@@ -37,10 +37,11 @@ function numberOfFile(name, epic) {
   return Number(m[2]);
 }
 
-// el número de la épica que nombra una rama, con punto o guion (`<épica>.<n>` o `<épica>-<n>`), en cualquier lugar del nombre
+// el número de la épica que nombra una rama, con punto o guion (`<épica>.<n>` o `<épica>-<n>`), en cualquier lugar del nombre.
+// Un número de historia tiene hasta tres cifras: `wt/Aimar-4-8276` es la sesión Aimar-4 con la historia 8.276, no la 4.8276
 function numbersOfBranch(ref, epic) {
   const out = [];
-  const re = new RegExp(`(?:^|[^\\d])${epicOf(epic)}[.-](\\d+)(?!\\d)`, 'g');
+  const re = new RegExp(`(?:^|[^\\d])${epicOf(epic)}[.-](\\d{1,3})(?!\\d)`, 'g');
   for (const m of String(ref).matchAll(re)) out.push(Number(m[1]));
   return out;
 }

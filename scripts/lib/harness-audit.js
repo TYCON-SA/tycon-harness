@@ -217,7 +217,6 @@ function checkContextEfficiency() {
     }
   }
   let agentsTokens = 0;
-  let agentsCount = 0;
   if (exists(AGENTS_DIR)) {
     for (const f of fs.readdirSync(AGENTS_DIR)) {
       if (!f.endsWith('.md')) continue;
@@ -225,7 +224,6 @@ function checkContextEfficiency() {
       const m = /^description:\s*(.+?)(?:\n[a-z_]+:|\n---)/ms.exec(content);
       if (m) {
         agentsTokens += Math.round(m[1].trim().length / 4);
-        agentsCount++;
       }
     }
   }

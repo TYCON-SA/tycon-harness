@@ -12,7 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./story-gate.js');
+const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
 // ── variables del comando ─────────────────────────────────────
 // `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale frenado como «EDICIÓN INVISIBLE»: el destino se resuelve
 // tal cual, `<repo>/$SP/x.cs`, y queda adentro del repo de la corrida.
@@ -1141,34 +1141,61 @@ function renglonesDelShell(texto) {
   return out;
 }
 
+/**
+ * La palabra con `$PWD`, `${PWD}`, `$(pwd)` y `` `pwd` `` reemplazados por `carpeta`, la carpeta en la que corre. El
+ * `$(pwd` sin su paréntesis también: quien lee la ruta le saca el `)` del final, que suele cerrar un subshell.
+ */
+const conCarpetaDelComando = (palabra, carpeta) => String(palabra).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(\s*pwd\s*(?:\)|$)|`pwd`/g, () => carpeta);
+
 const FIN_DE_EXEC = new Set([';', '\\;', '+', '\\']);
 const citarParaElShell = (w) => (/^[\w@%+=:,./~*?[\]{}-]+$/.test(w) ? w : `'${w.replace(/'/g, "'\\''")}'`);
 
-/** ¿El nombre cumple el patrón de `-name`? Un patrón que no se entiende cumple: se mira de más. */
+/**
+ * ¿El nombre cumple el patrón de `-name`? Se lee como el shell (`*`, `?`, corchetes con sus clases, `\x`), con el mismo
+ * comparador de los comodines; un patrón que no se entiende cumple: se mira de más.
+ */
 function cumplePatronDeFind(patron, sinMayusculas) {
-  let re;
   try {
-    // `[!x]` niega como `[^x]`
-    const fuente = String(patron).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*+/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^');
-    re = new RegExp(`^${fuente}$`, sinMayusculas ? 'i' : '');
+    const c = comodinDelShell(sinMayusculas ? String(patron).toLowerCase() : patron);
+    return (nombre) => c.test(sinMayusculas ? String(nombre).toLowerCase() : nombre);
   } catch { return () => true; }
-  return (nombre) => re.test(nombre);
 }
 
-/** Lo que corre cada `-exec`, `-execdir`, `-ok` y `-okdir` de un `find`, con `{}` reemplazado por las historias que alcanza. */
-function ordenesDeFind(words, absoluta) {
+/** Las historias que alcanza un `find`: sus carpetas de partida (resueltas con `absoluta`) filtradas por sus `-name`. */
+function alcanzadasPorFind(words, absoluta) {
   const carpetas = [];
-  for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) carpetas.push(words[i]);
+  for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) {
+    // `"$PWD"/docs` llega partido en dos palabras: la carpeta es una sola
+    const previa = carpetas[carpetas.length - 1];
+    if (previa !== undefined && words[i].startsWith('/') && conCarpetaDelComando(previa, '\0') === '\0') carpetas[carpetas.length - 1] = previa + words[i];
+    else carpetas.push(words[i]);
+  }
   if (!carpetas.length) carpetas.push('.');
   // con una negación, un «o» o un `-prune`, un `-name` ya no dice qué alcanza: se miran todas
   const filtros = [];
   const sinFiltro = words.some((w) => ['!', '-not', '-o', '-or', ',', '-prune'].includes(w));
-  if (!sinFiltro) words.forEach((w, k) => { if ((w === '-name' || w === '-iname') && words[k + 1] !== undefined) filtros.push(cumplePatronDeFind(words[k + 1], w === '-iname')); });
+  const patrones = [];
+  if (!sinFiltro) words.forEach((w, k) => { if ((w === '-name' || w === '-iname') && words[k + 1] !== undefined) { patrones.push(words[k + 1]); filtros.push(cumplePatronDeFind(words[k + 1], w === '-iname')); } });
+  // ningún `-name` que pueda dar un `.md` (`*.tmp`, `cache-*.log`): no hay historia que buscar, y el recorrido cuesta
+  // Con un corchete o una barra, cualquier cosa (`*.[m]d`, `*.m\d`). Si no, lo que sigue al último comodín tiene que poder
+  // ser el final de un `.md`, o terminar en `.md`
+  const puedeSerMd = (crudo) => {
+    const p = String(crudo).replace(/^['"]|['"]$/g, '').toLowerCase();
+    if (/[[\\]/.test(p)) return true;
+    const cola = p.slice(Math.max(p.lastIndexOf('*'), p.lastIndexOf('?')) + 1);
+    return '.md'.endsWith(cola) || cola.endsWith('.md') || (p.lastIndexOf('?') === p.length - 1);
+  };
+  if (patrones.length && !patrones.some(puedeSerMd)) return [];
   const cumple = filtros.length ? (nombre) => filtros.some((f) => f(nombre)) : () => true;
-  const alcanzadas = () => carpetas.flatMap(absoluta).flatMap((abs) => {
+  return carpetas.flatMap(absoluta).flatMap((abs) => {
     try { if (fs.statSync(abs).isFile()) return cumple(path.basename(abs)) ? [abs] : []; } catch { return []; }
     return mdAdentro(abs, cumple);
   });
+}
+
+/** Lo que corre cada `-exec`, `-execdir`, `-ok` y `-okdir` de un `find`, con `{}` reemplazado por las historias que alcanza. */
+function ordenesDeFind(words, absoluta) {
+  const alcanzadas = () => alcanzadasPorFind(words, absoluta);
   const out = [];
   for (let k = 0; k < words.length; k++) {
     if (!/^-(?:exec|execdir|ok|okdir)$/.test(words[k])) continue;
@@ -1328,4 +1355,4 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
 }
 
 
-module.exports = { MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget };
+module.exports = { MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };

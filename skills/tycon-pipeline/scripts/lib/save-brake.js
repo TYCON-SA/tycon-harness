@@ -1900,6 +1900,14 @@ function frenoDelTope(a, sid, home, repos, sinSeguir = false, registrar = true, 
  * subir (`sinSeguir`, como el tope): un borrador suelto en el repo no frena un commit que no lo suma ni un push, que no
  * sube lo que no está guardado. `{ texto }` o null; sin lista, null.
  */
+/** Lo sensible de save-ok.js, o null si no carga: sin la lista, el delegado no guarda nada (lo firma una persona), y se dice. */
+function cargarEsSensible() {
+  try { return require('./save-ok.js').esSensible || null; } catch (e) {
+    process.stderr.write(`⚠️  no pude cargar la lista de lo sensible (save-ok.js: ${String((e && e.message) || e).split('\n')[0]}): lo que guarde un delegado lo firma una persona.\n`);
+    return null;
+  }
+}
+
 function frenoDeLaLista(a, sid, home, { registrar = true, medida, sinSeguir = true } = {}) {
   if (!a || !Array.isArray(a.allowedFiles)) return null;
   const io = require('./story-gate-io.js');
@@ -1912,8 +1920,7 @@ function frenoDeLaLista(a, sid, home, { registrar = true, medida, sinSeguir = tr
     if (registrar) io.appendLog(dir, 'gates.log', sid, { name: 'save-brake', status: 'blocked', reason: `lista del carril sin medir: ${m.fallas[0]}` });
     return { texto: `🔒 GUARDAR: no pude medir qué cambió este camino corto (${m.fallas[0]}). Sin medir no guarda: arreglá eso y repetí el comando.` };
   }
-  let esSensible = null;
-  try { esSensible = require('./save-ok.js').esSensible; } catch (_) { esSensible = null; }
+  const esSensible = cargarEsSensible();
   const fuera = [];
   const sensibles = [];
   for (const [repo, r] of Object.entries(m.porRepo || {})) {
@@ -2355,4 +2362,4 @@ function decidirRiesgo(a, sid, home, { medida: m, alDia, registrar }) {
   return { texto: textoFaltanRevisoresYPase({ harness, regla: marca.regla, archivo: marca.archivo }), faltanRevisores: { regla: marca.regla, archivo: marca.archivo }, rutaPropia };
 }
 
-module.exports = { tramosDelShell, palabrasDelShell, commitsDelShell, gitsDelShell, comandosQueGuardan, leerComando, decidir, destinoDelEmpuje, preparado, RAMAS_COMPARTIDAS, textoFaltanRevisoresYPase, textoDeLaMaqueta, textoFueraDeLaLista, textoFaltanLasPruebas, textoCreaUnaRama, frenoDelRiesgo, frenoDeDatos };
+module.exports = { cargarEsSensible, tramosDelShell, palabrasDelShell, commitsDelShell, gitsDelShell, comandosQueGuardan, leerComando, decidir, destinoDelEmpuje, preparado, RAMAS_COMPARTIDAS, textoFaltanRevisoresYPase, textoDeLaMaqueta, textoFueraDeLaLista, textoFaltanLasPruebas, textoCreaUnaRama, frenoDelRiesgo, frenoDeDatos };

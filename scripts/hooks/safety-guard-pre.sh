@@ -2388,8 +2388,9 @@ fi
 # Además de las formas generales, las que apagan con cualquier valor que no sea 0 (`en_configuracion: cualquiera` en la
 # lista única scripts/lib/env-switches.json; scripts/tests/env-switches.test.js ata esta lista a ésa).
 _RC_CUALQUIERA="DOD_BYPASS|STOP_AUTONOMY|TYCON_ENGRAM_MANIFEST_OK|TYCON_EVAL_SANDBOX|TYCON_FULL_SUITE|TYCON_NO_DEEP_REVIEW|TYCON_PR_BY_HAND|TYCON_RUNTIME_MATRIX_LEGACY|TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK|TYCON_SAFETY_OFF|TYCON_SESSION_GUARD_OK|TYCON_STASH_GUARD_OK|TYCON_STATUS_GATE|TYCON_TEST_GATE"
-# Los lectores comparan `off` y `on` sin mayúsculas, y el chequeo de vida se apaga también con `ci`.
-_RC_APAGADO="TYCON_[A-Z_]+=(\"?'?)(0|[oO][fF][fF])|TYCON_(NO|SAFETY_OFF)[A-Z_]*=(\"?'?)(1|[oO][nN])|TYCON_NO_LIVENESS_PRECOMMIT=(\"?'?)([cC][iI])|(^|[^A-Za-z0-9_])(${_RC_CUALQUIERA})=[\"']?[^0\"'[:space:]]"
+# Los lectores comparan `off` y `on` sin mayúsculas, y el chequeo de vida se apaga también con `ci`. `warn` no apaga: baja
+# el control a aviso (TYCON_INTERNAL_HISTORY), y fijo en el rc queda bajado en todas las sesiones igual que uno apagado.
+_RC_APAGADO="TYCON_[A-Z_]+=(\"?'?)(0|[oO][fF][fF]|[wW][aA][rR][nN])|TYCON_(NO|SAFETY_OFF)[A-Z_]*=(\"?'?)(1|[oO][nN])|TYCON_NO_LIVENESS_PRECOMMIT=(\"?'?)([cC][iI])|(^|[^A-Za-z0-9_])(${_RC_CUALQUIERA})=[\"']?[^0\"'[:space:]]"
 if [[ "$CMD" =~ (\>|tee[[:space:]]+(-a[[:space:]]+)?|sed[[:space:]]+-i[^\|\;\&]*[[:space:]])[[:space:]]*[\"\']?[^[:space:]\"\']*(\.zshrc|\.bashrc|\.zprofile|\.bash_profile|\.profile|\.zshenv) ]] && \
    [[ "$CMD" =~ $_RC_APAGADO ]]; then
   block "HARNESS-C1" \
@@ -2401,11 +2402,11 @@ fi
 # escritura a `$PROFILE` que pone un apagado. Las tres piezas juntas, como arriba: un TYCON_ con valor de
 # apagado y un destino que persiste. `setx` de otra variable, o de un TYCON_ que PRENDE, pasa.
 _PS_Q='["'"'"']?'
-_PS_OFF="TYCON_[a-z_]+${_PS_Q}[[:space:]]*(,[[:space:]]*)?${_PS_Q}(0|off)${_PS_Q}|TYCON_(no|safety_off)[a-z_]*${_PS_Q}[[:space:]]*(,[[:space:]]*)?${_PS_Q}(1|on)${_PS_Q}"
+_PS_OFF="TYCON_[a-z_]+${_PS_Q}[[:space:]]*(,[[:space:]]*)?${_PS_Q}(0|off|warn)${_PS_Q}|TYCON_(no|safety_off)[a-z_]*${_PS_Q}[[:space:]]*(,[[:space:]]*)?${_PS_Q}(1|on)${_PS_Q}"
 if ps_match "${_PS_AT}setx[[:space:]]+(${_PS_OFF})([[:space:]]|;|$)" \
    || ps_match "setenvironmentvariable[[:space:]]*\([[:space:]]*${_PS_Q}(${_PS_OFF})[[:space:]]*,[[:space:]]*${_PS_Q}(\[?(system\.)?environmentvariabletarget\]?::)?(user|machine)" \
    || { ps_match "(add-content|set-content|out-file|>)[[:space:]]*(-(file)?path[[:space:]]+)?\\\$profile" \
-        && ps_match "\\\$env:TYCON_[a-z_]+[[:space:]]*=[[:space:]]*${_PS_Q}(0|off)|\\\$env:TYCON_(no|safety_off)[a-z_]*[[:space:]]*=[[:space:]]*${_PS_Q}(1|on)"; }; then
+        && ps_match "\\\$env:TYCON_[a-z_]+[[:space:]]*=[[:space:]]*${_PS_Q}(0|off|warn)|\\\$env:TYCON_(no|safety_off)[a-z_]*[[:space:]]*=[[:space:]]*${_PS_Q}(1|on)"; }; then
   block "HARNESS-C1" \
     "Persistir un kill-switch TYCON_* (setx, SetEnvironmentVariable de usuario o de máquina, o el perfil de PowerShell) apaga ese control para TODAS las sesiones futuras, sin rastro y sin vencimiento — incluido el instalador que re-sana a los demás." \
     "Si el dev quiere apagar un control: por sesión (\$env:TYCON_X=0; <cmd>) o que lo persista él a mano. El agente no persiste apagados."

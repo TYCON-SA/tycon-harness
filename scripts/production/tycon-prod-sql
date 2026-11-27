@@ -65,8 +65,20 @@ AQUI="$(cd "$(dirname "$0")" && pwd)"
 SECURITY="$RAIZ/usr/bin/security"
 CLIENTE="$RAIZ/opt/tycon/bin/sqlcmd"
 HUELLAS="$RAIZ/opt/tycon/huellas.json"
-# la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
-_ESTADO="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _ESTADO="$HOME/.tycon/state"
+# la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí). Si no, la
+# de siempre, con el nombre de la carpeta de Claude Code que dejó el instalador del freno en un renglón de root
+# (/opt/tycon/claude-dir-name: se lee, no se ejecuta); en el árbol (pruebas, desarrollo), la que da state-dir.sh. Sin
+# ninguno, vacía: la puerta frena más abajo pidiendo reinstalar, porque una operación de producción no queda sin su
+# registro, y ~/.tycon/state nunca se crea desde acá (que exista es lo que dice que la máquina se mudó).
+_ESTADO=""
+if [ -d "$HOME/.tycon/state" ]; then _ESTADO="$HOME/.tycon/state"
+elif [ -f "$RAIZ/opt/tycon/claude-dir-name" ]; then
+  IFS= read -r _CDIR < "$RAIZ/opt/tycon/claude-dir-name" 2>/dev/null || _CDIR=""
+  case "$_CDIR" in ''|.|..|*[!A-Za-z0-9._-]*) ;; *) _ESTADO="$HOME/$_CDIR/.tycon-pipeline" ;; esac
+elif [ "$INSTALADO" = 0 ] && [ -f "$AQUI/../lib/state-dir.sh" ]; then
+  _ESTADO="$(. "$AQUI/../lib/state-dir.sh" && tycon_state_dir)"
+  case "$_ESTADO" in "$HOME/.tycon/state") [ -d "$_ESTADO" ] || _ESTADO="" ;; esac
+fi
 REGISTRO="$_ESTADO/production.log"
 LLAVERO_PROPIO="$HOME/Library/Keychains/tycon-prod.keychain-db"
 MAX_FILAS=50
@@ -85,6 +97,9 @@ else
 fi
 
 muere(){ printf '%s\n' "$1" >&2; exit "${2:-2}"; }
+if [ -z "$_ESTADO" ] && [ "${1:-}" != "--help" ]; then
+  muere "🔴 la puerta no sabe dónde está la carpeta del estado (sin ~/.tycon/state ni $RAIZ/opt/tycon/claude-dir-name): sin ella no puede dejar el registro de producción. Reinstalá el freno: open \"$HOME/.tycon/harness/scripts/production/install-guard.command\""
+fi
 huella_de(){ shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
 duenio_de(){ stat -f '%Su' "$1" 2>/dev/null; }
 huella_esperada(){ # $1 = ruta canónica (/opt/tycon/…) — grep, NUNCA sed: la clave es una ruta con barras

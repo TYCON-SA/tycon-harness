@@ -1355,7 +1355,6 @@ function main() {
 
   let skippedNoStories = 0;
   const skippedNames = [];
-  let skippedNoHarness = 0;
   const repos = [];
   for (const r of targets) {
     const fromScan = !a.repos.includes(r);
@@ -1365,10 +1364,7 @@ function main() {
     // arnés (.tycon/ o .advisors/) — el mismo que usa unpushed-work-notice para decidir
     // qué repos vigila. Sólo filtra los descubiertos por --scan; un --repo explícito entra
     // igual (si lo nombraste, lo querés medir).
-    if (a.onlyHarness && fromScan && !tieneHuellaDelArnes(r)) {
-      skippedNoHarness++;
-      continue;
-    }
+    if (a.onlyHarness && fromScan && !tieneHuellaDelArnes(r)) continue;
     const m = measureRepo(r, a.since, { budgetMs: a.budgetMs });
     if (fromScan && !m.error && m.storiesTotal === 0) {
       skippedNoStories++; skippedNames.push(path.basename(r)); continue;

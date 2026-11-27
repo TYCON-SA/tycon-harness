@@ -2191,6 +2191,20 @@ test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', a
   });
 });
 
+test('T-A45 Corridas_ArchivosQuePasanSuTopeDeBajada_LosVeQuienMantiene_NoElDev', async () => {
+  // la pasada sale entera con archivos que no va a bajar nunca: quien mantiene lo ve en la pestaña; el dev, no
+  const fuentes = fuentesCon({ espejo: mundo({ marcadores: false }) });
+  fuentes.bajada = { completo: true, armable: true, generacion: 1, grandes: 2 };
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const l = (await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).json;
+    assert.strictEqual(l.buzon && l.buzon.grandes, 2, `quien mantiene: ${JSON.stringify(l.buzon)}`);
+    const pagina = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
+    assert.match(pagina, /2 archivos del depósito pasan su tope de bajada/, 'la banda en la página');
+    const d = (await h.pedir('/api/corridas', { cookie: await entrar(DEV_A) })).json;
+    assert.ok(!(d.buzon && d.buzon.grandes), `el dev no: ${JSON.stringify(d.buzon)}`);
+  });
+});
+
 test('T1 2.79-Corridas_VistaServida_NoSeReemplazaAMedias @story-2.79 @ac-1', async () => {
   // el caso de la Task 0.1: con la vista entera servida, una pasada con conversaciones pendientes no la reemplaza (sin
   // la conversación, el título, los tiempos y el consumo de una ejecución van y vuelven). Se espera a la pasada entera.
@@ -2398,4 +2412,71 @@ test('Cambios_ADemandaDeAUno — dos textos a demanda distintos esperan su turno
   });
   assert.strictEqual(pedidos, 2, 'se bajaron las dos');
   assert.strictEqual(maximo, 1, 'de a una');
+});
+
+// rojo si: la fila de los textos a demanda no tiene largo (quien tiene sesión encola N bajadas en serie y los demás
+// esperan detrás de todas), o un pedido que se fue mientras esperaba igual se baja y se arma (A46)
+test('T-A46 Cambios_ADemanda_LaFilaTieneTope_PorPersonaYEntera_YSeSueltaSiElPedidoSeVa', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const ids = servida.corridas.map((c) => c.id);
+  assert.ok(ids.length >= 4, `hacen falta cuatro ejecuciones: ${ids.length}`);
+  const g = leerGuardada(datos);
+  g.aDemanda = Object.fromEntries(ids.map((id) => [id, path.join(espejo, 'maq-a', 'a1.json')]));
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  const bajadas = [];
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.bajarCorrida = async ({ base }) => { bajadas.push(base); await new Promise((r) => setTimeout(r, 200)); return { codigo: 1, res: { estado: 'sin_partes' } }; };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true, esperanADemanda: 2 } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    // por persona: dos a la vez (una bajando y una esperando); la tercera vuelve «ocupado» enseguida, por la API con 503
+    const [r1, r2, r3] = await Promise.all(ids.slice(0, 3).map((id) => h.pedir(`/api/corridas/${id}/textos`, { cookie: lead })));
+    assert.deepStrictEqual([r1.status, r2.status, r3.status].sort(), [200, 200, 503], `estados: ${r1.status} ${r2.status} ${r3.status}`);
+    const ocupado = [r1, r2, r3].find((r) => r.status === 503);
+    assert.ok(ocupado.headers['retry-after'], 'dice cuándo volver');
+    // y «ocupado» no queda pegado a esa ejecución: pedida de nuevo, ya con lugar, se baja
+    const otraVez = await h.pedir(ocupado === r1 ? `/api/corridas/${ids[0]}/textos` : ocupado === r2 ? `/api/corridas/${ids[1]}/textos` : `/api/corridas/${ids[2]}/textos`, { cookie: lead });
+    assert.strictEqual(otraVez.status, 200, `la segunda vez: ${otraVez.status} ${otraVez.texto}`);
+    // la fila entera: con dos esperando, otra persona también vuelve «ocupado»
+    bajadas.length = 0;
+    const enFila = [vista.textos(ids[0], { quien: 'uno@x' }), vista.textos(ids[1], { quien: 'dos@x' }), vista.textos(ids[2], { quien: 'tres@x' })];
+    const cuarta = await vista.textos(ids[3], { quien: 'cuatro@x' });
+    assert.strictEqual(cuarta && cuarta.ocupado, true, `la cuarta: ${JSON.stringify(cuarta)}`);
+    await Promise.all(enFila);
+    // el que se fue mientras esperaba suelta su lugar y no se baja
+    bajadas.length = 0;
+    const ac = new AbortController();
+    const primero = vista.textos(ids[0], { quien: 'uno@x' });
+    const segundo = vista.textos(ids[1], { quien: 'dos@x', senal: ac.signal });
+    ac.abort();
+    const s = await segundo;
+    assert.strictEqual(s && s.cancelado, true, `el que se fue: ${JSON.stringify(s)}`);
+    await primero;
+    assert.deepStrictEqual(bajadas.length, 1, `se bajó sólo el que siguió esperando: ${bajadas.join(', ')}`);
+    // por la API: el cliente que corta la conexión mientras espera tampoco deja su bajada en la fila
+    bajadas.length = 0;
+    const ocupa = h.pedir(`/api/corridas/${ids[0]}/textos`, { cookie: lead });
+    await new Promise((r) => setTimeout(r, 30));
+    const u = new URL(`${h.base}/api/corridas/${ids[1]}/textos`);
+    const cortado = require('http').get({ hostname: u.hostname, port: u.port, path: u.pathname, headers: { cookie: lead, accept: 'application/json' } });
+    cortado.on('error', () => {});
+    await new Promise((r) => setTimeout(r, 30));
+    cortado.destroy();
+    await ocupa;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(bajadas.length, 1, `el que cortó no se bajó: ${bajadas.length} bajadas`);
+    // (Fable N12) dos esperan la misma ejecución y se va uno: el otro la recibe igual
+    bajadas.length = 0;
+    const se = new AbortController();
+    const queda = new AbortController();
+    const delante = vista.textos(ids[0], { quien: 'uno@x' });
+    const seVa = vista.textos(ids[1], { quien: 'dos@x', senal: se.signal });
+    const espera = vista.textos(ids[1], { quien: 'tres@x', senal: queda.signal });
+    se.abort();
+    const [, , recibe] = await Promise.all([delante, seVa, espera]);
+    assert.ok(recibe && !recibe.cancelado && !recibe.ocupado, `el que se quedó: ${JSON.stringify(recibe)}`);
+    assert.strictEqual(bajadas.length, 2, `se bajaron las dos: ${bajadas.length}`);
+  });
 });

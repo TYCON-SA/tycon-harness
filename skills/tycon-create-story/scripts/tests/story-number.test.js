@@ -165,3 +165,12 @@ test('Workflow_LlamaAlGuionYPreguntaConDuda', () => {
   assert.match(wf, /scripts\/story-number\.js next/);
   assert.match(wf, /sale 3/);
 });
+
+// 🔴 Falla con: tomar por un número de historia el número de otra historia pegado al nombre de una sesión con número
+//    (`wt/Aimar-4-8276-review` es la sesión Aimar-4 con la historia 8.276, no la 4.8276): el siguiente salía 4.8277 con duda.
+test('RamaDeSesionConNumero_NoEsHistoriaDeEsaEpica — un número de cuatro cifras o más no es un número de historia', () => {
+  assert.deepStrictEqual(lib.numbersOfBranch('wt/Aimar-4-8276-review', 4), []);
+  assert.deepStrictEqual(lib.numbersOfBranch('wt/Aimar-4-8289-lista', 4), []);
+  assert.deepStrictEqual(lib.numbersOfBranch('wt/4-15-algo', 4), [15], 'una historia de verdad sigue contando');
+  assert.deepStrictEqual(lib.numbersOfBranch('story/4.123-x', 4), [123]);
+});

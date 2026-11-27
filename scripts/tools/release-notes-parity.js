@@ -167,14 +167,12 @@ function main() {
   }
 
   const filas = [];
-  let ilegibles = 0;
   for (const c of cs) {
     try {
       const patron = filtroDe(c.archivo);
       const veredictos = CORPUS.map(([msg]) => filtra(patron, msg));
       filas.push({ ...c, patron, veredictos, respaldo: respaldoFiltra(c.archivo) });
     } catch (e) {
-      ilegibles++;
       filas.push({ ...c, error: e.message });
     }
   }

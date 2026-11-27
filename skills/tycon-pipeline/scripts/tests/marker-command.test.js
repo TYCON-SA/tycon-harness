@@ -82,3 +82,17 @@ test('T4 MarkerCommand_ProgramPosition_StillCalls — @story-8.278 @ac-5 @ac-18'
   assert.deepStrictEqual(guiones('ls | xargs node marker.js clear'), ['marker clear']);
   assert.deepStrictEqual(guiones('cd /x && node ./pipeline.js start --story s.md'), ['pipeline start']);
 });
+
+// T5 MarkerCommand_PipeKeepsItsSource
+// 🔴 Falla con: un salto de línea o un `(` después del `|` cierran un tramo vacío, y el tramo que sigue nace sin saber de
+//    qué tubería viene: el cuerpo de un heredoc que va a un shell deja de leerse como comando.
+test('T5 MarkerCommand_PipeKeepsItsSource — el tramo después de un | sabe de dónde viene aunque siga un salto o un (', () => {
+  const desde = (cmd) => mc.tramos(cmd).tramos.map((t) => (t.desde ? t.desde.palabras[0].texto : null));
+  for (const cmd of ['echo a | grep b', 'echo a |\ngrep b', 'echo a | (grep b)', 'echo a |\n  (grep b)', 'echo a | \\\ngrep b']) {
+    assert.deepStrictEqual(desde(cmd), [null, 'echo'], JSON.stringify(cmd));
+  }
+  assert.deepStrictEqual(desde('echo a; grep b'), [null, null], 'un ; no es una tubería');
+  assert.deepStrictEqual(desde('echo a |\n\ngrep b'), [null, 'echo'], 'tampoco con un renglón en blanco');
+  assert.deepStrictEqual(guiones('cat <<EOF | (bash)\nnode marker.js clear\nEOF'), ['marker clear']);
+  assert.deepStrictEqual(guiones('cat <<EOF | (bash -c "sh")\nnode marker.js clear\nEOF'), ['marker clear'], 'con -c el destino se lee por el enlace');
+});

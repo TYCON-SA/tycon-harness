@@ -32,7 +32,7 @@
 #
 # 🔴 EL ORIGEN SE FIJA LA PRIMERA VEZ Y DESPUÉS SE COMPARA (story 8.3, revisor de seguridad de la vuelta 2). Desde la
 # 8.3 la organización del equipo sale de la configuración, y esa configuración la puede escribir el propio asistente
-# (~/.claude/tycon.json, el perfil del equipo del clon): verificar la URL del remoto contra ella ya no alcanza para decir
+# (la configuración de la máquina, el perfil del equipo del clon): verificar la URL del remoto contra ella ya no alcanza para decir
 # «este clon es el del equipo». Lo que el asistente NO puede escribir es /opt/tycon, que es de root: la primera
 # instalación deja ahí (`production/trusted-origin.json`) la URL y la organización que una PERSONA aceptó por
 # teclado, y cada instalación siguiente exige las mismas. Un cambio se acepta sólo con `--change-origin` y otra
@@ -111,6 +111,81 @@ case "$ARNES" in ""|/*) ;; *) ARNES="$PWD/$ARNES" ;; esac
 case "${TYCON_PROD_HARNESS:-}" in ""|/*) ;; *) TYCON_PROD_HARNESS="$PWD/$TYCON_PROD_HARNESS" ;; esac
 case "${TYCON_PROD_ROOT:-}" in ""|/*) ;; *) TYCON_PROD_ROOT="$PWD/$TYCON_PROD_ROOT" ;; esac
 cd / || muere "no pude pararme en /"
+# Los lugares viejos de la persona: la carpeta de Claude Code, el estado de siempre y el lugar del arnés con su nombre
+# viejo. Este guion no los escribe a mano: los pregunta a lo que dejó la instalación ANTERIOR del freno en /opt/tycon,
+# que es de root. Primero places.json (lo escribe escribir_lugares, abajo); si no está (un freno de antes), el node de
+# root con la copia de root de tycon-home.js, que ya instalaba. Root no ejecuta ni lee como dato nada que no sea de root:
+# el archivo y cada carpeta hasta / tienen que ser de root, sin escritura de otros y sin enlaces (la misma vara que
+# --allow-auto-update). Las rutas se dan para la casa $1; una que no sea absoluta, que traiga un salto de línea o que
+# quede fuera de esa casa no se toma. Tres salidas: la ruta; nada, sin freno anterior (una máquina nueva no tiene
+# lugares viejos que mirar); o nada con un aviso en rojo por stderr, cuando no se pudo saber (un archivo ilegible o que
+# no es de root, el node que no contesta): «no sé» nunca se calla como «no hay».
+# En --no-sudo (las pruebas, nunca como root) los archivos no son de root: no se pide el dueño, y el respaldo de node
+# corre sólo con TYCON_PROD_NODE_LOCAL=1, con el node de quien corre (la copia no corre suelta), como el ensayo.
+nodo_de_pruebas(){ /usr/bin/python3 -I -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$(PATH="${TYCON_PROD_TEST_PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin}" command -v node || true)"; }
+lugar_instalado(){ # $1 = la casa · $2 = la clave (claude_dir, legacy_state_dir, place, legacy_place)
+  local opt="/opt/tycon" nodo th respaldo=1
+  [ -n "$1" ] || return 0
+  nodo="$opt/bin/node"
+  if [ "$SIN_SUDO" = 1 ]; then
+    opt="${TYCON_PROD_ROOT:-}/opt/tycon"; nodo="$opt/bin/node"; respaldo=0
+    if [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ]; then respaldo=1; nodo="$(nodo_de_pruebas)"; fi
+  fi
+  th="$opt/setup/harness/tycon-home.js"
+  /usr/bin/python3 -I - "$1" "$2" "$opt" "$SIN_SUDO" "$nodo" "$th" "$respaldo" <<'PY' || true
+import json, os, stat, subprocess, sys
+casa, clave, opt, sin_sudo, nodo, th, respaldo = os.path.normpath(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
+lugares = os.path.join(opt, "places.json")
+def no_se(motivo):
+    sys.stderr.write("   🔴 no sé dónde estaban los lugares viejos de la persona (%s): %s\n" % (clave, motivo)); sys.exit(0)
+def de_root(p):
+    # en --no-sudo los archivos son de quien corre la prueba: sólo se pide que existan
+    if sin_sudo == "1": return os.path.isfile(p)
+    try: s = os.lstat(p)
+    except OSError: return False
+    if not stat.S_ISREG(s.st_mode) or s.st_uid != 0 or (s.st_mode & 0o022): return False
+    d = os.path.dirname(p)
+    while True:
+        try: s = os.lstat(d)
+        except OSError: return False
+        if not stat.S_ISDIR(s.st_mode) or s.st_uid != 0 or (s.st_mode & 0o022): return False
+        if d == "/": return True
+        d = os.path.dirname(d)
+v = None
+if os.path.lexists(lugares):
+    if not de_root(lugares): no_se("%s no es de root, o una carpeta de su camino se puede escribir" % lugares)
+    try:
+        with open(lugares, encoding="utf-8") as f: d = json.load(f)
+    except Exception as e:
+        no_se("%s no se puede leer (%s)" % (lugares, e))
+    v = d.get(clave) if isinstance(d, dict) else None
+    # el archivo trae las rutas de la casa de quien instaló: de otra casa se toma la misma posición dentro de ésta
+    base = d.get("home") if isinstance(d, dict) else None
+    if isinstance(v, str) and isinstance(base, str) and os.path.normpath(v).startswith(os.path.normpath(base).rstrip("/") + "/"):
+        v = os.path.join(casa, os.path.relpath(os.path.normpath(v), os.path.normpath(base)))
+elif os.path.lexists(th):
+    # un freno de antes de places.json: se le pregunta a su tycon-home.js, con su node
+    fn = {"claude_dir": "claudeDir", "legacy_state_dir": "legacyStateDir", "place": "placePath", "legacy_place": "legacyPlacePath"}.get(clave)
+    if respaldo != "1" or not fn:
+        sys.exit(0)
+    if not (de_root(nodo) and de_root(th)): no_se("el node o tycon-home.js del freno anterior no son de root, o una carpeta de su camino se puede escribir")
+    try:
+        r = subprocess.run([nodo, "-e", "const T=require(process.argv[1]);const f=T[process.argv[2]];if(typeof f==='function')process.stdout.write(String(f(process.argv[3])))", th, fn, casa],
+                           env={"PATH": "/usr/bin:/bin"}, cwd="/", capture_output=True, text=True, timeout=20)
+    except Exception as e:
+        no_se("el tycon-home.js del freno anterior no contestó (%s)" % e)
+    if r.returncode != 0: no_se("el tycon-home.js del freno anterior salió %s: %s" % (r.returncode, (r.stderr or "").strip()[:200]))
+    v = r.stdout
+else:
+    sys.exit(0)
+if v is None:
+    sys.exit(0)
+if isinstance(v, str) and os.path.isabs(v) and not any(c in v for c in "\n\r\0") and os.path.normpath(v).startswith(casa.rstrip("/") + "/"):
+    sys.stdout.write(os.path.normpath(v))
+else:
+    no_se("la ruta que dio no es absoluta, trae un salto de línea o queda fuera de %s" % casa)
+PY
+}
 
 if [ "$SIN_SUDO" = 1 ]; then
   # el modo de pruebas NUNCA corre como root: con sudo instalaría en /opt/tycon sin chequear dueños ni
@@ -128,22 +203,27 @@ else
   { [ -n "$USUARIO" ] && [ "$USUARIO" != "root" ]; } || muere "no sé qué usuario lanzó la instalación (SUDO_USER vacío): corrélo con sudo desde tu sesión."
   HOME_USUARIO="$(dscl . -read "/Users/$USUARIO" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
   [ -d "$HOME_USUARIO" ] || muere "no encuentro la carpeta de $USUARIO"
-  # el lugar del arnés que deja el instalador: ~/.claude/tycon-harness y, si no está, el nombre viejo (stories 8.3 y
-  # 8.19). Escritos acá: este guion corre con sudo y no carga el árbol (copia declarada en harness-place-names.json)
+  # el lugar del arnés: la máquina ya mudada a ~/.tycon (story 8.23, tanda D · AC 30), con la versión bajada, que se
+  # verifica abajo; si no, el lugar y su nombre viejo con su clon, como los sabe el freno instalado (lugar_instalado):
+  # este guion corre con sudo y no carga el árbol
   if [ -z "${ARNES:-}" ]; then
-    # la máquina ya mudada a ~/.tycon (story 8.23, tanda D · AC 30): la versión bajada, que se verifica abajo
     if [ -f "$HOME_USUARIO/.tycon/harness/.tycon-release.json" ]; then ARNES="$HOME_USUARIO/.tycon/harness"; fi
-    for _place_name in tycon-harness tycon-claude-guides; do
+    for _place_key in place legacy_place; do
       [ -n "${ARNES:-}" ] && break
-      if [ -d "$HOME_USUARIO/.claude/$_place_name/.git" ]; then ARNES="$HOME_USUARIO/.claude/$_place_name"; break; fi
+      _place_cand="$(lugar_instalado "$HOME_USUARIO" "$_place_key")"
+      if [ -n "$_place_cand" ] && [ -d "$_place_cand/.git" ]; then ARNES="$_place_cand"; fi
     done
-    ARNES="${ARNES:-$HOME_USUARIO/.claude/tycon-harness}"
+    ARNES="${ARNES:-$HOME_USUARIO/.tycon/harness}"
   fi
   { [ -d "$ARNES/.git" ] || [ -f "$ARNES/.tycon-release.json" ]; } || muere "no encuentro el arnés en $ARNES: ni un clon (.git) ni una versión bajada (.tycon-release.json) — pasalo con --from <ruta>"
 fi
-# la HOME que se lee (con sudo, la del usuario que lanzó; sin sudo —las pruebas— la de quien corre) y, escrita UNA sola
-# vez, su carpeta de Claude Code: la configuración de la máquina y el estado viejo se buscan ahí (tycon-home T3)
-HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
+# la HOME que se lee (con sudo, la del usuario que lanzó; sin sudo —las pruebas— la de quien corre), su carpeta de
+# Claude Code (la configuración vieja de la máquina) y el estado de siempre, como los sabe el freno instalado
+# (lugar_instalado). Vacías en una máquina sin freno anterior: ahí no hay lugares viejos que mirar, y
+# lo de hoy vive en ~/.tycon.
+HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"
+CLAUDE_LEIDA="$(lugar_instalado "$HOME_LEIDA" claude_dir)"
+ESTADO_VIEJO_LEIDO="$(lugar_instalado "$HOME_LEIDA" legacy_state_dir)"
 
 # ── la actualización sin contraseña: lo que se decide ANTES de verificar o tocar nada ───────────────────────
 DESTINO="$RAIZ/opt/tycon"
@@ -217,7 +297,15 @@ motivo_eleccion(){
 # operadores de enlace del shell no andan igual en Windows (el arnés los pasa por Node, y acá Node no entra)
 es_enlace(){ /usr/bin/python3 -I -c 'import os, sys; sys.exit(0 if os.path.islink(sys.argv[1]) else 1)' "$1"; }
 # El estado del arnés de la persona, donde lo busca el resto de este guion: ~/.tycon/state si está, si no donde siempre.
-estado_del_arnes(){ if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then printf '%s' "$HOME_LEIDA/.tycon/state/harness-state.json"; else printf '%s' "$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi; }
+estado_del_arnes(){ if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then printf '%s' "$HOME_LEIDA/.tycon/state/harness-state.json"; elif [ -n "$ESTADO_VIEJO_LEIDO" ]; then printf '%s' "$ESTADO_VIEJO_LEIDO/harness-state.json"; else printf '%s' "$HOME_LEIDA/.tycon/state/harness-state.json"; fi; }
+# Una máquina que no se mudó a ~/.tycon y nunca tuvo el freno: su estado está en la carpeta de siempre y no hay un freno
+# anterior que diga dónde queda. No se adivina: se frena diciendo qué hacer (la mudanza lo resuelve, y adivinar como
+# root una ruta de la casa es justo lo que este guion no hace).
+exigir_estado_del_arnes(){ # $1 = la ruta elegida
+  if [ ! -f "$1" ] && [ -z "$ESTADO_VIEJO_LEIDO" ] && [ ! -d "$HOME_LEIDA/.tycon/state" ]; then
+    muere "esta máquina guarda el estado del arnés en la carpeta de siempre y no hay un freno anterior que diga dónde queda: actualizá el arnés para que se mude a ~/.tycon (node \"\$HOME/.tycon/harness/scripts/setup/harness.js\" update) y volvé a correr esto"
+  fi
+}
 # La actualización del arnés cambia la versión bajada (~/.tycon/harness) y graba el estado recién después del aplicador:
 # leer las dos en ese tramo da una carpeta que no es la que registra el estado. Mientras su candado (el de lock.js, al lado
 # del estado) sea de un proceso vivo de esta máquina, se espera.
@@ -331,7 +419,8 @@ if [ "$AUTO" = 1 ]; then
   [ -z "$ENLACES" ] || muere "la versión bajada trae enlaces simbólicos (${ENLACES//$COPIA_AUTO\/harness\//}): la actualización sin contraseña no los sigue"
   ESTADO_AUTO="${TYCON_PROD_STATE:-}"
   if [ "$SIN_SUDO" = 0 ] || [ -z "$ESTADO_AUTO" ]; then
-    if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_AUTO="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_AUTO="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
+    if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_AUTO="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_AUTO="$(estado_del_arnes)"; fi
+    exigir_estado_del_arnes "$ESTADO_AUTO"
   fi
   /bin/cp "$ESTADO_AUTO" "$COPIA_AUTO/harness-state.json" 2>/dev/null || muere "no pude copiar el estado del arnés ($ESTADO_AUTO): sin él no sé de qué repo se bajó la versión"
   ARNES_BAJADO="$ARNES"; ARNES="$COPIA_AUTO/harness"; ESTADO_AUTO="$COPIA_AUTO/harness-state.json"
@@ -421,7 +510,8 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   # `install --version` CON Claude Code (pase adversarial de la D, clase 13): se mira donde esté
   ESTADO_RELEASE="${ESTADO_AUTO:-${TYCON_PROD_STATE:-}}"
   if [ -z "$ESTADO_RELEASE" ]; then
-    if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_RELEASE="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_RELEASE="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
+    if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_RELEASE="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_RELEASE="$(estado_del_arnes)"; fi
+    exigir_estado_del_arnes "$ESTADO_RELEASE"
   fi
   # con la actualización del arnés terminada (la del modo sin contraseña ya esperó antes de copiar)
   [ "$AUTO" = 1 ] || esperar_al_arnes "$ESTADO_RELEASE"
@@ -677,7 +767,8 @@ fi
 if [ "$DESDE_RELEASE" = 0 ]; then
   URL="$(git_arnes remote get-url origin)" || muere "no pude leer el remoto del clon"
   # La organización del equipo sale de la configuración del arnés (story 8.3): TYCON_ADO_ORG/ADO_ORG del que
-  # invoca, ~/.claude/tycon.json del usuario, o el perfil del equipo. Acá se lee con python3 (está en /usr/bin;
+  # invoca, la configuración del usuario (~/.tycon/config.json, y la vieja, tycon.json en su carpeta de Claude Code), o el
+  # perfil del equipo. Acá se lee con python3 (está en /usr/bin;
   # node no entra en el PATH de root) y sin la precedencia completa del lector: sólo `ado.org`. Sin organización
   # no se puede verificar que el clon sea el del equipo, y sin eso no se instala.
   # 🔴 Un archivo de configuración ILEGIBLE frena con el motivo (AC 2 de la story 8.3): no se lee como «sin
@@ -686,7 +777,7 @@ if [ "$DESDE_RELEASE" = 0 ]; then
   RC_ORG=0
   # el perfil del equipo con su nombre de hoy; si no está, el de antes, que sigue valiendo (con los dos, gana el nuevo)
   PERFIL_ARNES="$ARNES/team-profile.json"; [ -f "$PERFIL_ARNES" ] || PERFIL_ARNES="$ARNES/perfil-equipo.json"
-  ORG="$(/usr/bin/python3 -I - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$CLAUDE_LEIDA/tycon.json}" "$PERFIL_ARNES" 2>"$CFG_ERR" <<'PY'
+  ORG="$(/usr/bin/python3 -I - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$HOME_LEIDA/.tycon/config.json}" "${HOME_USUARIO:+${CLAUDE_LEIDA:+$CLAUDE_LEIDA/tycon.json}}" "$PERFIL_ARNES" 2>"$CFG_ERR" <<'PY'
 import json, re, sys
 # la misma forma canónica que tycon-config.js (normalizarOrg): https://dev.azure.com/<org>; acepta <org>.visualstudio.com,
 # usuario, barra final y espacios — sin esto, `${ORG##*/}` daba vacío y el clon del equipo se rechazaba
@@ -732,7 +823,7 @@ PY
     muere "la configuración del arnés está ROTA — ${CFG_MOTIVO}— arreglá ese archivo: un archivo roto no se lee como «sin organización» (AC 2 de la story 8.3)."
   fi
   rm -f "$CFG_ERR"
-  [ -n "$ORG" ] || muere "sin organización de Azure DevOps configurada (ado.org en el perfil del equipo o en ~/.claude/tycon.json, o TYCON_ADO_ORG): no puedo verificar que el clon sea el del equipo."
+  [ -n "$ORG" ] || muere "sin organización de Azure DevOps configurada (ado.org en el perfil del equipo, en ~/.tycon/config.json o en la configuración vieja de la carpeta de Claude Code, o TYCON_ADO_ORG): no puedo verificar que el clon sea el del equipo."
   ORG_NOMBRE="${ORG##*/}"
   # El host se compara ENTERO (sin el usuario de la URL) y sólo por https: con el glob `*dev.azure.com/` de antes,
   # `https://ajeno/dev.azure.com/<org>/…` también pasaba (revisor de seguridad, vuelta 3).
@@ -980,7 +1071,7 @@ instalar(){ # $1 = relativo en ORIGEN, $2 = destino, $3 = modo
 # hook la vuelve a intentar.
 cerrar_reglas_abiertas(){
   local casa="${HOME_USUARIO:-${HOME:-}}" puerta_vieja="$DESTINO/bin/tycon-prod-sql" f h hosts salida
-  for d in "$casa/.tycon/state" "$casa/.claude/.tycon-pipeline"; do
+  for d in "$casa/.tycon/state" ${ESTADO_VIEJO_LEIDO:+"$ESTADO_VIEJO_LEIDO"}; do
     [ -f "$d/production-firewall.json" ] || [ -f "$d/production.log" ] || continue
     # la unión del estado y de las aperturas del registro sin un cierre posterior, como el barrido del hook
     if ! hosts="$(/usr/bin/python3 -I -c 'import json,sys,os
@@ -1038,8 +1129,9 @@ retirar_estados_viejos(){
     fi
     como=(/usr/bin/sudo -n -u "$USUARIO" --)
   fi
-  # la carpeta de Claude Code con el nombre escrito una sola vez, arriba (CLAUDE_LEIDA)
-  for d in "$casa/.tycon/state" "$casa/${CLAUDE_LEIDA##*/}/.tycon-pipeline"; do
+  # el estado de siempre de ESTA casa (la de laboratorio en las pruebas), como lo sabe el freno instalado
+  local viejo; viejo="$(lugar_instalado "$casa" legacy_state_dir)"
+  for d in "$casa/.tycon/state" ${viejo:+"$viejo"}; do
     [ -d "$d" ] || continue
     if ! salida="$(${como[@]+"${como[@]}"} /usr/bin/python3 -I -c 'import json,sys,os,stat
 d, casa = sys.argv[1], sys.argv[2]
@@ -1151,9 +1243,6 @@ instalar scripts/production/guard-libs/setup/harness/tycon-home.js "$DESTINO/set
 if [ "$CON_MAPA" = 1 ]; then instalar "$MAPA_NOMBRES" "$DESTINO/lib/renames.json" 644; fi
 instalar scripts/production/production-index.js  "$DESTINO/production/production-index.js" 644
 instalar scripts/production/load-key.command.template "$DESTINO/production/load-key.command.template" 644
-instalar scripts/production/tycon-prod-sql        "$DESTINO/bin/tycon-prod-sql" 755
-instalar scripts/production/node-shim.sh          "$DESTINO/node-shim.sh" 755
-ok "freno y puerta instalados en $DESTINO"
 # el origen que la persona aceptó queda fijado, de root, para las instalaciones siguientes (sólo se escribe si cambió:
 # la segunda corrida no toca nada)
 FIJADO_URL_AHORA=""; FIJADO_ORG_AHORA=""
@@ -1259,6 +1348,53 @@ if [ "$AUTO" = 1 ]; then
 else copiar_binario sqlcmd; fi
 sin_dependencias_del_usuario "$DESTINO/bin/sqlcmd"
 [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ] || sin_dependencias_del_usuario "$DESTINO/bin/node"
+
+# ── 2b. los lugares de la persona, para lo que corre en bash ────────────────
+# El lanzador y la puerta corren en bash (el lanzador, a veces justo sin node) y no pueden preguntarle a tycon-home.js
+# dónde está el estado de siempre. Se lo pregunta acá el node de root a la copia de root de tycon-home.js, los dos recién
+# instalados: nada de lo que la persona escribe se ejecuta. Quedan dos archivos de root: places.json (lo lee este mismo
+# guion la próxima vez, en lugar_instalado) y claude-dir-name, un renglón con el NOMBRE de la carpeta de Claude Code, que
+# el lanzador y la puerta leen sin ejecutar nada y pegan a su propia casa. Corre ANTES de instalar la puerta y el
+# lanzador nuevos: nunca quedan sin su archivo. Si falla, la instalación frena con el error.
+escribir_lugares(){
+  local nodo="$DESTINO/bin/node" json err f
+  # sólo en pruebas (--no-sudo): la copia de un node con bibliotecas propias no corre suelta (como en el ensayo)
+  if [ "$SIN_SUDO" = 1 ] && [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ]; then nodo="$(nodo_de_pruebas)"; fi
+  err="$(/usr/bin/mktemp)" || muere "no pude crear un archivo temporal"
+  json="$(cd / && /usr/bin/env -i PATH=/usr/bin:/bin "$nodo" -e 'const T = require(process.argv[1]); const h = process.argv[2];
+process.stdout.write(JSON.stringify({ home: h, claude_dir: T.claudeDir(h), legacy_state_dir: T.legacyStateDir(h), place: T.placePath(h), legacy_place: T.legacyPlacePath(h) }));' \
+    "$DESTINO/setup/harness/tycon-home.js" "$HOME_LEIDA" 2>"$err")" \
+    || { local motivo; motivo="$(head -c 300 "$err" | tr '\n' ' ')"; rm -f "$err"; muere "no pude preguntarle los lugares de la persona a $DESTINO/setup/harness/tycon-home.js con el node de root: ${motivo:-sin salida}"; }
+  rm -f "$err"
+  /usr/bin/python3 -I - "$json" "$DESTINO/places.json.nuevo" "$DESTINO/claude-dir-name.nuevo" <<'PY' || muere "no pude escribir los lugares de la persona en $DESTINO/places.json y claude-dir-name"
+import json, os, re, sys
+d = json.loads(sys.argv[1])
+claves = ("home", "claude_dir", "legacy_state_dir", "place", "legacy_place")
+for k in claves:
+    v = d.get(k)
+    if not isinstance(v, str) or not os.path.isabs(v) or any(c in v for c in "\n\r\0"):
+        sys.exit("la ruta %s no es una ruta absoluta de una línea" % k)
+nombre = os.path.basename(os.path.normpath(d["claude_dir"]))
+if not re.fullmatch(r"[A-Za-z0-9._-]+", nombre) or nombre in (".", ".."):
+    sys.exit("el nombre de la carpeta de Claude Code (%r) no es un nombre simple" % nombre)
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    json.dump({k: d[k] for k in claves}, f, indent=1)
+with open(sys.argv[3], "w", encoding="utf-8") as f:
+    f.write(nombre + "\n")
+PY
+  for f in places.json claude-dir-name; do
+    # sin cambios, no se toca (la segunda corrida no reescribe nada)
+    if [ -f "$DESTINO/$f" ] && cmp -s "$DESTINO/$f.nuevo" "$DESTINO/$f"; then rm -f "$DESTINO/$f.nuevo"; continue; fi
+    chmod 644 "$DESTINO/$f.nuevo" || muere "no pude poner permisos 644 a $DESTINO/$f"
+    if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/$f.nuevo" || muere "no pude dejar $DESTINO/$f como root:wheel"; fi
+    mv -f "$DESTINO/$f.nuevo" "$DESTINO/$f" || muere "no pude dejar $DESTINO/$f"
+  done
+  ok "los lugares de la persona, en $DESTINO/places.json y claude-dir-name"
+}
+escribir_lugares
+instalar scripts/production/tycon-prod-sql        "$DESTINO/bin/tycon-prod-sql" 755
+instalar scripts/production/node-shim.sh          "$DESTINO/node-shim.sh" 755
+ok "freno y puerta instalados en $DESTINO"
 
 # ── 3. las huellas (lo que el freno y la puerta reverifican antes de ejecutar) ────────────────
 huella(){ local h; h="$(shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1)"; [[ "$h" =~ ^[a-f0-9]{64}$ ]] || muere "no pude calcular la huella de $1"; printf '%s' "$h"; }

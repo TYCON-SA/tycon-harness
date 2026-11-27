@@ -1126,7 +1126,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: partes.siSaleMal || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
     ...(partes.explica !== undefined ? { explica: partes.explica } : {}),
-    comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
+    comando: comandoDelDetalle(formaExacta(comando, sinDestino), texto) });
   // lo que la fuente dice entero y la vista resume (la designación, la exención) va al detalle
   if (partes.queHaceALaVista) {
     const enteras = partes.queHace.map((l) => `Qué hace: ${String(l).replace(/\s+/g, ' ').trim()}`).filter((l) => !q.detalle.includes(l));
@@ -1141,8 +1141,24 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
 const renglonALaVista = (x) => `AC ${x.ac}: ${x.medida ? `lo medido: ${x.medida}; ` : ''}por qué no se prueba en vivo: ${razonDeclarada(x) || 'sin razón declarada'}; lo cubre: ${x.coveredBy || '(ninguna prueba declarada)'}; el criterio: ${x.text || '(sin texto en la historia)'}`;
 
 /**
- * El comando para el detalle del cuadro: el programa por su nombre y el resto como se pidió, salvo los valores de
- * `--entries` y `--file`, que nombran los archivos de la firma (la lista no se muestra en ningún lado).
+ * El pedido en la forma exacta en que se corre: con el intérprete que lo antecede (`bash`, `sh`, `node`) y la ruta entera
+ * del programa, citada como la lee la consola. El click vale para ese comando: otra forma (sin `bash`, o desde otra copia
+ * del arnés) puede negarla otro freno después de gastarlo, y Claude Code no avisa de eso. No entra en la huella.
+ */
+function formaExacta(comando, palabras) {
+  if (!palabras || !palabras.length) return null;
+  // el intérprete como se escribió, también con su ruta (`/bin/bash`)
+  const interprete = /^\s*((?:\/[^\s'"]*\/)?(?:bash|sh|node))\s+/.exec(String(comando || ''));
+  const yaLoTrae = interprete && base(String(palabras[0])) === base(interprete[1]);
+  const programa = String(palabras[0]);
+  // `~/` queda fuera de las comillas: entre comillas la consola no la expande y la ruta del arnés instalado daría 127
+  const citado = yaLoTrae ? programa : programa.startsWith('~/') ? `~/${rutaParaLaConsola(programa.slice(2))}` : rutaParaLaConsola(programa);
+  return [...(interprete && !yaLoTrae ? [interprete[1]] : []), citado, ...palabras.slice(1)];
+}
+
+/**
+ * El comando para el detalle del cuadro: como se corre (`formaExacta`), salvo los valores de `--entries` y `--file`, que
+ * nombran los archivos de la firma (la lista no se muestra en ningún lado).
  */
 function comandoDelDetalle(palabras, texto) {
   if (!palabras) return texto;
@@ -1392,6 +1408,60 @@ function escribirRegistro(casa, reg) {
   fs.renameSync(tmp, destino);
   avisarOficina(reg.destino, casa);
   return destino;
+}
+
+/**
+ * El click que gastó un comando que no llegó a ejecutarse vuelve a valer (F27, decisión del dueño del 27/11: «debe
+ * gastarse sólo si el comando corre»). Lo llama el gancho del después de una herramienta que falló. Sólo si las tres
+ * cosas se ven: el comando salió 126 o 127 (sin permiso de ejecución, no encontrado: así empieza el error que trae el
+ * evento), su pedido de la ventana (el de su `tool_use_id`, que gastó una aprobación) sigue sin consumir, y es de esta
+ * sesión. Un guion de firma que corrió consume el pedido antes de firmar: con el pedido consumido el click queda gastado,
+ * aunque después saliera 127. El pedido se cierra al devolver (nadie lo puede consumir después), y cada aprobación vuelve
+ * una sola vez: una marca `devueltas/<id>` lo recuerda aunque el comando repetido vuelva a salir 127. Con `herramienta`
+ * (el proceso que lanzó al gancho), sólo el pedido que anotó esa misma herramienta. Si otro freno niega el comando,
+ * Claude Code no manda este evento: ese click sigue gastado. Devuelve `{ devuelta, firma }` o null.
+ */
+function devolverSiNoCorrio(evento, { casa = os.homedir(), ahora = Date.now(), aprobaciones, herramienta = null } = {}) {
+  const e = evento && typeof evento === 'object' ? evento : {};
+  if (e.hook_event_name !== 'PostToolUseFailure' || !['Bash', 'PowerShell'].includes(e.tool_name)) return null;
+  const sesion = String(e.session_id || '');
+  const tid = e.tool_use_id == null ? '' : String(e.tool_use_id);
+  if (!SESION.test(sesion) || !tid || !/^Exit code 12[67]\b/.test(String(e.error || ''))) return null;
+  const pedido = pedidoConClick(casa, sesion, tid);
+  if (!pedido) return null;
+  const { dir, f, reg } = pedido;
+  if (herramienta && !(reg.herramienta && reg.herramienta.pid === herramienta.pid && reg.herramienta.inicio === herramienta.inicio)) return null;
+  // una sola vez por aprobación: la marca se crea antes de tocar nada, y si ya estaba no se devuelve
+  const oa = aprobaciones || require('./owner-approvals.js');
+  try {
+    const marcas = path.join(oa.carpeta(casa), 'devueltas');
+    fs.mkdirSync(marcas, { recursive: true });
+    fs.writeFileSync(path.join(marcas, reg.aprobacion), `${JSON.stringify({ ts: new Date(ahora).toISOString(), sesion, tool_use_id: tid })}\n`, { flag: 'wx' });
+  } catch (_) { return null; }
+  // cerrar el pedido: si otro proceso lo consumió o lo cerró, no se devuelve nada
+  try { fs.renameSync(path.join(dir, f), path.join(dir, `${f}.no-corrio-${ahora}`)); } catch (_) { return null; }
+  oa.devolver(casa, { id: reg.aprobacion });
+  return { devuelta: reg.aprobacion, firma: reg.firma };
+}
+
+/**
+ * El pedido sin consumir de `sesion` que anotó el comando `tid` y gastó una aprobación, o null. Barato: el gancho lo
+ * pregunta antes de leer los procesos de la máquina. El id de la aprobación tiene que ser una huella (va a una ruta).
+ */
+function pedidoConClick(casa, sesion, tid) {
+  if (!SESION.test(String(sesion || '')) || !tid) return null;
+  const dir = carpeta(casa);
+  let nombres;
+  try { nombres = fs.readdirSync(dir); } catch (_) { return null; }
+  for (const f of nombres) {
+    if (!f.endsWith(`--${sesion}.json`)) continue;
+    let reg;
+    try { reg = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { continue; }
+    if (!reg || reg.tool_use_id !== String(tid) || reg.sesion !== sesion) continue;
+    if (typeof reg.aprobacion !== 'string' || !/^[0-9a-f]{64}$/.test(reg.aprobacion)) return null;
+    return { dir, f, reg };
+  }
+  return null;
 }
 
 /** La sesión pasó a esperar o dejó de esperar: la oficina se entera enseguida. El aviso nunca cambia el resultado de la firma. */
@@ -2695,7 +2765,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { esRojoDeUnControl, plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { devolverSiNoCorrio, pedidoConClick, formaExacta, esRojoDeUnControl, plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, porQueSinLista, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
