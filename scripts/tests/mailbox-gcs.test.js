@@ -937,3 +937,58 @@ test('SiteGcs_EncodedObject_DoesNotFreezeSite @story-1.3 @ac-9 — un objeto con
     assert.ok(!fake.pedidos.some((p) => p.metodo === 'GET' && p.ruta.endsWith('/s9.json') && p.consulta.includes('alt=media')), 'el codificado ni se pide');
   } finally { await fake.cerrar(); }
 });
+
+// ── el sitio entero: el repo de operaciones con site.mailbox gcs, crearFuentes y su refresco ───────────────────────
+
+const { arrancarRepoHttp, repoConArchivos, hayHttpBackend } = require('./lib/git-http-server.js');
+const H = require('./lib/site-harness.js');
+// sin git http-backend se saltea con constancia; en CI (CI=true) NO se saltea, como en site-sources.test.js
+const SIN_BACKEND = !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina: el repo por HTTP no se puede armar';
+
+test('T19 SiteGcs_WholeSite_RefreshReadsRuns @story-1.3 @ac-9 — el sitio con site.mailbox gcs y la identidad del entorno: el refresco lee las corridas; una falla después conserva la última lectura buena', { skip: SIN_BACKEND }, async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  const raiz = tmp('gcs-sitio-entero-');
+  const TOKEN = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'gcs', bucket: BUCKET } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString('base64')}` });
+  const antes = process.env.GCE_METADATA_HOST;
+  process.env.GCE_METADATA_HOST = fake.host;
+  let fuentes = null;
+  try {
+    fake.poner('maq-a-11111111/s1.json', volcado('s1', '2026-11-20T10:00:00Z'));
+    fake.poner('maq-b-22222222/s2.json', volcado('s2', '2026-11-21T10:00:00Z'));
+    const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
+    const v = validarConfiguracion(H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_IDENTITY: 'managed' }));
+    assert.ok(v.ok, JSON.stringify(v.problemas));
+    assert.deepStrictEqual(v.cfg.mailboxCredencial, { managed: true });
+    const registro = [];
+    const { crearFuentes } = require(path.join(H.SITE, 'sources.js'));
+    fuentes = crearFuentes({ cfg: v.cfg, dataDir: tmp('gcs-sitio-datos-'), log: (l) => registro.push(l), urlBuzon: fake.url });
+
+    await fuentes.refrescar();
+    assert.strictEqual(fuentes.estado().cargado, true, registro.join('\n'));
+    const c = fuentes.modelo().corridas;
+    assert.strictEqual(c.estado, 'medido', `${JSON.stringify(c)}\n${registro.join('\n')}`);
+    assert.strictEqual(c.lista.length, 2, 'las dos corridas del bucket');
+    assert.strictEqual(fuentes.buzonEstado().completo, true);
+    assert.ok(fake.pedidos.some((p) => p.ruta === '/computeMetadata/v1/instance/service-accounts/default/token'), 'el token salió del servidor de metadatos');
+    assert.ok(fake.pedidos.some((p) => /^\/storage\/v1\/b\/[^/]+\/o$/.test(p.ruta)), 'listó el bucket por la API JSON');
+
+    // después, sin el rol de lector: no es un buzón vacío; se queda lo último bueno y la falla se anota
+    fake.modo.json = '403';
+    await fuentes.refrescar();
+    const c2 = fuentes.modelo().corridas;
+    assert.strictEqual(c2.estado, 'medido', 'conserva la última lectura buena');
+    assert.strictEqual(c2.lista.length, 2);
+    assert.strictEqual(fuentes.buzonEstado().completo, false);
+    assert.match(registro.join('\n'), /el buzón no se leyó entero \(sin_permiso/);
+    assert.ok(!registro.join('\n').includes(TOKEN), 'la credencial del repo no sale en el registro');
+  } finally {
+    if (fuentes) fuentes.detener();
+    if (antes === undefined) delete process.env.GCE_METADATA_HOST; else process.env.GCE_METADATA_HOST = antes;
+    await git.cerrar();
+    await fake.cerrar();
+    fs.rmSync(raiz, { recursive: true, force: true });
+  }
+});
