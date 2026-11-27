@@ -24,7 +24,7 @@
  *      documento puede ser una página. `.mdx` cuenta siempre: es una página en los sitios que lo usan.
  *      Tampoco cuenta por su ruta una entrada cuyos archivos no pueden ser pantalla: un script por su extensión
  *      (.sh, .ps1, .bat, .cmd, .py, .yml) o un archivo de una carpeta de scripts o de CI (`scripts/`, `pipelines/`,
- *      `.github/`) o del propio arnés en la raíz (`.advisors/`, `.tycon/`, `.engram/`), ni lo que nunca dibuja nada:
+ *      `.github/`) o del propio arnés, en cualquier nivel (`.advisors/`, `.tycon/`, `.engram/`), ni lo que nunca dibuja nada:
  *      tipos (`.d.ts`) y `tsconfig*.json` fuera de las carpetas de la aplicación, y `*.config.js|ts` fuera de `src/` y
  *      `app/` (`package.json` sí cuenta: una librería puede cambiar lo que se ve). El gate de un repo que se llama `FrontEnd` no es una pantalla; un `.ts` de ese repo sí.
  *   3. RUTA o NOMBRE DECLARADO en un CAMPO ESTRUCTURADO (`repo`, `repos`, `target_repo`, `target_repos`, `tags`,
@@ -74,9 +74,10 @@ function testSections(body) {
 }
 // Lo que no puede ser una pantalla: un script por su extensión, o cualquier archivo de una carpeta de scripts o de CI.
 const NOT_SCREEN_RE = /\.(sh|ps1|psm1|bat|cmd|py|ya?ml)$|(^|\/)(scripts|pipelines|\.github|\.azure-pipelines)\//i;
-// Las carpetas del propio arnés en la raíz del repo (`.advisors/`, `.tycon/`, `.engram/`) guardan su evidencia y su
-// estado: una captura de la prueba en vivo no es una pantalla del producto, aunque el repo se llame FrontEnd.
-const HARNESS_DIR_RE = /^\.(advisors|tycon|engram)\//i;
+// Las carpetas del propio arnés (`.advisors/`, `.tycon/`, `.engram/`), en la raíz o en la de cada aplicación de un repo
+// con varias, guardan su evidencia y su estado: una captura de la prueba en vivo no es una pantalla del producto, aunque
+// el repo se llame FrontEnd.
+const HARNESS_DIR_RE = /(^|\/)\.(advisors|tycon|engram)\//i;
 // Lo que nunca dibuja nada: las declaraciones de tipos (`.d.ts`) y la configuración de TypeScript (`tsconfig*.json`),
 // salvo dentro de las carpetas de la aplicación; la configuración de las herramientas (`vite.config.ts`), fuera de `src/`
 // y de `app/`, donde un `menu.config.ts` sí arma lo que se ve. `package.json` sí cuenta: una librería puede cambiarlo.
