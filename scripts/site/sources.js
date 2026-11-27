@@ -997,7 +997,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} ${r.res.sin_tiempo === 1 ? 'archivo pendiente' : 'archivos pendientes'}; la siguiente sigue enseguida`);
     if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes === 1 ? '1 conversación pasa' : `${r.res.hilos_grandes} conversaciones pasan`} el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
     // 🔴 A48: mientras la bajada se pone al día (una pasada cada pocos segundos que avanza), releer el espejo entero en
-    //    cada una son decenas de miles de aperturas del disco montado, que Azure Files cobra como escrituras. La vista
+    //    cada una son decenas de miles de aperturas del disco montado, que un recurso de archivos de una nube puede
+    //    cobrar como escrituras. La vista
     //    parcial se rearma como mucho cada RELEER_PARCIAL_MS; entre una y otra queda la anterior. La entera rearma siempre
     if (st.buzon.armable && st.buzon.seguir && previo && previo.estado === 'medido'
       && Number.isFinite(st.buzon.parcialEn) && t - st.buzon.parcialEn < RELEER_PARCIAL_MS) {
