@@ -788,7 +788,7 @@ function horaDe(file) {
 }
 
 // ¿Desde `desde` (ms) se lanzó algún revisor en esta sesión o cambió algún archivo de la corrida? Sin hora, no.
-function movidaDesde(desde, marcador, storyId) {
+function movidaDesde(desde, marcador, storyId, repoAbs) {
   if (!desde) return false;
   if (Object.values((marcador && marcador.filesTouchedAt) || {}).some((v) => v && Number(v.ts) > desde)) return true;
   let lineas = [];
@@ -797,12 +797,16 @@ function movidaDesde(desde, marcador, storyId) {
   const { esRevisor } = require('./late-snapshot.js');
   const catalogo = revisoresDelCatalogo();
   const parsed = lineas.map((l) => { if (!l.trim()) return null; try { return JSON.parse(l); } catch { return null; } });
-  // sólo lo anotado después del último pedido de vuelta de esta historia (su `step5-start`): lo de antes es de vueltas
-  // anteriores, aunque su hora diga otra cosa, y el pedido de otra historia en la misma sesión no corta
+  // sólo lo anotado después del último pedido de vuelta de esta historia en este repo (su `step5-start`): lo de antes es
+  // de vueltas anteriores, aunque su hora diga otra cosa, y el pedido de otra historia u otro repo en la sesión no corta
+  const orLib = require('./open-runs.js');
+  const raiz = (p) => orLib.raizDeGit(p) || path.resolve(p);
+  const raizPropia = repoAbs ? raiz(repoAbs) : null;
+  const delRepo = (r) => !r || !raizPropia || (orLib.dentroDe(raiz(r), raizPropia) && orLib.dentroDe(raizPropia, raiz(r)));
   let desdeIdx = 0;
   for (let i = parsed.length - 1; i >= 0; i -= 1) {
     const d = parsed[i];
-    if (d && d.event === 'step5-start' && (!d.story || !storyId || String(d.story) === String(storyId))) { desdeIdx = i + 1; break; }
+    if (d && d.event === 'step5-start' && (!d.story || !storyId || String(d.story) === String(storyId)) && delRepo(d.repo)) { desdeIdx = i + 1; break; }
   }
   return parsed.slice(desdeIdx).some((d) => d && esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde);
 }
@@ -910,7 +914,7 @@ function rethinkGate(args, { vueltaChica = false, sinCodigo = false, baseIter = 
   // pedido es una vuelta nueva, para que repetir no esquive la nota.
   const rr = require('./review-rounds.js');
   const servidaEn = espejo.last === ultima && espejo.ts ? espejo.ts : (runDir ? horaDe(rt.servedPath(runDir)) : null);
-  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador, storyId));
+  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador, storyId, repoAbs));
   const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
   const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica, sinCodigo, baseIter });

@@ -449,7 +449,18 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       // para saltear el tope y la nota hace falta más: la ronda base consta vista entera (cada revisor lanzado), y se
       // compara contra el sello de esa ronda (topeDeVueltas)
       base_iter: prev,
-      ronda_base_vista: vista.medible && deLaVuelta.length > 0 && deLaVuelta.every((a) => Number.isFinite(vista.lanzamientos.get(a))),
+      // vista entera: cada revisor de la ronda base consta lanzado después del último sello de esa ronda, el mismo contra
+      // el que se compara (un pedido repetido con el mismo número vuelve a sellar, y lo que trae no lo leyó nadie)
+      ronda_base_vista: (() => {
+        if (!vista.medible || !deLaVuelta.length) return false;
+        let selloBase = NaN;
+        try {
+          const ult = require('./frozen-tree.js').vueltas(stateDirOf(os.homedir()), sessionIdFileKey())
+            .filter((x) => x.tipo === 'revisores' && x.etiqueta === `rev-iter${prev}`).pop();
+          if (ult) selloBase = Date.parse(ult.ts);
+        } catch { selloBase = NaN; }
+        return Number.isFinite(selloBase) && deLaVuelta.every((a) => { const t = vista.lanzamientos.get(a); return Number.isFinite(t) && t >= selloBase; });
+      })(),
     };
   }
 
@@ -799,7 +810,7 @@ function cmdSmartReloop(cmd, args) {
     for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
   }
   decirModelos(result, conModelos.orgModels, avisosModelos);
-  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : ((readSessionMarker() || {}).storyId || null), context_file: result.context_file, context_file_overrides: result.context_file_overrides });
+  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : ((readSessionMarker() || {}).storyId || null), repo: path.resolve(args.repo || '.'), context_file: result.context_file, context_file_overrides: result.context_file_overrides });
   salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
   return;
 }

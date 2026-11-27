@@ -1611,6 +1611,53 @@ test('Tope_VueltaExtraFirmadaPedidaOtraVez_NoSeCierraSola', () => {
   assert.ok(!(sin.r.status === 0 && sin.json.no_code_delta && !(sin.json.rerun || []).length), `el pedido repetido se cerró solo: ${salida(sin.r).slice(0, 400)}`);
 });
 
+// Caso: la vuelta 1 completa; cambia la configuración; se pide otra vez el set de la vuelta 1 (vuelve a sellar con esa
+// etiqueta) y no se lanza; después sólo cambia la historia. La vuelta siguiente no pasa el tope sola: los revisores de la
+// ronda base leyeron el primer sello, no el que trae el cambio.
+// 🔴 Falla con: la vuelta que pasa el tope sin firma comparando contra el sello repetido que nadie leyó.
+test('Tope_SelloRepetidoSinLanzar_NoPasaSola', () => {
+  const C = corridaRevisada('s-ft-n9e2', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  dormirMs(1100);
+  editarConEvento(C, 'package.json', '{ "scripts": { "postinstall": "node x.js" } }\n');
+  dormirMs(50);
+  assert.strictEqual(C.correr('pipeline.js', ['advisors', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', 'src/b.js', '--iter', '1']).status, 0);
+  dormirMs(1100);
+  tocarLaHistoria(C, 'uno');
+  C.escribir((m) => ({ filesTouchedAt: { ...(m.filesTouchedAt || {}), [C.story]: { ts: Date.now() } } }));
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.ok(!(v2.r.status === 0 && v2.json.no_code_delta && !(v2.json.rerun || []).length), `pasó sola: ${salida(v2.r).slice(0, 400)}`);
+  assert.ok(!gatesDe(C).some((g) => g.name === 'no-code-round'), 'no queda la constancia de una vuelta sin código');
+});
+
+// Caso: vuelta 2 al tope, lanzada a medias, un arreglo por consola y, en el medio, un pedido de vuelta de otro repo sin
+// --story. Pedir la vuelta 2 otra vez es una vuelta nueva (se lanzaron revisores desde que se sirvió): el pedido del otro
+// repo no corta la cuenta.
+// 🔴 Falla con: la vuelta 2 servida otra vez como «la misma» por el pedido del otro repo.
+test('Rondas_PedidoDeOtroRepoEnElMedio_NoCortaLaCuenta', () => {
+  const C = corridaRevisada('s-ft-n8c', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  dormirMs(1100);
+  lanzarYa(C, (v2.json.rerun || []).slice(0, -1));
+  dormirMs(50);
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), `${B_CODIGO}// arreglo de lo que dijeron\n`);
+  const otro = repoDeJuguete('otro', { 'src/x.js': 'module.exports = 1;\n' });
+  fs.writeFileSync(path.join(otro.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  C.correr('pipeline.js', ['advisors', '--repo', otro.repo, '--files', 'src/x.js', '--iter', '1']);
+  dormirMs(50);
+  const v2b = C.vuelta(2);
+  assert.strictEqual(v2b.r.status, 3, `la vuelta 2 se sirvió otra vez como la misma: ${salida(v2b.r).slice(0, 300)}`);
+});
+
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
   const tercera = (C) => {
     const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));
