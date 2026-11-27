@@ -150,8 +150,8 @@ Para darlo de alta:
 3. **Las variables del repo de operaciones**: `SITE_PLATFORM=cloudrun`, `SITE_GCP_WIF_PROVIDER`
    (`projects/<número>/locations/global/workloadIdentityPools/<pool>/providers/<proveedor>`),
    `SITE_GCP_SERVICE_ACCOUNT`, `SITE_GCP_PROJECT`, `SITE_GCP_REGION`, `SITE_SERVICE`, `SITE_IMAGE_NAME` (la imagen
-   pública, donde se lee `stable`) y `SITE_URL`. El nocturno entra con la acción del conector,
-   `integrations/gcs/actions/site-update-login`.
+   pública, donde se lee `stable`) y `SITE_URL`. El nocturno entra con `google-github-actions/auth` (fijada por
+   huella) y usa la herramienta de Google Cloud que ya trae la máquina de GitHub.
 
 ## Lo que todavía no hace
 
