@@ -2483,6 +2483,24 @@ test('Config_SessionNames_NotWrittenWithAnOldGuard — with an installed product
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).coordination, { max_working: 4, session_names: ['Norte', 'Sur'] });
 });
 
+test('Config_AwayNotify_NotWrittenWithAnOldGuard — con un freno instalado que no conoce coordination.away_notify, set no la escribe y dice cómo ponerlo al día', () => {
+  const home = casa();
+  const dir = tmp('tcfg-set-guard-away-');
+  const nuevo = fs.readFileSync(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  const viejo = nuevo.replace(", away_notify: 'aceptada'", '');
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno conoce la clave');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const file = path.join(home, '.claude', 'tycon.json');
+  let out = cli(['set', 'coordination.away_notify', 'never'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 2, out.stdout);
+  assert.match(out.stderr, /no lo escribí.*coordination\.away_notify.*install-guard\.sh/s);
+  assert.ok(!fs.existsSync(file), 'no escribió nada');
+  out = cli(['set', 'coordination.away_notify', 'never'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).coordination, { away_notify: 'never' });
+});
+
 test('Config_PersonalData_NotShown — explain shows the chat cut short, and the hook answer carries no configuration', () => {
   const home = casa();
   const arnes = arnesCon(null);

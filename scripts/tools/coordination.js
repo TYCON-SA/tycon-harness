@@ -169,7 +169,7 @@ function recipe({ home, arnes, env }) {
     // el piso del segundo turno, de la constante de heavy-turn.js: el número vive en un solo lugar
     let floor = null;
     try { floor = require('./heavy-turn.js').SECOND_HEAVY_MIN_FREE_PCT; } catch { /* sin el módulo del turno no hay piso que decir */ }
-    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, max_awaiting_review: { value: 8, origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
+    return { max_working: { value: 3, origin: 'sin-valor' }, owner_folder: { value: null, origin: 'sin-valor' }, session_names: { value: null, origin: 'sin-valor' }, second_heavy_min_free_pct: { value: floor, origin: 'sin-valor' }, max_stories_in_cycle: { value: 4, origin: 'sin-valor' }, max_awaiting_review: { value: 8, origin: 'sin-valor' }, away_notify: { value: 'signatures', origin: 'sin-valor' }, problem: `el lector de configuración falló (${e.message})` };
   }
 }
 
@@ -2634,7 +2634,7 @@ function listNotice(opts = {}) {
  * (lib/owner-away.js): con ella, una firma o un permiso no arman el cuadro, que dejaría la sesión esperando a quien no
  * está; se le avisa al dueño por los canales de los avisos y se espera a que escriba. El renglón queda igual.
  */
-function ownerNextText(r, sesion, nota = null, marca = null) {
+function ownerNextText(r, sesion, nota = null, marca = null, avisos = 'signatures') {
   const lines = [];
   for (const p of r.problemas) lines.push(`Aviso: ${p}.`);
   for (const f of r.faltaRepetir) lines.push(f.destino === sesion ? `${f.id} ya está aprobado y es de esta sesión: repetí el comando, si todavía no lo hiciste.` : `${f.id} ya está aprobado y falta que su sesión repita el comando. Si todavía no se lo mandaste, mandale este mensaje a ${f.nombre}; si ya se lo mandaste, no se lo repitas:`, f.aviso, '');
@@ -2650,7 +2650,9 @@ function ownerNextText(r, sesion, nota = null, marca = null) {
   if ((r.tipo === 'firma' || r.tipo === 'permiso') && marca) {
     const notify = path.join(__dirname, '..', 'lib', 'notify.js');
     lines.push(`Renglón ${r.id}. El dueño está ausente (marca de ausente desde ${marca.setAt}): no muestres el cuadro de opciones, que dejaría esta sesión esperando a alguien que no está.`);
-    lines.push(`Avisale por los canales de los avisos del equipo, en una línea, que tiene ${r.tipo === 'firma' ? 'una firma' : 'un permiso'} esperando: «${r.pregunta}». El comando: node "${notify}" --side session -- "<el aviso>".`);
+    // qué le llega al dueño ausente lo elige la organización (coordination.away_notify); de fábrica, un aviso por firma
+    if (avisos === 'broken-only' || avisos === 'never') lines.push(`No le avises: el perfil dice coordination.away_notify: ${avisos}, y una firma que espera no es algo roto. La encuentra en su lista cuando vuelva.`);
+    else lines.push(`Avisale por los canales de los avisos del equipo, en una línea, que tiene ${r.tipo === 'firma' ? 'una firma' : 'un permiso'} esperando: «${r.pregunta}». El comando: node "${notify}" --side session -- "<el aviso>".`);
     lines.push(`Después esperá a que escriba, y seguí con lo demás mientras tanto. El renglón queda en la lista, sin cambios: cuando vuelva, owner-next le arma el cuadro. Lo que sigue en la lista: owner-next --after ${r.id}.`);
     return [...lines, ...saltados].join('\n');
   }
@@ -4097,7 +4099,10 @@ function main(argv) {
         marca = g.mark;
         if (g.problem) r.problemas = [...(r.problemas || []), `la marca de ausente (${g.problem}): cuento al dueño como presente`];
       } catch (e) { r.problemas = [...(r.problemas || []), `la marca de ausente (${e.code || e.message}): cuento al dueño como presente`]; }
-      process.stdout.write(`${ownerNextText(r, sesion, nota, marca)}${planes.length && !sinRenglon ? `\n\n${planes.join('\n')}` : ''}\n`);
+      // qué le llega al dueño ausente (coordination.away_notify); sin poder leerlo, lo de fábrica
+      let avisos = 'signatures';
+      try { avisos = recipe({ home, env: process.env }).away_notify.value || 'signatures'; } catch { /* lo de fábrica */ }
+      process.stdout.write(`${ownerNextText(r, sesion, nota, marca, avisos)}${planes.length && !sinRenglon ? `\n\n${planes.join('\n')}` : ''}\n`);
       return 0;
     }
     const r = signatureList.rechazar({ casa: home, id: f.rest[0], sesion });

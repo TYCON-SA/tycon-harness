@@ -354,6 +354,7 @@ Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, 
 | Usarlo con un modelo abierto por Ollama | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
 | Usarlo con Cursor | [Usar el arnés con Cursor](guides/integrations/cursor.md) |
 | Trabajar con varias sesiones a la vez | [Trabajar con una coordinadora](guides/working-with-a-coordinator.md) |
+| Dejar la coordinadora trabajando sola, de noche o un fin de semana | [El modo autónomo de la coordinadora](guides/autonomous-mode.md) |
 | Entender una palabra del arnés | [Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés) |
 | Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 

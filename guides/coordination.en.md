@@ -1160,8 +1160,10 @@ product's. Each one, with its why.
   is not a broken one.
 - **A turn is never closed with «shall we go on?».** A session that waits gets work. Why: with the owner away, nobody
   answers that question and the session stays stopped.
-- **With the owner away, no box is opened.** The owner is told through the team's notice channel, and the coordinator
-  waits for them to write. Why: a box opened in the middle of the night left the coordinator stopped for six hours, and
+- **With the owner away, no box is opened.** The owner is told through the team's notice channel, if the profile asks
+  for it (`coordination.away_notify`, default `signatures`; with `broken-only` or `never` a signature is not notified),
+  and the coordinator waits for them to write. The whole mode, for whoever uses it:
+  [The coordinator's autonomous mode](autonomous-mode.en.md). Why: a box opened in the middle of the night left the coordinator stopped for six hours, and
   the sessions without work.
 - **Before running the signature command of another session that asked for the owner's yes, the owner is asked.**
   Why: a signature the profile delegates to the coordinator goes through on its own when the command runs, without
