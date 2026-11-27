@@ -1213,6 +1213,88 @@ test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve 
   assert.ok(!gatesDe(C3).some((g) => g.name === 'small-round'), 'con un crítico abierto no pasa como vuelta chica');
 });
 
+// Caso: tras la última vuelta permitida sólo cambiaron pruebas E2E y la historia. El portón de «Preparar» lo contaba como
+// código sin revisar y pedía otra vuelta; el re-loop la negaba por el tope y hacía falta la firma del dueño para una vuelta
+// que salía vacía. Una vuelta sin código se cierra sola: sin tope, sin firma y sin nota de repensar.
+// 🔴 Falla con: la vuelta sin código frenada por el tope (sale 3), o una firma de vuelta extra anotada.
+test('Tope_VueltaSinCodigo_SeCierraSolaSinFirma: pasado el tope, sólo pruebas E2E y la historia se cierran solas', () => {
+  const C = corridaRevisada('s-ft-a66', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+    const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', C.codigo.repo, ...a], { encoding: 'utf8' });
+    assert.strictEqual(g.status, 0, g.stderr);
+  }
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  C.editar('tests/e2e/flujo.spec.ts', "test('flujo', async () => { expect(1).toBe(1); });\n");
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', '- hoy: escrita\n- después: pruebas E2E'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.no_code_delta, true, salida(v.r));
+  assert.deepStrictEqual(v.json.rerun, []);
+  assert.ok(!gatesDe(C).some((g) => g.name === 'extra-round'), 'una vuelta sin código no pide firma');
+  // el código, en cambio, sigue frenando en el tope
+  C.editar('src/b.js', B_CODIGO);
+  const v2 = C.vuelta(3);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(v2.r.stderr, /Llegaste al tope de 1/);
+});
+
+// El otro lado: el portón de «Preparar» mide qué es código con el mismo lector que el re-loop. Una prueba del
+// proyecto o un texto que no se ejecuta, cambiados después de la vuelta, no piden otra; el código, lo de una carpeta del
+// arnés, la configuración y la historia siguen por sus reglas.
+// 🔴 Falla con: una prueba E2E o una nota .md cambiadas después de la vuelta que frenan, o un .js que no frena.
+test('PrepareCommit_PruebasYNotasDespuesDeLaVuelta_NoFrenan: el mismo lector de código que el re-loop', () => {
+  const C = corrida('s-ft-a66-b');
+  C.vuelta();
+  fs.mkdirSync(path.join(C.codigo.repo, 'tests', 'e2e'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'tests', 'e2e', 'flujo.spec.ts'), "test('flujo', () => {});\n");
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'notas.md'), '# notas\n');
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /no es código[^\n]*tests\/e2e\/flujo\.spec\.ts/, salida(r));
+  // la configuración de una herramienta y el código siguen frenando
+  fs.writeFileSync(path.join(C.codigo.repo, 'package.json'), '{"scripts":{"test":"true"}}\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /package\.json/);
+  assert.match(salida(r), /src\/b\.js/);
+  assert.doesNotMatch(salida(r), /· tests\/e2e\/flujo\.spec\.ts/);
+});
+
+// Pasado el tope, la coordinadora no firma sola un cambio de código. «Preparar»
+// dice las tres salidas: volver a lo revisado (con los comandos), llevarlo a una historia de arreglo, o la vuelta extra
+// que firma el dueño.
+// 🔴 Falla con: el aviso que sólo manda a otra vuelta, comandos que no vuelven a lo revisado, o un `$` que se expande.
+test('PrepareCommit_PastTheCap_RestoreToReviewed: pasado el tope, los comandos para volver a lo revisado', () => {
+  const C = corrida('s-ft-s254-tope', { antesDeArrancar: (codigo) => {
+    fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
+    fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), 'review:\n  max_rounds: 1\n');
+    for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+      const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', codigo.repo, ...a], { encoding: 'utf8' });
+      assert.strictEqual(g.status, 0, g.stderr);
+    }
+  } });
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  // un arreglo después de la última vuelta: un .js cambiado, uno nuevo sin agregar y uno con `$` en el nombre
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.js'), 'module.exports = 4;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', '$HOME`id`.js'), 'module.exports = 5;\n');
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /Pasaste el tope de 1 vuelta/, salida(r));
+  assert.match(salida(r), /historia de arreglo/);
+  assert.match(salida(r), /--extra-round[^\n]*(\n[^\n]*)?el dueño/);
+  const comandos = salida(r).split('\n').map((l) => l.trim()).filter((l) => /^git -C /.test(l));
+  assert.ok(comandos.some((l) => / stash push --include-untracked /.test(l)), salida(r));
+  // los comandos, tal cual y con el shell, guardan el cambio y vuelven a lo revisado; el `$` no se expande
+  for (const l of comandos) execFileSync('bash', ['-c', l], { stdio: 'ignore', env: { ...process.env, HOME: C.home } });
+  assert.strictEqual(fs.existsSync(path.join(C.codigo.repo, 'src', 'c.js')), false);
+  assert.match(execFileSync('git', ['-C', C.codigo.repo, 'stash', 'show', '--include-untracked', '--name-only'], { encoding: 'utf8' }), /src\/\$HOME`id`\.js/);
+  const despues = prepararCommit(C);
+  assert.doesNotMatch(salida(despues), MISMATCH, salida(despues));
+});
+
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
   const tercera = (C) => {
     const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));

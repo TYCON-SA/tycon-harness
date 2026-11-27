@@ -524,6 +524,11 @@ function comprobarLoRevisado(marker, quien) {
   const sinSepararMain = [];
   const huellas = [];
   const movidos = [];
+  // lo que no es código para el re-loop (lib/reloop-code.js: una prueba del proyecto, un texto que no se ejecuta): con el
+  // mismo lector que la vuelta, no pide otra. La historia sigue su regla de papeleo, y una carpeta oculta, la
+  // configuración de una herramienta, lo sensible, un ejecutable, un enlace o un submódulo siguen contando
+  const sinCodigo = [];
+  const noPideVuelta = sinCodigoParaLaVuelta(marker, storyAbs);
   // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
   let conComentarios = false;
   try {
@@ -555,6 +560,7 @@ function comprobarLoRevisado(marker, quien) {
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
     for (const f of c.files) {
       if (isControlApproval(f)) papeleo.push(f);
+      else if (noPideVuelta(r.repo, ahora.tree, f)) sinCodigo.push(f);
       else distintos.push({ repo: r.repo, f });
     }
     for (const f of c.papeleo) papeleo.push(f);
@@ -569,13 +575,65 @@ function comprobarLoRevisado(marker, quien) {
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
     if (adentro.length) console.error('  Lo de adentro de un submódulo o repo anidado no lo ve la vuelta: commitealo en su repo, o descartalo, y después corré otra vuelta.');
+    // pasado el tope, la coordinadora no firma sola otra vuelta: lo cambiado vuelve a lo
+    // revisado, va a una historia de arreglo, o el dueño firma la vuelta extra
+    let tope = null;
+    try { tope = require('./review-rounds.js').tope({ repo: marker.repoPath || undefined }).value; } catch (_e) { tope = null; }
+    if (tope !== null && iter > tope) {
+      console.error(`  Pasaste el tope de ${tope} ${tope === 1 ? 'vuelta' : 'vueltas'} de revisores. Lo que cambió después de la última tiene tres salidas:`);
+      console.error('  (a) Volver a lo revisado: estos comandos lo guardan aparte (stash) y dejan el disco como lo vieron los revisores.');
+      console.error('      Revisá la lista: un archivo de otra tarea también queda guardado, no se pierde.');
+      const porRepo = new Map();
+      for (const d of distintos) { if (!porRepo.has(d.repo)) porRepo.set(d.repo, []); porRepo.get(d.repo).push(d.f); }
+      const { spawnSync } = require('child_process');
+      for (const [repo, archivos] of porRepo) {
+        const sello = ((v.repos || []).find((r) => r.repo === repo) || {}).tree;
+        // lo que git no sigue (un archivo nuevo sin agregar) no lo vuelve `restore`: lo saca el stash
+        const conocido = (f) => spawnSync('git', ['-C', repo, 'ls-files', '--error-unmatch', '--', f], { windowsHide: true }).status === 0
+          || (!!sello && spawnSync('git', ['-C', repo, 'cat-file', '-e', `${sello}:${f}`], { windowsHide: true }).status === 0);
+        const seguidos = archivos.filter(conocido);
+        // comillas simples: dentro de ellas el shell no expande nada (un `$` o una comilla invertida en un nombre)
+        const mensaje = `${marker.storyId || 'historia'}: lo cambiado después de la vuelta ${iter - 1}`;
+        console.error(`     git -C ${citar(repo)} stash push --include-untracked -m ${citar(mensaje)} -- ${archivos.map(citar).join(' ')}`);
+        // lo que se commiteó después de la vuelta no lo devuelve el stash: sale del sello
+        if (seguidos.length && sello) console.error(`     git -C ${citar(repo)} restore --source=${sello} --staged --worktree -- ${seguidos.map(citar).join(' ')}`);
+      }
+      console.error('  (b) Llevarlo a una historia de arreglo (followup_of: esta historia): lo mismo que (a), y de lo guardado sale para esa historia.');
+      console.error(`  (c) Una vuelta extra, que firma el dueño (no la coordinadora ni como trámite): pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'}`);
+      console.error(`      --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo>" --extra-round; el dueño lo aprueba en la ventana de permiso.`);
+      process.exit(2);
+    }
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
   appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
-    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}), ...(sinCodigo.length ? { sin_codigo: sinCodigo.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinCodigo.length ? `; lo que no es código para la vuelta (pruebas, textos que no se ejecutan), que no pide otra: ${sinCodigo.slice(0, 5).join(', ')}${sinCodigo.length > 5 ? '…' : ''}` : ''}.`);
+}
+
+// `(repo, tree, rel) => bool`: ¿el archivo, cambiado después de la vuelta, no pide otra vuelta para el re-loop? El mismo
+// lector que smart-reloop (lib/reloop-code.js), con lo que siempre cuenta en lo revisado: la historia (tiene su regla de
+// papeleo), una carpeta oculta, la configuración de una herramienta, lo sensible del catálogo y un modo que no es el de
+// un archivo común (ejecutable, enlace, submódulo). Ante un error, cuenta.
+function sinCodigoParaLaVuelta(marker, storyAbs) {
+  const { spawnSync } = require('child_process');
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+  const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
+  return (repo, tree, rel) => {
+    try {
+      const abs = path.join(repo, rel);
+      if (storyAbs && real(abs) === real(storyAbs)) return false;
+      if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
+      if (require('./save-ok.js').esSensible(rel)) return false;
+      const ls = spawnSync('git', ['-C', repo, 'ls-tree', tree, '--', rel], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+      if (ls.error || ls.status !== 0) return false;
+      const modo = String(ls.stdout || '').split(' ')[0];
+      // borrado (sin entrada) o un archivo común: lo demás cuenta
+      if (modo && modo !== '100644') return false;
+      return !require('./reloop-code.js').pideOtraVuelta(abs, { storyPath: storyAbs || marker.storyPath, repoPath: marker.repoPath });
+    } catch (_e) { return false; }
+  };
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */

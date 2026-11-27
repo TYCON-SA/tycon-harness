@@ -649,12 +649,10 @@ function cmdSmartReloop(cmd, args) {
   if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
   const emptyWork = emptyWorkGate(args);
   if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
-  // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma
+  // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma, y una sin código
+  // se cierra sola
   const conModelos = conModelosDeLaCorrida(args);
   const result = computeSmartReloop(conModelos);
-  salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round' }));
-  // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
-  if (process.env[PRECHEQUEO] === '1') process.exit(0);
   const avisosModelos = result._avisos || [];
   // El descuento aplica también al subset rerun del re-loop. Sin poder leer los críticos de la corrida, no se descuenta.
   const pc = revisoresPorConfirmar(args);
@@ -715,6 +713,12 @@ function cmdSmartReloop(cmd, args) {
     }
     for (const l of [...(pc.error ? [`no pude leer los críticos de la corrida (${pc.error}): no descuento`] : []), ...pc.fuera]) process.stderr.write(`⚠️  ${l}\n`);
   }
+  // El tope de vueltas, con el set ya decidido: una vuelta chica (sólo textos) lo pasa sin firma, y una vuelta sin código
+  // (sin revisores que lanzar, ni uno que vuelva a confirmar un crítico) se cierra sola, sin tope, sin firma ni nota
+  const sinCodigo = !!result.no_code_delta && !(result.rerun || []).length;
+  salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round', sinCodigo }));
+  // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
+  if (process.env[PRECHEQUEO] === '1') process.exit(0);
   // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
   const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
   if (congelada.error) {
