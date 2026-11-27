@@ -1034,7 +1034,11 @@ test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
 
 // 🔴 Falla con: `git reset --hard`, el stash de git, `git clean -f` o `find -delete` deshacen o borran código del repo de
 // una corrida abierta y el freno no los ve: el control al cerrar no encuentra nada en el diff.
-test('T32b Freno_DeshacerEnBloque', () => {
+// arma un repo de juguete con git: sin git (el instalador corre la suite rápida con un PATH sin git) no mide. Un git que
+// existe y no corre (una Mac sin las herramientas de línea de comandos) tampoco es git
+const GIT_T32B = require('child_process').spawnSync('git', ['--version'], { stdio: 'ignore' });
+const SIN_GIT_T32B = GIT_T32B.error || GIT_T32B.status !== 0 ? 'NO MEDIDO: sin git en esta máquina (arma un repo de juguete con git)' : false;
+test('T32b Freno_DeshacerEnBloque', { skip: SIN_GIT_T32B }, () => {
   const stateDir = tmpState();
   const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-bloque-')));
   const g = (...a) => {
