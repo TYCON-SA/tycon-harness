@@ -295,7 +295,11 @@ const VOCABULARIO = Object.freeze({
   // `light_list`: un archivo markdown con trabajo liviano para las sesiones que quedan quietas o esperan algo de afuera
   // (la lista de la coordinadora): sus renglones abiertos se suman a la fila liviana del tablero. Con el orden de
   // siempre. Sin valor, sólo el tablero.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50', light_list: 'ruta' }),
+  // `away_notify`: con el dueño ausente (lib/owner-away.js), qué le llega por los canales de aviso del equipo:
+  // `signatures` (un aviso por cada firma o permiso que lo espera; lo de antes), `broken-only` (sólo lo que se rompió) o
+  // `never`. Las firmas lo esperan igual en su lista. Con el orden de siempre. Sin valor, `signatures`: así el dueño
+  // sigue enterándose de lo que lo espera, como antes de que existiera la opción (guides/autonomous-mode.md).
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50', light_list: 'ruta', away_notify: 'opcion:signatures|broken-only|never' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -1557,7 +1561,7 @@ function coordinacion(config) {
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
   return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4), permission_wait_minutes: con('permission_wait_minutes', 10),
-    max_awaiting_review: con('max_awaiting_review', 8), light_list: con('light_list', null) };
+    max_awaiting_review: con('max_awaiting_review', 8), light_list: con('light_list', null), away_notify: con('away_notify', 'signatures') };
 }
 /**
  * Lo que la máquina limpia sola, según una configuración YA cargada: `{ worktree_idle_hours, temp_days,
@@ -1791,7 +1795,7 @@ const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-gua
 // Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.
-const GUARD_FIRST = Object.freeze(['coordination.session_names', 'integraciones.mcp_servers']);
+const GUARD_FIRST = Object.freeze(['coordination.session_names', 'integraciones.mcp_servers', 'coordination.away_notify']);
 // Lo mismo, por valor: una opción nueva de una clave que el freno instalado ya conoce. Con un freno anterior, `auto` en
 // el archivo de la máquina es una opción fuera de su lista y la configuración entera queda ROTA para él. El perfil del
 // equipo no cuenta: el freno instalado no lo lee.

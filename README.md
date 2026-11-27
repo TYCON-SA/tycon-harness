@@ -354,6 +354,7 @@ How the harness extends for your organization, with a worked example, in an
 | Use it with an open model through Ollama | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
 | Use it with Cursor | [Use the harness with Cursor](guides/integrations/cursor.en.md) |
 | Work with several sessions at once | [Working with a coordinator](guides/working-with-a-coordinator.en.md) |
+| Leave the coordinator working on its own, overnight or over a weekend | [The coordinator's autonomous mode](guides/autonomous-mode.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 

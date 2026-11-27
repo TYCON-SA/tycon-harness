@@ -608,8 +608,9 @@ links = sorted(i for k, w, i in after if k == "link")
 print("%d new=%s gone=%s links=%s" % (len(after), sorted(after - before), sorted(before - after), ",".join(links)))
 PY
 )"
-  # (los enlaces del arnés son los dos nombres de su lugar, el lugar y el viejo, cada uno su pieza `link`)
-  case "$PIECES" in *" new=[] gone=[] links=$LEGACY_PLACE_NAME,$PLACE_NAME") ok "T29 no registra piezas nuevas: las mismas que antes del corte, y los únicos enlaces son los dos nombres del lugar (${PIECES%% *} piezas)" ;; *) mal "T29 las piezas cambiaron: $PIECES" ;; esac
+  # (el enlace del arnés es su lugar, con su pieza `link`: el nombre viejo, un enlace directo al clon sin nada registrado
+  # por él, lo retiró `install`)
+  case "$PIECES" in *" new=[] gone=[] links=$PLACE_NAME") ok "T29 no registra piezas nuevas: las mismas que antes del corte, y el único enlace es el lugar (${PIECES%% *} piezas)" ;; *) mal "T29 las piezas cambiaron: $PIECES" ;; esac
   DOCTOR="$(harness_lab_isolated harness doctor 2>&1)"
   [ "$(printf '%s\n' "$DOCTOR" | grep -c 'dos clones: en transición')" = 1 ] && printf '%s\n' "$DOCTOR" | grep 'dos clones: en transición' | grep '^  ✓ ' >/dev/null \
     && ok "T29 doctor lo dice UNA vez, como dato" || mal "T29 doctor: $(printf '%s\n' "$DOCTOR" | grep -c 'dos clones') mención(es) — $(printf '%s\n' "$DOCTOR" | grep 'dos clones' | head -2)"
