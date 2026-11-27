@@ -795,7 +795,7 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, grandes: 0, registros_enteros: true, volcados_enteros: true };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, grandes: 0, grandes_nombres: [], registros_enteros: true, volcados_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
   // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo, salvo la que
   // cortó antes de bajar todos los volcados, o la que no pudo bajar un archivo de una carpeta vieja: con la vieja a medio
@@ -944,6 +944,9 @@ async function bajar(opts = {}) {
   const porClave = new Map();
   const juegos = new Map();
   const instintosOmitidos = new Set();
+  // los juegos de registros (`<maquina>\0<versión>`) con un registro que pasa su tope: no se pueden bajar enteros (A45)
+  const juegosConGrandes = new Set();
+  const nombrarGrande = (texto) => { if (res.grandes_nombres.length < 20) res.grandes_nombres.push(texto); };
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     // un blob que el almacén marca `codificado` llega transformado y nunca casa con el listado: contarlo como no bajado
@@ -952,10 +955,11 @@ async function bajar(opts = {}) {
     // Lo que pasa su tope de bajada no se pide (no se podría abrir). La conversación en el sitio la ve antes su propio
     // tope, más chico (`hiloTopeBytes`), que además le escribe el resumen «sin conversación».
     const esHilo = /\.hilo\.jsonl\.gz$/.test(forma.archivo);
+    // Va a su propia lista, no a la de los nombres sin forma: el sitio lo muestra a quien mantiene (A45).
     if (b.largo > topeDeBajada(forma.archivo) && !(esHilo && topeHilo)) {
       res.grandes += 1;
-      res.ignorados += 1;
-      if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(`${nombreMostrable(b.nombre)} (pesa ${mbDe(b.largo)} MB: pasa el tope de bajada de ${mbDe(topeDeBajada(forma.archivo))} MB)`);
+      nombrarGrande(`${nombreMostrable(b.nombre)} (pesa ${mbDe(b.largo)} MB: pasa el tope de bajada de ${mbDe(topeDeBajada(forma.archivo))} MB)`);
+      if (forma.archivo.startsWith('registros/')) juegosConGrandes.add(`${forma.maquina}\0${forma.version || ''}`);
       continue;
     }
     if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
@@ -1041,6 +1045,9 @@ async function bajar(opts = {}) {
     const versiones = [...vs.keys()].filter(Boolean).sort().reverse();
     let elegido = null;
     for (const v of versiones) {
+      // un juego con un registro que pasa su tope nunca va a bajar entero: no se pide su cobertura (se pedía en cada
+      // pasada) ni cuenta como «incompleto», que es lo de una subida a medias; se nombra y se usa el anterior
+      if (juegosConGrandes.has(`${maquina}\0${v}`)) { nombrarGrande(`${nombreMostrable(`${maquina}/registros/${v}`)} (un registro pasa su tope: se usa el juego anterior)`); continue; }
       const r = await juegoCompleto(maquina, vs.get(v));
       // cortó antes de bajar los volcados: no deja la unión de carpetas (la misma regla que la pasada sin tiempo)
       if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
@@ -1050,7 +1057,11 @@ async function bajar(opts = {}) {
     if (elegido === null && vs.has('')) elegido = '';
     if (elegido === null) continue;
     for (const v of vs.keys()) if (v !== elegido && (v === '' || v < elegido)) res.versiones_viejas += 1;
-    elegidos.push(...vs.get(elegido).values());
+    // el juego de nombres de siempre no se elige por su cobertura: si uno de sus registros pasa el tope, su cobertura
+    // nueva lo daría por medido sin estar en el espejo. Queda la anterior (o ninguna), y se dice
+    const sinCobertura = elegido === '' && juegosConGrandes.has(`${maquina}\0`);
+    if (sinCobertura) nombrarGrande(`${nombreMostrable(`${maquina}/registros/cobertura.json`)} (no se baja: un registro de su juego pasa su tope; queda la anterior)`);
+    elegidos.push(...[...vs.get(elegido).values()].filter((e) => !(sinCobertura && e.forma.archivo === 'registros/cobertura.json')));
   }
   // con resúmenes: las dos partes de cada corrida (conversación y cambio) se deciden JUNTAS. Una corrida está resumida si
   // su resumen tiene la huella de cada parte que hay en el buzón; si una cambió, se bajan las dos (el resumen se rehace
@@ -1147,6 +1158,7 @@ async function bajar(opts = {}) {
 
   // Lo que no se baja se NOMBRA: la llave de escritura está en el repo, así que cualquiera puede dejar un
   // nombre sin forma de corrida, y la vista nunca lo va a ver (no llega al disco).
+  if (res.grandes) log(`${res.grandes} archivo(s) del buzón pasan su tope de bajada y no se bajan: ${res.grandes_nombres.join(', ')}${res.grandes_nombres.length < res.grandes ? '…' : ''}`);
   if (res.ignorados) log(`${res.ignorados} blob(s) del buzón no tienen forma <maquina>/<volcado, hilo o cambio> y no se bajaron: ${res.ignorados_nombres.join(', ')}${res.ignorados > res.ignorados_nombres.length ? '…' : ''}`);
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto

@@ -2191,6 +2191,20 @@ test('T15 2.77-Guardada_CambioDeDueno_HastaLaBajadaEntera @story-2.77 @ac-15', a
   });
 });
 
+test('T-A45 Corridas_ArchivosQuePasanSuTopeDeBajada_LosVeQuienMantiene_NoElDev', async () => {
+  // la pasada sale entera con archivos que no va a bajar nunca: quien mantiene lo ve en la pestaña; el dev, no
+  const fuentes = fuentesCon({ espejo: mundo({ marcadores: false }) });
+  fuentes.bajada = { completo: true, armable: true, generacion: 1, grandes: 2 };
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const l = (await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).json;
+    assert.strictEqual(l.buzon && l.buzon.grandes, 2, `quien mantiene: ${JSON.stringify(l.buzon)}`);
+    const pagina = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
+    assert.match(pagina, /2 archivos del depósito pasan su tope de bajada/, 'la banda en la página');
+    const d = (await h.pedir('/api/corridas', { cookie: await entrar(DEV_A) })).json;
+    assert.ok(!(d.buzon && d.buzon.grandes), `el dev no: ${JSON.stringify(d.buzon)}`);
+  });
+});
+
 test('T1 2.79-Corridas_VistaServida_NoSeReemplazaAMedias @story-2.79 @ac-1', async () => {
   // el caso de la Task 0.1: con la vista entera servida, una pasada con conversaciones pendientes no la reemplaza (sin
   // la conversación, el título, los tiempos y el consumo de una ejecución van y vuelven). Se espera a la pasada entera.

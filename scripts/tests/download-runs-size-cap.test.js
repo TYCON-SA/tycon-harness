@@ -60,7 +60,7 @@ test('T38a Bajada_ArchivosQuePasanSuTope_NoSePiden_YLosChicosSi', async (t) => {
   const { res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
   assert.deepStrictEqual(a.pedidos, ['2.1-2026-11-20T1210.json'], `se pidieron: ${a.pedidos.join(', ')}`);
   assert.strictEqual(res.grandes, GRANDES.length);
-  assert.ok(res.ignorados_nombres.some((n) => /gates\.log\.gz.*tope/.test(n)), res.ignorados_nombres.join(' | '));
+  assert.ok(res.grandes_nombres.some((n) => /gates\.log\.gz.*tope/.test(n)), res.grandes_nombres.join(' | '));
   assert.ok(fs.existsSync(path.join(dir, MAQ, '2.1-2026-11-20T1210.json')));
 });
 
@@ -210,4 +210,66 @@ test('T44b Bajada_UnArchivoMasGrandeQueElTopeEnVuelo_BajaSolo_YLosChicosSiguenEn
   const b = almacenQueMideLoQueVuela(Array.from({ length: 8 }, (_, i) => [`${i + 2}.1-2026-11-20T1110.json`, 1000]));
   await B.bajar({ almacen: b, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {}, topeEnVueloBytes: 3000 });
   assert.strictEqual(b.pico, 3000, 'tres a la vez, no ocho ni uno');
+});
+
+/** Un almacén falso con largos a mano: `{ nombre: largo }` para los que dicen pesar de más, `{ nombre: Buffer }` para los chicos. */
+function almacenMixto(archivos) {
+  const pedidos = [];
+  const lista = Object.entries(archivos).map(([n, c]) => (Buffer.isBuffer(c)
+    ? { nombre: `${MAQ}/${n}`, largo: c.length, md5: crypto.createHash('md5').update(c).digest('base64'), etag: 'x' }
+    : { nombre: `${MAQ}/${n}`, largo: c, md5: 'AAAAAAAAAAAAAAAAAAAAAA==', etag: 'x' }));
+  return {
+    pedidos,
+    destino: 'falso/buzon',
+    listar: async () => ({ blobs: lista }),
+    leer: async (nombre) => {
+      const corto = nombre.split('/').slice(1).join('/');
+      pedidos.push(corto);
+      const c = archivos[corto];
+      return Buffer.isBuffer(c) ? { status: 200, cuerpo: c, cabeceras: {} } : { status: 404, cuerpo: Buffer.alloc(0), cabeceras: {} };
+    },
+  };
+}
+const cobertura = (fuentes) => Buffer.from(JSON.stringify({ fuentes: Object.fromEntries(fuentes.map((f) => [f, { estado: 'medido' }])) }));
+
+test('T45a Bajada_LoQuePasaSuTope_SeNombraAparte_NoComoSinForma', async (t) => {
+  // lo salteado por tamaño no es «no tiene forma»: va a su propia lista, el registro lo dice con su motivo, y el sitio lo
+  // puede mostrar (antes quedaba en `ignorados`, con la frase de los nombres sin forma)
+  const lineas = [];
+  const a = almacen(GRANDES, { '2.1-2026-11-20T1210.json': Buffer.from('{}') });
+  const { res } = await B.bajar({ almacen: a, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: (l) => lineas.push(l) });
+  assert.strictEqual(res.grandes, GRANDES.length);
+  assert.strictEqual(res.ignorados, 0, `ignorados: ${res.ignorados_nombres.join(' | ')}`);
+  assert.strictEqual(res.grandes_nombres.length, GRANDES.length);
+  assert.ok(res.grandes_nombres.some((n) => /gates\.log\.gz.*tope/.test(n)), res.grandes_nombres.join(' | '));
+  assert.ok(lineas.some((l) => /pasan? (su|el) tope de bajada/.test(l)), lineas.join('\n'));
+  assert.ok(!lineas.some((l) => /no tienen forma/.test(l)), lineas.join('\n'));
+});
+
+test('T45b Bajada_JuegoSinVersion_ConUnRegistroEnorme_NoBajaUnaCoberturaQueLoDaPorMedido', async (t) => {
+  // la cobertura nueva diría «medido» de un registro que no se bajó: queda la anterior (o ninguna), y se dice
+  const dir = path.join(carpeta(t), 'buzon');
+  const a = almacenMixto({ 'registros/gates.log.gz': GB5, 'registros/bypass.log.gz': Buffer.from('x'), 'registros/cobertura.json': cobertura(['gates', 'bypass']) });
+  const { codigo, res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+  assert.ok(!a.pedidos.includes('registros/cobertura.json'), `se pidió: ${a.pedidos.join(', ')}`);
+  assert.ok(!fs.existsSync(path.join(dir, MAQ, 'registros', 'cobertura.json')), 'no se escribió');
+  assert.strictEqual(codigo, 0, 'no queda «parcial» para siempre por un archivo que nunca va a bajar');
+  assert.ok(res.grandes_nombres.some((n) => /cobertura/.test(n)), res.grandes_nombres.join(' | '));
+});
+
+test('T45c Bajada_JuegoNuevoConUnRegistroEnorme_UsaElAnterior_SinPedirSuCobertura_YLoDice', async (t) => {
+  const V2 = 'v20261121T000000000Z';
+  const a = almacenMixto({
+    'registros/gates.log.gz': Buffer.from('viejo'), 'registros/cobertura.json': cobertura(['gates']),
+    [`registros/${V2}/gates.log.gz`]: GB5, [`registros/${V2}/cobertura.json`]: cobertura(['gates']),
+  });
+  const dir = path.join(carpeta(t), 'buzon');
+  for (const pasada of [1, 2]) {
+    a.pedidos.length = 0;
+    const { res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+    assert.ok(!a.pedidos.includes(`registros/${V2}/cobertura.json`), `pasada ${pasada}: se pidió la cobertura del juego que no se puede bajar`);
+    assert.strictEqual(res.versiones_incompletas, 0, `pasada ${pasada}: no es «incompleto», es «pasa el tope»`);
+    assert.ok(res.grandes_nombres.some((n) => n.includes(V2)), res.grandes_nombres.join(' | '));
+  }
+  assert.strictEqual(fs.readFileSync(path.join(dir, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'viejo');
 });

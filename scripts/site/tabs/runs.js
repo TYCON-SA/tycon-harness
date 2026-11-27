@@ -566,7 +566,9 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     // la vista servida que espera una bajada entera dice, como la bajada a medias, que puede faltar alguna corrida
     const completo = Boolean(vista.bajada().armable) && !(typeof vista.esperaLaBajada === 'function' && vista.esperaLaBajada());
     const pendientes = completo ? vista.pendientes() : 0;
-    const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo, pendientes];
+    // los archivos que pasan su tope de bajada (A45): sólo a quien mantiene, que es quien puede ir a mirar el buzón
+    const grandes = ctx.quien.rol === 'maintainer' ? Number(vista.bajada().grandes) || 0 : 0;
+    const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo, pendientes, grandes];
     let porPersona = guardados.get(M);
     if (!porPersona) { porPersona = new Map(); guardados.set(M, porPersona); }
     const clave = `${ctx.quien.rol}\0${ctx.quien.email || ''}`;
@@ -580,6 +582,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
       // armada con conversaciones que quedaron para la pasada siguiente: las corridas están, y la banda dice cuánto falta
       if (vis && pendientes > 0) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), pendientes };
+      if (vis && grandes > 0) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), grandes };
       g = { deps, vis, salidas: {} };
       porPersona.set(clave, g);
     }
