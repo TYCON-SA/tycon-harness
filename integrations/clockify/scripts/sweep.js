@@ -47,6 +47,8 @@ const {
   sessionFilePath,
   stateMissing,
 } = require('./lib');
+// el estado lo escribe el comando de la integración: a mano, el freno de la carpeta del estado lo para
+const STATE_JS = require('path').join(__dirname, 'state.js');
 
 function main() {
   if (stateMissing()) process.exit(0);
@@ -155,8 +157,8 @@ ${blocks.join('\n\n')}
 1. ${mcpTool('update-clockify-time-entry')} con workspaceId, projectId, timeEntryId,
    description, start = startedAt, **end = lastActivity**.
    🔴 end = lastActivity, NUNCA "ahora": un huérfano viejo inventaría días de trabajo.
-2. Borrar la entry del state de SU PROPIA sesión: ${sessionFilePath('<sessionId>')},
-   key [cwd]. Si el archivo queda {} vacío, borralo. Nunca escribas '{}' a mano.
+2. Sacala del estado: la tuya con node "${STATE_JS}" close --cwd "<cwd>"; la de una sesión
+   muerta con node "${STATE_JS}" close --orphan <sessionId> --cwd "<cwd>". Nunca a mano.
 
 ## Lo que sigue siendo INTOCABLE
 

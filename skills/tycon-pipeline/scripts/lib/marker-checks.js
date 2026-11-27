@@ -866,6 +866,9 @@ function cmdStartWarning(part, mensaje) {
   writeMarker(marker);
   appendLog('gates.log', { name: 'start-warning', part, motivo, ...(aviso.unconfirmed ? { unconfirmed: true } : {}), at: nowIso(), story: nn(marker.storyId, null) });
   process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [aviso] })[0]}\n`);
+  // una sola vez, al declararlo: la nota de `next` la lee el agente, no la persona
+  const persona = STEPS_LIB.startWarningPersonLine(aviso);
+  if (persona) process.stdout.write(`${persona}\n`);
 }
 
 // Cerrar una historia por su salida prevista: `close-as-debt --reason "<texto>" --debt <DEF-id>`. El permiso de la

@@ -13,6 +13,9 @@
 // Casos: scripts/tests/time-tracking-config.test.js.
 
 const lib = require('./lib.js');
+const path = require('path');
+// el estado lo escribe el comando de la integración: a mano, el freno de la carpeta del estado lo para
+const STATE_JS = path.join(__dirname, 'state.js');
 
 function handle(ev) {
   if (!ev || typeof ev !== 'object' || lib.stateMissing()) return {};
@@ -20,15 +23,16 @@ function handle(ev) {
   const description = `Story ${ev.storyId || '?'}${ev.title ? ` — ${ev.title}` : ''}`.slice(0, 100);
   let found = null;
   try { found = ev.repo && ev.sessionId ? lib.findActiveEntryForCwd(lib.readActive(), lib.normalizeCwd(ev.repo), ev.sessionId) : null; } catch (_) { found = null; }
-  if (ev.event === 'entry') return found ? { entryId: found.entry.entryId } : {};
+  // `tracked`: esta integración anota sus entradas, así que sin una es «no hay ninguna anotada»
+  if (ev.event === 'entry') return found ? { entryId: found.entry.entryId, tracked: true } : { tracked: true };
   if (ev.event === 'start') {
     if (found) return { action: `ya hay una entrada abierta de esta sesión en Clockify (${found.entry.entryId}, «${found.entry.description || ''}»): si es de otra historia, cerrala con ${tool('update-clockify-time-entry')} antes de abrir la de «${description}»` };
-    return { action: `abrí la entrada de Clockify con ${tool('create-clockify-time-entry')}, descripción «${description}», el proyecto que se llama como la carpeta del repo y la hora local; guardala en ${lib.sessionFilePath(ev.sessionId || '<sesión>')} (la skill clocki, «Flujo de start»)` };
+    return { action: `abrí la entrada de Clockify con ${tool('create-clockify-time-entry')}, descripción «${description}», el proyecto que se llama como la carpeta del repo y la hora local; y anotala con node "${STATE_JS}" open --entry <id que devolvió> --workspace <su workspaceId> --project <su projectId> --story '${String(ev.storyId || '').replace(/[^A-Za-z0-9._-]/g, '')}' --cwd "${ev.repo || '<repo>'}" (el estado no se escribe a mano: el freno de la carpeta del estado lo para; la skill clocki, «Flujo de start»)` };
   }
   if (ev.event === 'stop') {
     const sum = `sumá las entradas de Clockify de la historia ${ev.storyId || '?'} con ${tool('list-clockify-time-entries')} (la skill clocki, «Cierre desde el pipeline»): ése es el tiempo para CompletedWork`;
     if (!found) return { action: `${sum}; no hay entrada abierta de esta sesión que cerrar` };
-    return { action: `cerrá la entrada de Clockify ${found.entry.entryId} con ${tool('update-clockify-time-entry')} con el fin ahora (hora local), sacala de ${lib.sessionFilePath(ev.sessionId)}, y ${sum}`, entryId: found.entry.entryId };
+    return { action: `cerrá la entrada de Clockify ${found.entry.entryId} con ${tool('update-clockify-time-entry')} con el fin ahora (hora local), sacala con node "${STATE_JS}" close --cwd "${found.matchedKey}", y ${sum}`, entryId: found.entry.entryId };
   }
   return {};
 }

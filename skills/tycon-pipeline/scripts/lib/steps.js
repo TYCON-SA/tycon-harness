@@ -90,7 +90,9 @@ function closeControlsByStep() {
 const START_PARTS = {
   'time-tracking': { name: 'el aviso de trabajo', flags: ['workSignalStarted', 'clockiStarted'], failed: 'no se pudo abrir el registro de horas',
     // la integración tiene una entrada abierta en la sesión, pero nada de la conversación la confirma
-    unconfirmed: 'registro de horas abierto, sin confirmar por el arnés' },
+    unconfirmed: 'registro de horas abierto, sin confirmar por el arnés',
+    // lo que pierde la persona si nadie se lo dice: la nota de `next` la lee el agente, no ella
+    person: 'las horas de esta historia pueden quedar mal registradas: la entrada que no queda anotada no la cierra ni la inactividad ni el fin de la historia' },
   ado: { name: 'el pedido en ADO', flags: ['adoMarkedActive'], failed: 'no se pudo marcar el pedido en ADO' },
 };
 
@@ -269,6 +271,14 @@ function startWarningLines(marker) {
   // la acción de horas marcada sin conversación que leer (Codex): se dice hasta el cierre, como un aviso más
   if (marker && marker.workSignalVerified === false) out.push('Arranque: hecho, con aviso: el aviso de trabajo quedó sin verificar (sin conversación que leer)');
   return out;
+}
+
+/** «Decile a la persona…» para el aviso de una parte que pierde algo de la persona, o null. */
+function startWarningPersonLine(aviso) {
+  const p = aviso && START_PARTS[aviso.part];
+  if (!p || !p.person) return null;
+  const que = (aviso.unconfirmed && p.unconfirmed) || p.failed;
+  return `Decile a la persona en una línea, ahora: ${que}${aviso.message ? ` (${String(aviso.message).slice(0, 160)})` : ''}; ${p.person}.`;
 }
 
 /** El último cierre de los revisores, en milisegundos: `completedAt` guarda el de la primera vuelta. */
@@ -483,7 +493,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 }
 
 module.exports = {
-  SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
+  SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, startWarningPersonLine, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   STEP_CLOSE_CHECKS, closeControlsByStep, byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
   resolveStepArg, closesStep, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersClose, reviewersRound, otraVueltaDe, prepareCommitStale, findingsOpen, noteFindingsWait, noteFindingsAnswer, retireCheck,
 };
