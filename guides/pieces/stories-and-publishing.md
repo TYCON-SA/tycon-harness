@@ -156,7 +156,7 @@ _scripts/publishing/_
 
 ## scripts/publishing/third-party-skills.json
 
-_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
+_scripts/publishing/ + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El manifiesto `third-party-skills.json` de las skills de terceros: de quién es cada carpeta y, para lo ajeno, repo de origen, commit y hash de árbol.
 
@@ -170,7 +170,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 ## scripts/publishing/export.js
 
-_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
+_scripts/publishing/ + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El exportador de la copia pública: arma en una carpeta local una copia sin nombres reales, a partir de los objetos de git. No publica.
 
@@ -184,7 +184,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 ## scripts/publishing/mirror.js
 
-_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
+_scripts/publishing/ + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** `mirror.js` lleva la copia del exportador al repo público de GitHub por un solo camino, con los subcomandos `plan`, `first`, `sync` y `verify`.
 
@@ -198,7 +198,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 ## pipelines/azure-pipelines-public-leak-check.yml
 
-_pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline.test.sh + scripts/ci/verify-notice.js + guides/maintaining/publicacion-espejo.md_
+_pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline.test.sh + scripts/ci/verify-notice.js + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El pipeline que corre `mirror.js`, en dos etapas: una decide y otra publica o verifica.
 
@@ -212,7 +212,7 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 ## scripts/hooks/public-push-guard.js
 
-_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + integrations/github/scripts/command-reader.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
+_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + integrations/github/scripts/command-reader.js + scripts/ci/pr-texts.js + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El freno antes de publicar: un `pre-push` de git y un freno de `gh` que revisan lo que va a un remoto público.
 
@@ -326,7 +326,7 @@ _scripts/setup/harness/team-local.js + `harness.js team-init --local` + `--team 
 
 ## scripts/publishing/new-names.js
 
-_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
+_scripts/publishing/ + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El freno de nombres reales nuevos en lo que se publica.
 
@@ -382,7 +382,7 @@ _scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/engli
 
 ## scripts/publishing/internal-history.js
 
-_scripts/publishing/internal-history.js + internal-history.json + guides/maintaining/publicacion-espejo.md_
+_scripts/publishing/internal-history.js + internal-history.json + guides/maintaining/mirror-publishing.md_
 
 **Qué es:** El control de historia interna en la prosa que se publica, y en los comentarios con `--zone comment`.
 

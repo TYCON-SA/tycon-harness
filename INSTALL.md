@@ -526,7 +526,7 @@ va una entrada en el manifiesto de terceros del arnés, `scripts/publishing/thir
 `path` dentro del origen, el `tree` (el hash de árbol que tiene que quedar: `git rev-parse <commit>:<path>` en un clon
 del origen), `omit` si sobra algo, su licencia con de dónde se leyó, `install: download` y el porqué. El paso del
 instalador la pone en cada máquina en el próximo arranque —verificada por árbol, sin pisar nada— y el pre-commit del
-repo frena si alguien la copia al árbol sin declararla. El detalle: `guides/maintaining/publicacion-espejo.md` §«Las skills
+repo frena si alguien la copia al árbol sin declararla. El detalle: `guides/maintaining/mirror-publishing.md` §«Las skills
 de terceros». Lo que sigue es para una skill **del equipo**.
 
 **Flujo para agregar una skill nueva del equipo:**

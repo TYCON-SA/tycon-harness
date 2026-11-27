@@ -90,7 +90,7 @@
 // base que git no conoce, el tope de tiempo sin hallazgos).
 // Como freno previo a la herramienta: 2 = el comando no corre · 0 = pasa.
 // TYCON_PUBLIC_PUSH_TREAT_AS_PUBLIC (carpetas, separadas como el PATH) AGREGA remotos locales a mirar: es de las pruebas.
-// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/maintaining/publicacion-espejo.md §«El freno antes de publicar».
+// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/maintaining/mirror-publishing.md §«El freno antes de publicar».
 
 const fs = require('fs');
 const os = require('os');

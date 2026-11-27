@@ -125,7 +125,7 @@ test('T35d Mirror_ToyGuideWithCloneOrWithoutPhraseFails', () => {
  *  público: las once. En el repo privado adelgazado no están; llegan con el público encima. */
 const PUBLIC_ONLY_GUIDES = [
   'README.md', 'INDEX.md', 'INSTALL.md',   // el índice de guías; README.md es la portada
-  'guides/maintaining/publicacion-espejo.md',
+  'guides/maintaining/mirror-publishing.md',
   'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/integrations/instinct-mining.md',
   'guides/maintaining/installation-mechanism.md', 'guides/reviewer-rules.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',

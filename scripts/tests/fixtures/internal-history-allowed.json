@@ -158,139 +158,139 @@
       "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma)."
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "artifacts",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "commands/tycon-vigilante.md",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "guides/decisions/revision-adversarial-engram-2026-08-25-codex.md",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "guides/decisions/vuelta-atras-2026-08-31.md",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "guides/guide-update-proposals.md",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "inbox",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "onboarding",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "perfil-equipo.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/ci/overlay-harness.js",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/controls-bench/evidence",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/lib/renames.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/metrics/corridas-buzon.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/nightly/dependencies/repos.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/publishing/public-repos.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/publishing/split.js",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/publishing/split.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/publishing/team-layer.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/publishing/team-repo.js",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/tests/fixtures/legacy-names-d1",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/tests/fixtures/legacy-names-f",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "scripts/tests/fixtures/product-pipeline",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "skills/bizuit-sdd",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
-      "file": "guides/maintaining/publicacion-espejo.md",
+      "file": "guides/maintaining/mirror-publishing.md",
       "form": "team-path",
       "value": "skills/tycon-pipeline/HISTORIA.md",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
