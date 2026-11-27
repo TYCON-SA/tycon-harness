@@ -304,9 +304,9 @@ Se invoca en paralelo con los otros advisors post-build. Detecta el caso donde l
 
 ## Referencias
 
-- Catálogo de reglas: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` (sección Spec-First Checker).
-- Guía Mary+GOLD: `~/.claude/tycon-harness/story-format.md`.
-- Arquitectura de advisors: `~/.claude/tycon-harness/guides/agent-architecture.md`.
+- Catálogo de reglas: `~/.tycon/harness/guides/advisor-rules-catalog.md` (sección Spec-First Checker).
+- Guía Mary+GOLD: `~/.tycon/harness/story-format.md`.
+- Arquitectura de advisors: `~/.tycon/harness/guides/agent-architecture.md`.
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
 
