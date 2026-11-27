@@ -814,3 +814,19 @@ test('T40 CarpetaDelComando_Nombrada_Frena @A50 — la carpeta del comando nombr
   pasa(c, 'find docs -name a.md -delete');
   pasa(c, 'ls $PWD/specs');
 });
+
+// T41 CarpetaDelComando_DespuesDeUnCd @A50
+// 🔴 Falla con: el recorrido que arranca desde la carpeta ya movida al primer `cd` (lo aplicaba dos veces), `cd -` que
+// no vuelve, un `cd` entre paréntesis que mueve el resto, `pushd` o las opciones de `cd` leídas como carpeta, o un
+// `-delete` que arma el borrado de archivos con `-type d` o `-empty` (revisión de Fable de la A50).
+test('T41 CarpetaDelComando_DespuesDeUnCd @A50 — el cd mueve $PWD una vez, cd - vuelve, el paréntesis devuelve la carpeta', () => {
+  const c = corral();
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'freno-afuera-')));
+  for (const cmd of [
+    'cd specs && rm $PWD/story-1.1.md', 'cd specs; rm "$(pwd)/story-1.1.md"', `cd ${afuera} && rm $OLDPWD/${H}`,
+    `cd ${afuera} && cd - && rm $PWD/${H}`, `(cd ${afuera} && true); rm $PWD/${H}`, 'pushd specs && rm $PWD/story-1.1.md',
+    'cd -P specs && rm $PWD/story-1.1.md', `rm "$(git rev-parse --show-toplevel 2>/dev/null)/${H}"`,
+  ]) frena(c, cmd);
+  for (const cmd of [`cd ${afuera} && rm $PWD/${H}`, `pushd ${afuera} && rm $PWD/${H}`, 'find . -type d -empty -delete',
+    `(cd ${afuera} && rm $PWD/${H})`]) pasa(c, cmd);
+});

@@ -1158,13 +1158,13 @@ function conCarpetasNombradas(cmd, carpeta, { raiz = null, carpetaAnterior = nul
   let s = String(cmd)
     // la forma sola entre comillas dobles y pegada a lo que sigue (`"$PWD"/docs`): sin las comillas, para que la palabra no
     // se parta en dos (la carpeta sola quedaría como la raíz de un `find`)
-    .replace(/"(\$\{?PWD\}?|\$\(\s*(?:command\s+|builtin\s+)?(?:\/bin\/)?pwd(?:\s+-[LP])?\s*\))"(?=[^\s;&|)])/g, () => carpeta)
+    .replace(/"(\$\{?PWD\}?|\$\(\s*(?:command\s+|builtin\s+)?(?:\/bin\/)?pwd(?:\s+-[LP])?\s*\))"(?=[^\s;&|)])/g, () => (/[\s'"$`\\]/.test(carpeta) ? `"${carpeta}"` : carpeta))
     .replace(/\$\{PWD(?:(?::?[-=])[^}]*|%%?[^}]*)?\}|\$PWD(?!\w)/g, () => carpeta)
     .replace(/\$\(\s*(?:command\s+|builtin\s+)?(?:\/bin\/)?pwd(?:\s+-[LP])?\s*\)|`\s*(?:\/bin\/)?pwd(?:\s+-[LP])?\s*`/g, () => carpeta)
     .replace(/\$\(\s*realpath\s+\.\s*\)/g, () => carpeta)
     .replace(/(^|[\s=:"'(])~\+(?=[\/\s"';&|)]|$)/g, (m, a) => `${a}${carpeta}`);
   if (carpetaAnterior) s = s.replace(/\$\{OLDPWD\}|\$OLDPWD(?!\w)/g, () => carpetaAnterior);
-  if (raiz) s = s.replace(/\$\(\s*git\s+rev-parse\s+--show-toplevel\s*\)/g, () => raiz);
+  if (raiz) s = s.replace(/\$\(\s*git\s+(?:-C\s+\.\s+)?rev-parse\s+--show-toplevel(?:\s+2>\s*\/dev\/null)?\s*\)/g, () => raiz);
   return s;
 }
 
@@ -1173,20 +1173,44 @@ function conCarpetasNombradas(cmd, carpeta, { raiz = null, carpetaAnterior = nul
  * `$OLDPWD` la de antes (`cd /tmp && echo x >> $PWD/h.md` escribe en /tmp). La carpeta del `cd` se lee con la de antes.
  * Un `cd` que no se resuelve (una variable, un comodín) deja la carpeta como estaba.
  */
+// un `cd` o un `pushd` con sus opciones (`-P`, `-L`, `-e`, `-@`, `--`) y la carpeta adonde va
+const CD_DEL_TRAMO = /(?:^|[\s;&|('"])(?:cd|pushd)\s+(?:(?:-[LPe@]+|--)\s+)*(['"]?)([^\s'";&|)`]+)\1/g;
+
 function conCarpetasPorTramo(cmd, carpeta, { raiz = null } = {}) {
   const texto = String(cmd);
+  // los lugares donde cambia la carpeta: cada `cd`, cada paréntesis que abre (guarda la carpeta) y el que cierra (la
+  // devuelve: `(cd /tmp && ls); rm $PWD/h.md` borra en la carpeta de antes). Los paréntesis entre comillas no cuentan
+  const cambios = [...texto.matchAll(CD_DEL_TRAMO)].map((m) => ({ at: m.index + m[0].length, cd: m[2] }));
+  // sólo los paréntesis de un grupo: los de una sustitución (`$(…)`) no mueven la carpeta de afuera, y cortar en ellos
+  // partiría la sustitución que se escribe
+  let q = null;
+  const abiertos = [];
+  for (let i = 0; i < texto.length; i++) {
+    const ch = texto[i];
+    if (q) { if (ch === q && (q === "'" || texto[i - 1] !== '\\')) q = null; continue; }
+    if (ch === "'" || ch === '"') { q = ch; continue; }
+    if (ch === '(') {
+      const grupo = texto[i - 1] !== '$';
+      abiertos.push(grupo);
+      if (grupo) cambios.push({ at: i + 1, abre: true });
+    } else if (ch === ')' && abiertos.length && abiertos.pop()) cambios.push({ at: i, cierra: true });
+  }
+  cambios.sort((a, b) => a.at - b.at || (a.cierra ? -1 : 1));
   let actual = carpeta;
   let anterior = carpeta;
+  const guardadas = [];
   let desde = 0;
   let out = '';
-  for (const m of texto.matchAll(/(?:^|[\s;&|('"])cd\s+(['"]?)([^\s'";&|)`]+)\1/g)) {
-    const fin = m.index + m[0].length;
-    out += conCarpetasNombradas(texto.slice(desde, fin), actual, { raiz, carpetaAnterior: anterior });
-    desde = fin;
-    const destino = conCarpetasNombradas(m[2], actual, { raiz, carpetaAnterior: anterior });
+  for (const c of cambios) {
+    out += conCarpetasNombradas(texto.slice(desde, c.at), actual, { raiz, carpetaAnterior: anterior });
+    desde = c.at;
+    if (c.abre) { guardadas.push([actual, anterior]); continue; }
+    if (c.cierra) { if (guardadas.length) [actual, anterior] = guardadas.pop(); continue; }
+    const destino = conCarpetasNombradas(c.cd, actual, { raiz, carpetaAnterior: anterior });
     if (/[$*?[{`]/.test(destino)) continue;
-    anterior = actual;
+    const previa = actual;
     actual = destino === '-' ? anterior : path.resolve(actual, destino.replace(/^~(?=\/|$)/, os.homedir()));
+    anterior = previa;
   }
   return out + conCarpetasNombradas(texto.slice(desde), actual, { raiz, carpetaAnterior: anterior });
 }
@@ -1253,7 +1277,14 @@ function ordenesDeFind(words, absoluta) {
   }
   // `-delete` borra lo que alcanza, archivos y carpetas vacías: es un `rm` de cada uno (A50)
   if (words.includes('-delete')) {
-    const archivos = alcanzadas();
+    // `-type d` borra sólo carpetas y `-empty` sólo lo vacío (`find . -type d -empty -delete` limpia carpetas vacías):
+    // lo demás que alcanza no se borra
+    const tipo = words[words.indexOf('-type') + 1];
+    const vacio = (a) => { try { const st = fs.statSync(a); return st.isDirectory() ? fs.readdirSync(a).length === 0 : st.size === 0; } catch (_) { return true; } };
+    const esCarpeta = (a) => { try { return fs.statSync(a).isDirectory(); } catch (_) { return false; } };
+    const archivos = alcanzadas()
+      .filter((a) => !(words.includes('-type') && tipo === 'd') || esCarpeta(a))
+      .filter((a) => !words.includes('-empty') || vacio(a));
     if (archivos.length) out.push(['rm', '-rf', ...archivos.map((a) => citarParaElShell(a))].join(' '));
   }
   return out;
@@ -1404,4 +1435,4 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
 }
 
 
-module.exports = { MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, conCarpetasNombradas, conCarpetasPorTramo, alcanzadasPorFind };
+module.exports = { MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, conCarpetasNombradas, conCarpetasPorTramo, CD_DEL_TRAMO, alcanzadasPorFind };
