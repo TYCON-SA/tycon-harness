@@ -16,7 +16,8 @@
  *   T25 cada precondición rota (1, sin tocar nada); un relocate matado a mitad (TYCON_RELOCATE_DIE_AT, variable de
  *       prueba) y, antes de volver a correrlo, un permiso nuevo guardado por otra sesión: la segunda corrida termina y el
  *       permiso sigue; y `rollback` a la copia de antes: los archivos vuelven a nombrar el viejo, el viejo resuelve y
- *       doctor lo vuelve a contar.
+ *       doctor lo vuelve a contar;
+ *   T25r la vuelta atrás a una copia de antes del retiro del nombre viejo lo repone hacia el lugar si lo restaurado lo usa.
  */
 // las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
 process.env.TYCON_HARNESS_NODE = '0';
@@ -240,4 +241,41 @@ test('T25 Relocate_Preconditions_KilledThenPersonEdits_RollbackOlderStillRuns', 
   let j = null;
   try { j = JSON.parse(doc.out); } catch (_) { j = null; }
   assert.ok(j && j.registered_by_legacy && j.registered_by_legacy.total > 0, `doctor no lo cuenta: ${doc.out.slice(0, 400)}`);
+});
+
+// ── T25r ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Una vuelta atrás a una copia de ANTES de que el nombre viejo se retirara: lo que la copia devuelve (la línea de
+// CLAUDE.md, y los hooks si settings.json no cambió después) vuelve a nombrar el viejo, y la vuelta atrás repone el
+// enlace viejo hacia el lugar para que eso siga andando. Una carpeta real con ese nombre no se pisa.
+test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => {
+  const retire = (k) => spawnSync(process.execPath, [path.join(k.C, 'scripts', 'lib', 'canonical-path.js'), '--ensure-link', '--clone', k.C, '--home', k.h], { encoding: 'utf8', env: machineEnv(k.h), timeout: 60000 });
+  const exists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
+  // (1) relocate, el arranque siguiente retira el viejo (quedaron sólo permisos), y la vuelta atrás a la copia de antes
+  const v = installed('vuelta-retirado');
+  assert.strictEqual(harness(v.h, v.C, ['relocate']).rc, 0);
+  const r = retire(v);
+  assert.ok(!exists(legacyOf(v.h)), `la regla del lugar no retiró el viejo: ${r.stdout}${r.stderr}`);
+  const before = snapshots(v.h).find((n) => manifest(v.h, n).reason === 'relocate');
+  assert.ok(before, `sin copia relocate: ${snapshots(v.h).join(', ')}`);
+  const rb = harness(v.h, v.C, ['rollback', '--to', before]);
+  assert.ok(fs.readFileSync(v.m.files.claudeMd, 'utf8').includes(OLD_IMPORT), `CLAUDE.md no volvió a la línea por el viejo (la prueba no reproduce el caso): ${rb.all}`);
+  assert.ok(exists(legacyOf(v.h)) && fs.lstatSync(legacyOf(v.h)).isSymbolicLink(), `la vuelta atrás no repuso el enlace viejo: ${rb.all}`);
+  assert.ok(PLACE.samePath(path.resolve(path.dirname(legacyOf(v.h)), fs.readlinkSync(legacyOf(v.h))), placeOf(v.h)), 'el viejo repuesto no apunta al lugar');
+  assert.strictEqual(fs.realpathSync(legacyOf(v.h)), fs.realpathSync(v.C), 'el viejo repuesto no resuelve al árbol');
+  assert.match(rb.all, new RegExp(`repuse el nombre viejo`), `la vuelta atrás no dice que lo repuso: ${rb.all}`);
+  // …la regla del lugar ya no lo retira (lo usa la línea de CLAUDE.md) y doctor lo cuenta, sin rojo
+  retire(v);
+  assert.ok(exists(legacyOf(v.h)), 'la regla del lugar retiró el viejo con la línea de CLAUDE.md por él');
+  const doc = harness(v.h, v.C, ['doctor', '--json']);
+  let j = null;
+  try { j = JSON.parse(doc.out); } catch (_) { j = null; }
+  assert.ok(j && j.registered_by_legacy && j.registered_by_legacy.total > 0 && !(j.fail || []).length, `doctor: ${doc.out.slice(0, 400)}`);
+  // (2) una carpeta real con el nombre viejo no se pisa
+  const x = installed('vuelta-carpeta');
+  assert.strictEqual(harness(x.h, x.C, ['relocate']).rc, 0);
+  retire(x);
+  fs.mkdirSync(legacyOf(x.h)); fs.writeFileSync(path.join(legacyOf(x.h), 'mio.txt'), 'mío\n');
+  const b2 = snapshots(x.h).find((n) => manifest(x.h, n).reason === 'relocate');
+  harness(x.h, x.C, ['rollback', '--to', b2]);
+  assert.ok(!fs.lstatSync(legacyOf(x.h)).isSymbolicLink() && fs.readFileSync(path.join(legacyOf(x.h), 'mio.txt'), 'utf8') === 'mío\n', 'la vuelta atrás pisó una carpeta real con el nombre viejo');
 });

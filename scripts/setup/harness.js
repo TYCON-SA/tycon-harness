@@ -4913,6 +4913,10 @@ function cmdRollback(ctx) {
     // que tomó `uninstall --tool codex` restaura hooks.json, config.toml y AGENTS.md de Codex, y sin esto `tools` seguía en
     // ['claude'] y el registro sin esas piezas: nadie las mantenía, doctor no las veía y uninstall no las quitaba
     reconcileToolsAfterRestore(ctx, state, lines => lines.forEach((l) => log(`rollback: ${l}`)));
+    // una copia de antes del retiro del nombre viejo devuelve lo que lo nombra: sin el enlace, eso quedaría roto
+    let legacyBack = null;
+    try { legacyBack = restoreLegacyIfUsed(ctx, state.tree); } catch (e) { legacyBack = `no pude reponer el nombre viejo del lugar (${e.message}): harness.js relocate muda lo restaurado al lugar`; }
+    if (legacyBack) log(legacyBack);
     // sólo si los árboles se movieron cambia lo registrado: una vuelta atrás frenada (una fuente en otra rama, con commits
     // propios) no re-registra ese clon como la versión instalada
     if (moved.length) {
@@ -4922,6 +4926,7 @@ function cmdRollback(ctx) {
     }
     state.last_apply = nowIso();
     const lines = [`vuelta atrás a ${pick.reason}`];
+    if (legacyBack) lines.push(legacyBack);
     if (state.mode === 'developer') lines.push(`modo desarrollador: restauré piezas y archivos; el git de ${state.tree} no se tocó`);
     // un rollback que vuelve a lo que la retención había deshecho (la copia `before-rollback` del anterior) la LEVANTA:
     // deshacer un rollback no deja una retención sobre la versión vieja
@@ -4949,6 +4954,27 @@ function cmdRollback(ctx) {
     log(`${undone} → ${state.version.number} · ${(res.lines || []).join(' · ')}`);
     return { code: res.ok ? 0 : 1, lines: [...lines, ...(res.lines || [])] };
   }, { env: ctx.env, onBusy: busy });
+}
+
+/**
+ * El nombre viejo del lugar, de vuelta después de una vuelta atrás: si no hay nada con ese nombre, el lugar resuelve a
+ * un clon y lo restaurado lo usa fuera de los permisos (los hooks, la línea de CLAUDE.md: lo que cuenta doctor), se
+ * crea el enlace viejo hacia el lugar, como lo dejaban las versiones de antes del retiro. Lo demás (una carpeta, un
+ * archivo, un enlace que ya está, sólo permisos) no se toca. La regla del lugar no lo vuelve a retirar mientras eso lo
+ * use; `relocate` lo muda y entonces sí. Devuelve la línea para la persona, o null.
+ */
+function restoreLegacyIfUsed(ctx, tree) {
+  const lp = PLACE.legacyPlacePath(ctx.home);
+  if (kindOf(lp)) return null;
+  const place = linkPath(ctx.home);
+  const target = real(place);
+  if (!target || !isHarnessClone(target)) return null;
+  const R = placeFacts(ctx, tree).registered;
+  if (!R || R.problem || !R.total || R.files.every((x) => x.count === x.permissions)) return null;
+  fs.symlinkSync(place, lp, isWin(ctx) ? 'junction' : 'dir');
+  try { fs.unlinkSync(path.join(mod('tycon-home').stateDir(ctx.home), 'legacy-place-retired.json')); } catch (_) { /* no estaba */ }
+  const list = R.files.filter((x) => x.count > x.permissions).map((x) => x.file).join(', ');
+  return `repuse el nombre viejo ${tildePath(ctx, lp)} → ${tildePath(ctx, place)}: lo restaurado lo usa (${list}); harness.js relocate lo muda al lugar, y después el nombre se retira solo`;
 }
 
 /**
