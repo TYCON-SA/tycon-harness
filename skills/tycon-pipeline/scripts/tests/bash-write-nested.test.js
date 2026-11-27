@@ -326,6 +326,32 @@ test('T34 Nested_XargsUnknownInput_ShellBodyBuildsTheStory_Block @story-8.308 @a
   ]) pasa(c, cmd);
 });
 
+// De la revisión de Fable del T34: el comodín suelto en la raíz frenaba los reemplazos y borrados en bloque de otra
+// carpeta, y un filtro en el medio o una historia un nivel más abajo dejaban pasar la escritura.
+// 🔴 Falla con: sumar el comodín de la raíz aunque la fuente nombre su carpeta, o mirar sólo el tramo de antes.
+test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const d of ['src', 'build', path.join('specs', 'epic-2')]) fs.mkdirSync(path.join(c.dir, d), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'src', 'a.js'), 'foo\n');
+  fs.writeFileSync(path.join(c.dir, 'build', 'a.log'), 'x\n');
+  fs.writeFileSync(path.join(c.dir, 'specs', 'epic-2', 'story-2.1.md'), '---\nstory: "2.1"\nepic: "2"\ntitle: "z"\nstatus: draft\n---\n\n# z\n');
+  for (const cmd of [
+    "git ls-files specs | sort | xargs -I {} sh -c 'truncate -s 0 {}'",
+    'git ls-files specs | sort | xargs -I {} tee -a {}',
+    "find specs -type f | head -5 | xargs -I {} sh -c 'echo x >> {}'",
+    "ls -d specs/* | grep story | xargs -I {} sh -c 'echo x >> {}'",
+    "find specs -name '*.md' | sort | xargs -I {} sh -c 'echo x >> {}'",
+  ]) frena(c, cmd);
+  for (const cmd of [
+    "grep -rl foo src | xargs sed -i '' s/foo/bar/",
+    'grep -rl foo src | xargs perl -pi -e s/foo/bar/',
+    "git ls-files src | xargs -I {} sh -c 'sed -i \"\" s/a/b/ {}'",
+    'ls build | xargs rm -rf',
+    'find build -type f | xargs rm -f',
+    "find build -name '*.log' -print0 | xargs -0 rm -f",
+  ]) pasa(c, cmd);
+});
+
 // Lo que confirmó el pase adversarial de la corrida: formas de `find`, `xargs` y heredocs que escriben la historia y
 // pasaban, y formas que sólo leen y se frenaban.
 // 🔴 Falla con: tomar todo `-name` como filtro positivo, buscar `xargs` sólo como primera palabra cruda, no leer el

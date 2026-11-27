@@ -1258,6 +1258,10 @@ function entradaPorCadena(cadena, crudas, asignados) {
  * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
  * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
  */
+// lo que entre la fuente y el `xargs` sólo filtra o reordena renglones
+const FILTROS_DE_LA_ENTRADA = /^(?:sort|uniq|head|tail|grep|egrep|fgrep|rg|sed|awk|cut|tr|cat|tac|shuf)$/;
+// el marcador de `xargs -I` o el argumento del cuerpo (`$0`, `$1`, `$@`) pegado a otra ruta: `specs/{}`, `{}.md`
+const MARCADOR_PEGADO = /[^\s'"=]\/?(?:\{\}|\$\{?[0-9@*]\}?|%)|(?:\{\}|\$\{?[0-9@*]\}?)[^\s'";|&)]/;
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
   if (!/\bfind\b|\bxargs\b|\bparallel\b|<<|\|/.test(s)) return [];
@@ -1298,8 +1302,20 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // palabras, se prueba con un comodín, que es cualquier archivo de la carpeta, y con cada palabra como carpeta
         // (`git ls-files specs` da `specs/…`). Sin eso, un destino armado alrededor del marcador (`specs/{}`) o del
         // argumento del cuerpo (`specs/$0`) no nombra la historia
-        const comoCarpeta = previas.slice(1).filter((w) => !w.startsWith('-') && !/[*?[]/.test(w)).map((w) => `${w.replace(/\/+$/, '')}/*`);
-        const entrada = escribe ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : [...previas, '*', ...comoCarpeta];
+        // Un filtro en el medio (`sort`, `head`, `grep`) no cambia de qué carpeta salen los archivos: se mira hasta el
+        // programa que los lista. El comodín suelto (cualquier archivo de donde corre) va cuando el marcador o el
+        // argumento del cuerpo va pegado a otra ruta (`specs/{}`, `specs/$0`: la entrada es un nombre suelto, como el de
+        // `ls specs`) o cuando la fuente no nombra ninguna carpeta. Si no, con `grep -rl x src | xargs sed -i` el
+        // reemplazo en bloque es de `src/`, y el comodín suelto en la raíz lo frenaba (y a todo `xargs rm` de otra carpeta)
+        let j = k - 1;
+        while (j > 0 && FILTROS_DE_LA_ENTRADA.test(nombreDeComando(palabras(lista[j]).filter((w) => w !== '')[0]) || '')) j -= 1;
+        const fuentes = k ? lista.slice(j, k).flatMap((t) => palabras(t).filter((w) => w !== '').slice(1)) : [];
+        const carpetas = fuentes.filter((w) => !w.startsWith('-') && !/[*?[]/.test(w)).map((w) => w.replace(/\/+$/, ''));
+        // un comodín de la fuente (`ls -d specs/*`) ya es la lista de archivos que llega
+        const comoCarpeta = [...carpetas.map((w) => `${w}/*`), ...fuentes.filter((w) => !w.startsWith('-') && /[*?[]/.test(w))];
+        const pegado = MARCADOR_PEGADO.test(crudas.slice(1).join(' '));
+        const entrada = escribe ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w))
+          : [...previas, ...(pegado || !carpetas.length ? ['*'] : []), ...comoCarpeta];
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
