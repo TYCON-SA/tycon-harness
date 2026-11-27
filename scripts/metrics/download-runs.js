@@ -905,7 +905,9 @@ async function bajar(opts = {}) {
   const instintosOmitidos = new Set();
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
-    if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
+    // un blob que el almacén marca `codificado` llega transformado y nunca casa con el listado: contarlo como no bajado
+    // dejaría cada pasada en «parcial» y el sitio sin armar, por un solo objeto que la subida del arnés no escribe
+    if (!forma || !Number.isFinite(b.largo) || b.codificado === true) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
     if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
     // Sin hilos ni se mira el disco — la conversación no se baja.
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los

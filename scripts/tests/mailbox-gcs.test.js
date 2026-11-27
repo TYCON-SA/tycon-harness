@@ -859,3 +859,23 @@ test('SiteMailbox_RealEmptyBucket_IsEmpty @story-8.336 — el listado de un buck
     srv.close(); fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('SiteGcs_EncodedObject_DoesNotFreezeSite @story-1.3 @ac-9 — un objeto con Content-Encoding (la subida del arnés nunca lo pone) se ignora y no deja cada pasada en «parcial»', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    fake.poner('maq-a-11111111/s1.json', volcado('s1', '2026-11-20T10:00:00Z'));
+    fake.poner('maq-a-11111111/s2.json', volcado('s2', '2026-11-21T10:00:00Z'));
+    // 4 KB guardados comprimidos: Cloud Storage los sirve descomprimidos y no casan con el tamaño ni el MD5 del listado
+    fake.ponerComprimido('maq-a-11111111/s9.json', volcado('s9', '2026-11-22T10:00:00Z') + ' '.repeat(4000));
+    const dir = path.join(tmp('gcs-codificado-'), 'corridas-buzon');
+    for (const pasada of [1, 2]) {
+      const r = await leerDelSitio(fake, dir, fake.host);
+      assert.strictEqual(r.codigo, 0, `pasada ${pasada}: ${JSON.stringify(r.res)}`);
+      assert.strictEqual(r.res.completo, true, `pasada ${pasada}: el sitio puede armar`);
+      assert.strictEqual(r.res.ignorados, 1, `pasada ${pasada}: el objeto codificado cuenta como ignorado`);
+      assert.ok(!fs.existsSync(path.join(dir, 'maq-a-11111111', 's9.json')), 'el objeto codificado no se escribe en el espejo');
+    }
+    assert.ok(fs.existsSync(path.join(dir, 'maq-a-11111111', 's1.json')) && fs.existsSync(path.join(dir, 'maq-a-11111111', 's2.json')), 'los sanos bajaron');
+    assert.ok(!fake.pedidos.some((p) => p.metodo === 'GET' && p.ruta.endsWith('/s9.json') && p.consulta.includes('alt=media')), 'el codificado ni se pide');
+  } finally { await fake.cerrar(); }
+});
