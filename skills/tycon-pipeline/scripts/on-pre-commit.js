@@ -117,15 +117,18 @@ function dodEvidenceDirsFor(cwd) {
 // Parser muy simple del frontmatter YAML — solo extrae los campos planos que
 // nos interesan (no full YAML parser para mantener zero-dependency).
 function parseFrontmatter(content) {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
+  // la apertura y los saltos como en looksLikeStorySpec: `--- ` y el fin de renglón de Windows también abren
+  const m = String(content).match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
-  const lines = m[1].split('\n');
   const out = {};
-  for (const line of lines) {
-    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):\s*(.+)$/);
-    if (!mm || Object.prototype.hasOwnProperty.call(out, mm[1])) continue;
-    // el valor, con el lector de los demás controles (comillas y comentario de YAML); el primer renglón gana, como allá
-    const val = fmScalar(line, mm[1]);
+  const vistas = new Set();
+  for (const line of m[1].split(/\r?\n/)) {
+    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):/);
+    if (!mm || vistas.has(mm[1])) continue;
+    vistas.add(mm[1]);
+    // cada clave, con el lector de los demás controles sobre el bloque entero (comillas, comentario de YAML, y gana el
+    // primer renglón aunque esté vacío): si leyera distinto, un cierre pasaría por uno y no por el otro
+    const val = fmScalar(m[1], mm[1]);
     if (val !== null) out[mm[1]] = val;
   }
   return out;
@@ -2164,7 +2167,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
+  parseFrontmatter, looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
 };
 
 if (require.main === module) {

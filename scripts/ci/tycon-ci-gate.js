@@ -133,10 +133,14 @@ function declaraSerStory(txt, rel) {
 let lectorDelSkill;
 function escalar(fm, clave) {
   if (lectorDelSkill === undefined) {
+    let motivo = 'el skill no exporta fmScalar (¿un clon viejo?)';
     try {
       const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
       lectorDelSkill = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js')).fmScalar || null;
-    } catch { lectorDelSkill = null; }
+    } catch (e) { lectorDelSkill = null; motivo = `no cargó (${(e && (e.code || e.message)) || e})`; }
+    // lo dice una vez: con la lectura vieja, una historia con `status: done   # nota` no se revisa, y el «✅ ninguna
+    // story pasa…» no lo diría
+    if (!lectorDelSkill) process.stderr.write(`⚠️ portón: el lector del frontmatter del skill ${motivo}: leo el estado y el número con la regla vieja, que no saca el comentario de YAML. Decí dónde están las skills con TYCON_SKILLS_DIR.\n`);
   }
   if (lectorDelSkill) return lectorDelSkill(fm, clave);
   const m = String(fm).match(new RegExp(`^${clave}:\\s*["']?([^"'\\n]+?)["']?\\s*$`, 'm'));
