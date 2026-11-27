@@ -24,7 +24,9 @@
  *      documento puede ser una página. `.mdx` cuenta siempre: es una página en los sitios que lo usan.
  *      Tampoco cuenta por su ruta una entrada cuyos archivos no pueden ser pantalla: un script por su extensión
  *      (.sh, .ps1, .bat, .cmd, .py, .yml) o un archivo de una carpeta de scripts o de CI (`scripts/`, `pipelines/`,
- *      `.github/`). El gate de un repo que se llama `FrontEnd` no es una pantalla; un `.ts` de ese repo sí.
+ *      `.github/`) o del propio arnés en la raíz (`.advisors/`, `.tycon/`, `.engram/`), ni lo que nunca dibuja nada:
+ *      tipos (`.d.ts`) y `tsconfig*.json` fuera de las carpetas de la aplicación, y `*.config.js|ts` fuera de `src/` y
+ *      `app/` (`package.json` sí cuenta: una librería puede cambiar lo que se ve). El gate de un repo que se llama `FrontEnd` no es una pantalla; un `.ts` de ese repo sí.
  *   3. RUTA o NOMBRE DECLARADO en un CAMPO ESTRUCTURADO (`repo`, `repos`, `target_repo`, `target_repos`, `tags`,
  *      `stack`, `layer`, `component`, `area`: valor suelto, entre corchetes o en bloque) o en cualquier cosa que
  *      cuelgue de `pipelines:` o `tandas:` (el nombre de la tanda incluido), sin distinguir mayúsculas. Una nota
@@ -72,6 +74,20 @@ function testSections(body) {
 }
 // Lo que no puede ser una pantalla: un script por su extensión, o cualquier archivo de una carpeta de scripts o de CI.
 const NOT_SCREEN_RE = /\.(sh|ps1|psm1|bat|cmd|py|ya?ml)$|(^|\/)(scripts|pipelines|\.github|\.azure-pipelines)\//i;
+// Las carpetas del propio arnés en la raíz del repo (`.advisors/`, `.tycon/`, `.engram/`) guardan su evidencia y su
+// estado: una captura de la prueba en vivo no es una pantalla del producto, aunque el repo se llame FrontEnd.
+const HARNESS_DIR_RE = /^\.(advisors|tycon|engram)\//i;
+// Lo que nunca dibuja nada: las declaraciones de tipos (`.d.ts`) y la configuración de TypeScript (`tsconfig*.json`),
+// salvo dentro de las carpetas de la aplicación; la configuración de las herramientas (`vite.config.ts`), fuera de `src/`
+// y de `app/`, donde un `menu.config.ts` sí arma lo que se ve. `package.json` sí cuenta: una librería puede cambiarlo.
+const NEVER_DRAWS_RE = /\.d\.ts$|(^|\/)tsconfig[^/]*\.json$/i;
+const TOOL_CONFIG_RE = /(^|\/)[^/]+\.config\.(js|ts)$/i;
+const APP_DIR_RE = /(^|\/)(src\/(app|components|pages)|app)\//i;
+const CODE_DIR_RE = /(^|\/)(src|app)\//i;
+const cannotBeScreen = (p) => !UI_EXT_RE.test(p) && (HARNESS_DIR_RE.test(p)
+  || (NOT_SCREEN_RE.test(p) && !/src\/(app|components|pages)\//i.test(p))
+  || (NEVER_DRAWS_RE.test(p) && !APP_DIR_RE.test(p))
+  || (TOOL_CONFIG_RE.test(p) && !CODE_DIR_RE.test(p)));
 const UI_EXT_RE = /\.(tsx|jsx|vue|svelte)\b/i;
 // Rutas HTTP: un verbo con su ruta, cualquier `/api/…` y las URLs. No son rutas de archivo.
 const HTTP_ROUTE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\/[^\s"'`)\]]*|(?<![\w.])\/api\/[^\s"'`)\]]*|https?:\/\/[^\s"'`)\]]*/gi;
@@ -136,7 +152,11 @@ const isDocPath = (p) => DOC_FILE_RE.test(p) && !PAGE_DIR_RE.test(p);
 function isNotScreenOnly(text) {
   const ps = pathsOf(text);
   // Bajo una carpeta de pantalla (src/app, src/components, src/pages) manda la carpeta: ahí un `scripts/` es parte de la pantalla.
-  return ps.length > 0 && ps.every((p) => NOT_SCREEN_RE.test(cleanToken(p)) && !UI_EXT_RE.test(p) && !/src\/(app|components|pages)\//i.test(p));
+  if (ps.length > 0 && ps.every((p) => cannotBeScreen(cleanToken(p)))) return true;
+  // Una sola ruta con espacios en el nombre (`.advisors/x/Captura de pantalla 17.30.12.png`): la ruta entera, si no
+  // junta varias rutas y sólo la primera palabra tiene carpeta.
+  const whole = cleanToken(sinPrefijo(text).trim());
+  return ps.length > 1 && !/\s(y|e|and|o|or)\s|[;,]/i.test(whole) && ps.slice(1).every((p) => !p.includes('/')) && cannotBeScreen(whole);
 }
 function isDocOnly(text) {
   const ps = pathsOf(text);
