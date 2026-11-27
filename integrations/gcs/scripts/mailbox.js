@@ -46,6 +46,8 @@ const HOST_DE_METADATOS = 'metadata.google.internal';
 const TOPE_METADATOS_MS = 2000;
 // las mil páginas de la bajada de Azure (scripts/metrics/download-runs.js → listarTodo)
 const TOPE_PAGINAS = 1000;
+// lo más que se lee de un objeto que no salió en el listado de este almacén (los que salieron se cortan en su `size`)
+const TOPE_SIN_LISTAR = 256 * 1024 * 1024;
 const BAJADA = path.join(__dirname, '..', '..', '..', 'scripts', 'metrics', 'download-runs.js');
 
 const esTexto = (v) => typeof v === 'string' && v.trim() !== '';
@@ -109,8 +111,12 @@ function firmar({ metodo, host, ruta, consulta = [], cabeceras = {}, accessId, s
   return h;
 }
 
-/** Un pedido HTTP: `{ status, cuerpo, cabeceras }` o `{ error }`; nunca rechaza. `topeMs` corta todo el pedido. */
-function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs = 60000, topeMs = null } = {}) {
+/**
+ * Un pedido HTTP: `{ status, cuerpo, cabeceras }` o `{ error }`; nunca rechaza. `topeMs` corta todo el pedido.
+ * `topeBytes` corta la respuesta apenas pasa ese largo: el cuerpo llega con `topeBytes + 1` bytes y `excedido: true`, y
+ * lo que sigue no se lee.
+ */
+function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs = 60000, topeMs = null, topeBytes = null } = {}) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(url); } catch (e) { resolve({ error: e }); return; }
@@ -119,7 +125,16 @@ function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs =
     const fin = (r) => { if (!hecho) { hecho = true; if (reloj) clearTimeout(reloj); resolve(r); } };
     const req = (u.protocol === 'http:' ? http : https).request(u, { method: metodo, headers: cabeceras, timeout: timeoutMs }, (res) => {
       const trozos = [];
-      res.on('data', (c) => trozos.push(c));
+      let largo = 0;
+      res.on('data', (c) => {
+        if (hecho) return;
+        trozos.push(c);
+        largo += c.length;
+        if (topeBytes !== null && largo > topeBytes) {
+          fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos).subarray(0, topeBytes + 1), cabeceras: res.headers, excedido: true });
+          req.destroy();
+        }
+      });
       res.on('end', () => fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers }));
       res.on('error', (e) => fin({ error: e }));
     });
@@ -138,7 +153,8 @@ const esDelServicio = (status) => status >= 500 || status === 429 || status === 
 
 /**
  * El almacén de la subida para una llave gcs ya validada. `urlBase` (las pruebas) reemplaza el host de Cloud Storage.
- *   · probarListado() → `{ ok: true }` (403 AccessDenied: la llave no puede listar) o `{ codigo, estado, motivo }`;
+ *   · probarListado() → `{ ok: true }` (403 AccessDenied al listar y al leer un objeto por su nombre: la llave sólo
+ *     crea) o `{ codigo, estado, motivo }`;
  *   · poner(nombre, cuerpo, md5, timeoutMs, { pisar }) → `{ status, codigo }` o `{ error }`; sin `pisar`, con la
  *     precondición de no pisar;
  *   · clasificar(r) → `{ tipo, motivo? }`, con el vocabulario de la subida (creado, ya_existe, sin_permiso, llave,
@@ -160,12 +176,27 @@ function almacenDeSubida(cfg, { urlBase = null } = {}) {
     if (r.error) return { codigo: 1, estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al probar la llave (${r.error.code || r.error.message}): no se sube nada` };
     const codigo = codigoXml(r.cuerpo);
     const visto = `${r.status}${codigo ? ` ${codigo}` : ''}`;
-    if (r.status === 403 && codigo === 'AccessDenied') return { ok: true };
+    if (r.status === 403 && codigo === 'AccessDenied') return probarLectura();
     if (r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: `la llave del buzón puede listar el bucket ${cfg.bucket} (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
     if (r.status === 404) return { codigo: 1, estado: 'llave_invalida', motivo: `el bucket ${cfg.bucket} no existe o la llave no lo ve (${visto}): revisar "bucket" en corridas-buzon.json. No se sube nada` };
     if (r.status === 401 || r.status === 403) return { codigo: 1, estado: 'llave_invalida', motivo: `el buzón rechazó la llave (${visto}): desactivada, borrada o inválida — hay que rotarla (corridas-buzon.json → "rotar", vence ${cfg.vence}). No se sube nada` };
     if (esDelServicio(r.status)) return { codigo: 1, estado: 'servicio_fallo', motivo: `el servicio del buzón falló al probar la llave (${visto}): se reintenta en el próximo arranque` };
     return { codigo: 1, estado: 'otro', motivo: `el buzón contestó ${visto} al probar la llave: no se sube nada` };
+  }
+
+  // Una cuenta con storage.objects.get y sin storage.objects.list no lista, pero lee cualquier objeto cuyo nombre sepa: la
+  // llave de las máquinas tampoco puede leer. Se pide por la API XML un nombre que no existe: la que sólo crea contesta
+  // 403 AccessDenied; la que lee, 404 NoSuchKey
+  async function probarLectura() {
+    const ruta = rutaDe(`tycon-sonda-de-lectura-${crypto.randomBytes(8).toString('hex')}`);
+    const r = await pedir(url(ruta), { cabeceras: firmado('GET', ruta, [], {}), timeoutMs: 30000, topeBytes: 64 * 1024 });
+    if (r.error) return { codigo: 1, estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al probar la llave (${r.error.code || r.error.message}): no se sube nada` };
+    const codigo = codigoXml(r.cuerpo);
+    const visto = `${r.status}${codigo ? ` ${codigo}` : ''}`;
+    if (r.status === 403 && codigo === 'AccessDenied') return { ok: true };
+    if (r.status === 404 || r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: `la llave del buzón puede leer objetos del bucket ${cfg.bucket} por su nombre (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
+    if (esDelServicio(r.status)) return { codigo: 1, estado: 'servicio_fallo', motivo: `el servicio del buzón falló al probar la llave (${visto}): se reintenta en el próximo arranque` };
+    return { codigo: 1, estado: 'otro', motivo: `el buzón contestó ${visto} al probar si la llave lee: no se sube nada` };
   }
 
   function poner(nombre, cuerpo, md5, timeoutMs, { pisar = false } = {}) {
@@ -222,6 +253,10 @@ const LECTOR_MAQUINA = Object.freeze({ quien: 'tu sesión de gcloud', sinRol: (b
 function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
   const cab = { authorization: `Bearer ${token}`, accept: 'application/json' };
   const raiz = `${base}/storage/v1/b/${codificar(bucket)}/o`;
+  // el `size` de cada objeto listado: la bajada no lee más que eso. Cloud Storage sirve descomprimido un objeto guardado
+  // con Content-Encoding gzip (la transcodificación): sin el tope, pocos bytes subidos con la llave de sólo crear serían
+  // GB juntados en memoria del sitio
+  const largos = new Map();
   async function listar(prefijo = '') {
     const blobs = [];
     let pagina = '';
@@ -242,6 +277,7 @@ function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
         if (!it || typeof it.name !== 'string') continue;
         const fecha = (v) => { const t = v ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
         blobs.push({ nombre: it.name, largo: Number(it.size), md5: it.md5Hash || null, etag: it.etag || null, creado: fecha(it.timeCreated), modificado: fecha(it.updated) });
+        if (Number.isSafeInteger(Number(it.size)) && Number(it.size) >= 0) largos.set(it.name, Number(it.size));
       }
       if (!doc.nextPageToken) return { blobs };
       pagina = String(doc.nextPageToken);
@@ -249,9 +285,11 @@ function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
     return { estado: 'servicio_fallo', motivo: `el listado del buzón pasó las ${TOPE_PAGINAS} páginas sin terminar: no se bajó nada` };
   }
   // un 401 al bajar es el token que venció o no vale, como al listar: la bajada lo toma de `estado` (un 403 sigue siendo
-  // el permiso que falta, y lo clasifica la bajada como siempre)
+  // el permiso que falta, y lo clasifica la bajada como siempre). Lo que pasa del `size` listado se corta: el cuerpo
+  // llega con un byte de más y la bajada lo cuenta como «llegó distinto», ese objeto solo
   async function leer(nombre, timeoutMs) {
-    const r = await pedir(`${raiz}/${codificar(nombre)}?alt=media`, { cabeceras: { authorization: cab.authorization }, timeoutMs });
+    const topeBytes = largos.has(nombre) ? largos.get(nombre) : TOPE_SIN_LISTAR;
+    const r = await pedir(`${raiz}/${codificar(nombre)}?alt=media`, { cabeceras: { authorization: cab.authorization }, timeoutMs, topeBytes });
     if (r.status === 401) return { ...r, estado: 'credencial_rechazada', motivo: `el buzón rechazó el token de ${lector.quien} al bajar ${nombre} (401): venció o no vale` };
     return r;
   }
