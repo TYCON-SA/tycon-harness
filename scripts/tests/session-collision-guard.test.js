@@ -258,3 +258,31 @@ test('Choque_TextoDeUnHeredoc_NoEsUnComando: un heredoc que CITA un `git merge` 
     assert.strictEqual(r.status, 2, `no frenó: ${corre}\n${r.stderr}`);
   }
 });
+
+test('T10 Choque_GitSoloComoTextoDeUnArgumento_NoFrena: un grep que busca el texto de un git que escribe no toca git; una sustitución o un sh -c siguen frenando', () => {
+  // 🔴 rojo si: el filtro grueso ve el texto entre comillas y, sin destino ubicado, asume el checkout (el falso de la A17);
+  // o si se deja pasar una sustitución `$(git …)` o un `sh -c "git …"`, que sí corren el git
+  const t = toy();
+  const checkout = repo(t, 'harness-maintainers');
+  transcript(t, checkout, 'cccc3333-otra', checkout);
+  const verbo = ['st', 'ash'].join('');
+  const con = (c) => run(t, 'PreToolUse', checkout, { tool_input: { command: c } }).status;
+  assert.strictEqual(con(`grep -n "git ${verbo}" nota.md`), 0);
+  assert.strictEqual(con(`grep -c 'git ${verbo} pop' a.txt b.txt`), 0);
+  assert.strictEqual(con(`echo "$(git ${verbo})"`), 2);
+  assert.strictEqual(con(`sh -c "git ${verbo}"`), 2);
+  assert.strictEqual(con(`git ${verbo}`), 2);
+});
+
+test('T11 Choque_GitDetrasDeUnaFormaQueElLectorNoVe_SigueFrenando: con `&`, una sustitución o un `#` pegado, el git puede correr y se frena', () => {
+  // 🔴 rojo si: el paso de la A17 confía en ejecutaTexto, que no ve estas formas, y un git que bash corre pasa (Fable, I1)
+  const t = toy();
+  const checkout = repo(t, 'harness-maintainers');
+  transcript(t, checkout, 'dddd4444-otra', checkout);
+  const v = ['st', 'ash'].join('');
+  const con = (c) => run(t, 'PreToolUse', checkout, { tool_input: { command: c } }).status;
+  for (const c of [`echo $(true)#x & git ${v}`, `echo "$(echo ')' & git ${v})"`, `cat <<< "$(echo ')' & git ${v})"`,
+    `echo "\${x:-$(echo ')' & git ${v})}"`, `echo a\\\n# & git ${v}`, `echo a #x & git ${v}`, `echo a\r#x & git ${v}`]) {
+    assert.strictEqual(con(c), 2, JSON.stringify(c));
+  }
+});
