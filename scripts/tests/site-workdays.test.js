@@ -411,7 +411,7 @@ test('OH5 DiaADia_PorPersona — la tabla diaria plegada tiene una fila por pers
   const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
   const r = WD().resumen(t, PEOPLE);
   const html = WD().htmlDiaPorPersona(t, r, 'es');
-  const fila = (p) => (html.match(new RegExp(`<tr><th scope="row">${p.replace(/\./g, '\\.')}</th>(.*?)</tr>`)) || [])[1] || '';
+  const fila = (p) => (html.match(new RegExp(`<tr><th scope="row">${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</th>(.*?)</tr>`)) || [])[1] || '';
   const celdas = (f) => [...f.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((m) => m[1]);
   assert.deepStrictEqual(celdas(fila('ana@acme.example')).slice(0, 3), ['2.0 h', '1.0 h', 'no medido'], 'ana: las dos máquinas suman el 9');
   assert.deepStrictEqual(celdas(fila('beto@acme.example')).slice(0, 3), ['no medido', 'no medido', '1.0 h']);
