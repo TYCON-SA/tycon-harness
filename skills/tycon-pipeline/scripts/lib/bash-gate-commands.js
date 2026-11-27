@@ -1347,7 +1347,10 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // ahí: el comodín suelto no va, como no va en un `cd` así seguido de un editor
         const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
         const cdNunca = bases.length > 1 && path.relative(cwd, bases[bases.length - 1]).split(/[\\/]+/).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
-        const base = escribe ? fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)).map(conValor)
+        // la lista no guarda qué separa los tramos: un `echo` de otro comando (`echo ok && rg -l x specs | xargs rm`) puede
+        // quedar como fuente, y entonces las palabras de todos los tramos saltados también cuentan
+        const saltadas = lista.slice(j + 1, k).flatMap((t) => palabras(t).filter((w) => w !== ''));
+        const base = escribe ? [...fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)), ...saltadas].map(conValor)
           : [...previas.map(conValor), ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
         // un `find` le suma a la entrada los archivos que alcanza (sus palabras siguen: si la lectura del `find` queda
         // corta, frenan como antes). No se recorre si lo que corre el `xargs` sólo lee: el recorrido cuesta y no cambia nada

@@ -1174,7 +1174,18 @@ function alcanzadasPorFind(words, absoluta) {
   // con una negación, un «o» o un `-prune`, un `-name` ya no dice qué alcanza: se miran todas
   const filtros = [];
   const sinFiltro = words.some((w) => ['!', '-not', '-o', '-or', ',', '-prune'].includes(w));
-  if (!sinFiltro) words.forEach((w, k) => { if ((w === '-name' || w === '-iname') && words[k + 1] !== undefined) filtros.push(cumplePatronDeFind(words[k + 1], w === '-iname')); });
+  const patrones = [];
+  if (!sinFiltro) words.forEach((w, k) => { if ((w === '-name' || w === '-iname') && words[k + 1] !== undefined) { patrones.push(words[k + 1]); filtros.push(cumplePatronDeFind(words[k + 1], w === '-iname')); } });
+  // ningún `-name` que pueda dar un `.md` (`*.tmp`, `cache-*.log`): no hay historia que buscar, y el recorrido cuesta
+  // Con un corchete o una barra, cualquier cosa (`*.[m]d`, `*.m\d`). Si no, lo que sigue al último comodín tiene que poder
+  // ser el final de un `.md`, o terminar en `.md`
+  const puedeSerMd = (crudo) => {
+    const p = String(crudo).replace(/^['"]|['"]$/g, '').toLowerCase();
+    if (/[[\\]/.test(p)) return true;
+    const cola = p.slice(Math.max(p.lastIndexOf('*'), p.lastIndexOf('?')) + 1);
+    return '.md'.endsWith(cola) || cola.endsWith('.md') || (p.lastIndexOf('?') === p.length - 1);
+  };
+  if (patrones.length && !patrones.some(puedeSerMd)) return [];
   const cumple = filtros.length ? (nombre) => filtros.some((f) => f(nombre)) : () => true;
   return carpetas.flatMap(absoluta).flatMap((abs) => {
     try { if (fs.statSync(abs).isFile()) return cumple(path.basename(abs)) ? [abs] : []; } catch { return []; }

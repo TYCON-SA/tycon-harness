@@ -728,9 +728,46 @@ test('T38 FindAXargsQueSoloLee_NoRecorre', () => {
   try {
     comandosPorOtroPrograma(`find ${grande} -name '*.log' | xargs grep -l x`, c.dir);
     assert.strictEqual(lecturas, 0, 'un xargs que sólo lee no recorre');
-    comandosPorOtroPrograma(`find ${grande} -name '*.log' | xargs rm`, c.dir);
+    comandosPorOtroPrograma(`find ${grande} -name '*.md' | xargs rm`, c.dir);
     assert.ok(lecturas > 0, 'uno que borra sí');
   } finally { fs.readdirSync = leer; }
+});
+
+// T40 XargsTrasUnSeparador_LoDeAlLadoCuenta
+// 🔴 Falla con: saltar los filtros del medio hacia atrás también por `;`, `&&` o un salto de renglón: la fuente cae en un
+//    `echo` de otro comando y las palabras del tramo de al lado (`rg -l draft specs`) se pierden; la historia se borra.
+test('T40 XargsTrasUnSeparador_LoDeAlLadoCuenta', () => {
+  const c = corral();
+  for (const cmd of ['echo ok && rg -l draft specs | xargs rm', 'echo x; grep -l draft specs/*.md | xargs rm',
+    'echo x\ngrep -l draft specs/*.md | xargs -I{} mv {} /tmp/', 'echo ok; grep -l draft specs/*.md | sort | xargs rm']) frena(c, cmd);
+});
+
+// T41 FindConNombreQueNoEsMd_NoRecorre
+// 🔴 Falla con: recorrer cuatro niveles de carpetas para un `find -name '*.tmp' | xargs rm`, que no puede dar una
+//    historia: sobre una carpeta grande tarda segundos.
+test('T41 FindConNombreQueNoEsMd_NoRecorre', () => {
+  const c = corral();
+  const grande = path.join(c.raiz, 'grande-tmp');
+  for (let i = 0; i < 5; i++) fs.mkdirSync(path.join(grande, `d${i}`, 'e'), { recursive: true });
+  const { comandosPorOtroPrograma } = require(path.join(__dirname, '..', 'lib', 'bash-gate-commands.js'));
+  const leer = fs.readdirSync;
+  let lecturas = 0;
+  fs.readdirSync = (...a) => { lecturas++; return leer(...a); };
+  try {
+    comandosPorOtroPrograma(`find ${grande} -name '*.tmp' | sort | xargs rm -f`, c.dir);
+    comandosPorOtroPrograma(`find ${grande} -iname 'cache-*.log' | xargs rm -f`, c.dir);
+    assert.strictEqual(lecturas, 0, 'un -name que no puede dar un .md no recorre');
+    comandosPorOtroPrograma(`find ${grande} -name 'story-*' | xargs rm`, c.dir);
+    assert.ok(lecturas > 0, 'uno que puede dar un .md sí');
+  } finally { fs.readdirSync = leer; }
+  frena(c, "find . -name 'story-*' | xargs rm");
+  // un corchete o una barra pueden dar `.md` aunque no lo digan al final
+  // (nombra la primera historia que encuentra, que puede ser cualquiera de las dos del corral)
+  for (const n of ["'*.[m]d'", "'*.m\\d'", "'story-*.m?'", "'*d'"]) {
+    const r = correr(c, `find . -name ${n} | xargs truncate -s 0`);
+    assert.strictEqual(r.salida, 2, `frena: ${n}\n${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, n);
+  }
 });
 
 // T39 Find_PwdPegadoAUnaCarpeta_EsEsaCarpeta
