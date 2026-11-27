@@ -289,6 +289,46 @@
             ]
           },
           "__doc": "La regla es sobre el repo DESTINO: si `otro` tiene su propia sesión viva (su carpeta de transcripciones), tocarlo frena y el mensaje nombra ese repo y esa sesión — no las de este checkout."
+        },
+        {
+          "id": "un-grep-que-busca-el-texto-de-un-git-no-frena",
+          "type": "must-not-block",
+          "__doc": "A17 (27/11): el git va entre comillas como texto de un argumento de grep y nada del comando corre texto. Con otra sesión viva, no se frena. ROJO PREVIO: el filtro grueso veía el texto y, sin destino ubicado, asumía el checkout.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "grep -n \"git stash\" nota.md"
+            }
+          }
+        },
+        {
+          "id": "una-sustitucion-con-el-git-entre-comillas-sigue-frenando",
+          "type": "must-block",
+          "__doc": "A17 (27/11), la otra cara: `$(git …)` adentro de comillas sí corre el git. Se frena aunque el análisis por sentencia no lo ubique.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/live-sessions.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/place.js $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "echo \"$(git stash)\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva"
+            ]
+          }
         }
       ]
     },
