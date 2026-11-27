@@ -549,7 +549,8 @@ test('FotoVieja_LaMaquinaDiceQueTieneUnaSinMandar_SeMarcaFuerte', async () => {
   // una máquina viva cuya foto no sale: la que no entraba en 64 KB dejaba al sitio con la de horas antes, sin que nadie lo
   // notara. Una oficina quieta tampoco manda fotos (una igual no sale), así que el tiempo no alcanza: lo dice el latido
   const reloj = { t: Date.now() };
-  const h = await montar({ reloj });
+  // la conexión a mano no reconecta: el corte de cada 10 minutos (A42) queda apagado, esto mira horas de una misma conexión
+  const h = await montar({ reloj, opciones: { plazos: { vidaMaquinaMs: 0 } } });
   try {
     const { ma, mb } = await dosMaquinasConectadas(h);
     await hasta(() => h.centro.oficina('maquina-a') && h.centro.oficina('maquina-a').foto, 2000, 'la foto');
@@ -1772,7 +1773,8 @@ test('T25 Site_Reinicio_Reconectando @story-8.234 @ac-25 — la hora de una cone
   // navegadores, después del reinicio, sólo vale con el reloj del sitio cerca de esa hora
   const reloj = { t: Date.now() - 184 * MIN };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'disco-reconectando-'));
-  const h = await montar({ reloj, config: opsTres(), personas: personasTres(), dataDir: dir });
+  const h = await montar({ reloj, config: opsTres(), personas: personasTres(), dataDir: dir, opciones: { plazos: { vidaMaquinaMs: 0 } } });
+  // una conexión «sin cortes» de 3 h: el corte de cada 10 minutos (A42) queda apagado
   try {
     const [ka, kb, kc] = [par(), par(), par()];
     pedir(h.llaves, ka); pedir(h.llaves, kb, '10.0.0.2'); pedir(h.llaves, kc, '10.0.0.3');
@@ -1992,4 +1994,39 @@ test('T15 LiveHub_Revisar_DisparaLaLecturaAPedidoSinEsperarla @story-8.328 @ac-8
 
 test('T10 Sources_HuellaAPedido_SinEsperas_NoBaja @story-8.328 @ac-9', async () => {
   assert.strictEqual((await revisarContando(false)).llamadas, 0, 'sin ninguna máquina esperando no la pide');
+});
+
+test('A42 Maquina_ConexionVieja_ElSitioLaRenueva_YVuelveSola — issue 1798', async () => {
+  // en Cloud Run una conexión abierta antes de desplegar sigue en la instancia vieja hasta su plazo (una hora): el sitio
+  // corta cada conexión de máquina a los SITE_OFFICE_RECONNECT_MINUTES (10 por defecto) y la máquina vuelve sola
+  assert.strictEqual(PLAZOS.vidaMaquinaMs, 10 * MIN, '10 minutos por defecto');
+  const reloj = { t: Date.now() };
+  const h = await montar({ reloj, env: { SITE_OFFICE_RECONNECT_MINUTES: '3' } });
+  try {
+    const m = maquinaReal(h);
+    pedir(h.llaves, m.key);
+    h.aprobar(m.key);
+    m.link.start();
+    m.link.update(FOTO('Antes del corte'));
+    await hasta(() => h.centro.oficina('maquina-a') && h.centro.oficina('maquina-a').foto, 3000, 'la primera foto');
+    const cortes = () => h.registro.filter((l) => /renueva la conexión de maquina-a/.test(l)).length;
+    // antes de los 3 minutos no se corta (el azar la adelanta hasta un quinto, nunca más)
+    reloj.t += 2 * MIN;
+    m.link.update(FOTO('Antes del corte'));
+    h.centro.revisar();
+    assert.strictEqual(cortes(), 0, 'a los 2 minutos sigue');
+    reloj.t += 1 * MIN + 1000;
+    h.centro.revisar();
+    assert.strictEqual(cortes(), 1, 'a los 3 minutos el sitio la corta');
+    await hasta(() => !h.centro.conectada('maquina-a'), 3000, 'el corte');
+    assert.ok(h.centro.oficina('maquina-a').foto, 'la foto no se borra en el corte');
+    await hasta(() => h.centro.conectada('maquina-a'), 8000, 'la máquina vuelve sola');
+    assert.strictEqual(SL.readLinkState(m.dir), 'aprobada', 'sigue aprobada');
+    m.parar();
+  } finally { await h.cerrar(); }
+
+  // 0 apaga el corte; un valor raro no deja arrancar el sitio
+  const r0 = crearSitio({ env: H.envBase({ SITE_OFFICE_RECONNECT_MINUTES: '0' }), fuentes: H.fuentesFijas({ config: ops(), personas: personasDe() }), llaves: null });
+  assert.ok(r0, 'con 0 arranca');
+  assert.throws(() => crearSitio({ env: H.envBase({ SITE_OFFICE_RECONNECT_MINUTES: 'diez' }), fuentes: H.fuentesFijas({ config: ops(), personas: personasDe() }), llaves: null }), /SITE_OFFICE_RECONNECT_MINUTES/);
 });
