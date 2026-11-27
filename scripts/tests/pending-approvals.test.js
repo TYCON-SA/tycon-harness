@@ -574,3 +574,20 @@ test('T33 una aprobación firmada ya commiteada no se borra: borrarla y volverla
   assert.strictEqual(r.status, 1);
   assert.match(r.stderr, /no se borra/);
 });
+
+test('T34 approve-pending con una aprobación que ya vale dice contra qué comparó y cómo se sale si el main local está viejo', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git('checkout', '-q', '-b', 'rama');
+  fs.writeFileSync(path.join(d, 'otro.txt'), 'x\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'trabajo');
+  const env = { ...process.env };
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_TEST_CONTEXT', 'TYCON_SIGN_PRECHECK']) delete env[k];
+  const r = spawnSync(process.execPath, [MARKER, 'approve-pending', '--id', 'DEF-viejo', '--repo', d], { encoding: 'utf8', env, cwd: d });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /ya estaba aprobado \(comparado contra el último commit [0-9a-f]{9} y el ancestro con main [0-9a-f]{9}\)/);
+  assert.match(r.stderr, /git fetch origin/);
+  assert.strictEqual(fs.readFileSync(path.join(d, PA.RECORD), 'utf8'), BASE, 'no escribió nada');
+});
