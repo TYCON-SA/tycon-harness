@@ -24,7 +24,7 @@ const path = require('path');
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
-const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, citados, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
+const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 
 /**
  * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de

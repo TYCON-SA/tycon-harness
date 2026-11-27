@@ -9,7 +9,6 @@
  * sólo las de abajo (la red primero; el despachador, todas).
  */
 
-const os = require('os');
 
 // en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
 // también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)

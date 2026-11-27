@@ -647,7 +647,7 @@ test('T27 ErrorPaths_LeaveTheirLine — configuración rota, edición rechazada,
   // (e) Telegram rechaza la edición del mensaje anterior: edit-failed, y el aviso nuevo sale igual
   let n = 100; const calls = [];
   const server = http.createServer((req, res) => {
-    let body = ''; req.on('data', (d) => { body += d; });
+    req.resume();
     req.on('end', () => {
       const method = req.url.split('/').pop(); calls.push(method);
       if (method === 'editMessageText') { res.writeHead(400); res.end('{"ok":false}'); return; }
