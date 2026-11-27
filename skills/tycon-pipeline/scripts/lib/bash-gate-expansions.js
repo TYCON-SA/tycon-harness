@@ -1200,10 +1200,14 @@ function alcanzadasPorFind(words, absoluta, { recursivo = false } = {}) {
   };
   const cumple = filtros.length ? (nombre) => filtros.some((f) => f(nombre)) : () => true;
   // las carpetas que cumplen el `-name` (hasta cuatro niveles), con todas las historias de adentro
+  // hasta cuatro niveles (o los de `-maxdepth`) y dos mil carpetas: una limpieza grande no recorre el disco entero
+  const md = Number(words[words.indexOf('-maxdepth') + 1]);
+  const niveles = words.includes('-maxdepth') && Number.isFinite(md) ? Math.min(4, md - 1) : 4;
+  let visitadas = 0;
   const deCarpetas = (abs) => {
     const out = [];
     const recorrer = (d, nivel) => {
-      if (nivel > 4) return;
+      if (nivel > niveles || ++visitadas > 2000) return;
       let hijos = [];
       try { hijos = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
       for (const h of hijos) {
@@ -1215,7 +1219,8 @@ function alcanzadasPorFind(words, absoluta, { recursivo = false } = {}) {
     recorrer(abs, 0);
     return out;
   };
-  const porCarpeta = recursivo && filtros.length ? carpetas.flatMap(absoluta).flatMap(deCarpetas) : [];
+  const soloArchivos = words[words.indexOf('-type') + 1] === 'f' && words.includes('-type');
+  const porCarpeta = recursivo && filtros.length && !soloArchivos ? carpetas.flatMap(absoluta).flatMap(deCarpetas) : [];
   if (patrones.length && !patrones.some(puedeSerMd)) return porCarpeta;
   return [...new Set([...porCarpeta, ...carpetas.flatMap(absoluta).flatMap((abs) => {
     try { if (fs.statSync(abs).isFile()) return cumple(path.basename(abs)) ? [abs] : []; } catch { return []; }
@@ -1226,8 +1231,13 @@ function alcanzadasPorFind(words, absoluta, { recursivo = false } = {}) {
 /** Lo que corre cada `-exec`, `-execdir`, `-ok` y `-okdir` de un `find`, con `{}` reemplazado por las historias que alcanza. */
 function ordenesDeFind(words, absoluta) {
   // lo que corre borra carpetas enteras (`rm -r`, `-delete`): una carpeta que cumple el `-name` trae sus historias
-  const recursivo = words.includes('-delete') || words.some((w, k) => /^-(?:exec|execdir|ok|okdir)$/.test(w) && /^rm$/.test(nombreDeComando(words[k + 1] || ''))
-    && words.slice(k + 2).some((x) => /^-[a-zA-Z]*[rR]/.test(x) || x === '--recursive'));
+  // (el `-r` se busca sólo dentro de ese `-exec`; `-delete` solo no borra una carpeta con cosas)
+  const recursivo = words.some((w, k) => {
+    if (!/^-(?:exec|execdir|ok|okdir)$/.test(w) || !/^rm$/.test(nombreDeComando(words[k + 1] || ''))) return false;
+    let fin = k + 2;
+    while (fin < words.length && !FIN_DE_EXEC.has(words[fin])) fin++;
+    return words.slice(k + 2, fin).some((x) => /^-[a-zA-Z]*[rR]/.test(x) || x === '--recursive');
+  });
   const alcanzadas = () => alcanzadasPorFind(words, absoluta, { recursivo });
   const out = [];
   for (let k = 0; k < words.length; k++) {

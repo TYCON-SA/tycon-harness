@@ -864,3 +864,41 @@ test('T42 FindName_ComoLoDejaElShell_YBucles @A50 — el -name como lo deja el s
   for (const cmd of ["find docs -name '*.md' | while read f; do rm \"$f\"; done", "for f in $(find docs -name '*.md'); do rm $f; done",
     "for f in $(find specs -name 'story-*.md'); do cat $f; done", 'find . -name docs -exec rm -rf {} +']) pasa(c, cmd);
 });
+
+// T43 Bucles_FormasQueSeEscapaban @A50
+// 🔴 Falla con (revisión de Fable de la tanda 2): las comillas de alrededor de `$f` comidas (`echo "Borrando $f"; rm "$f"`),
+// el cuerpo cortado en el primer `done` (bucle adentro, `echo done`), el `do` en otro renglón, un filtro en el medio de la
+// tubería, `< <(find …)`, `read -rd ''` o sin variable (REPLY), o un `rm -r` del cuerpo sobre una carpeta que cumple.
+test('T43 Bucles_FormasQueSeEscapaban @A50 — comillas, done de adentro, do en otro renglón, filtros, < <(find) y rm -r', () => {
+  const c = corral();
+  for (const cmd of [
+    "for f in $(find specs -name 'story-*.md'); do echo \"Borrando $f\"; rm \"$f\"; done",
+    "for f in $(find specs -name 'story-*.md'); do for g in 1 2; do echo done; done; rm $f; done",
+    "for f in $(find specs -name 'story-*.md')\ndo\n  rm \"$f\"\ndone",
+    "find specs -name 'story-*.md' | sort | while read f; do rm \"$f\"; done",
+    "while read -r f; do rm \"$f\"; done < <(find specs -name 'story-*.md')",
+    "find specs -name 'story-*.md' -print0 | while IFS= read -rd '' f; do rm \"$f\"; done",
+    "find specs -name 'story-*.md' | while read; do rm \"$REPLY\"; done",
+    "find specs -name 'story-*.md' | while read f\ndo rm \"$f\"; done",
+    'for d in $(find . -type d -name specs); do rm -rf "$d"; done',
+  ]) frena(c, cmd);
+  pasa(c, 'for d in $(find . -type d -name specs); do ls "$d"; done');
+  pasa(c, 'find . -type f -name specs -exec rm -rf {} +');
+});
+
+// T44 Bucles_SinTardarConBlancos @A50
+// 🔴 Falla con: las expresiones del bucle que se comían los mismos blancos una y otra vez: un `for … in` con miles de
+// espacios tardaba más que el tope del freno (que deja pasar).
+test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece más que lineal', () => {
+  const { ordenesDeBucles } = require('../lib/bash-gate-folders.js');
+  const op = { palabras: (s) => s.split(/\s+/), alcanzadas: () => [], citar: (x) => x };
+  const medir = (n) => {
+    const t = process.hrtime.bigint();
+    ordenesDeBucles(`find . ; for f in${' '.repeat(n)}x${' '.repeat(n)}done`, op);
+    return Number(process.hrtime.bigint() - t) / 1e6;
+  };
+  medir(1000);
+  const chico = Math.max(medir(4000), 1);
+  const grande = medir(32000);
+  assert.ok(grande < chico * 40, `8 veces más texto tardó ${grande.toFixed(1)} ms contra ${chico.toFixed(1)} ms`);
+});
