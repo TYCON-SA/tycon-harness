@@ -2949,6 +2949,12 @@
       "requiere": []
     },
     {
+      "__nota": "HARNESS-C1 frena también dejar fijo en el arranque del shell un control bajado a aviso (TYCON_INTERNAL_HISTORY=warn), en Unix y en Windows; subirlo (block) pasa. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-c1-warn.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
@@ -3714,6 +3720,12 @@
       "__nota": "el mismo pedido de firma escrito de otra forma (el orden de las opciones, de --acs, la historia relativa o absoluta) da el mismo cuadro y el mismo click le sirve; lo que cambia lo que se firma da otro código. En proceso, con una casa temporal; un par de segundos.",
       "raiz": "arnes",
       "ruta": "tests/owner-window-canonical.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el click del dueño vuelve a valer si el comando que lo gastó no llegó a ejecutarse (sale 126 o 127 con el pedido de la ventana sin consumir), una sola vez; si corrió, salió con otro código o es de otro comando, queda gastado. Y el detalle del cuadro dice el comando con su intérprete y su ruta entera (F27). En proceso, con una casa temporal; milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-give-back.test.js",
       "requiere": []
     },
     {

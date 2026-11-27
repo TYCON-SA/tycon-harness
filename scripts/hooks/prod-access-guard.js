@@ -3642,30 +3642,59 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     }
 
     if (prog === 'az' || t.some(esAz)) {
-      // el subcomando de `az sql`, hasta la primera bandera: `az sql server firewall-rule create -s …` → server, firewall-rule, create
-      const iSql = t.findIndex((x, k) => x === 'sql' && k > 0 && esAz(t[k - 1]));
-      const ruta = [];
-      for (let k = iSql + 1; iSql >= 0 && k < t.length && !t[k].startsWith('-'); k++) ruta.push(t[k]);
-      // `-s` es el servidor en `az sql db|dw|elastic-pool …` y en los grupos de `az sql server` (firewall-rule, ad-admin…),
-      // pero `az sql server <verbo>` no lo tiene: ahí el servidor es `-n`, y lo que sigue a `-s` (en la práctica, el id
-      // de una suscripción) leído como servidor frenaba una consulta de configuración
-      const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
-      for (let i = 1; i < t.length; i++) {
-        // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
-        const esSqlServer = t.includes('sql') && t.includes('server');
-        const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
-                                (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
-        if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
-        const igual = /^--server[=:](.+)$/.exec(t[i]);
-        if (igual) agregar(crudoDe(texto, igual[1]), 'az');
-        const rec = RECURSO_SQL.exec(t[i]);
-        if (rec) agregar(rec[1], 'recurso');
-      }
-      // `az resource delete -n <s> --resource-type Microsoft.Sql/servers` y `--parent servers/<s>`: el servidor sale del
-      // nombre y del tipo (los `--ids` ya los lee la línea de arriba)
-      const iAz = t.findIndex(esAz);
-      if (iAz >= 0 && t.slice(iAz + 1).some((x) => x.toLowerCase() === 'resource') && !t.includes('--ids')) {
-        for (const srv of recursosDeAzResource(t.slice(iAz + 1)).servidores) agregar(crudoDe(texto, srv), 'recurso');
+      // A56: az recibe las palabras como las deja el shell, sin las barras de escape de una palabra sin comillas
+      // (`acme\-sql` llega como `acme-sql`, `-\n` como `-n`, `s\ql` como `sql`), y el freno las comparaba tal cual: un
+      // nombre con barra pasaba por archivo y una bandera con barra no se reconocía. Si el tramo trae barras, se lee
+      // dos veces: tal cual y sin ellas. Sólo en az: en sqlcmd la barra separa la instancia del servidor (`host\INST`)
+      const sinBarras = (w) => String(w).replace(/\\(.)/g, '$1');
+      const lecturas = [t];
+      if (t.some((w) => String(w).includes('\\'))) lecturas.push(t.map(sinBarras));
+      // az reemplaza por el contenido de un archivo toda palabra que empieza con @ (también el valor de una bandera con
+      // `=`): lo que ahí dice no se ve. En `az sql` y `az resource` es un servidor desconocido, salvo en el valor de una
+      // bandera que nunca nombra un servidor (las de az, sin sus dos guiones)
+      const ARROBA_SIN_SERVIDOR = new Set([...['parameters', 'body', 'settings', 'scripts', 'password', 'admin-password',
+        'tags', 'storage-key', 'properties', 'template-file'].map((b) => `--${b}`), '-p']);
+      for (const t of lecturas) {
+        // también si el subcomando mismo sale de un archivo (`az @sql.txt server delete …`)
+        const iDelAz = t.findIndex(esAz);
+        const enSqlOResource = t.some((x) => x === 'sql' || String(x).toLowerCase() === 'resource')
+          || (iDelAz >= 0 && String(t[iDelAz + 1] || '').startsWith('@'));
+        if (enSqlOResource) {
+          for (let i = 1; i < t.length; i++) {
+            const w = String(t[i]);
+            const conIgual = /^(-[^=]*)=(@.*)$/.exec(w);
+            if (w.startsWith('@') && !ARROBA_SIN_SERVIDOR.has(String(t[i - 1]))) out.push({ host: null, crudo: w, via: 'az' });
+            else if (conIgual && !ARROBA_SIN_SERVIDOR.has(conIgual[1])) out.push({ host: null, crudo: w, via: 'az' });
+          }
+        }
+        // el subcomando de `az sql`, hasta la primera bandera: `az sql server firewall-rule create -s …` → server, firewall-rule, create
+        const iSql = t.findIndex((x, k) => x === 'sql' && k > 0 && esAz(t[k - 1]));
+        const ruta = [];
+        for (let k = iSql + 1; iSql >= 0 && k < t.length && !t[k].startsWith('-'); k++) ruta.push(t[k]);
+        // `-s` es el servidor en `az sql db|dw|elastic-pool …` y en los grupos de `az sql server` (firewall-rule, ad-admin…),
+        // pero `az sql server <verbo>` no lo tiene: ahí el servidor es `-n`, y lo que sigue a `-s` (en la práctica, el id
+        // de una suscripción) leído como servidor frenaba una consulta de configuración
+        const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
+        for (let i = 1; i < t.length; i++) {
+          // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
+          const esSqlServer = t.includes('sql') && t.includes('server');
+          const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
+                                  (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
+          if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
+          const igual = /^--server[=:](.+)$/.exec(t[i]);
+          if (igual) agregar(crudoDe(texto, igual[1]), 'az');
+          // donde `-n` es el servidor, también con el valor pegado por `=` (`--name=acme-sql`, `-n=acme-sql`)
+          const nombreIgual = esSqlServer ? /^(?:--name|-n)[=:](.+)$/.exec(t[i]) : null;
+          if (nombreIgual) agregar(crudoDe(texto, nombreIgual[1]), 'az');
+          const rec = RECURSO_SQL.exec(t[i]);
+          if (rec) agregar(rec[1], 'recurso');
+        }
+        // `az resource delete -n <s> --resource-type Microsoft.Sql/servers` y `--parent servers/<s>`: el servidor sale del
+        // nombre y del tipo (los `--ids` ya los lee la línea de arriba)
+        const iAz = t.findIndex(esAz);
+        if (iAz >= 0 && t.slice(iAz + 1).some((x) => x.toLowerCase() === 'resource') && !t.includes('--ids')) {
+          for (const srv of recursosDeAzResource(t.slice(iAz + 1)).servidores) agregar(crudoDe(texto, srv), 'recurso');
+        }
       }
     }
 
