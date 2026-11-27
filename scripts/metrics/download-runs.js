@@ -43,7 +43,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   place.json es de una versión que trae el Node propio del arnés; `todas: true` decide cuándo sacar Node 22 de la CI.
  *
  *   (los archivos se bajan de a 8 a la vez, por fases: registros, coberturas y corridas; `bajar({ concurrencia })` lo
- *   cambia; de a uno, la primera pasada de un espejo vacío no entraría en el tope del sitio)
+ *   cambia; de a uno, la primera pasada de un espejo vacío no entraría en el tope del sitio). Entre los que vuelan a la
+ *   vez no se piden más de 128 MB del listado (`TOPE_EN_VUELO`; `bajar({ topeEnVueloBytes })` lo cambia)
  *   --no-threads: baja los registros y los volcados, NUNCA los hilos ni los cambios de git
  *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz`: traen código de todos los repos); los cuenta en
  *   `omitidos`. Lo usa el nocturno del tablero: la página no usa las conversaciones —prompts, rutas, código de
@@ -595,6 +596,10 @@ const TOPE_BAJADA_OTRO = 64 * 1024 * 1024;
 /** El tope de bajada de un archivo del buzón, por su nombre dentro de la carpeta de la máquina. */
 const topeDeBajada = (archivo) => (/\.hilo\.jsonl\.gz$/.test(String(archivo)) ? TOPE_BAJADA_HILO : TOPE_BAJADA_OTRO);
 const mbDe = (n) => Math.round(n / 1048576);
+// Lo que se pide A LA VEZ, sumando el largo del listado de cada archivo en vuelo (A44). El tope de cada archivo no
+// alcanza: la pasada baja de a 8, y ocho volcados de 60 MB son casi 500 MB juntándose en memoria fuera del techo del hilo
+// del sitio. Un archivo que solo pasa este tope se pide cuando no vuela ningún otro: el tope ordena, no deja afuera.
+const TOPE_EN_VUELO = 128 * 1024 * 1024;
 // las dos partes de una corrida que pesan (su conversación y su cambio de git), por el nombre del archivo en el espejo
 const PARTE_DE_CORRIDA = /^(.+)\.(hilo\.jsonl|cambio\.json)\.gz$/;
 /** El resumen que el sitio guardó de una corrida (dashboard/runs.js → resumirEspejo), o null. `volcado`: su ruta local. */
@@ -1219,6 +1224,15 @@ async function bajar(opts = {}) {
   // coberturas (que miran si un registro de su máquina falló) y recién ahí las corridas. Dentro de una fase, hasta
   // `concurrencia` a la vez (8 si no se dice). El corte por tiempo se mira antes de tomar cada archivo.
   const conc = Number.isInteger(opts.concurrencia) && opts.concurrencia >= 1 ? Math.min(opts.concurrencia, 32) : 8;
+  // y, entre los `conc`, no más de `topeEnVuelo` bytes pedidos a la vez: el trabajador que no entra espera a que otro suelte
+  const topeEnVuelo = Number.isFinite(opts.topeEnVueloBytes) && opts.topeEnVueloBytes > 0 ? opts.topeEnVueloBytes : TOPE_EN_VUELO;
+  let enVuelo = 0;
+  let esperan = [];
+  const tomarLugar = async (n) => {
+    while (enVuelo > 0 && enVuelo + n > topeEnVuelo) await new Promise((r) => esperan.push(r));
+    enVuelo += n;
+  };
+  const soltarLugar = (n) => { enVuelo -= n; const w = esperan; esperan = []; for (const r of w) r(); };
   let tomados = 0;
   let corto = false;
   // el tope de conversaciones por pasada, POR CORRIDA (sus dos partes entran o quedan juntas). La primera entra siempre,
@@ -1245,7 +1259,8 @@ async function bajar(opts = {}) {
         if (Date.now() - inicio > tope) { corto = true; return; }
         const p = cola[k++]; tomados += 1;
         if (!entra(p)) { res.por_tope += 1; continue; }
-        await bajarUno(p);
+        await tomarLugar(p.largo);
+        try { await bajarUno(p); } finally { soltarLugar(p.largo); }
       }
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
@@ -1273,7 +1288,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina, leerResumenDe, pedir, topeDeBajada };
+module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina, leerResumenDe, pedir, topeDeBajada, TOPE_EN_VUELO };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');

@@ -170,3 +170,44 @@ test('T38i DetalleADemanda_UnaVersionNuevaEnorme_UsaLaAnterior', async (t) => {
   assert.deepStrictEqual(pedidos, [`${MAQ}/${base}.cambio.json.gz`]);
   assert.strictEqual(res.estado, 'bajado');
 });
+
+/** Un almacén falso que anota cuántos bytes del listado se están pidiendo a la vez. Cada pedido tarda `ms`. */
+function almacenQueMideLoQueVuela(archivos, ms = 30) {
+  const lista = archivos.map(([n, largo]) => ({ nombre: `${MAQ}/${n}`, largo, md5: 'AAAAAAAAAAAAAAAAAAAAAA==', etag: 'x' }));
+  const a = { destino: 'falso/buzon', enVuelo: 0, pico: 0, pedidos: 0, listar: async () => ({ blobs: lista }) };
+  a.leer = async (nombre) => {
+    const largo = lista.find((b) => b.nombre === nombre).largo;
+    a.pedidos += 1;
+    a.enVuelo += largo; a.pico = Math.max(a.pico, a.enVuelo);
+    await new Promise((r) => setTimeout(r, ms));
+    a.enVuelo -= largo;
+    // sin juntar el cuerpo de verdad: el corte lo deja como «no bajado», que alcanza para medir lo que se pidió
+    return { status: 200, cuerpo: Buffer.alloc(0), cabeceras: {}, cortado: true };
+  };
+  return a;
+}
+
+test('T44a Bajada_LoQueSePideALaVez_TieneUnTopeEnBytes_NoSoloEnArchivos', async (t) => {
+  // ocho archivos de 60 MB, cada uno debajo de su tope: de a 8 eran 480 MB juntándose a la vez fuera del techo del hilo
+  const MB = 1024 * 1024;
+  const archivos = Array.from({ length: 8 }, (_, i) => [`${i + 1}.1-2026-11-20T10${10 + i}.hilo.jsonl.gz`, 60 * MB]);
+  const a = almacenQueMideLoQueVuela(archivos);
+  await B.bajar({ almacen: a, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
+  assert.strictEqual(a.pedidos, 8, 'se piden todos');
+  assert.ok(a.pico <= B.TOPE_EN_VUELO, `se pidieron ${Math.round(a.pico / MB)} MB a la vez (tope ${Math.round(B.TOPE_EN_VUELO / MB)} MB)`);
+  assert.ok(B.TOPE_EN_VUELO <= 128 * MB, 'el tope de lo que vuela a la vez no pasa de 128 MB');
+});
+
+test('T44b Bajada_UnArchivoMasGrandeQueElTopeEnVuelo_BajaSolo_YLosChicosSiguenEnParalelo', async (t) => {
+  // el tope no deja a nadie afuera: uno que solo lo pasa (una conversación de una máquina) se pide cuando no vuela nada
+  const MB = 1024 * 1024;
+  const archivos = [['1.1-2026-11-20T1010.hilo.jsonl.gz', 200 * MB], ...Array.from({ length: 6 }, (_, i) => [`${i + 2}.1-2026-11-20T1110.json`, 1000])];
+  const a = almacenQueMideLoQueVuela(archivos);
+  await B.bajar({ almacen: a, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
+  assert.strictEqual(a.pedidos, 7);
+  assert.strictEqual(a.pico, 200 * MB, 'el grande se pidió solo');
+  // con el tope chico por opción, los chicos van de a varios: el tope no apaga el paralelo
+  const b = almacenQueMideLoQueVuela(Array.from({ length: 8 }, (_, i) => [`${i + 2}.1-2026-11-20T1110.json`, 1000]));
+  await B.bajar({ almacen: b, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {}, topeEnVueloBytes: 3000 });
+  assert.strictEqual(b.pico, 3000, 'tres a la vez, no ocho ni uno');
+});
