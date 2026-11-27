@@ -533,6 +533,46 @@ test('story-discovery: `story:` SIN `status:` no es una story (y al revés tampo
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('story-discovery: el estado que compara el freno del commit se lee como en el descubridor (A34, segunda vuelta)', () => {
+  // 🔴 rojo: `parseFrontmatter` del freno (el estado de antes y de después de un cierre) no tenía prueba, no abría un
+  //    frontmatter con fin de renglón de Windows ni con `--- `, y con el primer renglón vacío tomaba el de abajo
+  const freno = require(path.join(__dirname, '..', 'on-pre-commit.js'));
+  const historia = (cuerpo, apertura = '---\n', salto = '\n') => `${apertura}${cuerpo.join(salto)}${salto}---${salto}# h${salto}`;
+  const casos = [
+    [historia(['story: "9.2"', 'status: done   # nota']), 'done'],
+    [historia(['story: "9.2"', 'status: "done"  # cerrada']), 'done'],
+    [historia(['story: "9.2"', 'status: done', 'status: in-progress']), 'done'],
+    [historia(['story: "9.2"', 'status:  # pendiente', 'status: done']), undefined],
+    [historia(['story: "9.2"', 'status: done'], '---\r\n', '\r\n'), 'done'],
+    [historia(['story: "9.2"', 'status: done'], '--- \n'), 'done'],
+  ];
+  for (const [texto, esperado] of casos) {
+    const fm = freno.parseFrontmatter(texto);
+    assert.strictEqual(fm.status, esperado, JSON.stringify(texto));
+    const bloque = texto.replace(/^---[ \t]*\r?\n/, '').split(/\r?\n---/)[0];
+    assert.strictEqual(discovery.fmScalar(bloque, 'status') ?? undefined, esperado, `descubridor: ${JSON.stringify(texto)}`);
+  }
+});
+
+test('story-discovery: el comentario de YAML al final de un valor no es parte del valor', () => {
+  // el caso: `status: cancelled   # descartada por el dueño` salía con el comentario en los índices generados
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-coment-'));
+  fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+  writeStoryFile(root, 'specs/a/8-1-con-comentario.md', ['story: "8.1"   # el número', 'status: cancelled   # descartada por el dueño', 'epic: 8 # la épica']);
+  writeStoryFile(root, 'specs/a/8-2-entre-comillas.md', ['story: "8.2"', 'status: "done"  # cerrada', 'epic: 8', 'title: "El arreglo del PR #12"']);
+  writeStoryFile(root, 'specs/a/8-3-numeral-pegado.md', ['story: "8.3"', 'status: done', 'epic: 8', 'title: El lenguaje C# y sus pruebas']);
+  const p = (f) => discovery.probeStoryFile(path.join(root, 'specs/a', f));
+  const a = p('8-1-con-comentario.md');
+  assert.equal(a.status, 'cancelled', 'el estado sin el comentario');
+  assert.equal(a.id, '8.1');
+  assert.equal(a.epic, '8');
+  const b = p('8-2-entre-comillas.md');
+  assert.equal(b.status, 'done', 'entre comillas, con un comentario después');
+  assert.equal(b.title, 'El arreglo del PR #12', 'un « #» adentro de las comillas es texto');
+  assert.equal(p('8-3-numeral-pegado.md').title, 'El lenguaje C# y sus pruebas', 'un # sin espacio antes es texto');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('story-discovery: la relectura por frontmatter largo NO se dispara de más', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-relect-'));
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
