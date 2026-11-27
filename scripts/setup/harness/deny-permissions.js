@@ -9,7 +9,7 @@
 // segunda red: frena lo mismo con el mismo id.
 //
 // Codex no lee `permissions.deny`: lee sus propias reglas, y build/deploy-codex-rules.js le escribe éstas mismas en
-// `<CODEX_HOME>/rules/tycon-harness.rules`. Cursor no tiene nada equivalente: ahí sigue sólo el freno.
+// `<CODEX_HOME>/rules/harness-deny.rules`. Cursor no tiene nada equivalente: ahí sigue sólo el freno.
 //
 // El mismo patrón que read-permissions.js (y usa sus funciones de lista): se suma sólo lo que falta, al final y sin
 // reordenar; una regla igual que ya tenía el dev es suya (no se anota y al desinstalar queda); al desinstalar se saca

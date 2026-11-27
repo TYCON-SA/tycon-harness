@@ -5,7 +5,7 @@
  * Claude Code las tiene en `permissions.deny` de settings.json (scripts/setup/harness/deny-permissions.js): frenan antes
  * de cualquier gancho, y ningún gancho las puede dejar pasar. Codex no lee esa lista; lee sus propias reglas en
  * `<CODEX_HOME>/rules/*.rules` (`prefix_rule(pattern=[…], decision="forbidden")`). Este guion escribe las mismas reglas,
- * desde la misma lista (`RULES` de deny-permissions.js), en un archivo propio: `rules/tycon-harness.rules`.
+ * desde la misma lista (`RULES` de deny-permissions.js), en un archivo propio: `rules/harness-deny.rules`.
  *
  *   - Archivo propio, nunca `default.rules`: ése lo escribe Codex cuando la persona aprueba un comando.
  *   - El primer renglón dice que es del arnés. Un archivo con ese nombre que no lo dice es de la persona: no se pisa, y
@@ -29,8 +29,8 @@ const path = require('path');
 
 const DP = require(path.join(__dirname, '..', 'scripts', 'setup', 'harness', 'deny-permissions.js'));
 
-const FILE = 'tycon-harness.rules';
-const HEAD = '# tycon-harness: ';
+const FILE = 'harness-deny.rules';
+const HEAD = '# harness-deny: ';
 
 /** Las reglas en palabras, en el orden de la lista: `[{ pattern: ['rm', '-rf', '/'], justification }]`. */
 function patterns(j = DP.RULES) {

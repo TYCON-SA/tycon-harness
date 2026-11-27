@@ -28,7 +28,7 @@ function world() {
   dirs.push(home);
   const codexHome = path.join(home, '.codex');
   fs.mkdirSync(codexHome, { recursive: true });
-  return { home, codexHome, file: path.join(codexHome, 'rules', 'tycon-harness.rules') };
+  return { home, codexHome, file: path.join(codexHome, 'rules', 'harness-deny.rules') };
 }
 const env = (w, extra = {}) => {
   const e = {};
@@ -45,7 +45,7 @@ test('A62-1 Reglas_MismaListaQueClaude — cada deny de Claude Code tiene su reg
   assert.deepStrictEqual(pats.map((p) => p.pattern), claude, 'las mismas formas, en el mismo orden');
   for (const p of pats) assert.match(p.justification, /^FS-C[23]: /);
   const text = R().rulesText();
-  assert.match(text.split('\n')[0], /^# tycon-harness: /, 'el archivo dice de quién es en el primer renglón');
+  assert.match(text.split('\n')[0], /^# harness-deny: /, 'el archivo dice de quién es en el primer renglón');
   assert.strictEqual((text.match(/prefix_rule\(/g) || []).length, claude.length);
   assert.strictEqual((text.match(/decision = "forbidden"/g) || []).length, claude.length);
 });
@@ -72,7 +72,7 @@ test('A62-3 Despliegue_ArchivoAjeno_NoSePisa — un archivo con el mismo nombre 
   const r = run(w);
   assert.strictEqual(r.status, 0);
   assert.strictEqual(fs.readFileSync(w.file, 'utf8'), '# mío\n');
-  assert.match(r.stdout, /⚠ tycon\/codex: .*tycon-harness\.rules/);
+  assert.match(r.stdout, /⚠ tycon\/codex: .*harness-deny\.rules/);
 });
 
 test('A62-4 Interruptor_LoApaga — con TYCON_NO_DENY_RULES=1 no se escribe, y el del arnés se saca; uno ajeno, no', () => {
@@ -98,9 +98,9 @@ test('A62-5 Piezas_LoCuentaYLoSaca — el archivo del arnés es una pieza de Cod
   const w = world();
   run(w);
   const ids = () => T.codexPieces({ tree: ROOT, home: w.home, env: env(w) }).map((p) => p.id);
-  assert.ok(ids().includes('rules/tycon-harness.rules'));
+  assert.ok(ids().includes('rules/harness-deny.rules'));
   fs.writeFileSync(w.file, '# mío\n');
-  assert.ok(!ids().includes('rules/tycon-harness.rules'));
+  assert.ok(!ids().includes('rules/harness-deny.rules'));
 });
 
 test('A62-6 DespliegueDeCodex_LoCorreYLoExige — el paso está en el despliegue, y sin el archivo el despliegue se repone', () => {
@@ -132,7 +132,7 @@ test('A62-9 Desinstalar_ArchivoReemplazado_NoSeBorra — si la persona puso el s
   const RM = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'remove.js'));
   const w = world();
   run(w);
-  const pieza = { kind: 'codex', where: w.file, id: 'rules/tycon-harness.rules' };
+  const pieza = { kind: 'codex', where: w.file, id: 'rules/harness-deny.rules' };
   fs.writeFileSync(w.file, '# mío\n');
   const out = RM.removePieces([pieza], { home: w.home, env: env(w), tree: ROOT });
   assert.strictEqual(fs.readFileSync(w.file, 'utf8'), '# mío\n');

@@ -123,7 +123,7 @@ sin forma fija). Este freno sigue frenando las dos de la tabla, con el mismo id:
 Cursor, que no tiene nada parecido.
 
 Codex no lee `permissions.deny`, pero tiene sus propias reglas. Con el lado Codex prendido, el arnés le escribe las mismas,
-de la misma lista, en un archivo suyo: `~/.codex/rules/tycon-harness.rules` (`build/deploy-codex-rules.js`). No toca
+de la misma lista, en un archivo suyo: `~/.codex/rules/harness-deny.rules` (`build/deploy-codex-rules.js`). No toca
 `default.rules`, donde Codex anota lo que la persona aprueba, y no pisa un archivo con ese nombre que no sea del arnés.
 
 El instalador las suma en el perfil completo, sin tocar las reglas que ya tenía cada persona; desinstalar saca sólo las

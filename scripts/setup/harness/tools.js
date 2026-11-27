@@ -287,7 +287,7 @@ function codexPieces({ tree, home = os.homedir(), env = process.env } = {}) {
   for (const rel of ['hooks.json', 'config.toml']) if (isFile(path.join(dir, rel))) add(rel);
   // las reglas que prohíben borrar la raíz o la carpeta personal (build/deploy-codex-rules.js): sólo si el archivo dice que
   // es del arnés; uno con el mismo nombre que no lo dice es de la persona
-  try { if (fs.readFileSync(path.join(dir, 'rules', 'tycon-harness.rules'), 'utf8').startsWith('# tycon-harness: ')) add('rules/tycon-harness.rules'); } catch (_) { /* no está */ }
+  try { if (fs.readFileSync(path.join(dir, 'rules', 'harness-deny.rules'), 'utf8').startsWith('# harness-deny: ')) add('rules/harness-deny.rules'); } catch (_) { /* no está */ }
   const roots = skillRoots({ tree, home });
   let names = [];
   try { names = fs.readdirSync(path.join(dir, 'skills')).sort(); } catch (_) { names = []; }

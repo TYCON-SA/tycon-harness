@@ -477,10 +477,10 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           }
           // las reglas que prohíben borrar la raíz o la carpeta personal (build/deploy-codex-rules.js): se borran sólo si
           // siguen diciendo que son del arnés; la persona pudo poner las suyas en ese lugar después de instalar
-          if (piece.id === 'rules/tycon-harness.rules') {
+          if (piece.id === 'rules/harness-deny.rules') {
             let head = '';
             try { head = fs.readFileSync(piece.where, 'utf8').slice(0, 64); } catch (_) { head = ''; }
-            if (!head.startsWith('# tycon-harness: ')) { keep(piece, `${piece.where} ya no es el archivo del arnés (no empieza con su renglón): no lo toco`); break; }
+            if (!head.startsWith('# harness-deny: ')) { keep(piece, `${piece.where} ya no es el archivo del arnés (no empieza con su renglón): no lo toco`); break; }
             rm(piece, piece.where);
             break;
           }
