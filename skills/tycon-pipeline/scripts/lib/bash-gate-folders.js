@@ -85,7 +85,7 @@ function conCarpetasPorTramo(cmd, carpeta, { raiz = null } = {}) {
  */
 function cuerpoHastaDone(s, desde) {
   // sólo donde va una orden (al principio, o tras `;`, `&`, `|`, un renglón o un paréntesis): `echo done` no cierra nada
-  const re = /(^|[;&|\n(){}][ \t]*)(do|done)(?=$|[\s;&|(){}])/g;
+  const re = /(^|[;&|\n(){}][ \t]*)(do|done)(?=$|[\s;&|(){}<>])/g;
   re.lastIndex = desde;
   let hondo = 1;
   for (let m = re.exec(s); m; m = re.exec(s)) {
@@ -113,27 +113,82 @@ function despuesDelDo(s, desde) {
  * de espacios no tarda).
  */
 function ordenesDeBucles(cmd, { palabras, alcanzadas, citar, ruta = (x) => x }) {
-  const s = String(cmd || '');
+  // la continuación de renglón (`find specs \⏎ -name …`) es un renglón solo
+  const s = String(cmd || '').replace(/\\\r?\n/g, ' ');
   if (!/\bfind\b/.test(s) || !/\bdone\b/.test(s)) return [];
   const out = [];
+  // pasados doscientos bucles no se leen más: el tiempo crece con cada uno, y el reloj del freno frena lo que no llega
+  let leidos = 0;
   const recursivoEn = (cuerpo) => /\brm\b[^;&|\n]*\s-[a-zA-Z]*[rR]|\brm\b[^;&|\n]*--recursive/.test(cuerpo);
   const deFind = (texto, cuerpo) => {
     const w = palabras(texto).filter((x) => x !== '');
     const i = w.findIndex((x) => /(?:^|\/)g?find$/.test(x));
     return i < 0 ? [] : alcanzadas(w.slice(i), recursivoEn(cuerpo));
   };
-  const conCada = (cuerpo, variable, items) => {
-    // sólo `$f` y `${f}`: las comillas de alrededor quedan como estaban (`echo "Borrando $f"; rm "$f"`)
-    const v = new RegExp(`\\$(?:\\{${variable}\\}|${variable}(?!\\w))`, 'g');
+  const conCada = (cuerpo, variables, items) => {
+    // sólo `$f`, `${f}` y `${f…}` (`${f:?}`, `${f%.md}.md`, del lado seguro: la ruta entera): las comillas de alrededor
+    // quedan como estaban (`echo "Borrando $f"; rm "$f"`)
+    const v = new RegExp(`\\$(?:\\{(?:${variables.join('|')})(?:[^}]*)\\}|(?:${variables.join('|')})(?!\\w))`, 'g');
     for (const item of items) {
       const r = ruta(item);
       out.push(cuerpo.replace(v, () => (/^[\w@%+=:,./~-]+$/.test(r) ? r : citar(r).replace(/^'|'$/g, ''))));
     }
   };
-  const finDeTramo = (desde) => { const m = /[;\n]/.exec(s.slice(desde)); return m ? desde + m.index : -1; };
+  // el `$(…)` que empieza en `i` (en el `$`), cerrado contando paréntesis y saltando lo citado: su contenido, o null
+  const sustitucion = (i) => {
+    let hondo = 0;
+    for (let k = i + 1; k < s.length; k++) {
+      const ch = s[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === "'" || ch === '"') { const cierre = s.indexOf(ch, k + 1); if (cierre < 0) return null; k = cierre; continue; }
+      if (ch === '(') hondo++;
+      else if (ch === ')' && --hondo === 0) return { texto: s.slice(i + 2, k), fin: k + 1 };
+    }
+    return null;
+  };
+  // el final del tramo que empieza en `desde`: el primer `;` o renglón fuera de comillas, de `$(…)` y de un `\;`
+  const finDeTramo = (desde) => {
+    for (let k = desde; k < s.length; k++) {
+      const ch = s[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === "'" || ch === '"') { const cierre = s.indexOf(ch, k + 1); if (cierre < 0) return -1; k = cierre; continue; }
+      if (ch === '$' && s[k + 1] === '(') { const x = sustitucion(k); if (!x) return -1; k = x.fin - 1; continue; }
+      if (ch === '`') { const cierre = s.indexOf('`', k + 1); if (cierre < 0) return -1; k = cierre; continue; }
+      if (ch === ';' || ch === '\n') return k;
+    }
+    return -1;
+  };
+  // el primer programa de una tubería: hasta el primer `|` fuera de comillas (`find … | awk '{ a | b }' | while`)
+  const primerPrograma = (t) => {
+    for (let k = 0; k < t.length; k++) {
+      const ch = t[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === "'" || ch === '"') { const cierre = t.indexOf(ch, k + 1); if (cierre < 0) break; k = cierre; continue; }
+      if (ch === '|') return t.slice(0, k);
+    }
+    return t;
+  };
+  // el comienzo del tramo que termina en `hasta` (para atrás, como mucho cuatro mil letras): después del último `;`,
+  // renglón, `&&` o `||` que no está entre comillas ni es el `\;` de un `-exec`
+  const inicioDeTramo = (hasta) => {
+    const desde = Math.max(0, hasta - 4000);
+    let inicio = desde;
+    let previo = '';
+    for (let k = desde; k < hasta; k++) {
+      const ch = s[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === "'" || ch === '"') { const cierre = s.indexOf(ch, k + 1); if (cierre < 0 || cierre >= hasta) break; k = cierre; previo = ch; continue; }
+      if (!/\s/.test(ch) || ch === '\n') { if (ch !== '\n') previo = ch; }
+      // un renglón que sigue a un `|` (o a `&&`, `||`) sigue la misma tubería
+      if (ch === ';' || (ch === '\n' && previo !== '|' && previo !== '&')) inicio = k + 1;
+      else if ((ch === '&' || ch === '|') && s[k + 1] === ch) { inicio = k + 2; k++; }
+    }
+    return inicio;
+  };
 
   // for f in <lista>; do …; done
-  for (const m of s.matchAll(/(?:^|[\s;&|(){}])for[ \t]+([A-Za-z_]\w*)[ \t]+in(?=[ \t])/g)) {
+  for (const m of s.matchAll(/(?:^|[\s;&|(){}'"`])for[ \t]+([A-Za-z_]\w*)[ \t]+in(?=[ \t])/g)) {
+    if (++leidos > 200) break;
     const fl = finDeTramo(m.index + m[0].length);
     if (fl < 0) continue;
     const lista = s.slice(m.index + m[0].length, fl);
@@ -141,37 +196,49 @@ function ordenesDeBucles(cmd, { palabras, alcanzadas, citar, ruta = (x) => x }) 
     if (d < 0) continue;
     const c = cuerpoHastaDone(s, d);
     if (!c) continue;
-    const items = [...lista.matchAll(/\$\(([^)]*)\)|`([^`]*)`/g)].flatMap((x) => deFind(x[1] || x[2], c.cuerpo));
-    if (items.length) conCada(c.cuerpo, m[1], items);
+    // cada `$(…)` de la lista, cerrado contando paréntesis (`$(find … | awk '{ print $0; }')`), y cada `` `…` ``
+    const textos = [...lista.matchAll(/`([^`]*)`/g)].map((x) => x[1]);
+    for (let k = lista.indexOf('$('); k >= 0; k = lista.indexOf('$(', k + 2)) {
+      const x = sustitucion(m.index + m[0].length + k);
+      if (x) textos.push(x.texto);
+    }
+    const items = textos.flatMap((t) => deFind(t, c.cuerpo));
+    if (items.length) conCada(c.cuerpo, [m[1]], items);
   }
 
   // [productor |] while [IFS=…] read [opciones] [variables]; do …; done [< <(find …) | <<< "$(find …)"]
-  for (const m of s.matchAll(/(?:^|[\s;&|(){}])while[ \t]+(?:IFS=\S*[ \t]+)?read\b/g)) {
+  for (const m of s.matchAll(/(?:^|[\s;&|(){}'"`])while[ \t]+(?:IFS=\S*[ \t]+)?read\b/g)) {
+    if (++leidos > 200) break;
     const fr = finDeTramo(m.index + m[0].length);
     if (fr < 0) continue;
-    // la variable: la primera palabra que no es una opción ni su valor; sin ninguna, REPLY
+    // las variables: las palabras que no son opciones ni su valor (`read size f`: las dos); sin ninguna, REPLY
     const resto = s.slice(m.index + m[0].length, fr).trim().split(/\s+/).filter(Boolean);
-    let variable = 'REPLY';
+    const variables = [];
     for (let k = 0; k < resto.length; k++) {
       if (/^-[a-zA-Z]*[dpntu]$/.test(resto[k])) { k++; continue; }
       if (resto[k].startsWith('-')) continue;
-      if (/^[A-Za-z_]\w*$/.test(resto[k])) { variable = resto[k]; break; }
+      if (/^[A-Za-z_]\w*$/.test(resto[k])) variables.push(resto[k]);
     }
+    if (!variables.length) variables.push('REPLY');
     const d = despuesDelDo(s, fr);
     if (d < 0) continue;
     const c = cuerpoHastaDone(s, d);
     if (!c) continue;
     // el productor: el primer programa de la tubería que llega al `while` (con filtros en el medio), o lo que entra por
     // `< <(…)` o `<<< "$(…)"` después del `done`
-    const antes = s.slice(0, m.index + 1);
+    const inicio = inicioDeTramo(m.index + 1);
+    const antes = s.slice(inicio, m.index + 1);
     const tuberia = antes.replace(/[|&\s({]+$/, '');
-    const inicio = Math.max(tuberia.lastIndexOf(';'), tuberia.lastIndexOf('\n'), tuberia.lastIndexOf('&&'), tuberia.lastIndexOf('||'));
-    const productores = antes.trimEnd().endsWith('|') || /\|\s*[({]?\s*$/.test(antes) ? [tuberia.slice(inicio + 1).split('|')[0]] : [];
+    const productores = /\|&?\s*[({]?\s*$/.test(antes) ? [primerPrograma(tuberia)] : [];
+    // lo que entra después del `done`, con otras redirecciones antes (`done 2>/dev/null < <(find …)`, `done 3< <(…)`)
     const despues = s.slice(c.fin, c.fin + 4000);
-    const entrada = /^\s*(?:<\s*<\(|<<<\s*"?\$\()([^)]*)\)/.exec(despues);
-    if (entrada) productores.push(entrada[1]);
+    const entrada = /^(?:\s*\d*>&?\S+)*\s*(?:\d*<\s*<\(|<<<\s*"?\$\()/.exec(despues);
+    if (entrada) {
+      const x = sustitucion(c.fin + entrada[0].length - 2);
+      if (x) productores.push(x.texto);
+    }
     const items = productores.flatMap((p) => deFind(p, c.cuerpo));
-    if (items.length) conCada(c.cuerpo, variable, items);
+    if (items.length) conCada(c.cuerpo, variables, items);
   }
   return out;
 }

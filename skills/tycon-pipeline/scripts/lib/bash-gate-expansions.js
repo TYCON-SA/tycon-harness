@@ -1203,20 +1203,30 @@ function alcanzadasPorFind(words, absoluta, { recursivo = false } = {}) {
   // hasta cuatro niveles (o los de `-maxdepth`) y dos mil carpetas: una limpieza grande no recorre el disco entero
   const md = Number(words[words.indexOf('-maxdepth') + 1]);
   const niveles = words.includes('-maxdepth') && Number.isFinite(md) ? Math.min(4, md - 1) : 4;
-  let visitadas = 0;
+  // Se recorre por niveles; al pasar el tope no se sabe qué carpeta cumple, y se miran todas las historias de la carpeta
+  // de partida (lo mismo que sin filtro), que dejar de mirar dejaría pasar
   const deCarpetas = (abs) => {
     const out = [];
-    const recorrer = (d, nivel) => {
-      if (nivel > niveles || ++visitadas > 2000) return;
-      let hijos = [];
-      try { hijos = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-      for (const h of hijos) {
-        if (!h.isDirectory() || h.name === '.git' || h.name === 'node_modules') continue;
-        const sub = path.join(d, h.name);
-        if (cumple(h.name)) out.push(...mdAdentro(sub, () => true)); else recorrer(sub, nivel + 1);
+    let visitadas = 0;
+    let cumplidas = 0;
+    if (cumple(path.basename(abs))) return mdAdentro(abs, () => true);
+    let nivel = [abs];
+    for (let n = 0; n <= niveles && nivel.length; n++) {
+      const siguiente = [];
+      for (const d of nivel) {
+        if (++visitadas > 2000) return mdAdentro(abs, () => true);
+        let hijos = [];
+        try { hijos = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+        for (const h of hijos) {
+          if (!h.isDirectory() || h.name === '.git' || h.name === 'node_modules') continue;
+          const sub = path.join(d, h.name);
+          if (!cumple(h.name)) { siguiente.push(sub); continue; }
+          if (++cumplidas > 200) return mdAdentro(abs, () => true);
+          out.push(...mdAdentro(sub, () => true));
+        }
       }
-    };
-    recorrer(abs, 0);
+      nivel = siguiente;
+    }
     return out;
   };
   const soloArchivos = words[words.indexOf('-type') + 1] === 'f' && words.includes('-type');

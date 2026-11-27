@@ -888,7 +888,7 @@ test('T43 Bucles_FormasQueSeEscapaban @A50 — comillas, done de adentro, do en 
 
 // T44 Bucles_SinTardarConBlancos @A50
 // 🔴 Falla con: las expresiones del bucle que se comían los mismos blancos una y otra vez: un `for … in` con miles de
-// espacios tardaba más que el tope del freno (que deja pasar).
+// espacios llegaba al tope de tiempo del freno, que frena el comando entero aunque no toque historias.
 test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece más que lineal', () => {
   const { ordenesDeBucles } = require('../lib/bash-gate-folders.js');
   const op = { palabras: (s) => s.split(/\s+/), alcanzadas: () => [], citar: (x) => x };
@@ -901,4 +901,44 @@ test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece
   const chico = Math.max(medir(4000), 1);
   const grande = medir(32000);
   assert.ok(grande < chico * 40, `8 veces más texto tardó ${grande.toFixed(1)} ms contra ${chico.toFixed(1)} ms`);
+  // con miles de bucles sin cerrar (o bien cerrados), el tope de bucles leídos lo deja en menos de un segundo
+  for (const trozo of ['for f in a; do x; ', 'find x | while read f; do y; done; ']) {
+    const t = process.hrtime.bigint();
+    ordenesDeBucles(`${trozo.repeat(8000)} echo done`, op);
+    const ms = Number(process.hrtime.bigint() - t) / 1e6;
+    assert.ok(ms < 1000, `8000 veces ${JSON.stringify(trozo)} tardó ${ms.toFixed(0)} ms`);
+  }
+});
+
+// T45 Bucles_SegundaVuelta @A50
+// 🔴 Falla con (segunda vuelta de Fable): el bucle pegado a una comilla (`bash -c 'for …'`), un `\;` o un `;` entre comillas
+// en la tubería o en la lista del `for`, el `find` partido en dos renglones, `${f:?}`, la segunda variable del `read`,
+// `done<` o una redirección antes de `< <(find …)`.
+test('T45 Bucles_SegundaVuelta @A50 — comillas pegadas, \\; y ; citados, continuación de renglón, ${f…}, read a b, done<', () => {
+  const c = corral();
+  for (const cmd of [
+    "bash -c 'for f in $(find specs -name \"*.md\"); do rm $f; done'",
+    "find specs -name '*.md' -exec grep -l status {} \\; | while read f; do rm \"$f\"; done",
+    "find specs -name '*.md' | awk '{ print $0; }' | while read f; do rm \"$f\"; done",
+    "for f in $(find specs -name '*.md' | awk '{ print $0; }'); do rm $f; done",
+    "find specs \\\n  -name '*.md' | while read f; do rm \"$f\"; done",
+    "find specs -name '*.md' |\n  while read f; do rm \"$f\"; done",
+    "for f in $(find specs -name '*.md'); do rm \"${f:?}\"; done",
+    "find specs -name '*.md' | nl | while read n f; do rm \"$f\"; done",
+    "while read f; do rm \"$f\"; done< <(find specs -name '*.md'); echo done",
+    "while read f; do rm \"$f\"; done 2>/dev/null < <(find specs -name '*.md')",
+  ]) frena(c, cmd);
+});
+
+// T46 CarpetaQueCumple_ConMuchasCarpetas @A50
+// 🔴 Falla con: el tope de carpetas del recorrido que cortaba en silencio: con más de dos mil carpetas antes, una `specs` a
+// dos niveles no se miraba y `find . -name specs -exec rm -rf {} +` pasaba.
+test('T46 CarpetaQueCumple_ConMuchasCarpetas @A50 — pasado el tope de carpetas se miran todas las historias', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'zzz'));
+  fs.renameSync(path.join(c.dir, 'specs'), path.join(c.dir, 'zzz', 'specs'));
+  for (let i = 0; i < 2500; i++) fs.mkdirSync(path.join(c.dir, 'aaa', `d${i}`), { recursive: true });
+  frena(c, 'find . -name specs -exec rm -rf {} +');
+  frena(c, 'for d in $(find . -type d -name specs); do rm -rf "$d"; done');
+  pasa(c, 'find aaa -name specs -exec rm -rf {} +');
 });
