@@ -572,6 +572,28 @@ test('T6 · StartupLine_NamesStateInUse: en una máquina mudada la línea pasa a
   assert.ok(w.includes('/.tycon/state/harness/bootstrap.js') && !w.includes('$'), w);
   // las dos son la línea del arnés (no una forma desconocida)
   assert.ok(mod().isNew(vieja) && mod().isNew(nueva) && mod().isNew(w));
+  // una variante de la vieja (`${HOME}`, la ruta entera, algo al final) también pasa: sólo cambia el tramo de la carpeta
+  for (const [name, antes, despues] of [
+    ['b3-llaves', vieja.split('$HOME').join('${HOME}'), nueva.split('$HOME').join('${HOME}')],
+    ['b3-cola', `${vieja}; true`, `${nueva}; true`],
+  ]) {
+    const v = casa(name, antes);
+    r = mod().migrate(v.file, { home: v.home, platform: 'darwin', nodeOk: true });
+    assert.ok(r.changed, `${name}: ${r.reason}`);
+    assert.strictEqual(sessionStart(v.file)[1].command, despues, name);
+  }
+  const abs = casa('b3-absoluta', 'x');
+  const conRuta = vieja.split('$HOME').join(abs.home);
+  fs.writeFileSync(abs.file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: conRuta }] }] } }));
+  r = mod().migrate(abs.file, { home: abs.home, platform: 'darwin', nodeOk: true });
+  assert.strictEqual(sessionStart(abs.file)[0].command, nueva.split('$HOME').join(abs.home), r.reason);
+  // una línea propia de la persona con una carpeta `state` no es la del arnés: las dos quedan
+  const propia = 'node "$HOME/miapp/state/harness/bootstrap.js"';
+  assert.ok(!mod().isNew(propia));
+  const p = casa('b3-propia', nueva);
+  fs.writeFileSync(p.file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: propia }] }, { hooks: [{ type: 'command', command: nueva, async: true }] }] } }));
+  r = mod().migrate(p.file, { home: p.home, platform: 'darwin', nodeOk: true });
+  assert.deepStrictEqual(sessionStart(p.file).map((h) => h.command), [propia, nueva], r.reason);
   // doctor lo dice una vez, como aviso, en una máquina mudada con la línea vieja; con la nueva o sin mudar, nada
   const { spawnSync } = require('child_process');
   const HARNESS = path.join(__dirname, '..', 'setup', 'harness.js');

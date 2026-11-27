@@ -204,6 +204,11 @@ if suite_part 1 && runs T28; then
   [ "$RC" = 0 ] && [ -z "$F" ] && ok "doctor en verde" || bad "doctor: rc $RC: ${F:-$OUT}"
   OUT="$(harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "d['sources'][0]['kind']")" = release ] && ok "un arranque más: sigue release y sale 0" || bad "el arranque tras la mudanza: rc $RC: $OUT"
+  # la línea de arranque de una máquina mudada llama a la copia fija por la carpeta del estado en uso: la de siempre se
+  # retira, y la versión bajada arranca por su propio camino (release.js), que también la pasa
+  if hook_cmds | grep '\.tycon/state/harness/bootstrap\.js' >/dev/null && ! hook_cmds | grep '\.tycon-pipeline/harness/bootstrap\.js' >/dev/null; then
+    ok "la línea de arranque nombra ~/.tycon/state/harness/ y no la carpeta de siempre"
+  else bad "la línea de arranque tras la mudanza y un arranque: $(hook_cmds | grep bootstrap | tr '\n' ' ')"; fi
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
   # ── (2) camino feliz entero, sin cortes: el estado se escribe al final y la salida cuenta ──

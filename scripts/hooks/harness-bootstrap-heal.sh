@@ -85,7 +85,7 @@ ss = hooks.setdefault("SessionStart", [])
 for h in ss:
     for c in h.get("hooks", []):
         cmd = c.get("command", "").replace("\\", "/")
-        if "install-tycon-hooks" in cmd or ".tycon-pipeline/harness/bootstrap.js" in cmd or "/state/harness/bootstrap.js" in cmd:
+        if "install-tycon-hooks" in cmd or ".tycon-pipeline/harness/bootstrap.js" in cmd or "/.tycon/state/harness/bootstrap.js" in cmd:
             sys.exit(0)
 
 # Buscar la línea de arranque: la que hace los git pull del arnés.
