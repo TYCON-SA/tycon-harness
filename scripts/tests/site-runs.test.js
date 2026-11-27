@@ -2413,3 +2413,59 @@ test('Cambios_ADemandaDeAUno — dos textos a demanda distintos esperan su turno
   assert.strictEqual(pedidos, 2, 'se bajaron las dos');
   assert.strictEqual(maximo, 1, 'de a una');
 });
+
+// rojo si: la fila de los textos a demanda no tiene largo (quien tiene sesión encola N bajadas en serie y los demás
+// esperan detrás de todas), o un pedido que se fue mientras esperaba igual se baja y se arma (A46)
+test('T-A46 Cambios_ADemanda_LaFilaTieneTope_PorPersonaYEntera_YSeSueltaSiElPedidoSeVa', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const ids = servida.corridas.map((c) => c.id);
+  assert.ok(ids.length >= 4, `hacen falta cuatro ejecuciones: ${ids.length}`);
+  const g = leerGuardada(datos);
+  g.aDemanda = Object.fromEntries(ids.map((id) => [id, path.join(espejo, 'maq-a', 'a1.json')]));
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  const bajadas = [];
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.bajarCorrida = async ({ base }) => { bajadas.push(base); await new Promise((r) => setTimeout(r, 200)); return { codigo: 1, res: { estado: 'sin_partes' } }; };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true, esperanADemanda: 2 } }, async ({ h, entrar, vista }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    // por persona: dos a la vez (una bajando y una esperando); la tercera vuelve «ocupado» enseguida, por la API con 503
+    const [r1, r2, r3] = await Promise.all(ids.slice(0, 3).map((id) => h.pedir(`/api/corridas/${id}/textos`, { cookie: lead })));
+    assert.deepStrictEqual([r1.status, r2.status, r3.status].sort(), [200, 200, 503], `estados: ${r1.status} ${r2.status} ${r3.status}`);
+    const ocupado = [r1, r2, r3].find((r) => r.status === 503);
+    assert.ok(ocupado.headers['retry-after'], 'dice cuándo volver');
+    // y «ocupado» no queda pegado a esa ejecución: pedida de nuevo, ya con lugar, se baja
+    const otraVez = await h.pedir(ocupado === r1 ? `/api/corridas/${ids[0]}/textos` : ocupado === r2 ? `/api/corridas/${ids[1]}/textos` : `/api/corridas/${ids[2]}/textos`, { cookie: lead });
+    assert.strictEqual(otraVez.status, 200, `la segunda vez: ${otraVez.status} ${otraVez.texto}`);
+    // la fila entera: con dos esperando, otra persona también vuelve «ocupado»
+    bajadas.length = 0;
+    const enFila = [vista.textos(ids[0], { quien: 'uno@x' }), vista.textos(ids[1], { quien: 'dos@x' }), vista.textos(ids[2], { quien: 'tres@x' })];
+    const cuarta = await vista.textos(ids[3], { quien: 'cuatro@x' });
+    assert.strictEqual(cuarta && cuarta.ocupado, true, `la cuarta: ${JSON.stringify(cuarta)}`);
+    await Promise.all(enFila);
+    // el que se fue mientras esperaba suelta su lugar y no se baja
+    bajadas.length = 0;
+    const ac = new AbortController();
+    const primero = vista.textos(ids[0], { quien: 'uno@x' });
+    const segundo = vista.textos(ids[1], { quien: 'dos@x', senal: ac.signal });
+    ac.abort();
+    const s = await segundo;
+    assert.strictEqual(s && s.cancelado, true, `el que se fue: ${JSON.stringify(s)}`);
+    await primero;
+    assert.deepStrictEqual(bajadas.length, 1, `se bajó sólo el que siguió esperando: ${bajadas.join(', ')}`);
+    // por la API: el cliente que corta la conexión mientras espera tampoco deja su bajada en la fila
+    bajadas.length = 0;
+    const ocupa = h.pedir(`/api/corridas/${ids[0]}/textos`, { cookie: lead });
+    await new Promise((r) => setTimeout(r, 30));
+    const u = new URL(`${h.base}/api/corridas/${ids[1]}/textos`);
+    const cortado = require('http').get({ hostname: u.hostname, port: u.port, path: u.pathname, headers: { cookie: lead, accept: 'application/json' } });
+    cortado.on('error', () => {});
+    await new Promise((r) => setTimeout(r, 30));
+    cortado.destroy();
+    await ocupa;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(bajadas.length, 1, `el que cortó no se bajó: ${bajadas.length} bajadas`);
+  });
+});

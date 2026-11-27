@@ -45,6 +45,11 @@ const FRASE_FALLA = 'no se pudo armar la vista de ejecuciones';
 const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
 // cuántos textos a demanda se bajan y arman a la vez: uno (cada armado abre un hilo de unos 555 MB de pico; A40)
 const SIMULTANEOS_A_DEMANDA = 1;
+// y la fila detrás (A46): cuántos esperan como mucho, y cuántos tiene a la vez una misma persona (bajando o esperando).
+// Sin tope, quien tiene sesión encolaba N bajadas en serie y los demás esperaban detrás de todas. El que no entra recibe
+// «ocupado» enseguida y vuelve a pedir más tarde
+const ESPERAN_A_DEMANDA = 8;
+const POR_PERSONA_A_DEMANDA = 2;
 const FRASE_SIN_BUZON = 'sin depósito configurado: no medido';
 // la vista guardada en el disco del sitio, y el número de su forma: cambia cuando cambia lo que se guarda
 const ARCHIVO_VISTA = 'runs-view.json';
@@ -197,7 +202,7 @@ if (!isMainThread && workerData && workerData.__leerVista) {
  * armado para probar que el sitio contesta mientras tanto.
  */
 function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now,
-  topeCacheBytes = TOPE_CACHE_BYTES, simultaneos = SIMULTANEOS_A_DEMANDA, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
+  topeCacheBytes = TOPE_CACHE_BYTES, simultaneos = SIMULTANEOS_A_DEMANDA, esperanADemanda = ESPERAN_A_DEMANDA, porPersonaADemanda = POR_PERSONA_A_DEMANDA, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
   huellaDe = (dir, extra) => require('../summaries.js').huellaEnWorker({ dir, extra }), leerVista = leerVistaEnWorker }) {
   // los textos (los parches de cada corrida) van al disco del contenedor, nunca a SITE_DATA_DIR: son una copia que se
   // rearma, y el disco montado es chico. Los de antes (en el disco montado) se borran al arrancar
@@ -209,13 +214,28 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   // los textos bajados a demanda, con su tope: al pasarlo se borran los que se abrieron hace más tiempo
   const dirCache = path.join(base, 'a-demanda');
   const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false, aDemanda: {}, enCurso: new Map(),
-    guardada: null, leyendo: null, escribiendo: null, armandoTextos: 0, esperanTextos: [] };
+    guardada: null, leyendo: null, escribiendo: null, armandoTextos: 0, esperanTextos: [], porPersona: new Map() };
   // el lugar para bajar y armar los textos de una corrida: cada armado abre su hilo (unos 555 MB de pico con una
   // conversación grande), y dos a la vez pasaban el GiB del contenedor. Los demás esperan su turno (A40)
-  const tomarLugar = () => new Promise((listo) => {
-    if (st.armandoTextos < Math.max(1, simultaneos)) { st.armandoTextos += 1; listo(); } else st.esperanTextos.push(listo);
+  // Cada bajada lleva su turno: `{ vivos, listo }`. `listo(true)` le da el lugar; `listo(false)`, que nadie lo espera más
+  const hayLugar = () => st.armandoTextos < Math.max(1, simultaneos);
+  const tomarLugar = (turno) => new Promise((listo) => {
+    if (hayLugar()) { st.armandoTextos += 1; listo(true); } else { turno.listo = listo; st.esperanTextos.push(turno); }
   });
-  const soltarLugar = () => { const sig = st.esperanTextos.shift(); if (sig) sig(); else st.armandoTextos -= 1; };
+  const soltarLugar = () => { const sig = st.esperanTextos.shift(); if (sig) sig.listo(true); else st.armandoTextos -= 1; };
+  // un pedido que se va (el cliente cortó) deja de esperar; si era el último de su bajada y ésta todavía no tenía lugar,
+  // sale de la fila y no se baja (A46). Un pedido sin señal (las pruebas, un llamado interno) espera hasta el final
+  const interesar = (turno, senal) => {
+    turno.vivos += 1;
+    if (!senal) return;
+    const irse = () => {
+      turno.vivos -= 1;
+      if (turno.vivos > 0) return;
+      const i = st.esperanTextos.indexOf(turno);
+      if (i >= 0) { st.esperanTextos.splice(i, 1); turno.listo(false); }
+    };
+    if (senal.aborted) irse(); else senal.addEventListener('abort', irse, { once: true });
+  };
   // la vista guardada vive en el disco del sitio: sin él, no se guarda ni se lee
   const archivoVista = cfg.dataDir ? path.join(cfg.dataDir, ARCHIVO_VISTA) : null;
 
@@ -278,8 +298,10 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
    * buzón a una carpeta temporal, los arma en un hilo aparte, los guarda en el caché y borra lo bajado. Dos pedidos de
    * la misma corrida a la vez comparten la bajada. null = no se pudieron bajar o armar (el registro dice por qué).
    */
-  function aDemanda(id, volcado) {
-    if (st.enCurso.has(id)) return st.enCurso.get(id);
+  function aDemanda(id, volcado, { quien = null, senal = null } = {}) {
+    if (st.enCurso.has(id)) { const e = st.enCurso.get(id); interesar(e.turno, senal); return e.p; }
+    const turno = { vivos: 0, listo: null };
+    interesar(turno, senal);
     const p = (async () => {
       const cache = path.join(dirCache, `${id}.json`);
       try {
@@ -290,9 +312,17 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
       if (typeof fuentes.bajarCorrida !== 'function') { log('ejecuciones: las fuentes no saben bajar una ejecución del buzón'); return null; }
       const maquina = path.basename(path.dirname(volcado));
       const nombre = path.basename(volcado).replace(/\.json$/, '');
-      await tomarLugar();
+      if (!turno.vivos) return { cancelado: true };
+      // la fila tiene tope: entera y por persona. El que no entra no espera: «ocupado», y vuelve a pedir
+      const persona = quien || '';
+      if ((st.porPersona.get(persona) || 0) >= Math.max(1, porPersonaADemanda)) return { ocupado: true };
+      if (!hayLugar() && st.esperanTextos.length >= Math.max(0, esperanADemanda)) return { ocupado: true };
+      st.porPersona.set(persona, (st.porPersona.get(persona) || 0) + 1);
+      let conLugar = false;
       let tmp;
       try {
+        conLugar = await tomarLugar(turno);
+        if (!conLugar) return { cancelado: true };
         tmp = fs.mkdtempSync(path.join(base, 'bajando-'));
         fs.mkdirSync(path.join(tmp, maquina), { recursive: true });
         const copia = path.join(tmp, maquina, `${nombre}.json`);
@@ -313,11 +343,15 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
         return null;
       } finally {
         if (tmp) fs.rm(tmp, { recursive: true, force: true }, (e) => { if (e) log(`ejecuciones: no se pudo borrar lo bajado para un detalle (${codigoDe(e)})`); });
-        soltarLugar();
-        st.enCurso.delete(id);
+        if (conLugar) soltarLugar();
+        const n = (st.porPersona.get(persona) || 1) - 1;
+        if (n > 0) st.porPersona.set(persona, n); else st.porPersona.delete(persona);
       }
     })();
-    st.enCurso.set(id, p);
+    // sale de «en curso» al terminar por cualquier camino, también los que vuelven antes de bajar (del caché, «ocupado»):
+    // esos terminan antes de anotarse, y quedaban anotados para siempre devolviendo la misma respuesta
+    st.enCurso.set(id, { p, turno });
+    p.finally(() => { const e = st.enCurso.get(id); if (e && e.turno === turno) st.enCurso.delete(id); });
     return p;
   }
 
@@ -465,17 +499,19 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     dirCache: () => dirCache,
     /**
      * Los textos de una corrida: `{ texto, textoGit }` (null = la corrida no los tiene), `{ pendiente: true }` si se sirve
-     * la vista guardada (sus textos vuelven con el armado nuevo), o null si no se pudieron leer.
+     * la vista guardada (sus textos vuelven con el armado nuevo), o null si no se pudieron leer. A demanda, además,
+     * `{ ocupado: true }` si la fila está llena y `{ cancelado: true }` si la `senal` cortó antes de tener lugar.
+     * `quien`: la persona que pide (el tope por persona); `senal`: un AbortSignal que dice que el pedido se fue.
      */
-    async textos(id) {
+    async textos(id, demanda = {}) {
       if (!/^[0-9a-f]{16}$/.test(id)) return { texto: null, textoGit: null };
       if (!st.textosDir) {
-        if (st.aDemanda[id]) return aDemanda(id, st.aDemanda[id]);
+        if (st.aDemanda[id]) return aDemanda(id, st.aDemanda[id], demanda);
         return st.guardada ? { pendiente: true } : { texto: null, textoGit: null };
       }
       let crudo;
       try { crudo = fs.readFileSync(path.join(st.textosDir, `${id}.json`), 'utf8'); } catch (e) {
-        if (e && e.code === 'ENOENT') return st.aDemanda[id] ? aDemanda(id, st.aDemanda[id]) : { texto: null, textoGit: null };   // sin texto: el armado no escribió archivo
+        if (e && e.code === 'ENOENT') return st.aDemanda[id] ? aDemanda(id, st.aDemanda[id], demanda) : { texto: null, textoGit: null };   // sin texto: el armado no escribió archivo
         log(`ejecuciones: los textos de una ejecución no se pudieron leer del disco del sitio (${codigoDe(e)})`);
         return null;
       }
@@ -488,13 +524,13 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
 }
 
 /** Las rutas de la pestaña, para `rutasExtra` de crearSitio. */
-function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now, topeCacheBytes = null } = {}) {
+function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now, topeCacheBytes = null, esperanADemanda = null } = {}) {
   const runs = require(RUNS);
   const access = require('../access.js');
   const views = require('../views.js');
   const { t: tx } = require('../texts.js');
   const idiomaDe = (ctx) => views.idiomaDe(ctx);
-  const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}) });
+  const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}), ...(Number.isInteger(esperanADemanda) ? { esperanADemanda } : {}) });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
   // lo que arma el sitio alrededor de la vista sale del idioma del pedido; el cuerpo lo arma la vista de la noche, que
@@ -660,7 +696,15 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (r.falla) return r.falla;
         const c = corrida(r.vis, ctx.params.id);
         if (!c) return NO_EXISTE;
-        const t = await vista.textos(c.id);
+        // el pedido que se corta (el cliente cerró la conexión) deja de esperar su lugar en la fila (A46)
+        const corte = new AbortController();
+        const socket = ctx.req && ctx.req.socket;
+        const alCerrar = () => corte.abort();
+        if (socket) { if (socket.destroyed) corte.abort(); else socket.once('close', alCerrar); }
+        let t;
+        try { t = await vista.textos(c.id, { quien: ctx.quien.email || ctx.quien.rol, senal: corte.signal }); }
+        finally { if (socket) socket.off('close', alCerrar); }
+        if (t && (t.ocupado || t.cancelado)) return texto(503, tx(idiomaDe(ctx), 'corridas.textosOcupado'), { 'Retry-After': '30' });
         // la guardada no trae los textos: vuelven con el armado nuevo (nunca «la ejecución no tiene cambios»)
         // con el armado de este arranque fallado no hay nada por esperar, aunque la bajada siga a medias
         if (t && t.pendiente) {
