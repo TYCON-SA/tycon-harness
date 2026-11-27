@@ -44,7 +44,7 @@ ok(){ echo "✅ prod-azure-admin: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ prod-azure-admin: $1"; fallos=$((fallos+1)); }
 
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-azure-admin: esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
+  echo "⏭ prod-azure-admin: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
   exit 0
 fi
 
