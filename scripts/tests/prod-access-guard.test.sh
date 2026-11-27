@@ -78,9 +78,10 @@ pasa(){ local etiqueta="$1" cmd="$2"; shift 2
 }
 
 # Con el freno INSTALADO las costuras de prueba no existen (a propósito), así que estos casos no se
-# pueden fabricar ahí. La suite no corre, y lo dice.
+# pueden fabricar ahí. La suite no corre, y lo dice con la marca de los corredores de suites («⏭ <suite>: NO MEDIDO —
+# <motivo>», exit 0): sin la marca, un exit 0 cuenta como verde.
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-guard: esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
+  echo "⏭ prod-guard: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
   exit 0
 fi
 if [ ! -f "$HOOK" ] || [ ! -f "$INDICE" ]; then
@@ -322,9 +323,12 @@ pasa  "T34c · el mismo comando sin nada de bases pasa" 'bash -c "$CMD"'
 # adentro del try (la misma receta que el caso del banco `falla-real-del-freno-con-base-frena-y-anota`).
 freno_roto(){ # deja en $TMP/roto una copia del freno sin sus bibliotecas, e imprime la ruta del hook
   local r="$TMP/roto"; rm -rf "$r"
-  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production"
+  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production" "$r/scripts/setup/harness"
   cp "$HOOK" "$r/scripts/hooks/"
   cp "$AQUI/scripts/lib/repos-root.js" "$r/scripts/lib/"
+  # tycon-home.js viaja siempre con el freno (en /opt lo deja el instalador al lado): con él, la falla se anota donde la
+  # lee el aviso de arranque
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$r/scripts/setup/harness/"
   cp "$INDICE" "$r/scripts/production/"
   echo "$r/scripts/hooks/prod-access-guard.js"
 }

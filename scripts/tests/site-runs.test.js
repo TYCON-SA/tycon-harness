@@ -1638,6 +1638,79 @@ test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversa
   }
 });
 
+test('Cambios_DescompresionConTope — lo que baja del buzón se abre con su tope, el renglón gigante no se arma, y lo que pasa el tope se resume y se borra', () => {
+  // 🔴 rojo: el sitio descomprimía de una vez lo que bajó del buzón. Un .hilo.jsonl.gz de 299 KB subido con la llave
+  //    de sólo crear (el tamaño y el MD5 del listado casan) se abría a 300 MB en memoria, y uno más grande tumbaba el
+  //    contenedor (1 GiB). El tope de la bajada mira los bytes comprimidos, no los descomprimidos.
+  const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  const bajada = require(path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'));
+  const MB = 1024 * 1024;
+  // los valores: el del sitio deja el doble que junta gunzip lejos de 1 GiB; el de afuera lee la conversación real de 337 MB
+  assert.ok(ch.TOPE_HILO_SITIO <= 128 * MB, `sitio: ${ch.TOPE_HILO_SITIO}`);
+  assert.ok(ch.TOPE_HILO_DESCOMPRIMIDO >= 400 * MB && ch.TOPE_HILO_DESCOMPRIMIDO <= 512 * MB, `afuera: ${ch.TOPE_HILO_DESCOMPRIMIDO}`);
+  assert.ok(ch.TOPE_JSON_DESCOMPRIMIDO <= 64 * MB && ch.TOPE_RENGLON <= 32 * MB);
+  // el tope con que producción abre cada archivo: se espía gunzip, sin armar archivos de cientos de MB
+  const original = zlib.gunzipSync;
+  const pedidos = [];
+  zlib.gunzipSync = (buf, o) => { pedidos.push({ tope: o && o.maxOutputLength }); return original(buf, o); };
+  try {
+    const dir = tmp('cambios-bomba-');
+    const espejo = path.join(dir, 'espejo'); const maq = path.join(espejo, 'maq-a');
+    fs.mkdirSync(maq, { recursive: true });
+    const v = path.join(maq, 'a.json');
+    fs.writeFileSync(v, JSON.stringify({ marker: { startedAt: '2026-11-20T10:10:00Z' } }));
+    const hiloOk = zlib.gzipSync(Buffer.from('{"x":1}\n'));
+    const tope = (f) => { pedidos.length = 0; f(); return pedidos.map((p) => p.tope); };
+    fs.writeFileSync(ch.rutaDeHilo(v), hiloOk);
+    assert.deepStrictEqual(tope(() => ch.cambiosDeCorrida(v, {}, { sanear: (x) => x })), [ch.TOPE_HILO_DESCOMPRIMIDO], 'la vista local');
+    fs.writeFileSync(ch.rutaDeCambio(v), zlib.gzipSync(Buffer.from('{"estado":"ok"}')));
+    assert.deepStrictEqual(tope(() => ch.leerCambioDeGit(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el cambio de git');
+    fs.writeFileSync(ch.rutaDeResumen(v), zlib.gzipSync(Buffer.from('{"v":1,"cambios":{}}')));
+    assert.deepStrictEqual(tope(() => runs.leerResumen(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el resumen de la vista');
+    assert.deepStrictEqual(tope(() => bajada.leerResumenDe(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el resumen de la bajada');
+    fs.rmSync(ch.rutaDeResumen(v));
+    fs.rmSync(ch.rutaDeCambio(v));
+    assert.ok(tope(() => runs.resumirEspejo(espejo)).includes(ch.TOPE_HILO_SITIO), 'el resumen del sitio abre con el tope del sitio');
+  } finally { zlib.gunzipSync = original; }
+
+  // lo que pasa el tope sale ilegible con su código, y lo chico se lee
+  const dir = tmp('cambios-bomba2-');
+  const v = path.join(dir, 'a.json');
+  fs.writeFileSync(v, '{}');
+  fs.writeFileSync(ch.rutaDeHilo(v), zlib.gzipSync(Buffer.alloc(3 * MB, 0x0a), { level: 9 }));
+  const r = ch.cambiosDeCorrida(v, {}, { sanear: (x) => x, topeHiloBytes: MB });
+  assert.strictEqual(r.estado, 'ilegible', JSON.stringify(r));
+  assert.ok(ch.pasoElTope(r.motivo), r.motivo);
+  fs.writeFileSync(ch.rutaDeCambio(v), zlib.gzipSync(Buffer.from(JSON.stringify({ estado: 'ok', relleno: ' '.repeat(3 * MB) }))));
+  assert.ok(ch.pasoElTope(ch.leerCambioDeGit(v, MB).motivo));
+  fs.writeFileSync(ch.rutaDeResumen(v), zlib.gzipSync(Buffer.from(JSON.stringify({ v: 1, cambios: {}, relleno: ' '.repeat(3 * MB) }))));
+  assert.strictEqual(runs.leerResumen(v, MB), null);
+  assert.strictEqual(bajada.leerResumenDe(v, MB), null);
+  assert.ok(!ch.pasoElTope('la conversación no se pudo leer (Z_DATA_ERROR)'));
+
+  // el renglón de más del tope no se arma como texto: se cuenta ilegible, y los demás se leen
+  assert.deepStrictEqual([...ch.renglonesDe(Buffer.from('ab\nabcdef\nc'), 3)], ['ab', null, 'c']);
+
+  // en el sitio, la conversación que pasa el tope se resume con su motivo y se borra: la pasada siguiente no la abre
+  const espejo = path.join(dir, 'espejo'); const maq = path.join(espejo, 'maq-b');
+  fs.mkdirSync(maq, { recursive: true });
+  const b = path.join(maq, 'b.json');
+  fs.writeFileSync(b, JSON.stringify({ marker: { startedAt: '2026-11-20T10:10:00Z' } }));
+  fs.writeFileSync(ch.rutaDeHilo(b), zlib.gzipSync(Buffer.from('{"x":1}\n')));
+  const sitio = ch.TOPE_HILO_SITIO;
+  const conTope = Object.getOwnPropertyDescriptor(ch, 'TOPE_HILO_SITIO');
+  Object.defineProperty(ch, 'TOPE_HILO_SITIO', { ...conTope, value: 4 });
+  try {
+    const p1 = runs.resumirEspejo(espejo);
+    assert.strictEqual(p1.fallidas, 0, JSON.stringify(p1));
+    assert.strictEqual(p1.resumidas, 1, JSON.stringify(p1));
+  } finally { Object.defineProperty(ch, 'TOPE_HILO_SITIO', { ...conTope, value: sitio }); }
+  assert.ok(!fs.existsSync(ch.rutaDeHilo(b)), 'la conversación se borró');
+  const s = runs.leerResumen(b);
+  assert.strictEqual(s && s.cambios.estado, 'ilegible');
+  assert.ok(ch.pasoElTope(s.cambios.motivo), s.cambios.motivo);
+});
+
 // El texto del error de un hook viaja en la conversación subida, que leen sólo quienes administran el buzón; en el
 // sitio no lo ve el dev dueño de la máquina. 🔴 Falla con: que la lista, el detalle, los textos o la página de una ejecución empiecen a
 // mostrar los adjuntos de la conversación sin mirar el rol.
@@ -2275,4 +2348,54 @@ test('T11 2.78-Sitio_FirmasSoloDeLoTuyo @story-2.78 @ac-11', async () => {
     assert.strictEqual(TAB().FORMATO_VISTA, 2, 'la vista guardada cambió de forma con las firmas');
     assert.strictEqual(leerGuardada(datos).formato, 2);
   });
+});
+
+test('Cambios_ConsolaLargaEnTiempoLineal — un comando con «sed -i» repetido no traba el resumen (A39)', () => {
+  // 🔴 rojo: `destinosDeConsola` buscaba el archivo de cada `sed -i` hasta el fin del renglón: con el comando repetido,
+  //    el tiempo crecía al cuadrado (70 KB, 1,7 s; unos MB pasaban los 10 minutos del hilo del resumen)
+  const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  // ~280 KB de cada forma: sin el tope, `sed -i` repetido tardaba unos 16 s y `open(` repetido unos 7 s; con el tope,
+  // menos de medio segundo cada una, así que los 3 s dejan margen para una máquina lenta de la CI
+  for (const cmd of ['sed -i x '.repeat(32000), 'python - <<x\nopen( '.repeat(1) + 'open( '.repeat(45000)]) {
+    // stable-data: el reloj mide cuánto tarda la lectura; no compara fechas
+    const t = Date.now();
+    ch.destinosDeConsola(cmd);
+    const ms = Date.now() - t;
+    assert.ok(ms < 3000, `tardó ${ms} ms con ${cmd.slice(0, 12)}…`);
+  }
+  // una expresión de sed larga (más de 500 caracteres) sigue dando su archivo
+  assert.deepStrictEqual(ch.destinosDeConsola(`sed -i 's/${'a'.repeat(1500)}/b/' docs/largo.md`), ['docs/largo.md']);
+  // lo que ya leía, lo sigue leyendo
+  assert.deepStrictEqual(ch.destinosDeConsola("sed -i 's/a/b/' docs/guia.md && perl -pi -e 's/x/y/' lib/a.js"), ['docs/guia.md', 'lib/a.js']);
+  assert.deepStrictEqual(ch.destinosDeConsola('echo hola > salida.txt; cat a | tee -a log/b.log'), ['salida.txt', 'log/b.log']);
+});
+
+// rojo si: dos textos a demanda de ejecuciones distintas se bajan y arman a la vez (A40). Cada armado abre un hilo de
+// unos 555 MB de pico con una conversación grande; dos a la vez pasaban el GiB del contenedor.
+test('Cambios_ADemandaDeAUno — dos textos a demanda distintos esperan su turno (A40)', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const a1 = servida.corridas.find((c) => c.story === '3.1').id;
+  const a2 = servida.corridas.find((c) => c.story === '3.2').id;
+  const g = leerGuardada(datos);
+  g.aDemanda = { [a1]: path.join(espejo, 'maq-a', 'a1.json'), [a2]: path.join(espejo, 'maq-a', 'a2.json') };
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  let ahora = 0; let maximo = 0; let pedidos = 0;
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.bajarCorrida = async () => {
+    pedidos += 1; ahora += 1; maximo = Math.max(maximo, ahora);
+    await new Promise((r) => setTimeout(r, 150));
+    ahora -= 1;
+    return { codigo: 1, res: { estado: 'sin_partes' } };
+  };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const [r1, r2] = await Promise.all([h.pedir(`/api/corridas/${a1}/textos`, { cookie: lead }), h.pedir(`/api/corridas/${a2}/textos`, { cookie: lead })]);
+    assert.strictEqual(r1.status, 200, r1.texto);
+    assert.strictEqual(r2.status, 200, r2.texto);
+  });
+  assert.strictEqual(pedidos, 2, 'se bajaron las dos');
+  assert.strictEqual(maximo, 1, 'de a una');
 });

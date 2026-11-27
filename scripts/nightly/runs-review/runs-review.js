@@ -249,8 +249,10 @@ function migrar({ ops: opsDir, today, simular = false }) {
  * Las líneas JSON de un `.gz`: `{ lineas, rotas }`; `null` si el archivo no está; `{ lineas: null, roto: true }` si está
  * y no se puede leer (no es gzip, permisos, o descomprimido pasa de `max`).
  */
-// El tope de los registros de la máquina; la conversación de una ejecución no lo lleva.
+// El tope de los registros de la máquina; la conversación de una ejecución lleva el de afuera del sitio (changes.js):
+// una de unos KB que abre a GB, subida con la llave de sólo crear, no se junta entera (A41)
 const MAX_REGISTRO = 64 * 1024 * 1024;
+const MAX_HILO = require('../dashboard/changes.js').TOPE_HILO_DESCOMPRIMIDO;
 function leerJsonl(p, max) {
   let t;
   try { t = zlib.gunzipSync(fs.readFileSync(p), max ? { maxOutputLength: max } : {}).toString('utf8'); } catch (e) { return e && e.code === 'ENOENT' ? null : { lineas: null, rotas: 0, roto: true }; }
@@ -545,7 +547,7 @@ async function run(opts) {
       if (miradas.has(unaVez)) continue;
       miradas.add(unaVez);
       estado.miradas += 1;
-      const h = leerJsonl(ruta.replace(/\.json$/, '.hilo.jsonl.gz'));
+      const h = leerJsonl(ruta.replace(/\.json$/, '.hilo.jsonl.gz'), MAX_HILO);
       if (h) estado.ilegibles += h.roto ? 1 : h.rotas;
       let registros = registrosDeLaEjecucion(carpetasDe.get(grupo), cacheRegistros, estado);
       if (uniones.estado !== 'medidas' && gruposDe.get(unaVez).size > 1) {

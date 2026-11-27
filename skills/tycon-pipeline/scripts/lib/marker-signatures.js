@@ -740,25 +740,24 @@ function cmdApprovePending(argv) {
   const leido = PA.leerRegistro(registro);
   if (leido.ilegibles.length) { console.error(`marker.js approve-pending: el registro de aprobaciones tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un registro roto.`); process.exit(1); }
   // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
-  // una aprobación que ya está vale para el commit que se arma si el pendiente ya estaba abierto en HEAD, o si HEAD no la
-  // tiene: un pendiente cerrado y commiteado que se reabre pide una aprobación nueva, y la vieja no la reemplaza. Sin
-  // poder leer HEAD, como antes: cualquier aprobación del código
-  let deHead = null;
-  try {
-    // sólo se lee el contenido (show, ls-tree): ningún mensaje de git, así que el idioma no importa
-    const git = (...a) => require('child_process').execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
-    const enHead = (rel) => { try { return git('show', `HEAD:${rel}`); } catch (_) { return null; } };
-    const todoHead = enHead(PA.TODO);
-    if (todoHead != null) {
-      // el registro de HEAD, unido como el del disco: el archivo de antes y los de la carpeta
-      const nombres = git('ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', `${PA.RECORD_DIR}/`).split('\0').filter(PA.esArchivoDeLaCarpeta).sort();
-      const registroHead = PA.unirRegistro(enHead(PA.RECORD), nombres.map((n) => enHead(n)));
-      deHead = { abierto: PA.pendientesAbiertos(todoHead).some((p) => p.codigo === id),
-        lineas: new Set(PA.leerRegistro(registroHead).lineas.map((x) => x.texto)) };
-    }
-  } catch (_) { deHead = null; }
-  const vale = (x) => !PA.motivoDe(x.valor) && x.valor.id === id && (!deHead || deHead.abierto || !deHead.lineas.has(x.texto));
-  if (leido.lineas.some(vale)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
+  // una aprobación que ya está vale para el commit que se arma si, en el último commit y en el ancestro común con la rama
+  // principal (lo que mira la validación del pedido), el pendiente ya estaba abierto o esa aprobación no estaba: un
+  // pendiente cerrado que se reabre, aunque la rama ya lo haya commiteado abierto, pide una aprobación nueva, y la vieja
+  // no la reemplaza. Si git no se puede leer, ninguna aprobación del registro se da por buena: se pide la firma, que a
+  // lo sumo escribe una aprobación de más
+  let vigente = false;
+  let puntos = [];
+  try { puntos = PA.puntosDeComparacion(repo); vigente = PA.aprobacionVigente({ id, registro, puntos }); } catch (e) {
+    console.error(`marker.js approve-pending: no pude leer los commits contra los que se va a revisar (${(e && e.message) || e}): pido la firma igual.`);
+  }
+  if (vigente) {
+    // el ancestro sale del origin/main de esta copia, sin red: si está viejo, la validación del pedido compara contra
+    // otro, y el mensaje dice contra cuál comparó y cómo se sale
+    const contra = puntos.map((p, i) => `${i ? 'el ancestro con main' : 'el último commit'} ${String(p.donde).slice(0, 9)}`).join(' y ');
+    console.error(`✅ ${id} ya estaba aprobado${contra ? ` (comparado contra ${contra})` : ''}: no escribí nada.`);
+    if (puntos.length) console.error(`   Si la validación del pedido lo sigue frenando, el main de esta copia puede estar viejo: traelo (git fetch origin) y volvé a correr este comando.`);
+    process.exit(PREVIO ? 1 : 0);
+  }
   let maquina = null;
   try { maquina = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
   const linea = PA.lineaNueva({ id, maquina });

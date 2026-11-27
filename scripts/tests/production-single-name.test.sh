@@ -222,9 +222,11 @@ else no "RetireD_OldMemoryMergedBeforeDelete · el bloque de --verify sella por 
 
 # ═════ los casos del freno (el hook) ══════════════════════════════════════════════════════════════════════════
 if [ -d /opt/tycon ]; then
-  echo "⏭ production-single-name: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, los casos del freno corren en la CI y en el nocturno. No es un verde."
+  # la marca de los corredores de suites va en la última línea: es la única que leen
   echo "— production-single-name: $passed ok, $fails fallos (casos del freno: no medidos) —"
-  [ "$fails" = 0 ]; exit $?
+  [ "$fails" = 0 ] || exit 1
+  echo "⏭ production-single-name: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, los casos del freno corren en la CI y en el nocturno. No es un verde."
+  exit 0
 fi
 [ -f "$GUARD" ] || { no "no existe $GUARD"; echo "— production-single-name: $passed ok, $fails fallos —"; exit 1; }
 

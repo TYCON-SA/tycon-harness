@@ -28,6 +28,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * abierto en la lista del último commit, y las aprobaciones firmadas que el registro ya tuviera. Sólo arma lo que el
  * pre-commit acepta en el commit que crea el registro; si el registro ya está en el último commit, no escribe nada.
  *
+ * Límite: git no corre el pre-commit en `git revert` ni en `git cherry-pick`, así que un borrado de una aprobación hecho
+ * así pasa en la máquina. Lo frena la validación del pedido, que compara el pedido entero contra el ancestro con main:
+ * ése es el freno que vale para el borrado, y el pre-commit es el aviso temprano.
+ *
  * Sale 0 sin pendientes sin aprobar, 1 si hay alguno (los nombra, con el comando de la firma), 2 si no pudo leer lo que
  * necesita: un control que no leyó no es un verde.
  */
@@ -96,9 +100,11 @@ function registroDeGit(repo, commit) {
     if (!/invalid object name|bad revision|unknown revision|not a valid object name/i.test(err)) throw new Error(`git: no pude listar ${PA.RECORD_DIR} (${err.trim().split('\n')[0] || (e && e.message)})`);
     nombres = [];
   }
-  const viejo = deGit(repo, `${prefijo}${PA.RECORD}`);
+  // el archivo de antes y los de la carpeta en un solo proceso de git: la carpeta sólo crece, y uno por archivo
+  // tardaba segundos
+  const [viejo, ...archivos] = PA.leerEnLote(repo, [PA.RECORD, ...nombres].map((n) => `${prefijo}${n}`));
   if (viejo == null && !nombres.length) return null;
-  return PA.unirRegistro(viejo, nombres.map((n) => deGit(repo, `${prefijo}${n}`)));
+  return PA.unirRegistro(viejo, archivos);
 }
 
 function delDisco(repo, rel) {
@@ -157,6 +163,9 @@ function main(argv) {
   let todo; let registro; let nuevas = [];
   try {
     todo = o.staged ? deGit(o.repo, `:${PA.TODO}`) : delDisco(o.repo, PA.TODO);
+    // un commit que saca la lista no se salta el control si el último commit tenía lista o registro: lo que borra del
+    // registro se mira igual, como una lista vacía
+    if (todo == null && o.staged && (deGit(o.repo, `HEAD:${PA.TODO}`) != null || registroDeGit(o.repo, 'HEAD') != null)) todo = '';
     if (todo == null) { console.log(`check-pending-approvals: no hay ${PA.TODO}: nada que revisar`); return 0; }
     registro = (o.staged ? registroDeGit(o.repo, null) : PA.registroDelDisco(o.repo)) || '';
     if (o.staged) {
@@ -199,7 +208,10 @@ function main(argv) {
   if (nuevas.length) {
     out.push('⛔ el commit trae pendientes o aprobaciones que no valen:');
     for (const x of nuevas) out.push(`   · ${x.id || '?'}: ${x.motivo}`);
-    out.push('   El registro no se escribe a mano: lo escribe marker.js approve-pending con la firma.');
+    const borra = (x) => /^borra una aprobación/.test(x.motivo);
+    if (nuevas.some((x) => !borra(x))) out.push('   El registro no se escribe a mano: lo escribe marker.js approve-pending con la firma.');
+    // deshacer un pedido que trajo una aprobación, o arrepentirse en la rama, pasa por acá: la aprobación se queda
+    if (nuevas.some(borra)) out.push('   Para cerrar o deshacer un pendiente aprobado, dejá el archivo de la aprobación y sacá sólo el renglón de la lista.');
     const abre = nuevas.find((x) => /^se abre en este commit/.test(x.motivo));
     if (abre && !r.faltan.length) out.push(...comoSePide(abre.id, o.repo));
   }

@@ -336,6 +336,13 @@
   },
   "divergences": [
     {
+      "log": "PreToolUse/PostToolUse/PostToolUseFailure · on-bash-write-after.js — SOLO Claude Code (la mirada de después del freno de escrituras por consola, story 8.320)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-26, story 8.320, tanda C): la pieza se registra sólo en Claude Code, y en el modo que anota (compara y deja el renglón en gates.log, sin deshacer ni frenar). En Codex no se registra todavía: Codex manda las ediciones como apply_patch con el texto del parche en tool_input.command, y la pieza lo tomaría por un comando de consola (en el modo que deshace, deshacía la edición legítima de una historia: medido en la revisión de la tanda C). Además no tiene PostToolUseFailure, su conversación tiene otro formato y transcript_path puede faltar. Se registra cuando la pieza trate apply_patch como edición (scripts/lib/hook-io.js ya lo traduce) y haya casos del banco con las dos herramientas. Mientras tanto, en Codex queda el freno de antes (on-bash-write-gate.js) y la red del commit.",
+      "scripts": [
+        "on-bash-write-after.js"
+      ]
+    },
+    {
       "log": "PreToolUse/PostToolUse · Edit|Write (claude) ↔ apply_patch (codex)",
       "verdict": "VERIFICADO 2026-08-22 (sonda E2, payload real): la tool de edición de Codex es apply_patch y su tool_input.command es un TEXTO de patch (*** Update File: ...) — scripts/lib/hook-io.js la normaliza a eventos Edit/Write por archivo; dispatch.js y rebuild-before-verify.js la consumen con fallback a la conducta actual. Evidencia: los payloads de la sonda E2, resumidos en guides/codex-migration.md (Registro E2).",
       "scripts": [

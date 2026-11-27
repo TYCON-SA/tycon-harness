@@ -469,3 +469,195 @@ test('T29 la carpeta tampoco se escribe a mano: el freno de edición para sus ar
   const r = sg.computeStoryGate({ filePath: '/r/tasks/pending-approvals/DEF-a.0123456789abcdef.json', gateEnabled: false, marker: null, adhoc: null });
   assert.strictEqual(r.kind, 'pending-approvals');
 });
+
+test('T30 una aprobación ya commiteada, reescrita con otro espaciado, no es nueva: no reabre su pendiente; cambiarle un campo se nombra', () => {
+  // DEF-hecho se aprobó y se cerró: su línea firmada sigue en el registro y su renglón en el registro del arnés
+  const l = firmada('DEF-hecho');
+  const antes = `${BASE}${JSON.stringify(l)}\n`;
+  const reabierta = LISTA.replace('- [x] [DEF-hecho] uno tachado', '- [ ] [DEF-hecho] reabierto');
+  // la misma línea con otro espaciado: el mismo JSON, otro texto
+  const respaciada = JSON.stringify(l, null, 1).replace(/\n\s*/g, ' ');
+  assert.notStrictEqual(respaciada, JSON.stringify(l));
+  const malas = PA.revisarNuevas({ antes, despues: `${antes}${respaciada}\n`, renglones: [renglonDe(l)], todoAntes: LISTA, todoDespues: reabierta });
+  assert.deepStrictEqual(malas.map((x) => x.id), ['DEF-hecho']);
+  assert.match(malas[0].motivo, /aprobación vieja/);
+  // en la validación de pedidos (sin firma local) tampoco abre
+  const servidor = PA.revisarNuevas({ antes, despues: `${antes}${respaciada}\n`, renglones: [], todoAntes: LISTA, todoDespues: reabierta, sinFirmaLocal: true });
+  assert.deepStrictEqual(servidor.map((x) => x.id), ['DEF-hecho']);
+  // reescribir la línea vieja con otro espaciado, sin abrir nada, no pide nada
+  assert.deepStrictEqual(PA.revisarNuevas({ antes, despues: `${BASE}${respaciada}\n`, renglones: [], todoAntes: LISTA, todoDespues: LISTA }), []);
+  // cambiarle a una línea ya commiteada un campo que su huella no cubre (la vía, quién) se nombra
+  const otraVia = JSON.stringify({ ...l, via: 'ventana', quien: 'otra persona' });
+  const cambiada = PA.revisarNuevas({ antes, despues: `${BASE}${otraVia}\n`, renglones: [renglonDe({ ...l, via: 'ventana' })], todoAntes: LISTA, todoDespues: LISTA });
+  assert.deepStrictEqual(cambiada.map((x) => x.id), ['DEF-hecho']);
+  assert.match(cambiada[0].motivo, /ya commiteada/);
+  // la misma línea de otro padre del merge, respaciada, tampoco es nueva
+  const merge = PA.revisarNuevas({ antes: BASE, despues: `${BASE}${respaciada}\n`, renglones: [renglonDe(l)], todoAntes: LISTA, todoDespues: reabierta, otrosPadres: [{ registro: antes, todo: LISTA }] });
+  assert.deepStrictEqual(merge.map((x) => x.id), ['DEF-hecho']);
+});
+
+test('T31 un pendiente reabierto ya commiteado en la rama: la aprobación vieja no le sirve al pedido, y approve-pending lo ve', (t) => {
+  // main: DEF-hecho cerrado, con su aprobación vieja en la carpeta
+  const l = firmada('DEF-hecho');
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobado y cerrado');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const base = git('rev-parse', 'HEAD').stdout.trim();
+  // la rama lo reabre y lo commitea sin aprobación nueva (sin el pre-commit)
+  git('checkout', '-q', '-b', 'rama');
+  const reabierta = LISTA.replace('- [x] [DEF-hecho] uno tachado', '- [ ] [DEF-hecho] reabierto');
+  fs.writeFileSync(path.join(d, PA.TODO), reabierta);
+  git('commit', '-q', '-am', 'reabre');
+  const puntos = PA.puntosDeComparacion(d);
+  assert.deepStrictEqual(puntos.map((p) => p.donde), [git('rev-parse', 'HEAD').stdout.trim(), base], 'el último commit y el ancestro con main');
+  const registro = PA.registroDelDisco(d);
+  assert.strictEqual(PA.aprobacionVigente({ id: 'DEF-hecho', registro, puntos }), false, 'la vieja no le sirve al pedido: approve-pending pide la firma');
+  // contra el último commit solo (lo que hacía antes) la vieja valía: «ya estaba aprobado» y no había salida
+  assert.strictEqual(PA.aprobacionVigente({ id: 'DEF-hecho', registro, puntos: puntos.slice(0, 1) }), true);
+  // la validación del pedido, como la corre la pasada: el pedido entero contra el ancestro, sin firma local, frena
+  git('reset', '-q', '--soft', base);
+  assert.strictEqual(check(d, '--staged', '--no-local-signature').status, 1);
+  // con una aprobación nueva (con su forma y su huella) el pedido pasa, y approve-pending ya la da por buena
+  const nueva = firmada('DEF-hecho');
+  nueva.ts = '2026-11-26T23:00:00.000Z';
+  nueva.huella = PA.huella(nueva);
+  fs.writeFileSync(path.join(d, PA.archivoDe(nueva)), `${JSON.stringify(nueva)}\n`);
+  git('add', '-A');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(PA.aprobacionVigente({ id: 'DEF-hecho', registro: PA.registroDelDisco(d), puntos }), true);
+  // un pendiente que ya estaba abierto en main no pide nada: su aprobación vieja vale
+  assert.strictEqual(PA.aprobacionVigente({ id: 'DEF-viejo', registro, puntos }), true);
+  // la aprobación vieja reescrita con otro espaciado tampoco cuenta como nueva para approve-pending
+  const respaciada = JSON.stringify(l, null, 1).replace(/\n\s*/g, ' ');
+  assert.strictEqual(PA.aprobacionVigente({ id: 'DEF-hecho', registro: `${BASE}${respaciada}\n`, puntos }), false);
+});
+
+test('T32 sin rama principal conocida, approve-pending mira sólo el último commit; sin commits, nada', (t) => {
+  const { d } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  assert.strictEqual(PA.puntosDeComparacion(d).length, 1);
+  const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'pendientes-vacio-'));
+  t.after(() => fs.rmSync(vacio, { recursive: true, force: true }));
+  spawnSync('git', ['-C', vacio, 'init', '-q']);
+  assert.deepStrictEqual(PA.puntosDeComparacion(vacio), []);
+  // la lectura en lote: el que no está da null, en su lugar; un repo que no se lee lanza, no es «no está»
+  assert.deepStrictEqual(PA.leerEnLote(d, ['HEAD:no-esta.txt', `HEAD:${PA.TODO}`, `HEAD:${PA.RECORD}`]), [null, LISTA, BASE]);
+  assert.throws(() => PA.leerEnLote(path.join(vacio, 'no-existe'), [`HEAD:${PA.TODO}`]));
+});
+
+test('T33 una aprobación firmada ya commiteada no se borra: borrarla y volverla a poner la haría valer de nuevo', (t) => {
+  const l = firmada('DEF-hecho');
+  const antes = `${BASE}${JSON.stringify(l)}\n`;
+  // el commit que la borra frena, aunque no abra nada
+  const borra = PA.revisarNuevas({ antes, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA });
+  assert.deepStrictEqual(borra.map((x) => x.id), ['DEF-hecho']);
+  assert.match(borra[0].motivo, /no se borra/);
+  // también en la validación del pedido
+  assert.strictEqual(PA.revisarNuevas({ antes, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA, sinFirmaLocal: true }).length, 1);
+  // la base sí se achica, y una línea rota se puede sacar
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: `${BASE}no es json\n`, despues: base('DEF-viejo') + '\n', renglones: [], todoAntes: LISTA, todoDespues: LISTA.replace('- [ ] [DEF-viejo]', '- [x] [DEF-viejo]').replace(`- [ ] ${SIN_CODIGO}`, `- [x] ${SIN_CODIGO}`) }), []);
+  // en git: borrar el archivo de la aprobación frena en el commit
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  fs.rmSync(path.join(d, PA.archivoDe(l)));
+  git('add', '-A');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /no se borra/);
+});
+
+test('T34 approve-pending con una aprobación que ya vale dice contra qué comparó y cómo se sale si el main local está viejo', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git('checkout', '-q', '-b', 'rama');
+  fs.writeFileSync(path.join(d, 'otro.txt'), 'x\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'trabajo');
+  const env = { ...process.env };
+  for (const k of ['CLAUDE_CODE_SESSION_ID', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'NODE_TEST_CONTEXT', 'TYCON_SIGN_PRECHECK']) delete env[k];
+  const r = spawnSync(process.execPath, [MARKER, 'approve-pending', '--id', 'DEF-viejo', '--repo', d], { encoding: 'utf8', env, cwd: d });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /ya estaba aprobado \(comparado contra el último commit [0-9a-f]{9} y el ancestro con main [0-9a-f]{9}\)/);
+  assert.match(r.stderr, /git fetch origin/);
+  assert.strictEqual(fs.readFileSync(path.join(d, PA.RECORD), 'utf8'), BASE, 'no escribió nada');
+});
+
+test('T35 un merge que deja caer una aprobación firmada que traía la otra rama también frena', () => {
+  const l = firmada('DEF-hecho');
+  const malas = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA, otrosPadres: [{ registro: `${BASE}${JSON.stringify(l)}\n`, todo: LISTA }] });
+  assert.deepStrictEqual(malas.map((x) => x.id), ['DEF-hecho']);
+  assert.match(malas[0].motivo, /no se borra/);
+  // sacar una línea que no vale (sin vía ni quién, o con la huella cambiada) no frena
+  const rota = JSON.stringify({ ...l, huella: '0000000000000000' });
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: `${BASE}${rota}\n${JSON.stringify({ id: 'DEF-x' })}\n`, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA }), []);
+  // si el merge la deja, nada
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: `${BASE}${JSON.stringify(l)}\n`, renglones: [], todoAntes: LISTA, todoDespues: LISTA, otrosPadres: [{ registro: `${BASE}${JSON.stringify(l)}\n`, todo: LISTA }] }), []);
+});
+
+test('T36 un commit que saca la lista de pendientes no deja pasar el borrado de una aprobación', (t) => {
+  const l = firmada('DEF-hecho');
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  git('rm', '-q', PA.TODO, PA.archivoDe(l));
+  for (const modo of [[], ['--no-local-signature']]) {
+    const r = check(d, '--staged', ...modo);
+    assert.strictEqual(r.status, 1, `${modo.join(' ') || 'local'}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /no se borra/);
+  }
+  // sacar la lista sin tocar el registro no pide nada
+  git('reset', '-q', 'HEAD', '--', PA.archivoDe(l));
+  git('checkout', '-q', '--', PA.archivoDe(l));
+  assert.strictEqual(check(d, '--staged').status, 0);
+});
+
+test('T37 borrar una aprobación (un revert, o arrepentirse en la rama): el mensaje dice la salida, no que el registro se escribió a mano', (t) => {
+  const l = firmada('DEF-hecho');
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  git('rm', '-q', PA.archivoDe(l));
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /dejá el archivo de la aprobación/);
+  assert.match(r.stderr, /sacá sólo el renglón/);
+  assert.doesNotMatch(r.stderr, /no se escribe a mano/, 'quien borra no escribió nada a mano');
+});
+
+test('T38 el registro se lee con pocos procesos de git: la carpeta sólo crece', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  for (let i = 0; i < 40; i++) {
+    const l = firmada(`DEF-a${i}`);
+    fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  }
+  git('add', '-A');
+  git('commit', '-q', '-m', 'muchas');
+  // un git que anota cada llamada y pasa al de verdad
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'git-cuenta-'));
+  t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const log = path.join(bin, 'llamadas');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho x >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const r = spawnSync(process.execPath, [CHECK, '--repo', d, '--staged', '--no-local-signature'], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const llamadas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
+  assert.ok(llamadas <= 15, `con 40 aprobaciones hizo ${llamadas} llamadas a git: una por archivo no escala`);
+});

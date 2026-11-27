@@ -35,6 +35,23 @@ const TOPE_CONSOLA = 200000;
 const MARGEN_CIERRE_MS = 60 * 60000;
 const ESPERA_MIN_MS = 2 * 60000;
 
+// 🔴 Lo más que se descomprime. La bajada del sitio topea los bytes COMPRIMIDOS; un .gz de unos KB que se abre a GB
+//    (subido con la llave de sólo crear, con el tamaño y el MD5 del listado en regla) tumbaba el contenedor del sitio
+//    (1 GiB). `gunzipSync` junta el archivo dos veces fuera del techo del hilo, así que el del sitio es bajo: de 260
+//    conversaciones reales, la mayor de las que el sitio baja (≤ 50 MB comprimidos) abre a 72 MB. En una máquina hay una
+//    de 337 MB abiertos: el tope de afuera del sitio la deja leer. El cambio de git y el resumen son de unos MB
+//    (run-change.js topea el cambio en 5 MB de parches). Lo que pasa el tope sale ilegible con ERR_BUFFER_TOO_LARGE.
+const TOPE_HILO_DESCOMPRIMIDO = 512 * 1024 * 1024;
+const TOPE_HILO_SITIO = 128 * 1024 * 1024;
+const TOPE_JSON_DESCOMPRIMIDO = 64 * 1024 * 1024;
+// un renglón de la conversación de más de esto no se arma como texto: se cuenta ilegible (uno de 250 MB, dentro del
+// tope del archivo, llevaba el proceso a 1,3 GB entre el texto y su JSON.parse)
+const TOPE_RENGLON = 32 * 1024 * 1024;
+/** gunzip con tope de salida: tira un error con código ERR_BUFFER_TOO_LARGE si lo pasa. */
+function abrirGz(ruta, tope) { return zlib.gunzipSync(fs.readFileSync(ruta), { maxOutputLength: tope }); }
+/** ¿El motivo dice que un archivo pasó su tope al descomprimir? Eso no cambia en la pasada siguiente. */
+function pasoElTope(motivo) { return /ERR_BUFFER_TOO_LARGE/.test(String(motivo || '')); }
+
 function rutaDeHilo(volcado) { return String(volcado).replace(/\.json$/, '') + '.hilo.jsonl.gz'; }
 // el resumen de la corrida que guarda el sitio cuando borra su conversación y su cambio (dashboard/runs.js → RESUMEN)
 function rutaDeResumen(volcado) { return String(volcado).replace(/\.json$/, '') + '.resumen.json.gz'; }
@@ -45,11 +62,11 @@ function rutaDeResumen(volcado) { return String(volcado).replace(/\.json$/, '') 
 function rutaDeCambio(volcado) { return String(volcado).replace(/\.json$/, '') + '.cambio.json.gz'; }
 
 /** El cambio de git de una corrida tal cual quedó en disco; `sin_cambio` o `ilegible` con motivo si no se puede. */
-function leerCambioDeGit(volcado) {
+function leerCambioDeGit(volcado, tope = TOPE_JSON_DESCOMPRIMIDO) {
   const r = rutaDeCambio(volcado);
   if (!fs.existsSync(r)) return { estado: 'sin_cambio', motivo: 'esta ejecución no tiene el cambio de git guardado (es de antes de que se guardara, o el archivador no lo pudo armar)' };
   try {
-    const x = JSON.parse(zlib.gunzipSync(fs.readFileSync(r)).toString('utf8'));
+    const x = JSON.parse(abrirGz(r, tope).toString('utf8'));
     if (!x || typeof x !== 'object' || !x.estado) throw new Error('no trae estado');
     return x;
   } catch (e) {
@@ -121,13 +138,16 @@ function relativa(ruta, repoPath) {
  */
 // Con los archivos fuente de skills/tycon-pipeline/scripts/lib/code-files.js (Svelte, Vue, Go, Java…).
 const EXT_ARCHIVO = /\.(cs|csproj|sln|ts|tsx|js|jsx|mjs|cjs|mts|cts|json|ya?ml|md|sql|sh|ps1|py|go|rb|java|kt|swift|vue|svelte|html?|css|scss|xml|bpmn|toml|txt|config|props|razor|cshtml)$/i;
-const ESCRIBE = /open\([^)]*['"][wa]['"]|\.write_text\(|writeFileSync\(|appendFileSync\(|\.write\(/;
+const ESCRIBE = /open\([^)]{0,4000}['"][wa]['"]|\.write_text\(|writeFileSync\(|appendFileSync\(|\.write\(/;
 function destinosDeConsola(cmd) {
   const c = String(cmd || '');
   const out = new Set();
   const ext = '[\\w./~$-]+\\.[A-Za-z]{1,6}';
   for (const m of c.matchAll(new RegExp(`(?:>>?|\\btee(?:\\s+-a)?)\\s*["']?(${ext})["']?`, 'g'))) out.add(m[1]);
-  for (const m of c.matchAll(new RegExp(`\\b(?:sed|perl)\\s+-[a-zA-Z]*i[^\\n|;&]*?\\s["']?(${ext})["']?\\s*(?:$|[\\n|;&])`, 'gm'))) out.add(m[1]);
+  // el archivo de un `sed -i`/`perl -i`, hasta 4000 caracteres después (una expresión real entra de sobra): sin el tope, un
+  // comando con `sed -i` repetido se leía en tiempo cuadrático (cada uno buscaba hasta el fin del renglón) y unos MB
+  // trababan el hilo del resumen (A39). `open(` de ESCRIBE lleva el mismo tope, por lo mismo
+  for (const m of c.matchAll(new RegExp(`\\b(?:sed|perl)\\s+-[a-zA-Z]*i[^\\n|;&]{0,4000}?\\s["']?(${ext})["']?\\s*(?:$|[\\n|;&])`, 'gm'))) out.add(m[1]);
   if (ESCRIBE.test(c)) {
     // Una ruta entre comillas de un script: con barra, o con extensión de archivo de verdad (`d.type` no lo es).
     for (const m of c.matchAll(new RegExp(`["'](${ext})["']`, 'g'))) if (m[1].includes('/') || EXT_ARCHIVO.test(m[1])) out.add(m[1]);
@@ -152,12 +172,12 @@ function lineasDe(x) { return x ? String(x).split('\n').length : 0; }
  * comprimidos son 224 MB de texto; como string y partida en renglones ocupaba más de 1 GB a la vez, y el contenedor del
  * sitio (1 GiB) moría al resumirla.
  */
-function* renglonesDe(buf) {
+function* renglonesDe(buf, tope = Infinity) {
   let i = 0;
   while (i < buf.length) {
     let j = buf.indexOf(10, i);
     if (j < 0) j = buf.length;
-    yield buf.toString('utf8', i, j);
+    yield j - i > tope ? null : buf.toString('utf8', i, j);
     i = j + 1;
   }
 }
@@ -179,7 +199,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   if (!fs.existsSync(hiloRuta)) return { estado: 'sin_hilo', motivo: 'esta ejecución no tiene su conversación guardada (es de antes de que se guardara, o la conversación ya se había borrado): no se sabe qué archivos tocó' };
   if (!deps.sanear) return { estado: 'no_publicado', motivo: 'el saneado (scripts/metrics/tokens-digest.js) no está en esta máquina: los cambios no se publican sin sanear' };
   let crudo;
-  try { crudo = zlib.gunzipSync(fs.readFileSync(hiloRuta)); }
+  const tope = Number.isFinite(deps.topeHiloBytes) && deps.topeHiloBytes > 0 ? deps.topeHiloBytes : TOPE_HILO_DESCOMPRIMIDO;
+  try { crudo = abrirGz(hiloRuta, tope); }
   catch (e) { return { estado: 'ilegible', motivo: `la conversación no se pudo leer (${e.code || e.message})` }; }
 
   const m = marker || {};
@@ -221,7 +242,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   let previas = 0;
   let porConsola = 0;
   let ilegibles = 0;
-  for (const linea of renglonesDe(crudo)) {
+  for (const linea of renglonesDe(crudo, TOPE_RENGLON)) {
+    if (linea === null) { ilegibles += 1; continue; }
     if (!linea) continue;
     const esUso = linea.includes('"tool_use"');
     const esResultado = linea.includes('"tool_result"');
@@ -347,4 +369,4 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   };
 }
 
-module.exports = { unirTramos, cambiosDeCorrida, renglonesDe, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, rutaDeResumen, leerCambioDeGit, emparejar, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };
+module.exports = { unirTramos, cambiosDeCorrida, renglonesDe, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, rutaDeResumen, leerCambioDeGit, emparejar, abrirGz, pasoElTope, TOPE_HILO_DESCOMPRIMIDO, TOPE_HILO_SITIO, TOPE_JSON_DESCOMPRIMIDO, TOPE_RENGLON, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };

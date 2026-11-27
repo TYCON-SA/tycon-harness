@@ -154,9 +154,11 @@ const cmd = payload.tool_input && payload.tool_input.command;
 // programa): las formas de darle un heredoc a un shell no se terminan de enumerar, así que ante la duda el cuerpo cuenta,
 // como antes. Aun sin nada que corra texto, los `$(…)` de un cuerpo sin comillas corren, y se siguen mirando.
 let loQueCorre = typeof cmd === 'string' ? cmd : '';
+let correTexto = true;                                    // sin el partidor no se sabe: cuenta como que puede correr texto
 try {
   const sp = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
-  if (loQueCorre && !sp.ejecutaTexto(loQueCorre)) loQueCorre = sp.sinHeredocs(loQueCorre, { salvoShell: true });
+  correTexto = !loQueCorre || sp.ejecutaTexto(loQueCorre);
+  if (!correTexto) loQueCorre = sp.sinHeredocs(loQueCorre, { salvoShell: true });
 } catch (_) { /* sin el partidor, el texto entero: frena de más, nunca de menos */ }
 if (typeof cmd !== 'string' || !GIT_ESCRIBE.test(loQueCorre)) process.exit(0);
 
@@ -193,7 +195,14 @@ function baseDelComando() {
 const base = baseDelComando();
 let destinos = destinoGit.destinos(loQueCorre, base, GIT_QUE_ESCRIBE);
 // El filtro grueso vio un git que escribe pero el análisis por sentencia no lo ubicó (p. ej. dentro
-// de un `sh -c "…"`): se asume el checkout de la sesión, como siempre.
+// de un `sh -c "…"`): se asume el checkout de la sesión, como siempre. Salvo que nada en el comando pueda correr un
+// texto (ni un shell, ni un intérprete, ni una sustitución): entonces el git es texto de un argumento, como en un
+// `grep "git stash" nota.md`, y no toca nada. Sólo en un comando llano: sin `$`, comillas invertidas, `&` suelto, `#`,
+// barras ni blancos que no sean el espacio, el tab o el salto de línea. Esas formas los dos lectores no siempre las
+// siguen (`echo $(true)#x & git …`), y ahí se sigue asumiendo el checkout.
+const LLANO = /^[^$`#\\&\r\f\v\u00a0\u1680\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\ufeff]*$/;
+const sinAnd = typeof cmd === 'string' ? cmd.replace(/&&/g, '') : '';
+if (!destinos.length && !correTexto && LLANO.test(sinAnd)) process.exit(0);
 if (!destinos.length) destinos = [{ dir: base, op: (loQueCorre.match(GIT_ESCRIBE) || [])[1] || 'git', resuelto: true }];
 
 const ahora = Date.now();

@@ -6,5 +6,5 @@
   "connector": "scripts/mailbox.js",
   "provider": "gcs",
   "mailboxFields": ["bucket"],
-  "hardSignals": ["storage\\.googleapis\\.com", "\\bx-goog-", "metadata\\.google\\.internal", "GOOG4-HMAC"]
+  "hardSignals": ["[sS][tT][oO][rR][aA][gG][eE]\\.(?:[gG][oO][oO][gG][lL][eE][aA][pP][iI][sS]|[cC][lL][oO][uU][dD]\\.[gG][oO][oO][gG][lL][eE])\\.[cC][oO][mM]", "[gG][oO][oO][gG][lL][eE][aA][pP][iI][sS]\\.[cC][oO][mM]/(?:[uU][pP][lL][oO][aA][dD]/)?[sS][tT][oO][rR][aA][gG][eE]/", "\\b[xX]-[gG][oO][oO][gG]-", "[mM][eE][tT][aA][dD][aA][tT][aA]\\.[gG][oO][oO][gG][lL][eE]\\.[iI][nN][tT][eE][rR][nN][aA][lL]", "[gG][oO][oO][gG]4-[hH][mM][aA][cC]", "\\bgcloud\\b", "\\bgsutil\\b", "\\bgs://"]
 }

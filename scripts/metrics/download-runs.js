@@ -211,8 +211,10 @@ function formaDelNombre(nombre) {
 /**
  * Un GET con la credencial. Resuelve { status, cuerpo, cabeceras } o { error } — nunca rechaza. `cred` es el token (texto,
  * va como Bearer) o `{ sas }` (la firma va en la consulta y NO hay cabecera Authorization).
+ * Con `maxBytes`, un cuerpo que lo pasa no se junta: el pedido se corta y sale `{ status, cuerpo, cortado: true }` con lo
+ * que llegó hasta ahí, que nunca coincide con el largo del listado (quien llama lo cuenta como «llegó distinto»).
  */
-function pedir(url, cred, timeoutMs) {
+function pedir(url, cred, timeoutMs, maxBytes) {
   return new Promise((resolve) => {
     const sas = cred && typeof cred === 'object' && cred.sas;
     const u = new URL(sas ? `${url}${url.includes('?') ? '&' : '?'}${cred.sas}` : url);
@@ -222,7 +224,16 @@ function pedir(url, cred, timeoutMs) {
     const headers = sas ? { 'x-ms-version': X_MS_VERSION } : { Authorization: `Bearer ${cred}`, 'x-ms-version': X_MS_VERSION };
     const req = mod.request(u, { method: 'GET', headers, timeout: timeoutMs }, (res) => {
       const trozos = [];
-      res.on('data', (c) => trozos.push(c));
+      let juntos = 0;
+      const tope = Number.isFinite(maxBytes) && maxBytes >= 0 ? maxBytes : null;
+      const cortar = () => { fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers, cortado: true }); req.destroy(); };
+      if (tope !== null && Number(res.headers['content-length']) > tope) { cortar(); return; }
+      res.on('data', (c) => {
+        if (hecho) return;
+        juntos += c.length;
+        if (tope !== null && juntos > tope) { cortar(); return; }
+        trozos.push(c);
+      });
       res.on('end', () => fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers }));
       res.on('error', (e) => fin({ error: e }));
     });
@@ -567,12 +578,22 @@ function negativaDeLectura(sas, ahora = Date.now()) {
 }
 
 // ── el sitio con las conversaciones prendidas: los resúmenes y la poda del espejo ───────────────────────────────
+// El tope de lo que se pide al buzón, por tipo de archivo: el mismo con el que después se abre (changes.js:
+// TOPE_HILO_DESCOMPRIMIDO y TOPE_JSON_DESCOMPRIMIDO). Lo comprimido nunca pesa menos que una parte de lo abierto, así que
+// un archivo que pasa ese tope en el listado no se podría leer nunca: pedirlo sólo junta memoria. La llave de las máquinas
+// sólo crea, pero crea lo que quiera; sin esto, un volcado o un registro de 5 GB se pedía entero.
+const TOPE_BAJADA_HILO = 512 * 1024 * 1024;
+const TOPE_BAJADA_OTRO = 64 * 1024 * 1024;
+/** El tope de bajada de un archivo del buzón, por su nombre dentro de la carpeta de la máquina. */
+const topeDeBajada = (archivo) => (/\.hilo\.jsonl\.gz$/.test(String(archivo)) ? TOPE_BAJADA_HILO : TOPE_BAJADA_OTRO);
+const mbDe = (n) => Math.round(n / 1048576);
 // las dos partes de una corrida que pesan (su conversación y su cambio de git), por el nombre del archivo en el espejo
 const PARTE_DE_CORRIDA = /^(.+)\.(hilo\.jsonl|cambio\.json)\.gz$/;
 /** El resumen que el sitio guardó de una corrida (dashboard/runs.js → resumirEspejo), o null. `volcado`: su ruta local. */
-function leerResumenDe(volcado) {
+function leerResumenDe(volcado, tope) {
   try {
-    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(require('../nightly/dashboard/changes.js').rutaDeResumen(volcado))).toString('utf8'));
+    const ch = require('../nightly/dashboard/changes.js');
+    const r = JSON.parse(ch.abrirGz(ch.rutaDeResumen(volcado), tope || ch.TOPE_JSON_DESCOMPRIMIDO).toString('utf8'));
     return r && r.v === 1 ? r : null;
   } catch (e) {
     if (e.code !== 'ENOENT') process.stderr.write(`bajar-corridas: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message}): se vuelve a bajar\n`);
@@ -698,7 +719,7 @@ async function credencialDelSitio(opts) {
 }
 
 /**
- * El contenedor de Azure como almacén de la bajada: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }`, con el
+ * El contenedor de Azure como almacén de la bajada: `{ destino, listar(prefijo), leer(nombre, timeoutMs, maxBytes) }`, con el
  * listado y el GET de siempre. Un conector de buzón trae el suyo con la misma forma (integrations/<n>/, kind mailbox).
  * La respuesta de `leer` puede traer `estado` y `motivo` cuando el almacén ya la clasificó (por ejemplo, un token que
  * venció): la bajada usa ese estado tal cual, antes de mirar el código HTTP.
@@ -707,7 +728,7 @@ function almacenDeAzure(base, token, cfg) {
   return {
     destino: `${cfg.cuenta}/${cfg.contenedor}`,
     listar: (prefijo = '') => listarTodo(base, token, cfg, prefijo),
-    leer: (nombre, timeoutMs) => pedir(`${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`, token, timeoutMs),
+    leer: (nombre, timeoutMs, maxBytes) => pedir(`${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`, token, timeoutMs, maxBytes),
   };
 }
 
@@ -732,18 +753,26 @@ async function bajarUnaCorrida(opts = {}) {
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
   let alguna = false;
   for (const parte of [`${opts.base}.hilo.jsonl.gz`, `${opts.base}.cambio.json.gz`]) {
-    const versiones = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
-    if (!versiones.length) continue;
+    const todas = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
+    if (!todas.length) continue;
+    alguna = true;
+    const conTopeDelSitio = parte.endsWith('.hilo.jsonl.gz') && Number.isFinite(opts.hiloTopeBytes) && opts.hiloTopeBytes > 0;
+    // como la pasada: la versión que pasa su tope de bajada no cuenta, y se usa la anterior (una versión nueva y enorme
+    // subida con la llave de sólo crear no le saca el detalle a la ejecución). La conversación en el sitio no: la
+    // pasada mira la más nueva contra el tope del sitio y la da por grande, y el detalle dice lo mismo
+    const versiones = conTopeDelSitio ? todas : todas.filter(({ b }) => Number.isFinite(b.largo) && b.largo <= topeDeBajada(parte));
+    const topeParte = conTopeDelSitio ? Math.min(opts.hiloTopeBytes, topeDeBajada(parte)) : topeDeBajada(parte);
+    if (!versiones.length) return fin(1, 'grande', `${todas[0].b.nombre} pasa el tope de bajada (${mbDe(topeParte)} MB) en todas sus versiones: no se pidió`);
     // la más nueva: el nombre sin versión es la más vieja
     versiones.sort((x, y) => ((x.f.version || '') < (y.f.version || '') ? -1 : 1));
     const { b } = versiones[versiones.length - 1];
-    alguna = true;
-    const r = await almacen.leer(b.nombre, Math.max(60000, Math.min(300000, b.largo / 20)));
+    if (!Number.isFinite(b.largo) || b.largo > topeParte) return fin(1, 'grande', `${b.nombre} pesa ${mbDe(b.largo)} MB y pasa el tope de bajada (${mbDe(topeParte)} MB): no se pidió`);
+    const r = await almacen.leer(b.nombre, Math.max(60000, Math.min(300000, b.largo / 20)), b.largo);
     if (r.error) return fin(1, 'sin_red', `sin red al bajar ${b.nombre} (${r.error.code || r.error.message})`);
     if (r.estado) return fin(1, r.estado, r.motivo);
     if (r.status !== 200) return fin(1, 'servicio_fallo', `el buzón contestó ${r.status} al bajar ${b.nombre}`);
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
-    if (r.cuerpo.length !== b.largo || (b.md5 && b.md5 !== md5)) return fin(1, 'servicio_fallo', `${b.nombre} llegó distinto (${r.cuerpo.length} bytes)`);
+    if (r.cortado || r.cuerpo.length !== b.largo || (b.md5 && b.md5 !== md5)) return fin(1, 'servicio_fallo', `${b.nombre} llegó distinto (${r.cortado ? `más de los ${b.largo} bytes del listado: se cortó` : `${r.cuerpo.length} bytes`})`);
     const destino = path.join(opts.dir, opts.maquina, parte);
     fs.mkdirSync(path.dirname(destino), { recursive: true });
     fs.writeFileSync(destino, r.cuerpo);
@@ -753,7 +782,7 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, registros_enteros: true, volcados_enteros: true };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, grandes: 0, registros_enteros: true, volcados_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
   // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo, salvo la que
   // cortó antes de bajar todos los volcados, o la que no pudo bajar un archivo de una carpeta vieja: con la vieja a medio
@@ -905,6 +934,15 @@ async function bajar(opts = {}) {
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
+    // Lo que pasa su tope de bajada no se pide (no se podría abrir). La conversación en el sitio la ve antes su propio
+    // tope, más chico (`hiloTopeBytes`), que además le escribe el resumen «sin conversación».
+    const esHilo = /\.hilo\.jsonl\.gz$/.test(forma.archivo);
+    if (b.largo > topeDeBajada(forma.archivo) && !(esHilo && topeHilo)) {
+      res.grandes += 1;
+      res.ignorados += 1;
+      if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(`${nombreMostrable(b.nombre)} (pesa ${mbDe(b.largo)} MB: pasa el tope de bajada de ${mbDe(topeDeBajada(forma.archivo))} MB)`);
+      continue;
+    }
     if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
     // Sin hilos ni se mira el disco — la conversación no se baja.
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
@@ -958,7 +996,7 @@ async function bajar(opts = {}) {
       if (cob.b.md5 && crypto.createHash('md5').update(cuerpo).digest('base64') === cob.b.md5) texto = cuerpo;
     } catch (_) { /* no está en el espejo: se pide */ }
     if (texto === null) {
-      const r = await almacen.leer(cob.b.nombre, 60000);
+      const r = await almacen.leer(cob.b.nombre, 60000, cob.b.largo);
       if (r.error) return { estado: 'sin_red', motivo: `sin red a mitad de la bajada (${r.error.code || r.error.message}) al leer ${cob.b.nombre}` };
       if (r.estado) return { estado: r.estado, motivo: r.motivo };
       if (r.status === 401 || r.status === 403) return { estado: 'sin_permiso_a_mitad', motivo: `el buzón dejó listar pero no leer ${cob.b.nombre} (${r.status})` };
@@ -1137,7 +1175,7 @@ async function bajar(opts = {}) {
       return;
     }
     // El blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta sin versión
-    const r = coberturasLeidas.get(p.nombre) || await almacen.leer(p.nombre, Math.max(60000, Math.min(300000, p.largo / 20)));
+    const r = coberturasLeidas.get(p.nombre) || await almacen.leer(p.nombre, Math.max(60000, Math.min(300000, p.largo / 20)), p.largo);
     if (fatal) return;
     if (r.error) { fatal = [1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
     if (r.estado) { fatal = [1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
@@ -1145,7 +1183,7 @@ async function bajar(opts = {}) {
     if (r.status !== 200) { malos.push(`${p.nombre} (${r.status})`); falloRegistro(p); return; }
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
     const esperado = p.md5 || r.cabeceras['content-md5'] || null;
-    if (r.cuerpo.length !== p.largo || (esperado && esperado !== md5)) { malos.push(`${p.nombre} (llegó distinto: ${r.cuerpo.length} bytes)`); falloRegistro(p); return; }
+    if (r.cortado || r.cuerpo.length !== p.largo || (esperado && esperado !== md5)) { malos.push(`${p.nombre} (llegó distinto: ${r.cortado ? `más de los ${p.largo} bytes del listado, se cortó` : `${r.cuerpo.length} bytes`})`); falloRegistro(p); return; }
     const tmp = `${p.local}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
     let st;
     try {
@@ -1225,7 +1263,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
+module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina, leerResumenDe, pedir, topeDeBajada };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');

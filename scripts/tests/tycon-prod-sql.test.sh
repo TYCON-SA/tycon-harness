@@ -211,9 +211,10 @@ fi
 
 # 🔴 En una Mac con el freno INSTALADO la puerta ignora la raíz falsa (a propósito: no puede ser un
 # interruptor), así que esta suite usaría el `security` y el `sqlcmd` REALES contra la base real.
-# Ahí no corre, y lo dice.
+# Ahí no corre, y lo dice con la marca de los corredores de suites («⏭ <suite>: NO MEDIDO — <motivo>», exit 0): sin
+# la marca, un exit 0 cuenta como verde.
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-sql: esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar el Llavero ni la base reales."
+  echo "⏭ prod-sql: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar el Llavero ni la base reales."
   exit 0
 fi
 if [ ! -f "$PUERTA" ]; then
