@@ -41,6 +41,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
+// lo más que se descomprime de los usos de una máquina: bajan del buzón, y un .gz de unos KB puede abrirse a GB; lo que
+// pasa el tope no se lee a medias: la lectura falla
+const TOPE_USOS = 64 * 1024 * 1024;
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -130,7 +133,7 @@ function readJson(f, what) {
  * espejo. Una máquina que nunca usó un nombre viejo no tiene registro: la subida lo dice con ese motivo, y es un reporte
  * con cero usos (el estado al que se quiere llegar). Un registro que no se pudo leer, no.
  */
-function readMailbox(mirror, windowFrom, today) {
+function readMailbox(mirror, windowFrom, today, { tope = TOPE_USOS } = {}) {
   let folders;
   try { folders = fs.readdirSync(mirror, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch (e) {
     throw new Error(`no pude leer el espejo del buzón ${mirror} (${e.code || e.message})`);
@@ -154,7 +157,7 @@ function readMailbox(mirror, windowFrom, today) {
     for (const x of aliases) if (x) reported.add(x);
     if (sinRegistro) continue;
     let lines = [];
-    try { lines = zlib.gunzipSync(fs.readFileSync(path.join(reg, 'legacy-names.jsonl.gz'))).toString('utf8').split('\n'); } catch (e) {
+    try { lines = zlib.gunzipSync(fs.readFileSync(path.join(reg, 'legacy-names.jsonl.gz')), { maxOutputLength: tope }).toString('utf8').split('\n'); } catch (e) {
       if (e.code !== 'ENOENT') throw new Error(`no pude leer los usos de ${m} (${e.code || e.message})`);
     }
     let bad = 0;
@@ -505,4 +508,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, check, checkHome, parseArgs };
+module.exports = { main, check, checkHome, parseArgs, readMailbox };
