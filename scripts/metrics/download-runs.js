@@ -933,7 +933,9 @@ async function bajar(opts = {}) {
   const instintosOmitidos = new Set();
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
-    if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
+    // un blob que el almacén marca `codificado` llega transformado y nunca casa con el listado: contarlo como no bajado
+    // dejaría cada pasada en «parcial» y el sitio sin armar, por un solo objeto que la subida del arnés no escribe
+    if (!forma || !Number.isFinite(b.largo) || b.codificado === true) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
     // Lo que pasa su tope de bajada no se pide (no se podría abrir). La conversación en el sitio la ve antes su propio
     // tope, más chico (`hiloTopeBytes`), que además le escribe el resumen «sin conversación».
     const esHilo = /\.hilo\.jsonl\.gz$/.test(forma.archivo);

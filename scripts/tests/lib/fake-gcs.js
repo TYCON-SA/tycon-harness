@@ -17,6 +17,7 @@
  */
 const http = require('http');
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 const ERRORES = {
   AccessDenied: [403, 'AccessDenied'],
@@ -115,7 +116,7 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
           const tam = Math.min(modo.pagina, Number(u.searchParams.get('maxResults') || 1000));
           const items = nombres.slice(desde, desde + tam).map((n) => {
             const o = objetos.get(n);
-            return { name: n, size: String(o.cuerpo.length), md5Hash: o.md5, etag: `e-${o.md5}`, timeCreated: o.creado, updated: o.creado };
+            return { name: n, size: String(o.cuerpo.length), md5Hash: o.md5, etag: `e-${o.md5}`, timeCreated: o.creado, updated: o.creado, ...(o.encoding ? { contentEncoding: o.encoding } : {}) };
           });
           const doc = { kind: 'storage#objects', items };
           if (desde + tam < nombres.length) doc.nextPageToken = String(desde + tam);
@@ -135,7 +136,13 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
         if (modo.media !== 'ok') return jsonError(res, Number(modo.media));
         const o = objetos.get(nombre);
         if (!o) return jsonError(res, 404);
-        res.writeHead(200, { 'content-type': 'application/octet-stream' });
+        // un objeto guardado con `Content-Encoding: gzip` se sirve descomprimido a quien no pide gzip, como Cloud Storage
+        // (decompressive transcoding): el tamaño y el MD5 del listado son los de los bytes guardados
+        if (o.encoding === 'gzip' && !/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+          res.writeHead(200, { 'content-type': 'application/octet-stream' });
+          return res.end(zlib.gunzipSync(o.cuerpo));
+        }
+        res.writeHead(200, { 'content-type': 'application/octet-stream', ...(o.encoding ? { 'content-encoding': o.encoding } : {}) });
         return res.end(o.cuerpo);
       }
 
@@ -185,6 +192,8 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
       get servidos() { return cuenta.servidos; },
       /** Guarda un objeto en el bucket, como si alguien lo hubiera subido. */
       poner(nombre, cuerpo) { const b = Buffer.from(cuerpo); objetos.set(nombre, { cuerpo: b, md5: crypto.createHash('md5').update(b).digest('base64'), creado: new Date().toISOString() }); },
+      /** Guarda un objeto comprimido con `Content-Encoding: gzip`, como lo puede subir cualquiera que tenga la llave de crear. */
+      ponerComprimido(nombre, cuerpo) { const b = zlib.gzipSync(Buffer.from(cuerpo)); objetos.set(nombre, { cuerpo: b, md5: crypto.createHash('md5').update(b).digest('base64'), creado: new Date().toISOString(), encoding: 'gzip' }); },
       cerrar: () => new Promise((r) => { srv.closeAllConnections && srv.closeAllConnections(); srv.close(() => r()); }),
     });
   }));
