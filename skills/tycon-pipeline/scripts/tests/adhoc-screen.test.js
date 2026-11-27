@@ -712,3 +712,45 @@ test('adhoc set con maqueta sigue pidiendo la firma', (t) => {
   assert.notStrictEqual(s.status, 0);
   assert.ok(!fs.existsSync(path.join(estado(h), 'adhoc', `${SID}.json`)));
 });
+
+// 🔴 Falla con: la evidencia del propio arnés (`.advisors/`, `.tycon/`, `.engram/`) tomada por una pantalla. En un repo
+//    que se llama FrontEnd todo archivo cuenta como del frente, y una captura sin seguimiento en `.advisors/dod-runtime/`
+//    frenaba el guardar de un carril que sólo tocaba tipos (A72).
+test('AdhocScreen_EvidenciaDelArnes_NoEsPantalla (A72)', (t) => {
+  const r = repo(t, 'FrontEnd');
+  const h = home(t);
+  const tipos = escribir(r, 'src/types/deuda.d.ts', 'export type Deuda = { id: number };\n');
+  escribir(r, '.advisors/dod-runtime/merge-critical-main-captures-20261026T192213Z/pantalla.png', PNG);
+  // con espacios en el nombre, como las que nombra el sistema
+  escribir(r, '.advisors/dod-runtime/Captura de pantalla 2026-11-27 a las 17.30.12.png', PNG);
+  escribir(r, '.tycon/estado.json', '{}\n');
+  escribir(r, '.engram/manifest.json', '{}\n');
+  carril(h, { files: [tipos] });
+  const v = revisar(leerCarril(h), [r]);
+  assert.deepStrictEqual(v.pantallas.filter((p) => /\.(advisors|tycon|engram)\//.test(p)), [], `tomó la evidencia por pantalla: ${v.pantallas.join(', ')}`);
+  // y un archivo de pantalla de verdad en ese repo sigue contando
+  escribir(r, 'src/components/Combo.tsx', '<p>hola</p>\n');
+  assert.ok(revisar(leerCarril(h), [r]).pantallas.some((p) => p.endsWith('Combo.tsx')));
+});
+
+// 🔴 Falla con: un archivo que nunca dibuja nada tomado por pantalla en un repo de pantallas: las declaraciones de tipos
+//    (.d.ts), la configuración de TypeScript (tsconfig*.json) y la de las herramientas (*.config.js|ts). package.json sí
+//    cuenta: cambiar una librería puede cambiar lo que se ve. Una .tsx sigue contando (A72, decisión del dueño).
+test('AdhocScreen_TiposYConfiguracion_NoSonPantalla_PackageJsonSi (A72)', (t) => {
+  const r = repo(t, 'FrontEnd');
+  const h = home(t);
+  const noPantallas = ['web/src/types/voz.d.ts', 'web/tsconfig.json', 'web/tsconfig.app.json', 'web/vite.config.ts', 'web/tailwind.config.js'];
+  const fs_ = noPantallas.map((rel) => escribir(r, rel, '{}\n'));
+  carril(h, { files: fs_ });
+  for (const rel of noPantallas) {
+    assert.ok(!revisar(leerCarril(h), [r]).pantallas.some((p) => p.endsWith(rel)), `${rel} no es una pantalla`);
+  }
+  // lo que sigue contando en ese repo: package.json, una .tsx, y lo que no es tipo ni configuración de herramientas, o
+  // vive en una carpeta de la aplicación
+  const siguen = ['web/package.json', 'web/src/components/Combo.tsx', 'web/src/styles/app.css', 'web/public/logo.png', 'web/src/utils/fecha.ts',
+    'web/.storybook/preview.ts', 'web/src/components/Combo.d.ts', 'web/src/navigation/menu.config.ts', 'app/tipos.d.ts', 'app/layout.config.ts',
+    'web/src/features/.tycon/pantalla.ts'];
+  carril(h, { files: [...fs_, ...siguen.map((rel) => escribir(r, rel, '{}\n'))] });
+  const ps = revisar(leerCarril(h), [r]).pantallas;
+  for (const rel of siguen) assert.ok(ps.some((p) => p.endsWith(rel)), `${rel} sigue contando: ${ps.join(', ')}`);
+});
