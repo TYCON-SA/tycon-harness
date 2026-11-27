@@ -1705,8 +1705,11 @@ test('8.242-TraerMain_VenceLaFotoYSeVuelveAPreparar (T28) @story-8.242 @ac-19', 
   sh(a, 'checkout', '-q', RAMA);
   sh(a, 'merge', '-q', '--no-edit', 'origin/main');
   assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', CAMBIO, 'lo de main vence la foto');
-  // con «Preparar el pull request» cerrado otra vez (la foto nueva), pregunta
+  // con «Preparar el pull request» cerrado otra vez (la foto nueva) y la rama remota sin empujar, frena: el pedido
+  // saldría de lo de antes (S237); empujada, pregunta
   abrir(h, preparada(a));
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', /lo empujado a la rama no es lo preparado/);
+  sh(a, 'push', '-q');
   assert.match((decide(h, 'gh pr create --fill', a) || {}).pregunta || '', ABRO);
 });
 
@@ -2137,12 +2140,47 @@ test('SaveBrake_ReadyOrMergeAfterPrepare_PushedIsThePhoto (T5b) @story-8.332 @ac
     assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
     assert.match(d.texto, /lo empujado a la rama no es lo preparado/, cmd);
   }
-  // crear el pedido no cambia: lo que sale es la rama que el mismo comando empuja
-  assert.ok((decide(h, 'gh pr create --fill', a) || {}).pregunta, 'crear pregunta como antes');
+  // crear el pedido con la rama ya en el remoto, vieja, también: el pedido sale de lo que está allá (S237)
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', /lo empujado a la rama no es lo preparado/, 'crear frena');
   sh(a, 'push', '-q');
-  for (const cmd of ['gh pr ready 12', 'gh pr merge 12']) {
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12', 'gh pr create --fill']) {
     const d = decide(h, cmd, a);
     assert.ok(d && d.pregunta && !d.texto, `«${cmd}» empujado: ${JSON.stringify(d)}`);
+  }
+});
+
+// 🔴 Falla con: un pedido que se crea, se marca listo o se mergea mirando la copia local de la rama remota, que puede
+// estar vieja: lo que sale es la punta en el remoto, y sin poder leerla no se sabe qué sale (S237).
+test('SaveBrake_PrAfterPrepare_LiveRemoteTip (T5c) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  escribir(a, 'nuevo.txt', 'lo preparado\n');
+  sh(a, 'add', 'nuevo.txt');
+  sh(a, 'commit', '-q', '-m', 'lo preparado');
+  sh(a, 'push', '-q');
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12', 'gh pr create --fill']) {
+    assert.ok((decide(h, cmd, a) || {}).pregunta, `«${cmd}» con la punta remota igual a lo preparado pregunta`);
+  }
+  // otra copia empuja algo distinto a la rama: la copia local de la remota (`@{u}`) sigue igual a lo preparado
+  const otra = path.join(path.dirname(a), 'otra');
+  const origen = sh(a, 'remote', 'get-url', 'origin');
+  spawnSync('git', ['clone', '-q', '-b', RAMA, origen, otra], { env: { ...process.env, ...GIT_ENV } });
+  escribir(otra, 'ajeno.txt', 'otra cosa\n');
+  sh(otra, 'add', 'ajeno.txt');
+  sh(otra, 'commit', '-q', '-m', 'ajeno');
+  sh(otra, 'push', '-q', 'origin', RAMA);
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12', 'az repos pr update --id 12 --status completed', 'gh pr create --fill']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» con otra punta remota frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /lo empujado a la rama no es lo preparado|no pude comprobar/, cmd);
+  }
+  // un remoto que no responde: no pude comprobar, no pasa
+  sh(a, 'remote', 'set-url', 'origin', path.join(path.dirname(a), 'no-existe.git'));
+  for (const cmd of ['gh pr ready 12', 'gh pr create --fill']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» sin remoto frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /no pude comprobar/, cmd);
   }
 });
 

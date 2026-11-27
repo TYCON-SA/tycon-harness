@@ -296,6 +296,37 @@ function arbolDelCommit(repo, ref) {
   }
 }
 
+// lo que puede tardar la lectura de la punta en el remoto antes de darla por perdida
+const PUNTA_MS = Number(process.env.TYCON_SAVE_REMOTE_MS) > 0 ? Number(process.env.TYCON_SAVE_REMOTE_MS) : 15000;
+
+/**
+ * La punta de la rama actual en el remoto, leída en vivo (`git ls-remote`, con tope): lo que sale en un pull request es
+ * eso, no la copia local de la rama remota, que puede estar vieja. El remoto y la rama son los del seguimiento de la
+ * rama; sin seguimiento, `origin` y la rama del mismo nombre. `{ commit, arbol }`; `{ falta: true }` si la rama no está
+ * en el remoto; `{ error }` si no se pudo leer, o si la punta no está en esta copia (sin ella no se conoce su árbol).
+ */
+function puntaRemota(repo, timeoutMs = PUNTA_MS) {
+  const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+  if (!rama.ok || !rama.out) return { error: 'no estoy en una rama' };
+  const remoto = git(repo, ['config', '--get', `branch.${rama.out}.remote`]).out || 'origin';
+  const ref = git(repo, ['config', '--get', `branch.${rama.out}.merge`]).out || `refs/heads/${rama.out}`;
+  const r = spawnSync('git', ['-C', repo, 'ls-remote', '--', remoto, ref], {
+    windowsHide: true, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'],
+    env: entornoDeGit().idiomaFijo(process.env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+  });
+  if (r.error || r.status !== 0) {
+    const por = r.error ? (r.error.code === 'ETIMEDOUT' ? `no respondió en ${Math.round(timeoutMs / 1000)} s` : r.error.message)
+      : (String(r.stderr || '').trim().split('\n').pop() || `git ls-remote salió ${r.status}`);
+    return { error: `${remoto}: ${por}` };
+  }
+  const linea = String(r.stdout || '').split('\n').map((l) => l.split('\t')).find((p) => p[1] === ref);
+  if (!linea) return { falta: true };
+  const commit = linea[0].trim();
+  const c = arbolDelCommit(repo, commit);
+  if (c.falta) return { error: `la punta ${commit.slice(0, 9)} de ${remoto} no está en esta copia (\`git fetch\`)` };
+  return c;
+}
+
 // lo que pueden tardar los controles del commit de todos los repos antes de darlos por colgados: los del arnés, ~30 s; con
 // un revisor tocado, su chequeo de vida suma ~40 s, y hasta ~2 min si confirma un rojo. Debajo del plazo con que la
 // ventana espera al chequeo (owner-window.js, 240 s)
@@ -755,4 +786,4 @@ function evidenciaDelPedido({ marker = {}, findings = null } = {}) {
   return `Pruebas: ${pruebas} · Revisores: ${revisores} · Pase: ${pase} · Hallazgos: ${hallazgos}`;
 }
 
-module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
+module.exports = { FIRMA: 'save', raizDe, tieneCambios, esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo, rutasDeclaradas, reposDeLaCorrida, exencionesDeLaCorrida, requiereSensible, huella, huellas, arbolDelCommit, puntaRemota, controlesDelCommit, vigente, esSensible, sensibles, limpia, lineaDelAviso, avisar, antesDeFirmar, constancia, fotoDelPedido, evidenciaDelPedido };
