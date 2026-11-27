@@ -230,7 +230,11 @@ node "$HDIR/bootstrap.js" >"$BASE/bs.out" 2>"$BASE/bs.err"; rc=$?
 [ "$(state_field mode)" = "managed" ] && ok "T11 · el estado volvió a managed" || bad "T11 · mode=$(state_field mode)"
 [ "$(state_field tree)" = "$LAB_TREE" ] && ok "T11 · tree = tree_before" || bad "T11 · tree=$(state_field tree)"
 [ -z "$(state_field tree_before)" ] && ok "T11 · tree_before quedó vacío" || bad "T11 · tree_before=$(state_field tree_before)"
-[ "$(cd -P "$LINK" 2>/dev/null && pwd -P)" = "$(cd -P "$LAB_TREE" && pwd -P)" ] && ok "T11 · el enlace apunta a tree_before" || bad "T11 · el enlace apunta a $(readlink "$LINK")"
+# el lugar vuelve a tree_before; el nombre viejo colgado ya no se repara (queda como estaba y lo dice doctor)
+T11_PLACE="$LAB_HOME/.claude/$(node -p "require('$SRC/place.js').PLACE_NAME")"
+[ "$(cd -P "$T11_PLACE" 2>/dev/null && pwd -P)" = "$(cd -P "$LAB_TREE" && pwd -P)" ] && ok "T11 · el lugar apunta a tree_before" || bad "T11 · el lugar apunta a $(readlink "$T11_PLACE")"
+[ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$GONE" ] && ok "T11 · el nombre viejo colgado quedó como estaba" || bad "T11 · el nombre viejo colgado se tocó: $(readlink "$LINK")"
+rm "$LINK"; ln -s "$LAB_TREE" "$LINK"   # las pruebas de abajo arrancan por el nombre viejo, como antes
 grep -qi "developer\|desarrollador" <<<"$(state_field notice)" && ok "T11 · notice explica la vuelta a managed" || bad "T11 · notice: «$(state_field notice)»"
 grep -q '^argv=startup ' "$FAKE_LOG" && ok "T11 · y la sesión arrancó por harness.js de tree_before" || bad "T11 · harness.js no corrió tras la vuelta"
 [ ! -d "$HDIR/harness.lock" ] && ok "T11 · el candado quedó suelto" || bad "T11 · harness.lock quedó tomado"

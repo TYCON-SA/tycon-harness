@@ -21,6 +21,8 @@
  *       una carpeta real (cae al respaldo y lo anota en startup.log);
  *   T9  los lectores en Node y en shell: primero el lugar, después el viejo, el viejo sin decir nada, y bajo USERPROFILE
  *       cuando difiere de HOME.
+ *   T42 una máquina que recibe el retiro tarde lo hace igual, sea cual sea su forma (mudada o no, con o sin el lugar);
+ *   T43 no se retira el nombre por el que corre quien llama, ni uno por el que pasa el lugar, ni en la mudanza.
  * 🔴 Nunca la HOME real: el laboratorio fija HOME y USERPROFILE a su carpeta y se niega a seguir si os.homedir() da otra.
  */
 const fs = require('fs');
@@ -41,6 +43,8 @@ if (path.resolve(os.homedir()) !== path.resolve(LAB)) {
   try { fs.rmdirSync(LAB); } catch (_) { /* nada */ }
   process.exit(3);
 }
+// las rutas que el retiro del nombre viejo toma del ambiente: las de quien corre la prueba no valen en sus casas
+for (const k of ['TYCON_SETTINGS_PATH', 'CLAUDE_MD_PATH', 'CODEX_HOME', 'TYCON_GIT_HOOKS_DIR', 'TYCON_LAUNCHAGENTS_DIR']) delete process.env[k];
 if (process.argv.includes('--guard-only')) { process.stdout.write('guarda: ok\n'); fs.rmdirSync(LAB); process.exit(0); }
 
 const test = require('node:test');
@@ -48,6 +52,8 @@ const assert = require('node:assert');
 const PLACE = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'place.js'));
 const CP_FILE = path.join(ROOT, 'scripts', 'lib', 'canonical-path.js');
 const CP = require(CP_FILE);
+// la carpeta del estado de siempre de una casa (en una máquina mudada, un enlace a la nueva)
+const PLACE_STATE_OF = (h) => require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).legacyStateDir(h);
 test.after(() => { try { fs.rmSync(LAB, { recursive: true, force: true }); } catch (_) { /* un proceso de fondo todavía la usa */ } });
 
 let seq = 0;
@@ -124,16 +130,15 @@ test('T5 Birth_LegacyOrStateTree_NeverInstallerClone', () => {
   link(X, legacyOf(h));
   const r = CP.ensurePlace({ clon: Y, home: h });
   assert.strictEqual(real(placeOf(h)), X, `el lugar nació hacia ${real(placeOf(h))}, no hacia X (${r.mensaje})`);
-  assert.ok(PLACE.samePath(direct(legacyOf(h)), placeOf(h)), 'el viejo no quedó apuntando al lugar');
-  assert.strictEqual(real(legacyOf(h)), X, 'los dos resuelven a X');
+  assert.ok(!exists(legacyOf(h)), 'el viejo, un enlace al mismo clon que el lugar, no se retiró');
   fs.rmSync(Y, { recursive: true, force: true });
-  assert.ok(real(placeOf(h)) && real(legacyOf(h)), 'borrar Y dejó algo colgado');
+  assert.ok(real(placeOf(h)), 'borrar Y dejó el lugar colgado');
   // (2) el viejo colgado (su clon se borró) y el estado en Z: el lugar nace hacia Z, no hacia el clon que corre
   const Z = clone('Z'); const Y2 = clone('Y2'); const h2 = home('s1-state');
   link(path.join(LAB, 'borrado-hace-rato'), legacyOf(h2)); writeState(h2, Z);
   CP.ensurePlace({ clon: Y2, home: h2 });
   assert.strictEqual(real(placeOf(h2)), Z, 'con el viejo colgado, el lugar sigue al estado');
-  assert.strictEqual(real(legacyOf(h2)), Z, 'y el viejo, reparado hacia el lugar');
+  assert.ok(isLink(legacyOf(h2)) && !real(legacyOf(h2)), 'y el viejo colgado queda como estaba: no se repara');
   // --prefer (lo pasa harness.js) vale como el estado
   const P = clone('P'); const h2b = home('s1-prefer');
   CP.ensurePlace({ clon: Y2, home: h2b, prefer: P });
@@ -173,24 +178,21 @@ function build(h, which, kind, ctx, variant) {
 }
 const KINDS = ['F', 'E', 'C', 'N', 'R', 'X', 'A'];
 // lo que dice la matriz de «Cómo funciona» para cada celda: a dónde queda el lugar ('D' = el clon que corre, 'K' = el
-// clon del viejo, 'LR' = la carpeta real del viejo, 'same' = como estaba) y qué le pasa al viejo ('toPlace' | 'same')
+// clon del viejo, 'LR' = la carpeta real del viejo, 'same' = como estaba) y qué le pasa al viejo ('gone' | 'same').
+// El viejo ya no se mantiene: un enlace que lleva al lugar se retira (en estas casas no hay nada registrado
+// con él), y uno colgado, a algo que no es un clon o a otro clon queda como estaba
 function expected(p, v, variant) {
   if (p === 'X' || p === 'A') return { place: 'same', legacy: 'same', accion: 'real-folder' };
   if (p === 'F' || p === 'C' || p === 'N') {
     if (v === 'R') return { place: 'LR', legacy: 'same' };
-    if (v === 'E') return { place: 'K', legacy: 'toPlace' };
-    if (v === 'F') return { place: 'D', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: «—»
-    return { place: 'D', legacy: v === 'X' || v === 'A' ? 'same' : 'toPlace' };
+    if (v === 'E') return { place: 'K', legacy: 'gone' };   // el lugar nace hacia el clon del viejo, y el viejo se retira
+    return { place: 'D', legacy: 'same' };
   }
   // el lugar ya resuelve a un clon (E → P, o R)
-  if (v === 'F') return { place: 'same', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: «—»
-  if (v === 'C' || v === 'N') return { place: 'same', legacy: 'toPlace' };
-  if (v === 'X' || v === 'A') return { place: 'same', legacy: 'same' };
   if (v === 'R') return p === 'E' && variant === 'placeAtLegacy' ? { place: 'same', legacy: 'same' } : { place: 'same', legacy: 'same', accion: 'conflict' };
-  // v === 'E'
+  if (v !== 'E') return { place: 'same', legacy: 'same' };
   if (variant === 'other') return { place: 'same', legacy: 'same', accion: 'conflict' };
-  if (variant === 'atPlace') return { place: 'same', legacy: 'same' };
-  return { place: 'same', legacy: 'toPlace' };   // directo al mismo clon: se re-apunta al lugar
+  return { place: 'same', legacy: 'gone' };   // al lugar, o directo al mismo clon: se retira
 }
 function cells() {
   const out = [];
@@ -221,7 +223,7 @@ test('T6 Birth_Matrix49Cells_PlaceFirst_RealCloneUntouched_CycleResolved_Idempot
     if (c.p === 'X' || c.p === 'A') assert.ok(c.p === 'X' ? isRealDir(placeOf(h)) : fs.lstatSync(placeOf(h)).isFile(), `${label}: el lugar se tocó`);
     else assert.strictEqual(real(placeOf(h)), want, `${label}: el lugar quedó en ${real(placeOf(h))}, se esperaba ${want} (${r.mensaje})`);
     // el viejo
-    if (exp.legacy === 'toPlace') assert.ok(isLink(legacyOf(h)) && PLACE.samePath(direct(legacyOf(h)), placeOf(h)), `${label}: el viejo no apunta al lugar (${direct(legacyOf(h))})`);
+    if (exp.legacy === 'gone') assert.ok(!exists(legacyOf(h)), `${label}: el viejo no se retiró (${direct(legacyOf(h))}; ${r.mensaje})`);
     else if (c.v === 'F') assert.ok(!exists(legacyOf(h)), `${label}: el viejo apareció`);
     else if (isLink(legacyOf(h))) assert.strictEqual(direct(legacyOf(h)), legacyDirectBefore, `${label}: el viejo se re-apuntó`);
     // una carpeta real que es un clon, en cualquiera de los dos nombres, intacta
@@ -233,15 +235,17 @@ test('T6 Birth_Matrix49Cells_PlaceFirst_RealCloneUntouched_CycleResolved_Idempot
     const again = observeWrites(() => CP.ensurePlace({ clon: running, home: h }));
     assert.deepStrictEqual(again.order, [], `${label}: la segunda ejecución escribió (${again.result.mensaje})`);
   }
-  // el ciclo: el viejo apunta al lugar y el lugar al viejo (los dos colgados) → el lugar a D, el viejo al lugar
+  // el ciclo: el viejo apunta al lugar y el lugar al viejo (los dos colgados) → el lugar a D; el viejo, que ahora lleva
+  // al lugar, se retira en la misma corrida
   const h = home('ciclo');
   link(legacyOf(h), placeOf(h)); link(placeOf(h), legacyOf(h));
   CP.ensurePlace({ clon: running, home: h });
   assert.strictEqual(real(placeOf(h)), running, 'el ciclo: el lugar hacia D');
-  assert.ok(PLACE.samePath(direct(legacyOf(h)), placeOf(h)) && real(legacyOf(h)) === running, 'el ciclo: el viejo hacia el lugar');
-  // una máquina que ya tenía el viejo: el viejo apunta al lugar, y no queda anotado como nacido por la regla de máquina nueva
+  assert.ok(!exists(legacyOf(h)), 'el ciclo: el viejo no se retiró');
+  // una máquina que ya tenía el viejo (directo al clon): el lugar nace hacia ese clon y el viejo se retira, sin anotarlo
+  // como nacido por la regla de máquina nueva
   const had = home('ya-tenia'); link(running, legacyOf(had)); CP.ensurePlace({ clon: running, home: had });
-  assert.ok(isLink(placeOf(had)) && PLACE.samePath(direct(legacyOf(had)), placeOf(had)), 'una máquina que ya tenía el viejo: el viejo al lugar');
+  assert.ok(isLink(placeOf(had)) && real(placeOf(had)) === running && !exists(legacyOf(had)), 'una máquina que ya tenía el viejo: el lugar al clon y el viejo retirado');
   assert.ok(!fs.existsSync(path.join(had, '.claude', '.tycon-pipeline', 'legacy-place-born.json')), 'una máquina que ya tenía el viejo quedó anotada');
 });
 
@@ -264,6 +268,138 @@ test('T41 FreshMachine_NoLegacyAfterTandaC_OnboardingAgain', () => {
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.ok(isLink(placeOf(fresh2)) && !exists(legacyOf(fresh2)), `por la línea de comandos: ${r.stdout}`);
   assert.ok(!r.stdout.includes(legacyOf(fresh2)), `el mensaje nombra el viejo en una máquina que no lo tiene: ${r.stdout}`);
+});
+
+// ── T42 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Una máquina que recibe la versión con el retiro semanas después, desde cualquiera de las formas en que pudo quedar,
+// retira el viejo en esa misma corrida, sin depender de un orden: sin mudar o mudada, con o sin el lugar, con el viejo
+// al lugar o directo al clon, y con la carpeta del estado de siempre o la nueva. Los permisos con el nombre viejo pasan al
+// lugar en el mismo paso, queda anotado y la corrida siguiente no escribe. Con un hook registrado por el viejo, en
+// cualquiera de esas formas, el viejo queda.
+test('T42 LateMachine_RetiresLegacyWhateverItsShape_NoOrderDependency', () => {
+  const moved = (h, K) => {
+    const own = path.join(h, '.tycon', 'harness');
+    fs.mkdirSync(path.dirname(own), { recursive: true });
+    link(K, own); link(own, placeOf(h)); link(own, legacyOf(h));
+    fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true });
+    link(path.join(h, '.tycon', 'state'), PLACE_STATE_OF(h));
+  };
+  const shapes = [
+    { name: 'sin-mudar-sin-lugar', build: (h, K) => { link(K, legacyOf(h)); } },
+    { name: 'sin-mudar-viejo-al-lugar', build: (h, K) => { link(K, placeOf(h)); link(placeOf(h), legacyOf(h)); } },
+    { name: 'sin-mudar-viejo-al-clon', build: (h, K) => { link(K, placeOf(h)); link(K, legacyOf(h)); } },
+    { name: 'mudada', build: moved },
+  ];
+  const old = PLACE.LEGACY_PLACE_NAME; const neu = PLACE.PLACE_NAME;
+  const settingsOf = (h) => path.join(h, '.claude', 'settings.json');
+  const write = (h, extra = {}) => fs.writeFileSync(settingsOf(h), JSON.stringify({ permissions: { allow: [`Bash(node ~/.claude/${old}/scripts/x.js)`], additionalDirectories: [`~/.claude/${old}`] }, ...extra }, null, 2) + '\n');
+  for (const shape of shapes) {
+    for (const withHook of [false, true]) {
+      const K = clone(`tarde-${shape.name}`); const h = home(`tarde-${shape.name}${withHook ? '-hook' : ''}`);
+      shape.build(h, K);
+      write(h, withHook ? { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `node "$HOME/.claude/${old}/scripts/hooks/x.js"` }] }] } } : {});
+      const before = fs.readFileSync(settingsOf(h), 'utf8');
+      const label = `${shape.name}${withHook ? ' con un hook por el viejo' : ''}`;
+      const r = CP.ensurePlace({ clon: K, home: h });
+      assert.ok(real(placeOf(h)) === K, `${label}: el lugar no lleva al clon (${r.mensaje})`);
+      if (withHook) {
+        assert.ok(isLink(legacyOf(h)), `${label}: el viejo se retiró con un hook registrado`);
+        assert.strictEqual(fs.readFileSync(settingsOf(h), 'utf8'), before, `${label}: settings.json cambió`);
+        continue;
+      }
+      assert.ok(!exists(legacyOf(h)), `${label}: el viejo no se retiró (${r.mensaje})`);
+      const s = JSON.parse(fs.readFileSync(settingsOf(h), 'utf8'));
+      assert.deepStrictEqual(s.permissions.allow, [`Bash(node ~/.claude/${neu}/scripts/x.js)`], `${label}: el permiso`);
+      assert.deepStrictEqual(s.permissions.additionalDirectories, [`~/.claude/${neu}`], `${label}: la carpeta adicional`);
+      assert.ok(fs.existsSync(path.join(PLACE_STATE_OF(h), 'legacy-place-retired.json')), `${label}: el retiro no quedó anotado`);
+      assert.ok(fs.existsSync(path.join(K, 'testigo.txt')), `${label}: el clon se tocó`);
+      const again = observeWrites(() => CP.ensurePlace({ clon: K, home: h }));
+      assert.deepStrictEqual(again.order, [], `${label}: la corrida siguiente escribió (${again.result.mensaje})`);
+    }
+  }
+  // un settings.json que es un enlace (a un repo de configuración) sigue siendo un enlace, y un permiso anidado también
+  // deja de nombrar el viejo
+  const K = clone('tarde-enlace'); const h = home('tarde-settings-enlace'); link(K, legacyOf(h));
+  const cfg = dir('config-repo', `c-${++seq}`); const realSettings = path.join(cfg, 'settings.json');
+  fs.writeFileSync(realSettings, JSON.stringify({ permissions: { allow: [`Read(~/.claude/${old}/**)`], extra: { deep: [`~/.claude/${old}/x`] } } }, null, 2) + '\n');
+  link(realSettings, settingsOf(h));
+  CP.ensurePlace({ clon: K, home: h });
+  assert.ok(!exists(legacyOf(h)), 'con settings.json enlazado, el viejo no se retiró');
+  assert.ok(isLink(settingsOf(h)), 'settings.json dejó de ser un enlace');
+  const s = JSON.parse(fs.readFileSync(realSettings, 'utf8'));
+  assert.deepStrictEqual([s.permissions.allow, s.permissions.extra.deep], [[`Read(~/.claude/${neu}/**)`], [`~/.claude/${neu}/x`]], 'los permisos del settings.json enlazado');
+});
+
+// ── T43 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Lo que no se retira aunque el viejo sea un enlace al lugar con sólo permisos: (1) cuando quien llama corre POR el nombre
+// viejo (el instalador lanzado por ~/.claude/<viejo>/scripts/… se quedaría sin su carpeta a mitad de camino): se retira
+// en la corrida siguiente, por otro camino; (2) mientras el lugar llegue al clon pasando por el viejo (quedaría colgado):
+// la regla re-apunta antes el lugar a lo que el viejo lleva, y un --link pedido por el viejo hace lo mismo; (3) con
+// `keepLegacy` (la mudanza), que lo deja para el arranque siguiente.
+test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', () => {
+  const perm = (h) => fs.writeFileSync(path.join(h, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: [`Read(~/.claude/${PLACE.LEGACY_PLACE_NAME}/**)`] } }, null, 2) + '\n');
+  // (1) por el nombre viejo, con --clone y con --link
+  for (const how of ['clone', 'link']) {
+    const K = clone(`via-${how}`); const h = home(`via-viejo-${how}`); link(K, placeOf(h)); link(placeOf(h), legacyOf(h)); perm(h);
+    const r = CP.ensurePlace(how === 'clone' ? { clon: legacyOf(h), home: h } : { clon: K, home: h, forzar: legacyOf(h) });
+    assert.ok(isLink(legacyOf(h)) && real(legacyOf(h)) === K, `(1 ${how}) se retiró el nombre por el que corre quien llama (${r.mensaje})`);
+    assert.ok(real(placeOf(h)) === K, `(1 ${how}) el lugar se movió`);
+    CP.ensurePlace({ clon: K, home: h });
+    assert.ok(!exists(legacyOf(h)), `(1 ${how}) por otro camino, la corrida siguiente no lo retiró`);
+  }
+  // (2) el lugar pasa por el viejo
+  const K2 = clone('por-el-viejo'); const h2 = home('lugar-por-el-viejo'); link(K2, legacyOf(h2)); link(legacyOf(h2), placeOf(h2)); perm(h2);
+  const r2 = CP.ensurePlace({ clon: K2, home: h2 });
+  assert.ok(real(placeOf(h2)) === K2 && !PLACE.samePath(direct(placeOf(h2)), legacyOf(h2)), `(2) el lugar quedó colgado o sigue pasando por el viejo (${direct(placeOf(h2))}; ${r2.mensaje})`);
+  assert.ok(!exists(legacyOf(h2)), `(2) con el lugar re-apuntado, el viejo no se retiró (${r2.mensaje})`);
+  // …y un --link pedido por el viejo, en una máquina sin el lugar: el lugar va al clon, no al nombre viejo
+  const K3 = clone('link-viejo'); const h3 = home('link-por-el-viejo'); link(K3, legacyOf(h3)); perm(h3);
+  const r3 = CP.ensurePlace({ clon: K3, home: h3, forzar: legacyOf(h3) });
+  assert.ok(real(placeOf(h3)) === K3 && !PLACE.samePath(direct(placeOf(h3)), legacyOf(h3)), `(2) --link por el viejo dejó el lugar apuntando al viejo (${direct(placeOf(h3))}; ${r3.mensaje})`);
+  CP.ensurePlace({ clon: K3, home: h3 });
+  assert.ok(real(placeOf(h3)) === K3 && !exists(legacyOf(h3)), '(2) después del --link por el viejo, el viejo no se retiró o el lugar quedó colgado');
+  // (3) keepLegacy, por la API y por la línea de comandos
+  const K4 = clone('mudanza'); const h4 = home('mudanza-keep'); link(K4, placeOf(h4)); link(placeOf(h4), legacyOf(h4)); perm(h4);
+  CP.ensurePlace({ clon: K4, home: h4, forzar: K4, keepLegacy: true });
+  assert.ok(isLink(legacyOf(h4)), '(3) keepLegacy: el viejo se retiró');
+  const c = cli(['--ensure-link', '--clone', K4, '--home', h4, '--link', K4, '--keep-legacy']);
+  assert.strictEqual(c.status, 0); assert.ok(isLink(legacyOf(h4)), `(3) --keep-legacy: el viejo se retiró (${c.stdout})`);
+  CP.ensurePlace({ clon: K4, home: h4 });
+  assert.ok(!exists(legacyOf(h4)), '(3) sin keepLegacy, la corrida siguiente no lo retiró');
+  // (4) con una mudanza a medias (su diario en la casa propia) no se retira, lo pida quien lo pida
+  const K5 = clone('diario'); const h5 = home('mudanza-a-medias'); link(K5, placeOf(h5)); link(placeOf(h5), legacyOf(h5)); perm(h5);
+  const journal = path.join(h5, '.tycon', 'migrate.json'); fs.mkdirSync(path.dirname(journal), { recursive: true }); fs.writeFileSync(journal, '{ "stage": "links" }\n');
+  CP.ensurePlace({ clon: K5, home: h5 });
+  assert.ok(isLink(legacyOf(h5)), '(4) con la mudanza a medias, el viejo se retiró');
+  fs.unlinkSync(journal); CP.ensurePlace({ clon: K5, home: h5 });
+  assert.ok(!exists(legacyOf(h5)), '(4) terminada la mudanza, el viejo no se retiró');
+  // (5) por el viejo escrito con otras mayúsculas, en un disco que no las distingue
+  const K6 = clone('mayusculas'); const h6 = home('via-mayusculas'); link(K6, placeOf(h6)); link(placeOf(h6), legacyOf(h6)); perm(h6);
+  const upper = path.join(path.dirname(legacyOf(h6)), PLACE.LEGACY_PLACE_NAME.toUpperCase());
+  if (exists(upper)) {
+    CP.ensurePlace({ clon: upper, home: h6 });
+    assert.ok(isLink(legacyOf(h6)), '(5) por el viejo con otras mayúsculas, se retiró el nombre por el que corre');
+  } else console.log('⏭ T43 (5): NO MEDIDO — este disco distingue mayúsculas');
+  // (6) --link por el viejo en una máquina mudada sin el lugar: el lugar va a ~/.tycon/harness (el nombre estable), no a
+  // la carpeta a la que lleva
+  const K7 = clone('mudada-link'); const h7 = home('mudada-link-viejo'); const own = path.join(h7, '.tycon', 'harness');
+  fs.mkdirSync(path.dirname(own), { recursive: true }); link(K7, own); link(own, legacyOf(h7)); perm(h7);
+  CP.ensurePlace({ clon: K7, home: h7, forzar: legacyOf(h7) });
+  assert.ok(PLACE.samePath(direct(placeOf(h7)), own), `(6) el lugar no apunta a ~/.tycon/harness: ${direct(placeOf(h7))}`);
+  // (7) un retiro de permisos que falla al escribir no deja respaldos: el archivo queda como estaba y el viejo, también.
+  // settings.json enlazado a una carpeta de sólo lectura: el respaldo se crea al lado del enlace y la escritura falla
+  if (!IS_WIN && typeof process.getuid === 'function' && process.getuid() !== 0) {
+    const K8 = clone('falla'); const h8 = home('permisos-que-fallan'); link(K8, placeOf(h8)); link(placeOf(h8), legacyOf(h8));
+    const ro = dir('config-ro', `r-${++seq}`); const roSettings = path.join(ro, 'settings.json');
+    const text8 = JSON.stringify({ permissions: { allow: [`Read(~/.claude/${PLACE.LEGACY_PLACE_NAME}/**)`] } }, null, 2) + '\n';
+    fs.writeFileSync(roSettings, text8); link(roSettings, path.join(h8, '.claude', 'settings.json'));
+    fs.chmodSync(ro, 0o555);
+    let r8; try { r8 = CP.ensurePlace({ clon: K8, home: h8 }); } finally { fs.chmodSync(ro, 0o755); }
+    assert.match(r8.mensaje, /no pude sacar los permisos/, `(7) la escritura no falló donde se esperaba: ${r8.mensaje}`);
+    assert.ok(isLink(legacyOf(h8)), `(7) con los permisos sin poder escribirse, el viejo se retiró (${r8.mensaje})`);
+    assert.strictEqual(fs.readFileSync(roSettings, 'utf8'), text8, '(7) settings.json cambió');
+    assert.deepStrictEqual([...fs.readdirSync(path.join(h8, '.claude')), ...fs.readdirSync(ro)].filter((n) => /bak-retire|tmp-retire/.test(n)), [], '(7) quedó un respaldo o un temporal');
+  } else console.log('⏭ T43 (7): NO MEDIDO — Windows o root: no hay permiso que negar así');
 });
 
 // ── T7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -332,21 +468,22 @@ test('T7 Birth_Conflict_PlaceForeign_CannotCreate_CheckReadOnly_TwoProcessesLock
   const run = () => new Promise((res) => { const p = spawn(process.execPath, [CP_FILE, '--ensure-link', '--clone', running, '--home', h2]); p.on('close', res); });
   const codes = await Promise.all([run(), run()]);
   assert.deepStrictEqual(codes, [0, 0]);
-  assert.strictEqual(real(placeOf(h2)), A); assert.ok(PLACE.samePath(direct(legacyOf(h2)), placeOf(h2)));
+  assert.strictEqual(real(placeOf(h2)), A); assert.ok(!exists(legacyOf(h2)), 'dos procesos: el viejo no se retiró');
   assert.deepStrictEqual(fs.readdirSync(path.join(h2, '.claude')).filter((n) => /tycon-new/.test(n)), [], 'quedó un temporal');
 });
 
 // ── T8 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T8 Link_TempNameSwap_FourOperations_RealFolderRefused', () => {
   const A = clone('A'); const B = clone('B');
-  // una máquina del equipo: el viejo ya estaba (una máquina nueva no lo recibe)
+  // una máquina del equipo: el viejo ya estaba (una máquina nueva no lo recibe); el lugar nace hacia su
+  // clon y el viejo se retira
   const h = home('link'); link(A, legacyOf(h)); CP.ensurePlace({ clon: A, home: h });
-  assert.ok(real(placeOf(h)) === A && real(legacyOf(h)) === A);
+  assert.ok(real(placeOf(h)) === A && !exists(legacyOf(h)));
   // re-apunta con nombre temporal; después, los dos nombres resuelven a la misma carpeta
   const { result: r, order } = observeWrites(() => CP.ensurePlace({ clon: A, home: h, forzar: B }));
   assert.strictEqual(r.accion, 'repointed', r.mensaje);
   assert.ok(order.length === 1 && order[0] === placeOf(h), `se creó el temporal del lugar: ${order.join(', ')}`);
-  assert.ok(real(placeOf(h)) === B && real(legacyOf(h)) === B, 'después del --link los dos nombres no resuelven a lo mismo');
+  assert.ok(real(placeOf(h)) === B && !exists(legacyOf(h)), 'después del --link el lugar no resuelve a B (o el viejo volvió)');
   // crear el temporal falla → no se borró nada
   const orig = fs.symlinkSync;
   fs.symlinkSync = function (t, at, type) { if (/\.tycon-new-\d+$/.test(String(at))) { const e = new Error('EPERM simulado'); e.code = 'EPERM'; throw e; } return orig.call(fs, t, at, type); };
