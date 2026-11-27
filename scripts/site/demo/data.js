@@ -129,12 +129,7 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
     version: 1,
     owners: { default: LEAD },
     site: { maintainers: [LEAD], url: 'https://sitio.acme.example', refresh_minutes: 15, brand: { name: 'Acme' },
-      mailbox: { provider: PLATAFORMA.proveedorDeBuzon, account: 'acmecorridas', container: 'corridas', threads: false },
-      // precios inventados de dos modelos inventados: el ejemplo del costo estimado de «Horas y tokens»
-      prices: {
-        'modelo-grande': { lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
-        'modelo-chico': { lectura: 0.5, escritura: 2.5, cache: 0.05, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
-      } },
+      mailbox: { provider: PLATAFORMA.proveedorDeBuzon, account: 'acmecorridas', container: 'corridas', threads: false } },
     people: { machines: {
       'mac-ana': { person: ANA, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
       'mac-lead': { person: LEAD, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
@@ -156,6 +151,11 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
       'Producto Y': { staging: pipeline('Producto Y', 'Producto Y Backend', 'Staging'), production: pipeline('Producto Y', 'Producto Y Backend', 'Production') },
     } };
     ops.notify = { channel: 'teams' };
+    // precios inventados de dos modelos inventados: el ejemplo del costo estimado de «Horas y tokens»
+    ops.site.prices = {
+      'modelo-grande': { lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
+      'modelo-chico': { lectura: 0.5, escritura: 2.5, cache: 0.05, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
+    };
   }
   const archivos = archivosDeOperaciones({ hoy, ayer, config: ops });
   // los proyectos del día: dos productos con sus stories (sólo número, estado y días en el estado)
