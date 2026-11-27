@@ -303,6 +303,70 @@ test('T13 Nested_RunnersThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// Lo que un `xargs` recibe de un programa (`ls specs`, `find`, `git ls-files`) no se ve: el freno lo prueba también con
+// un comodín y con cada palabra como carpeta. Sin eso, un destino armado alrededor del marcador (`specs/{}`) o del
+// argumento posicional del cuerpo (`specs/$0`) no nombra la historia y la escritura pasa.
+// 🔴 Falla con: tomar las palabras del comando de antes como lo único que llega por la entrada.
+test('T34 Nested_XargsUnknownInput_ShellBodyBuildsTheStory_Block @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'echo x >> specs/{}'",
+    "ls specs | xargs -I % sh -c 'echo x >> specs/%'",
+    "ls specs | xargs -I {} bash -c 'rm specs/{}'",
+    "ls specs | xargs -n1 sh -c 'echo x >> specs/$0'",
+    "git ls-files specs | xargs -I {} sh -c 'truncate -s 0 {}'",
+    "cd specs && ls | xargs -I {} sh -c 'echo x >> {}'",
+  ]) frena(c, cmd);
+  // lo que sólo lee, o escribe fuera de la carpeta de las historias, sigue pasando
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'cat specs/{}'",
+    "ls specs | xargs -I {} sh -c 'wc -l specs/{} >> /tmp/cuentas.txt'",
+    'git ls-files | xargs grep -l status',
+    'ls specs | xargs -n1 basename',
+  ]) pasa(c, cmd);
+});
+
+// De la revisión de Fable del T34: el comodín suelto en la raíz frenaba los reemplazos y borrados en bloque de otra
+// carpeta, y un filtro en el medio o una historia un nivel más abajo dejaban pasar la escritura.
+// 🔴 Falla con: sumar el comodín de la raíz aunque la fuente nombre su carpeta, o mirar sólo el tramo de antes.
+test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const d of ['src', 'build', path.join('specs', 'epic-2')]) fs.mkdirSync(path.join(c.dir, d), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'src', 'a.js'), 'foo\n');
+  fs.writeFileSync(path.join(c.dir, 'build', 'a.log'), 'x\n');
+  fs.writeFileSync(path.join(c.dir, 'specs', 'epic-2', 'story-2.1.md'), '---\nstory: "2.1"\nepic: "2"\ntitle: "z"\nstatus: draft\n---\n\n# z\n');
+  for (const cmd of [
+    "git ls-files specs | sort | xargs -I {} sh -c 'truncate -s 0 {}'",
+    'git ls-files specs | sort | xargs -I {} tee -a {}',
+    "find specs -type f | head -5 | xargs -I {} sh -c 'echo x >> {}'",
+    "ls -d specs/* | grep story | xargs -I {} sh -c 'echo x >> {}'",
+    "find specs -name '*.md' | sort | xargs -I {} sh -c 'echo x >> {}'",
+    // el marcador con otro nombre, entre comillas o por una asignación (segunda vuelta de Fable)
+    "ls specs | xargs -I FILE sh -c 'echo x >> specs/FILE'",
+    'ls specs | xargs -I X rm specs/X',
+    `ls specs | xargs -I {} sh -c 'echo x >> specs/"{}"'`,
+    `ls specs | xargs -n1 sh -c 'echo x >> specs/"$0"'`,
+    // una palabra de la fuente que no es una carpeta (un subcomando) no acota: va el comodín suelto
+    'git ls-files | xargs rm -f',
+    // una carpeta nombrada en un filtro no acota: sólo la fuente (tercera vuelta de Fable)
+    "git diff --name-only | grep -v build | xargs sed -i '' s/draft/done/",
+  ]) frena(c, cmd);
+  for (const cmd of [
+    "grep -rl foo src | xargs sed -i '' s/foo/bar/",
+    'grep -rl foo src | xargs perl -pi -e s/foo/bar/',
+    "git ls-files src | xargs -I {} sh -c 'sed -i \"\" s/a/b/ {}'",
+    'ls build | xargs rm -rf',
+    'find build -type f | xargs rm -f',
+    "find build -name '*.log' -print0 | xargs -0 rm -f",
+    // una opción pegada del xargs, un `%` o un `$1` de otro programa no son el marcador pegado a una ruta
+    "find build -name '*.log' | xargs -I{} rm {}",
+    'find build -type f | xargs -I% rm %',
+    "grep -rl foo src | xargs sed -i '' 's%foo%bar%'",
+    "grep -rl foo src | xargs perl -pi -e 's/foo(\\d)/bar$1/'",
+    `git ls-files src | xargs -n1 sh -c 'sed -i "" s/a/b/ $0 && echo $0:ok'`,
+  ]) pasa(c, cmd);
+});
+
 // Lo que confirmó el pase adversarial de la corrida: formas de `find`, `xargs` y heredocs que escriben la historia y
 // pasaban, y formas que sólo leen y se frenaban.
 // 🔴 Falla con: tomar todo `-name` como filtro positivo, buscar `xargs` sólo como primera palabra cruda, no leer el
@@ -603,6 +667,117 @@ test('T33 EnvSplitString_LaOrdenDelValor_SeMiraComoAnidada', () => {
     `env --split-string "rm ${H}"`, `env -S "sh -c 'echo x >> ${H}'"`, `sudo -u root env -S "rm ${H}"`]) frena(c, cmd);
   pasa(c, `env -S "cat ${H}"`);
   pasa(c, 'env -S "echo hola" > /dev/null');
+});
+
+// T34 Find_CarpetaEsLaDelComando_Frena
+// 🔴 Falla con: la carpeta de un `find` escrita como `$PWD`, `${PWD}` o `$(pwd)` no se resuelve, y el `find` no alcanza
+//    ninguna historia.
+test('T34 Find_CarpetaEsLaDelComando_Frena', () => {
+  const c = corral();
+  for (const carpeta of ['$PWD', '${PWD}', '$(pwd)', '"$PWD"', '$PWD/specs']) {
+    frena(c, `find ${carpeta} -name 'story-*.md' -exec rm {} \\;`);
+    frena(c, `find ${carpeta} -name 'story-*.md' | xargs rm`);
+  }
+  pasa(c, "find $PWD -name 'story-*.md' -exec cat {} \\;");
+  pasa(c, "find $PWD -name 'README.md' -exec rm {} \\;");
+});
+
+// T35 Xargs_RutaEnUnaVariableDelComando_Frena
+// 🔴 Falla con: el `echo $f` que le da la entrada a un `xargs` llega con la variable sin resolver.
+test('T35 Xargs_RutaEnUnaVariableDelComando_Frena', () => {
+  const c = corral();
+  for (const cmd of [`f=${H}; echo $f | xargs rm`, `f=${H}; echo "$f" | xargs rm`, `f=${H}; echo \${f} | xargs -I{} rm {}`,
+    `f=${H}; printf '%s\\n' "$f" | xargs rm`]) frena(c, cmd);
+  pasa(c, `f=${H}; echo $f | xargs cat`);
+  pasa(c, 'f=README.md; echo $f | xargs rm');
+});
+
+// T36 FindName_ClasesPosixYEscapes_Frena
+// 🔴 Falla con: el patrón de `-name` traducido sin entender `[[:digit:]]` ni `\.`: no cumple con ningún nombre.
+test('T36 FindName_ClasesPosixYEscapes_Frena', () => {
+  const c = corral();
+  for (const nombre of ["'story-[[:digit:]].[[:digit:]].md'", "'story-1\\.1\\.md'", "'story-[[:digit:][:space:]].1.md'",
+    "'[[:alpha:]]tory-*.md'", "'story-[0-9].1.md'"]) frena(c, `find . -name ${nombre} -exec rm {} \\;`);
+  pasa(c, "find . -name 'story-[[:alpha:]].1.md' -exec rm {} \\;");
+  pasa(c, "find . -name 'story-1\\.1\\.txt' -exec rm {} \\;");
+});
+
+// T37 FindAXargs_LoQueLaLecturaNoAlcanza_SigueFrenando
+// 🔴 Falla con: reemplazar las palabras del `find` por los archivos que su lectura alcanza: cuando la lectura queda corta
+//    (un `\*` sin comillas, el patrón en una variable, `\!`, un comodín en la carpeta, una carpeta que coincide), la orden
+//    queda sin argumentos y la historia se borra.
+test('T37 FindAXargs_LoQueLaLecturaNoAlcanza_SigueFrenando', () => {
+  const c = corral();
+  for (const cmd of ['find . -name \\*.md | xargs rm', 'find . -name story-\\*.md | xargs rm',
+    "p='story-*.md'; find . -name \"$p\" | xargs rm", "find . \\! -name 'README.md' -type f | xargs rm",
+    "find * -name 'story-*.md' | xargs rm", "find {specs,docs} -name 'story-*.md' | xargs rm",
+    'find . -name specs | xargs rm -rf', 'find . -type d -name specs -print0 | xargs -0 rm -rf']) frena(c, cmd);
+});
+
+// T38 FindAXargsQueSoloLee_NoRecorre
+// 🔴 Falla con: recorrer lo que alcanza el `find` antes de saber qué corre el `xargs`: un `find | xargs ls` sobre una
+//    carpeta grande lee miles de carpetas (en /tmp, 15 s), y dos seguidos llegan al reloj del freno.
+test('T38 FindAXargsQueSoloLee_NoRecorre', () => {
+  const c = corral();
+  const grande = path.join(c.raiz, 'grande');
+  for (let i = 0; i < 20; i++) fs.mkdirSync(path.join(grande, `d${i}`, 'e', 'f'), { recursive: true });
+  const { comandosPorOtroPrograma } = require(path.join(__dirname, '..', 'lib', 'bash-gate-commands.js'));
+  const leer = fs.readdirSync;
+  let lecturas = 0;
+  fs.readdirSync = (...a) => { lecturas++; return leer(...a); };
+  try {
+    comandosPorOtroPrograma(`find ${grande} -name '*.log' | xargs grep -l x`, c.dir);
+    assert.strictEqual(lecturas, 0, 'un xargs que sólo lee no recorre');
+    comandosPorOtroPrograma(`find ${grande} -name '*.md' | xargs rm`, c.dir);
+    assert.ok(lecturas > 0, 'uno que borra sí');
+  } finally { fs.readdirSync = leer; }
+});
+
+// T40 XargsTrasUnSeparador_LoDeAlLadoCuenta
+// 🔴 Falla con: saltar los filtros del medio hacia atrás también por `;`, `&&` o un salto de renglón: la fuente cae en un
+//    `echo` de otro comando y las palabras del tramo de al lado (`rg -l draft specs`) se pierden; la historia se borra.
+test('T40 XargsTrasUnSeparador_LoDeAlLadoCuenta', () => {
+  const c = corral();
+  for (const cmd of ['echo ok && rg -l draft specs | xargs rm', 'echo x; grep -l draft specs/*.md | xargs rm',
+    'echo x\ngrep -l draft specs/*.md | xargs -I{} mv {} /tmp/', 'echo ok; grep -l draft specs/*.md | sort | xargs rm']) frena(c, cmd);
+});
+
+// T41 FindConNombreQueNoEsMd_NoRecorre
+// 🔴 Falla con: recorrer cuatro niveles de carpetas para un `find -name '*.tmp' | xargs rm`, que no puede dar una
+//    historia: sobre una carpeta grande tarda segundos.
+test('T41 FindConNombreQueNoEsMd_NoRecorre', () => {
+  const c = corral();
+  const grande = path.join(c.raiz, 'grande-tmp');
+  for (let i = 0; i < 5; i++) fs.mkdirSync(path.join(grande, `d${i}`, 'e'), { recursive: true });
+  const { comandosPorOtroPrograma } = require(path.join(__dirname, '..', 'lib', 'bash-gate-commands.js'));
+  const leer = fs.readdirSync;
+  let lecturas = 0;
+  fs.readdirSync = (...a) => { lecturas++; return leer(...a); };
+  try {
+    comandosPorOtroPrograma(`find ${grande} -name '*.tmp' | sort | xargs rm -f`, c.dir);
+    comandosPorOtroPrograma(`find ${grande} -iname 'cache-*.log' | xargs rm -f`, c.dir);
+    assert.strictEqual(lecturas, 0, 'un -name que no puede dar un .md no recorre');
+    comandosPorOtroPrograma(`find ${grande} -name 'story-*' | xargs rm`, c.dir);
+    assert.ok(lecturas > 0, 'uno que puede dar un .md sí');
+  } finally { fs.readdirSync = leer; }
+  frena(c, "find . -name 'story-*' | xargs rm");
+  // un corchete o una barra pueden dar `.md` aunque no lo digan al final
+  // (nombra la primera historia que encuentra, que puede ser cualquiera de las dos del corral)
+  for (const n of ["'*.[m]d'", "'*.m\\d'", "'story-*.m?'", "'*d'"]) {
+    const r = correr(c, `find . -name ${n} | xargs truncate -s 0`);
+    assert.strictEqual(r.salida, 2, `frena: ${n}\n${r.stderr}`);
+    assert.match(r.stderr, HISTORIA, n);
+  }
+});
+
+// T39 Find_PwdPegadoAUnaCarpeta_EsEsaCarpeta
+// 🔴 Falla con: `"$PWD"/docs` partido en dos palabras: `$PWD` sola es el repo entero y frena por las historias de specs/.
+test('T39 Find_PwdPegadoAUnaCarpeta_EsEsaCarpeta', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), 'x\n');
+  pasa(c, "find \"$PWD\"/docs -name '*.md' -exec rm {} \\;");
+  frena(c, "find \"$PWD\"/specs -name '*.md' -exec rm {} \\;");
 });
 
 // T15 Bench_FrenoComandosAnidados

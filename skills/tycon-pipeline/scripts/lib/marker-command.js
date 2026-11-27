@@ -89,8 +89,11 @@ function tramos(cmd, shell) {
       tramo.tras = separador;
       separador = null;
       salida.push(tramo);
+      tramo = { palabras: [], heredocs: [] };
+      return;
     }
-    tramo = { palabras: [], heredocs: [] };
+    // un tramo vacío (el salto de línea o el `(` que siguen a un `|`) le pasa al que sigue de qué tubería viene
+    tramo = tramo.desde ? { palabras: [], heredocs: [], desde: tramo.desde } : { palabras: [], heredocs: [] };
   };
   // `$(…)` o `<(…)` que abre en `i`: su comando va a `subs`, la palabra deja de ser literal; devuelve dónde cierra
   const sustitucion = (i) => {

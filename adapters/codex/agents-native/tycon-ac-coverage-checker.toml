@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-ac-coverage-checker.md
-# source_sha256: 1c948028bc3869f1417e0cd0575e93b66ce257d1e5e950f527bc99cbd29b1167
+# source_sha256: 5ab11c23edb6725b6b628464d00eb300b06aa9f228edec5ee17e352fc6a6e4d3
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-ac-coverage-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-ac-coverage-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -149,7 +149,7 @@ self-audit —opcional desde 2026-09-16—, ACCOV-C10 convergencia entre
 iteraciones, ACCOV-C11 una guarda de frescura no se cierra sin verse verde en un
 checkout LIMPIO —y `mtime` de un archivo versionado NUNCA es «cuándo cambió el
 producto»: en un clon es la hora del checkout—) viven en
-`~/.claude/tycon-harness/guides/accov-governance-protocol.md`
+`~/.tycon/harness/guides/accov-governance-protocol.md`
 (extraídas 2026-06-09 — aplican 1 vez al transicionar a review/done, no en
 cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el pull request»
 y este advisor las cita por ID si detecta sus patrones, sin re-derivar el protocolo.

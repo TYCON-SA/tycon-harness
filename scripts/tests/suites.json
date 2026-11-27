@@ -1849,11 +1849,31 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/story-reader-parity.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**",
+        "skills/tycon-pipeline/scripts/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/download-runs-index-writes.test.js",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/metrics/**",
         "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/site-disk-opens.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
+        "scripts/site/**",
+        "scripts/nightly/dashboard/**"
       ]
     },
     {
@@ -2929,6 +2949,12 @@
       "requiere": []
     },
     {
+      "__nota": "HARNESS-C1 frena también dejar fijo en el arranque del shell un control bajado a aviso (TYCON_INTERNAL_HISTORY=warn), en Unix y en Windows; subirlo (block) pasa. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-c1-warn.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
@@ -3694,6 +3720,12 @@
       "__nota": "el mismo pedido de firma escrito de otra forma (el orden de las opciones, de --acs, la historia relativa o absoluta) da el mismo cuadro y el mismo click le sirve; lo que cambia lo que se firma da otro código. En proceso, con una casa temporal; un par de segundos.",
       "raiz": "arnes",
       "ruta": "tests/owner-window-canonical.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el click del dueño vuelve a valer si el comando que lo gastó no llegó a ejecutarse (sale 126 o 127 con el pedido de la ventana sin consumir), una sola vez; si corrió, salió con otro código o es de otro comando, queda gastado. Y el detalle del cuadro dice el comando con su intérprete y su ruta entera (F27). En proceso, con una casa temporal; milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-give-back.test.js",
       "requiere": []
     },
     {
@@ -4850,6 +4882,12 @@
       "requiere": []
     },
     {
+      "__nota": "S247e (T1-T3): un `<<` que puede ser texto (adentro de una comilla, de un comentario o del cuerpo de otro heredoc) no le esconde al freno de producción lo que corre: el freno juzga las dos lecturas de los heredocs y frena si una frena; las formas de siempre pasan y la segunda lectura no anota un «pasó» de más. Corre en un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-heredoc-readings.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.9, tanda E (T58): la story de retiro existe con followup_of a la 8.9 y a la 8.12, trae lo que pide el AC 54, las dos padres tienen su followed_up_by y epics.md la registra con los números del termómetro. Sin specs/ (copia pública), no mide.",
       "raiz": "arnes",
       "ruta": "tests/retirement-story.test.js",
@@ -4871,6 +4909,12 @@
       "__nota": "story 8.15 (tanda A): el chequeo que dice qué nombres viejos se pueden retirar el 17/11 — el estado de cada entrada, las máquinas que no reportaron aparte, una consulta que falla nunca es «sin usos», la fecha propia de una entrada (T4, T5, T21). Buzón, máquinas, lista de productos y az de laboratorio.",
       "raiz": "arnes",
       "ruta": "tests/legacy-retire-check.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Lo que baja del buzón y se descomprime (el hilo de una conversación en reviewers-cost.js y run-change.js, los usos de nombres viejos en legacy-retire-check.js) tiene tope de salida: un .gz chico que se abre a GB no deja sin memoria al proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/decompress-limits.test.js",
       "requiere": []
     },
     {

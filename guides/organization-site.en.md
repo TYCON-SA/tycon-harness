@@ -1960,6 +1960,11 @@ version, because the first one is still served by the old instance. Whoever depl
 `SITE_OFFICE_RECONNECT_MINUTES` (1 to 60; `0` does not cut). To skip the wait, restart the office server on each
 machine: the next session relaunches it.
 
+**Up to date on Cloud Run**: with `site.update: "auto"`, the GitHub nightly keeps it up to date with the `cloudrun`
+platform, which the `gcs` connector brings: it changes only the image, by digest, waits for the new revision with all
+the traffic, checks it and, if it fails, goes back to the previous one. How to set it up: `guides/integrations/gcs-mailbox.md`
+(«El sitio en Cloud Run, al día», in Spanish).
+
 ### A closed network
 
 Without internet access, the site cannot look at the last published version and says so. The update is by hand: on a

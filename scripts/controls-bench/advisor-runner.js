@@ -921,6 +921,9 @@ const PERMITIDO_FUERA_DEL_CORRAL = [
   path.join(os.homedir(), '.antigravity'),
   path.join(os.homedir(), '.local'),
   path.join(os.homedir(), '.nvm'),
+  // la casa propia del arnés (su versión bajada y su estado), donde los revisores leen las guías y los registros; la
+  // sabe tycon-home.js, que se carga si está, como la carpeta del estado de arriba
+  ...((lib) => (fs.existsSync(lib) ? [require(lib).ownRootOf(os.homedir())] : []))(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')),
 ];
 /**
  * Las reglas que ENCIERRAN a Claude, derivadas de la MISMA lista de permitidos que usa el detector
@@ -2238,5 +2241,5 @@ async function main() {
   return failed + parityBreaks + baselineRegressions > 0 ? 1 : 0;
 }
 
-module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile, codexInvokePreamble, codexSandbox, advisorParts, claudeArgs };
+module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile, codexInvokePreamble, codexSandbox, advisorParts, claudeArgs, PERMITIDO_FUERA_DEL_CORRAL };
 if (require.main === module) main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });

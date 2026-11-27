@@ -563,7 +563,10 @@ const B1_DONE = ['scripts/setup/harness/bootstrap.js', 'scripts/setup/harness/bo
   'scripts/setup/harness/team-stories/githooks-pre-commit', 'scripts/hooks/test-scope-guard-pre.sh',
   'scripts/setup/harness/bootstrap-fallback.ps1', 'scripts/setup/harness/import-line.js',
   'scripts/install-tycon-hooks.ps1', 'scripts/setup/ensure-sqlite3.ps1', 'scripts/ci/nightly-dod-notice.sh', 'scripts/hooks/harness-bootstrap-heal.sh',
-  'integrations/azure-devops/scripts/on-story-create.js', 'skills/tycon-story-followup-link/scripts/on-story-create.js'];
+  'integrations/azure-devops/scripts/on-story-create.js', 'skills/tycon-story-followup-link/scripts/on-story-create.js',
+  // B1d: el freno de producción (los lee de los places que escribe su instalador, o de tycon-home.js de al lado)
+  'scripts/production/install-guard.sh', 'scripts/production/node-shim.sh', 'scripts/production/tycon-prod-sql',
+  'scripts/hooks/prod-firewall-close.js', 'scripts/production/managed-settings.tycon-production.json.template'];
 it('T824a B1_FixedCopiesOutOfTheList_NoDotClaude @story-8.24 @ac-3', () => {
   const L = legacy();
   const listed = new Set([...L.entries, ...(L.until_d || [])].map((e) => e.path));

@@ -260,10 +260,25 @@ function frontmatterBody(text) {
   return end === -1 ? null : text.slice(3, end);
 }
 
-/** Escalar del frontmatter — MISMO regex que usan el resto de las tools del arnés. */
+/**
+ * Escalar del frontmatter: EL lector de los controles (el freno del commit, el portón de CI, el lint y el índice lo
+ * llaman; dos lectores que leen distinto el mismo archivo son un hueco). El primer renglón `clave:` gana. Un `#` al
+ * principio del valor, o con un espacio o un tabulador antes, empieza un comentario de YAML (`status: cancelled   # nota`
+ * es `cancelled`). Entre comillas, un ` #` de adentro es texto y el comentario va después de la comilla de cierre. Un `#`
+ * pegado (`C#`) es texto. Una comilla sin cerrar se lee sin las comillas de los bordes. Vacío, null.
+ */
 function fmScalar(fm, key) {
-  const m = fm.match(new RegExp(`^${key}:\\s*["']?([^"'\\n]+?)["']?\\s*$`, 'm'));
-  return m ? m[1].trim() : null;
+  const m = String(fm).match(new RegExp(`^${key}:[ \\t]*([^\\n]*)$`, 'm'));
+  if (!m) return null;
+  let v = m[1].replace(/\r$/, '').trim();
+  const q = v[0];
+  if (q === '"' || q === "'") {
+    const fin = v.indexOf(q, 1);
+    const resto = fin > 0 ? v.slice(fin + 1).trim() : null;
+    if (resto !== null && (resto === '' || resto[0] === '#')) return v.slice(1, fin).trim() || null;
+  }
+  v = v.replace(/(^|[ \t])#.*$/, '').trim().replace(/^["']/, '').replace(/["']$/, '').trim();
+  return v || null;
 }
 
 /**
@@ -591,7 +606,7 @@ function findStoryReferencing(editedAbsPath, opts = {}) {
 module.exports = {
   findRepoRoot, findStoryDirs, storyDirsCached, findStoryReferencing, declaredFiles,
   discoverStories, isWorkStoryId, storiesConfig, storiesConfigForGate, parseStoriesConfigText,
-  probeStoryFile, declaresStoryIdentity, declaredStoryId, idSortKey, unquoteScalar,
+  probeStoryFile, declaresStoryIdentity, declaredStoryId, idSortKey, unquoteScalar, fmScalar,
   DEFAULT_ID_RE, DEFAULT_BUDGET_MS, BUDGET_MS,
 };
 

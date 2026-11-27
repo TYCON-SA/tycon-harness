@@ -302,7 +302,7 @@ else no "T19 · la plantilla no trae el hook en los dos eventos, o hay un interr
 if node -e '
   const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
   const ask = (j.permissions && j.permissions.ask) || [];
-  const ok = ["Edit", "Write"].every((t) => [".claude/.tycon-pipeline", ".tycon/state"].every((d) => ask.some((r) => r.startsWith(t + "(") && r.includes(d) && r.includes("production-firewall.json"))));
+  const ok = ["Edit", "Write"].every((t) => ["/.tycon-pipeline/", "/.tycon/state/"].every((d) => ask.some((r) => r.startsWith(t + "(") && r.includes(d) && r.includes("production-firewall.json"))));
   process.exit(ok ? 0 : 1);' "$PLANT"; then
   ok "T20 · la plantilla pregunta antes de editar o escribir el estado del firewall, en sus dos ubicaciones"
 else no "T20 · faltan las reglas ask de Edit/Write sobre production-firewall.json"; fi

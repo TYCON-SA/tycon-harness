@@ -756,3 +756,128 @@ test('T8 UpdateSite_Render_SinCredencial_ComoHoy @story-8.328 @ac-7', async () =
     assert.strictEqual(UP.variableCargada('SITE_RENDER_API_KEY'), LLAVE);
   } finally { if (antes === undefined) delete process.env.SITE_RENDER_API_KEY; else process.env.SITE_RENDER_API_KEY = antes; }
 });
+
+// ── Google Cloud Run (A43, issue 1820) ─────────────────────────────────────────────────────────────────────────────
+
+const ESPEJO = 'us-central1-docker.pkg.dev/acme-proyecto/ghcr/acme/arnes';
+// lo que el actualizador le pasa al conector de la plataforma (integrations/gcs/scripts/site-platform.js)
+const CLOUDRUN = { url: 'https://sitio.acme.example', opciones: { service: 'sitio-acme', region: 'us-central1', project: 'acme-proyecto' }, espera: { cadaMs: 0, plazoMs: 50, dormir: async () => {} } };
+
+/**
+ * Un `gcloud` de juguete con revisiones, como Cloud Run: `services update --image` crea una revisión nueva que se lleva
+ * el tráfico (salvo que esté fijado a una revisión: `fijado`). `listaTras`: cuántas preguntas tarda en quedar lista.
+ */
+function gcloudDeJuguete(corre = `${ESPEJO}@${VIEJA}`, { listaTras = 0, fijado = false } = {}) {
+  const ordenes = [];
+  const revs = [{ nombre: 'sitio-acme-00001-abc', imagen: corre }];
+  let lista = 0;
+  let falta = 0;
+  const actual = () => revs[revs.length - 1];
+  const describir = () => {
+    if (falta > 0) falta -= 1;
+    if (falta === 0) lista = revs.length - 1;
+    const sirve = fijado ? revs[0].nombre : revs[lista].nombre;
+    return {
+      spec: { template: { spec: { containers: [{ image: actual().imagen }] } }, traffic: fijado ? [{ percent: 100, revisionName: revs[0].nombre }] : [{ percent: 100, latestRevision: true }] },
+      status: { latestCreatedRevisionName: actual().nombre, latestReadyRevisionName: revs[lista].nombre, traffic: [{ percent: 100, revisionName: sirve, ...(fijado ? {} : { latestRevision: true }) }], conditions: [{ type: 'Ready', status: 'True' }] },
+    };
+  };
+  const correr = (args) => {
+    ordenes.push(args);
+    if (args[0] !== 'run' || args[1] !== 'services') return { status: 1, stdout: '', stderr: 'orden no prevista' };
+    if (args[2] === 'describe') return { status: 0, stdout: JSON.stringify(describir()), stderr: '' };
+    if (args[2] === 'update') {
+      revs.push({ nombre: `sitio-acme-0000${revs.length + 1}-xyz`, imagen: args[args.indexOf('--image') + 1] });
+      falta = revs.length > 2 && actual().imagen === revs[0].imagen ? 0 : listaTras;
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: 'orden no prevista' };
+  };
+  return { ordenes, correr, updates: () => ordenes.filter((a) => a[2] === 'update'), imagen: () => actual().imagen, sirve: () => (fijado ? revs[0].imagen : revs[lista].imagen) };
+}
+
+test('A43 CloudRun_AutoActualizaPorHuella_ConservaElEspejo — issue 1820', async () => {
+  const reg = await registro();
+  try {
+    const g = gcloudDeJuguete();
+    const vistas = [];
+    const r = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: g.correr, probar: async (u) => { vistas.push([u, g.sirve()]); return { ok: true }; } });
+    assert.strictEqual(r.resultado, 'actualizado', JSON.stringify(r));
+    assert.strictEqual(r.desde, '2026.10.15.48'); assert.strictEqual(r.hacia, '2026.10.18.9');
+    const ups = g.updates();
+    assert.strictEqual(ups.length, 1);
+    // stable se resuelve en el registro público; lo que se aplica conserva el espejo con el que corre el servicio
+    assert.strictEqual(ups[0][ups[0].indexOf('--image') + 1], `${ESPEJO}@${NUEVA}`, 'por huella y con el espejo');
+    for (const x of ['sitio-acme', '--region', 'us-central1', '--project', 'acme-proyecto', '--quiet']) assert.ok(ups[0].includes(x), `update lleva ${x}`);
+    assert.deepStrictEqual(vistas, [[CLOUDRUN.url, `${ESPEJO}@${NUEVA}`]], 'la prueba corre contra la revisión nueva, ya con el tráfico');
+    // la misma huella: al día, sin update
+    const g2 = gcloudDeJuguete(`${ESPEJO}@${NUEVA}`);
+    const r2 = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: g2.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r2.resultado, 'al_dia', JSON.stringify(r2));
+    assert.deepStrictEqual(g2.updates(), []);
+  } finally { await reg.cerrar(); }
+});
+
+test('A43 CloudRun_PruebaFalla_VuelveAtras_YTraficoFijadoNoSeToca — issue 1820', async () => {
+  const reg = await registro();
+  try {
+    const g = gcloudDeJuguete();
+    let n = 0;
+    const r = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: g.correr, probar: async () => { n += 1; return n === 1 ? { ok: false, motivo: 'la prueba sin sesión falló' } : { ok: true }; } });
+    assert.strictEqual(r.resultado, 'vuelto_atras', JSON.stringify(r));
+    assert.strictEqual(g.imagen(), `${ESPEJO}@${VIEJA}`, 'vuelve a la anterior por huella y con el espejo');
+    // nunca queda lista: vuelve atrás
+    const lenta = gcloudDeJuguete(undefined, { listaTras: Infinity });
+    const r3 = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: lenta.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r3.resultado, 'vuelto_atras', JSON.stringify(r3));
+    assert.match(r3.motivo, /^la prueba sin sesión falló \(la revisión nueva no quedó lista/);
+    // con el tráfico fijado a una revisión, update no se lo llevaría: no se toca nada y se dice
+    const fija = gcloudDeJuguete(undefined, { fijado: true });
+    const r2 = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: fija.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r2.resultado, 'no_pudo', JSON.stringify(r2));
+    assert.match(r2.motivo, /^el tráfico está fijado a una revisión/);
+    assert.ok(UP.MOTIVOS.some((m) => r2.motivo.startsWith(m)), 'el motivo es de la lista cerrada');
+    assert.deepStrictEqual(fija.updates(), []);
+  } finally { await reg.cerrar(); }
+});
+
+test('A43 CloudRun_PorEtiqueta_YFallaDeLectura — issue 1820', async () => {
+  const reg = await registro();
+  try {
+    const g = gcloudDeJuguete(`${ESPEJO}:stable`);
+    const r = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: g.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(r.resultado, 'no_pudo');
+    assert.match(r.motivo, /^instalado por etiqueta/);
+    const r2 = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: CLOUDRUN, correr: () => ({ status: 1, stdout: '', stderr: 'PERMISSION_DENIED proyecto acme-proyecto' }), probar: async () => ({ ok: true }) });
+    assert.strictEqual(r2.resultado, 'no_pudo');
+    assert.match(r2.motivo, /^no se pudo leer la imagen que corre \(salió 1\)$/);
+    assert.ok(!JSON.stringify(r2).includes('acme-proyecto'), 'el resultado no nombra el proyecto');
+  } finally { await reg.cerrar(); }
+});
+
+test('A43 CloudRun_LaTraeElConector_ElNucleoNoLaNombra — issue 1820', async () => {
+  const I = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const cr = I.sitePlatforms().find((x) => x.name === 'cloudrun');
+  assert.ok(cr, 'el conector gcs trae la plataforma cloudrun');
+  assert.ok(cr.file.endsWith(path.join('integrations', 'gcs', 'scripts', 'site-platform.js')));
+  assert.deepStrictEqual(cr.options, ['service', 'region', 'project']);
+  // un conector no puede tapar una plataforma del núcleo, ni apuntar fuera de su carpeta
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, 'otra', 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'otra', 'integration.json'), JSON.stringify({ name: 'otra', label: 'Otra', kind: 'toggle', sitePlatform: { name: 'azure', module: '../x.js', options: ['Malo'] } }));
+  const { problems } = I.listManifests({ dir });
+  const r = (problems.find((p) => p.name === 'otra') || { reasons: [] }).reasons.join('\n');
+  assert.match(r, /sitePlatform\.name/); assert.match(r, /sitePlatform\.module/); assert.match(r, /sitePlatform\.options/);
+  // el actualizador no nombra la herramienta de la plataforma: la nombra el conector
+  const nucleo = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'deploy', 'update-site.js'), 'utf8');
+  assert.doesNotMatch(nucleo, /\bgcloud\b|cloudrun/);
+  // sin las opciones que pide, no toca nada y lo dice
+  const reg = await registro();
+  try {
+    const g = gcloudDeJuguete();
+    const res = await UP.actualizar({ ...base(reg), plataforma: 'cloudrun', modo: 'auto', conector: { url: 'https://x', opciones: { project: 'p' } }, correr: g.correr, probar: async () => ({ ok: true }) });
+    assert.strictEqual(res.resultado, 'no_pudo');
+    assert.match(res.motivo, /^plataforma desconocida \(cloudrun: faltan --service y --region\)/);
+    assert.deepStrictEqual(g.ordenes, [], 'no se corrió nada');
+  } finally { await reg.cerrar(); }
+});
