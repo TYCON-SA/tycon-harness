@@ -2,16 +2,11 @@
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
     "date": "2026-11-27",
-    "direction": "baja: 58 → 18",
-    "reason": "Story 8.24, tanda B2-4b: los siete revisores y sus 14 .toml de Codex piden las guías y el estado por la casa propia. Quedan la B1d (el freno de producción) y los dos efectos de la portada, que se van con el retiro (tanda C)."
+    "direction": "baja: 18 → 2",
+    "reason": "Story 8.24, tanda B1d: el freno de producción. El lanzador y la puerta leen el nombre de la carpeta de Claude Code de lo que dejó el instalador en /opt/tycon, y el instalador le pregunta los lugares viejos a la instalación anterior del freno. Quedan los dos efectos de la portada, que se van con el retiro (tanda C)."
   },
-  "total": 18,
+  "total": 2,
   "files": {
-    "scripts/hooks/prod-firewall-close.js": 1,
-    "scripts/production/install-guard.sh": 9,
-    "scripts/production/managed-settings.tycon-production.json.template": 4,
-    "scripts/production/node-shim.sh": 1,
-    "scripts/production/tycon-prod-sql": 1,
     "scripts/setup/install-effects.json": 2
   }
 }
