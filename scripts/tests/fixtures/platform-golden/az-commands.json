@@ -67,16 +67,6 @@
   "scripts/install-tycon-hooks.sh": [
     "# el instalador no le pregunta a ninguna organización. La organización se le pasa: la del lector, no la de `az devops configure`."
   ],
-  "scripts/lib/az-pr.js": [
-    "* Los segmentos del comando: cada `az repos pr create` se juzga solo, con SUS banderas — nunca",
-    "* Un `echo \"az repos pr create\"` NO entra acá: echo no ejecuta nada.",
-    "* `az [opciones globales] repos pr <verbo>` leído de las fichas sueltas: un `echo \"az repos pr",
-    "* el `az repos pr create` viaja adentro de una cadena y ninguna ficha lo delata: no se puede juzgar",
-    "* scripts/lib/az-pr.js — cómo leer un comando `az repos pr …` sin dejarse engañar.",
-    "* un `az repos pr \\<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a",
-    "// Una sustitución de comandos ES un comando: `PR=$(az repos pr create …)` tiene que juzgarse",
-    "// abierta que se traga el `az repos pr create` de la línea siguiente."
-  ],
   "scripts/lib/ci-bypass.js": [
     "*     `az devops security permission update` con los bits 128, 32768, 2048 u 8192 (o un `--allow-bit` que no se lee);",
     "*     `az rest` o `az devops invoke` que escriben sobre pedidos, políticas o permisos. Vale igual con la ruta completa",
@@ -156,6 +146,14 @@
     "//   az devops invoke --area distributedtask --resource pools --api-version 7.1 --org <org> -o json",
     "//   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json",
     "//   az pipelines runs show --id <n> --project <proyecto> --org <org> -o json   (por cada pedido sin terminar)"
+  ],
+  "integrations/azure-devops/scripts/command-reader.js": [
+    "* Un `echo \"az repos pr create\"` NO entra acá: echo no ejecuta nada.",
+    "* `az [opciones globales] repos pr <verbo>` leído de las fichas sueltas: un `echo \"az repos pr",
+    "* `az repos pr`: qué verbo es, qué banderas lee az y cómo, y las faltas que frenan un pedido a main.",
+    "* el `az repos pr create` viaja adentro de una cadena y ninguna ficha lo delata: no se puede juzgar",
+    "* integrations/azure-devops/scripts/command-reader.js — cómo leer un comando `az repos pr …` sin dejarse engañar.",
+    "* un `az repos pr \\<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a"
   ],
   "integrations/azure-devops/scripts/dependency-notices.js": [
     "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"

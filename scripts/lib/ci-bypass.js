@@ -48,7 +48,7 @@
  */
 
 const gh = require('./command-readers.js').lectorDe('gh');
-const az = require('./az-pr.js');
+const az = require('./command-readers.js').lectorDe('az');
 
 const FIRMA = 'escape:merge-bypass';
 const ESCRIBE = /^(put|post|patch|delete)$/i;

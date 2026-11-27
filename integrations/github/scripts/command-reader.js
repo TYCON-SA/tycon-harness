@@ -10,7 +10,7 @@
  * (scripts/hooks/public-push-guard.js) necesita, de cada `gh` de un comando de terminal: si es de lectura, a qué repo
  * apunta y desde dónde corre, qué textos publica, qué archivos sube o lee, y qué parte NO se puede leer desde el texto.
  *
- * Se arma SOBRE el lector de scripts/lib/az-pr.js (`fichas`: un solo recorrido del texto, con conciencia de comillas) y
+ * Se arma SOBRE el lector de scripts/lib/command-tokens.js (`fichas`: un solo recorrido del texto, con conciencia de comillas) y
  * no es otro lector: la regla de ese archivo es que quien necesite leer otro comando lo sume ahí, no escriba otro regex.
  *
  * LAS DECISIONES, y hacia dónde falla cada una:
@@ -55,7 +55,7 @@
 const crypto = require('crypto');
 const path = require('path');
 // el lector de terminal con conciencia de comillas es del núcleo del mismo árbol
-const az = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'az-pr.js'));
+const az = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'command-tokens.js'));
 
 const BINARIO = /(^|[\\/])gh(\.exe|\.cmd)?$/i;
 // LAS TERMINALES, y los programas que corren como comando el TEXTO que reciben: un `gh` que publica pasado como texto a
