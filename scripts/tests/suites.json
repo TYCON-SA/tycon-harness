@@ -4870,6 +4870,12 @@
       "requiere": []
     },
     {
+      "__nota": "S247e (T1-T3): un `<<` que puede ser texto (adentro de una comilla, de un comentario o del cuerpo de otro heredoc) no le esconde al freno de producción lo que corre: el freno juzga las dos lecturas de los heredocs y frena si una frena; las formas de siempre pasan y la segunda lectura no anota un «pasó» de más. Corre en un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-heredoc-readings.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.9, tanda E (T58): la story de retiro existe con followup_of a la 8.9 y a la 8.12, trae lo que pide el AC 54, las dos padres tienen su followed_up_by y epics.md la registra con los números del termómetro. Sin specs/ (copia pública), no mide.",
       "raiz": "arnes",
       "ruta": "tests/retirement-story.test.js",
