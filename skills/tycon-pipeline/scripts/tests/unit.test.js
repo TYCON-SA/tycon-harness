@@ -2830,18 +2830,41 @@ test('Waiver_ParentAfterChild_Discarded — el padre tiene que estar antes que e
 test('Waiver_LegacyLinearLog_SameEntries — un registro lineal se lee igual que antes (T7)', () => {
   const armado = lineal([firma('6.1', [1]), firma('6.2', [2], { declHashByAc: { 2: 'x' } }), firma('6.3', [3])]);
   const { logPath } = registroDePrueba(armado);
+  // el armado es lineal entero: se lee igual
+  const lineas = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+  const antes = verificadorDeAntes(lineas);
+  assert.ok(antes.length > 0, `el registro de referencia tiene firmas: ${logPath}`);
+  assert.deepStrictEqual(waiverLib.verifyChain(logPath).entries, antes, `mismas entradas y mismo orden: ${logPath}`);
+  // el del repo, si está: es de la máquina (`.tycon/` va en .gitignore) y sigue recibiendo firmas
   const delRepo = path.join(SCRIPTS, '..', '..', '..', '.tycon', 'runtime-waivers.jsonl');
-  for (const lp of [logPath, ...(fs.existsSync(delRepo) ? [delRepo] : [])]) {
-    const lineas = fs.readFileSync(lp, 'utf8').split('\n').filter(Boolean);
-    const antes = verificadorDeAntes(lineas);
-    assert.ok(antes.length > 0, `el registro de referencia tiene firmas: ${lp}`);
-    const ahora = waiverLib.verifyChain(lp).entries;
-    // el armado es lineal entero: se lee igual. El del repo sigue recibiendo firmas, y las nuevas pueden ser hermanas
-    // (dos ramas que firmaron sobre la misma punta) que el verificador lineal no sabe leer: lo que él lee
-    // tiene que leerse igual y en el mismo orden, y lo nuevo va después.
-    if (lp === logPath) assert.deepStrictEqual(ahora, antes, `mismas entradas y mismo orden: ${lp}`);
-    else assert.deepStrictEqual(ahora.slice(0, antes.length), antes, `lo que leía el verificador de antes, igual y en el mismo orden: ${lp}`);
-  }
+  if (fs.existsSync(delRepo)) loDeAntesSeLeeIgual(delRepo);
+});
+
+/**
+ * Lo que leía el verificador de antes, en un registro que sigue recibiendo firmas, se lee igual y en el mismo orden; lo
+ * nuevo va después. Las firmas nuevas pueden ser hermanas (dos ramas sobre la misma punta) o traer el ok escrito en el
+ * chat: el verificador lineal no las lee. Un registro que sólo tiene de ésas no tiene nada que comparar (issue #1855).
+ */
+function loDeAntesSeLeeIgual(lp) {
+  const antes = verificadorDeAntes(fs.readFileSync(lp, 'utf8').split('\n').filter(Boolean));
+  if (!antes.length) return 0;
+  assert.deepStrictEqual(waiverLib.verifyChain(lp).entries.slice(0, antes.length), antes, `lo que leía el verificador de antes, igual y en el mismo orden: ${lp}`);
+  return antes.length;
+}
+
+test('Waiver_LegacyLinearLog_OnlyNewSignatures_NothingToCompare @A71 — un registro de la máquina con sólo firmas nuevas no hace fallar la prueba (issue #1855)', () => {
+  // 🔴 rojo si: la prueba del registro lineal exige firmas viejas en el registro de la máquina, que puede tener sólo
+  // firmas con el ok del chat (una exención en vivo de otra historia)
+  const { logPath } = registroDePrueba([]);
+  appendWaiverSeguro({ story: '9.1', acs: [1], matrixHash: 'm', approvedBy: 'lab', nowIso: '2026-11-27T10:00:00Z', logPath, ok: 'aprobado', tty: false });
+  assert.strictEqual(verificadorDeAntes(fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean)).length, 0, 'el verificador viejo no la lee');
+  assert.strictEqual(loDeAntesSeLeeIgual(logPath), 0);
+  assert.strictEqual(waiverLib.verifyChain(logPath).entries.length, 1, 'el verificador de ahora sí la lee');
+  // mezclado: firmas viejas y después una con el ok del chat. Lo viejo se compara por prefijo, y lo nuevo va después
+  const { logPath: mezclado } = registroDePrueba(lineal([firma('6.1', [1]), firma('6.2', [2])]));
+  appendWaiverSeguro({ story: '9.2', acs: [1], matrixHash: 'm', approvedBy: 'lab', nowIso: '2026-11-27T11:00:00Z', logPath: mezclado, ok: 'aprobado', tty: false });
+  assert.strictEqual(loDeAntesSeLeeIgual(mezclado), 2);
+  assert.deepStrictEqual(waiverLib.verifyChain(mezclado).entries.map((e) => e.story), ['6.1', '6.2', '9.2']);
 });
 
 test('Waiver_RevertAndCherryPick_Survive — con firmas nuevas, ni el revert ni el cherry-pick rompen (T8)', () => {
