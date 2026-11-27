@@ -258,7 +258,7 @@ test('E1 E2E_HorasYTokens_QuienMantiene @story-8.209 @ac-16 @ac-17',{ skip: SIN_
     await page.getByRole('link', { name: 'Horas y tokens' }).first().click();
     await page.waitForURL(/\/horas$/);
     // arriba, el resumen de la semana por persona; la tabla de cada día, plegada abajo
-    const resumen = page.locator('table.personas');
+    const resumen = page.locator('table.horas-personas');
     await resumen.waitFor({ timeout: 20000 });
     assert.match(await page.locator('.fichas').innerText(), /sin dato de modelo/);
     await page.getByText('Ver día por día, por máquina').click();
