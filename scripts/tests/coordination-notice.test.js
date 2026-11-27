@@ -723,7 +723,8 @@ test('BS6 Status_OpenTaskWithoutAnyConsole_IsNotWaiting: sin ninguna consola de 
 test('BS4 Processes_NeverAskTheCommandLine_UnreadableAccusesNobody: sólo número, padre, CPU y si es una consola', () => {
   let pedido = null;
   const salida = '  9001  77  0:01.50 /bin/zsh\n  9002 9001 1-02:03:04.05 -bash\n  9003 77 0:00.10 npm exec mcp_clockify@latest\n';
-  const r = BS.processes({ run: (cmd, args) => { pedido = [cmd, ...args]; return { status: 0, stdout: salida }; } });
+  // la lectura con `ps` (la de Windows, con PowerShell, la fija BSW2)
+  const r = BS.processes({ platform: 'darwin', run: (cmd, args) => { pedido = [cmd, ...args]; return { status: 0, stdout: salida }; } });
   assert.ok(!pedido.join(' ').match(/command|args|-ww|\bcmd\b/), `nunca la línea de comando: ${pedido.join(' ')}`);
   assert.deepStrictEqual(r.list, [{ pid: 9001, ppid: 77, cpu: 150, shell: true }, { pid: 9002, ppid: 9001, cpu: 9378405, shell: true }, { pid: 9003, ppid: 77, cpu: 10, shell: false }]);
   assert.ok(!JSON.stringify(r).includes('clockify'), 'del nombre no queda nada');
@@ -735,7 +736,7 @@ test('BS4 Processes_NeverAskTheCommandLine_UnreadableAccusesNobody: sólo númer
   const s = C.status(stallOpts(t, NOW + 40 * 60000, sinPs));
   assert.deepStrictEqual(s.backgroundStalled, []);
   assert.ok(s.problems.some((p) => /los procesos/.test(p)), JSON.stringify(s.problems));
-  // sin carpeta temporal (Windows): queda dicho que no se midió
+  // sin carpeta temporal (una plataforma sin número de usuario y que no es Windows): queda dicho que no se midió
   const problems = [];
   assert.deepStrictEqual(BS.stalled({ sessions: [], stateDir: t.state, now: NOW, tasksRoot: null, problems }), []);
   assert.match(problems.join(' '), /no medido/);
@@ -2216,4 +2217,43 @@ test('Retirada_HoraSoloDeLaMismaEspera @story-8.274 @ac-18', () => {
   assert.match(String(uma.waited), /la 8\.1, Preparar: firma del dueño/);
   assert.strictEqual(uma.waitingSince, undefined, 'la hora de la nota vieja no es la de esta espera');
   assert.doesNotMatch(C.statusText(s), /firma del dueño desde las/);
+});
+
+// ── Las tareas de fondo en Windows ─────────────────────────────────────────────────────────────────────────────────
+// En Windows Claude Code deja las tareas en %TEMP%\claude\<carpeta>\<sesión>\tasks (no hay /tmp ni número de usuario) y
+// no hay `ps`. Sin esto, el lector decía «no medido» en cada turno, y `open` no abría ninguna sesión.
+test('BSW1 BackgroundTasks_Windows_FolderUnderTemp: en Windows la carpeta es la de %TEMP%; con número de usuario, la de /tmp', () => {
+  assert.strictEqual(BS.defaultRoot({ platform: 'win32', tmpdir: 'C:\\Users\\x\\AppData\\Local\\Temp', getuid: null }), path.join('C:\\Users\\x\\AppData\\Local\\Temp', 'claude'));
+  assert.strictEqual(BS.defaultRoot({ platform: 'darwin', tmpdir: '/var/folders/x', getuid: () => 501 }), path.join('/tmp', 'claude-501'));
+  assert.strictEqual(BS.defaultRoot({ platform: 'linux', tmpdir: '/tmp', getuid: null }), null);
+});
+
+test('BSW2 BackgroundTasks_Windows_ProcessesByPowerShell: lee número, padre, CPU y si es una consola, sin abrir ventanas', () => {
+  let llamada = null;
+  const salida = JSON.stringify([
+    { ProcessId: 10, ParentProcessId: 4, KernelModeTime: 1000000, UserModeTime: 2000000, Name: 'claude.exe' },
+    { ProcessId: 11, ParentProcessId: 10, KernelModeTime: 50000, UserModeTime: 50000, Name: 'bash.exe' },
+    { ProcessId: 12, ParentProcessId: 10, KernelModeTime: 0, UserModeTime: 0, Name: 'pwsh.exe' },
+    { ProcessId: 13, ParentProcessId: 10, KernelModeTime: 0, UserModeTime: 0, Name: 'node.exe' },
+  ]);
+  const r = BS.processes({ platform: 'win32', run: (cmd, args, o) => { llamada = { cmd, args, o }; return { status: 0, stdout: salida }; } });
+  assert.ok(llamada && /powershell\.exe$/i.test(llamada.cmd) && llamada.o.windowsHide === true, `cómo se lanzó: ${JSON.stringify(llamada && llamada.cmd)}`);
+  assert.deepStrictEqual(r.list, [
+    { pid: 10, ppid: 4, cpu: 30, shell: false },
+    { pid: 11, ppid: 10, cpu: 1, shell: true },
+    { pid: 12, ppid: 10, cpu: 0, shell: true },
+    { pid: 13, ppid: 10, cpu: 0, shell: false },
+  ]);
+  // un PowerShell que falla o no devuelve nada es un problema dicho, no una lista vacía
+  assert.ok(BS.processes({ platform: 'win32', run: () => ({ status: 1, stdout: '' }) }).problem);
+  assert.ok(BS.processes({ platform: 'win32', run: () => ({ status: 0, stdout: 'no es json' }) }).problem);
+});
+
+test('BSW3 BackgroundTasks_Windows_DriveLetterEitherCase: la carpeta de la sesión se encuentra con la unidad en mayúscula o minúscula', () => {
+  const t = toy();
+  const root = path.join(t.root, 'tmp-claude-win');
+  const d = path.join(root, 'C--lab-coordi', 'sid-w', 'tasks');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'b7.output'), 'corriendo\n');
+  assert.deepStrictEqual(BS.openTasks('sid-w', root, 'c:\\lab\\coordi', { platform: 'win32' }).map((x) => x.id), ['b7']);
 });
