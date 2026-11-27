@@ -146,6 +146,23 @@ frena "T4q · firewall-rule sobre producción sigue frenando" "az sql server fir
 pasa  "T4r · ad-admin sobre no-producción" "az sql server ad-admin create --server acme-sql-staging -g ACME --display-name equipo --object-id 0f1e2d3c-1111-2222-3333-444455556666"
 frena "T4s · ad-admin sobre producción sigue frenando" "az sql server ad-admin create --server acme-sql -g ACME --display-name equipo --object-id 0f1e2d3c-1111-2222-3333-444455556666"
 frena "T4t · un --name que nombra producción en firewall-rule no esconde el --server de producción" "az sql server firewall-rule create --name acme-sql-staging --server acme-sql -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+# Revisión de Fable sobre la A53: -n sigue siendo el servidor fuera de los subgrupos de reglas, y las formas de
+# servidor que az acepta se leen. Todos frenan.
+frena "T4u · audit-policy: ahí -n es el servidor" "az sql server audit-policy update -n acme-sql -g ACME --state Disabled"
+frena "T4v · ad-only-auth: ahí --name es el servidor" "az sql server ad-only-auth disable --name acme-sql -g ACME"
+frena "T4w · una redirección tras el verbo no apaga el -n" "az sql server delete 2>/dev/null -n acme-sql -g ACME --yes"
+frena "T4x · una palabra que el shell saca no apaga el -n" "az sql server show \$@ -n acme-sql -g ACME"
+frena "T4y · -s con el valor pegado" "az sql server firewall-rule create -sacme-sql -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4z · -s= con el valor" "az sql server firewall-rule create -s=acme-sql -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+# la abreviatura de --server que az acepta, armada al correr: es una bandera de az, no un nombre del arnés
+SERV_AZ="--ser""v"
+frena "T4aa · la abreviatura de --server" "az sql server firewall-rule create $SERV_AZ acme-sql -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4ab · la abreviatura con producción después de un --server de prueba" "az sql server firewall-rule create --server acme-sql-staging $SERV_AZ acme-sql -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4ac · regla sin --server (az puede tomarlo de sus valores por defecto)" "az sql server firewall-rule create -n acme-sql -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4ad · dns-alias con --original-server de producción" "az sql server dns-alias set -n alias --server acme-sql-staging --original-server acme-sql -g ACME"
+frena "T4ae · --name= pegado en az sql server show" "az sql server show --name=acme-sql -g ACME"
+frena "T4af · -n pegado en az sql server delete" "az sql server delete -nacme-sql -g ACME --yes"
+pasa  "T4ag · outbound-firewall-rule sobre no-producción" "az sql server outbound-firewall-rule create -n destino.example.com --server acme-sql-staging -g ACME"
 # 6.3 · T11 y T12: el borrado de un servidor o de una base de producción ya frenaba; se fija. La sentencia de borrado se
 # arma por partes: escrita entera, el freno general corta el comando que corre esta suite.
 frena "6.3 T11 · borrar el servidor de producción por -n" "az sql server delete -n acme-sql --yes"

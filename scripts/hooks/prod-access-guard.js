@@ -3610,16 +3610,50 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       // pero `az sql server <verbo>` no lo tiene: ahí el servidor es `-n`, y lo que sigue a `-s` (en la práctica, el id
       // de una suscripción) leído como servidor frenaba una consulta de configuración
       const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
+      // La ruta otra vez, sin las redirecciones (el shell las saca antes de llamar a az: `az sql server show 2>/dev/null
+      // -n …`). Si queda una palabra que el shell cambia (`$@`, `*(N)`, `{,}`) o una vacía, la ruta es dudosa
+      const rutaLimpia = [];
+      let rutaDudosa = false;
+      for (let k = iSql + 1; iSql >= 0 && k < t.length && !t[k].startsWith('-'); k++) {
+        if (/^\d*(?:[<>]|&>)/.test(t[k])) { if (/^\d*(?:[<>]{1,2}|&>{1,2}|<<<)$/.test(t[k])) k++; continue; }
+        if (!t[k] || /[$*?{}()`[\]]/.test(t[k])) rutaDudosa = true;
+        rutaLimpia.push(t[k]);
+      }
+      // el servidor también en las formas que az acepta y el freno no leía: el valor pegado (`-sX`, `-s=X`), la bandera
+      // abreviada (serv y serve, abreviaturas de server) y el servidor de origen de un alias de DNS (`--original-server`)
+      // (las banderas son de az: su lector de argumentos acepta las abreviaturas de server, serv y serve)
+      const BANDERA_SERVIDOR = /^--(?:serv|serve|server|original-server)$/;
+      const PEGADO_SERVIDOR = /^--(?:serv|serve|server|original-server)[=:](.+)$|^-s=?(.+)$/;
+      let servidorLeido = false;     // un servidor nombrado con una forma que el freno lee entera
+      let servidorRaro = false;      // una forma de servidor que az acepta y que no es `--server X` / `-s X` / `--server=X`
       for (let i = 1; i < t.length; i++) {
-        // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo. En los subgrupos
-        // (`az sql server firewall-rule|ad-admin|… -n <nombre>`), `-n` es el nombre de la regla o del objeto, y el
-        // servidor va por `-s`/`--server`: leer el nombre como servidor frenaba una regla sobre un servidor de prueba
-        const esSqlServer = t.includes('sql') && t.includes('server') && sinFlagS;
-        const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
-                                (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
+        const esS = t[i] === '-s' && t.includes('sql') && !sinFlagS;
+        if ((t[i] === '--server' || esS) && t[i + 1] !== undefined && !t[i + 1].startsWith('-')) servidorLeido = true;
+        else if (/^--server[=:].+$/.test(t[i])) servidorLeido = true;
+        else if (BANDERA_SERVIDOR.test(t[i]) || (PEGADO_SERVIDOR.test(t[i]) && t.includes('sql') && !(t[i].startsWith('-s') && sinFlagS))) servidorRaro = true;
+      }
+      // `-n` es el nombre de la regla o del alias, no el servidor, SÓLO en estos subgrupos (donde az usa `--server` para
+      // el servidor) y SÓLO si el comando lo nombra en una forma que el freno lee entera. En cualquier otro caso `-n` se
+      // lee como servidor, como siempre: en `audit-policy`, `ad-only-auth` o `advanced-threat-protection-setting` el
+      // servidor ES `-n`, y sin `--server` az puede tomarlo de sus valores por defecto. Leerlo de más frenaba al dueño
+      // una regla de firewall sobre un servidor que no es de producción (A53)
+      const SUBGRUPOS_CON_NOMBRE_PROPIO = new Set(['firewall-rule', 'ipv6-firewall-rule', 'outbound-firewall-rule', 'vnet-rule', 'dns-alias']);
+      const nombreEsObjeto = !rutaDudosa && rutaLimpia.length === 3 && rutaLimpia[0] === 'server'
+        && SUBGRUPOS_CON_NOMBRE_PROPIO.has(rutaLimpia[1]) && servidorLeido && !servidorRaro;
+      for (let i = 1; i < t.length; i++) {
+        // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
+        const esSqlServer = t.includes('sql') && t.includes('server') && !nombreEsObjeto;
+        const esFlagServidor = (t[i] === '--server' || BANDERA_SERVIDOR.test(t[i]) || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
+                                (esSqlServer && (t[i] === '-n' || t[i] === '--name' || t[i] === '--nam' || t[i] === '--na')));
         if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
         const igual = /^--server[=:](.+)$/.exec(t[i]);
         if (igual) agregar(crudoDe(texto, igual[1]), 'az');
+        // las formas pegadas: `-sX`, `-s=X`, la abreviada con `=`, `--original-server=X`; y, donde `-n` es el servidor, `-nX`,
+        // `-n=X`, `--name=X`
+        const pegado = t.includes('sql') ? PEGADO_SERVIDOR.exec(t[i]) : null;
+        if (pegado && !(t[i].startsWith('-s') && sinFlagS)) agregar(crudoDe(texto, pegado[1] || pegado[2]), 'az');
+        const nombrePegado = esSqlServer ? /^(?:-n=?|--name[=:]|--nam[=:]|--na[=:])(.+)$/.exec(t[i]) : null;
+        if (nombrePegado) agregar(crudoDe(texto, nombrePegado[1]), 'az');
         const rec = RECURSO_SQL.exec(t[i]);
         if (rec) agregar(rec[1], 'recurso');
       }
