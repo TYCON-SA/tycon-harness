@@ -623,7 +623,9 @@ function main(argv, env = process.env) {
       portable: Array.isArray(s.requiere) && s.requiere.length === 0 };
   });
 
-  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
+  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}),
+    // la corrida de una sola suite (`--suite`): quien juzga el rojo sabe que ya se midió sola
+    ...(suiteOnly ? { suite_only: suiteOnly } : {}) };
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];

@@ -32,6 +32,12 @@
  *    repo, en la base se mide la misma subcarpeta. Límite conocido: el árbol de la base trae sólo lo commiteado (sin lo
  *    que git ignora, como `node_modules`); una suite que necesita eso da rojo en la base por el entorno y queda
  *    heredada. Las suites del arnés no lo necesitan.
+ *    Verde en la base no alcanza para cobrarle el rojo al cambio: la base se midió sola y la rama, en la corrida completa
+ *    (con otras suites antes y la máquina cargada). Por eso, si la base da verde, la misma suite se corre sola también en
+ *    la rama, con el mismo corredor, tope y medidor. Verde ahí → «no-reproduce»: el rojo sale sólo en la corrida completa
+ *    (orden, carga u otra suite de la corrida); no se le cobra al cambio, pero no es heredada: queda en las heredadas con
+ *    `measured_on: branch-alone` y el portón lo dice aparte. Roja sola en la rama → no heredada, frena. No se corre la rama
+ *    sola cuando la corrida ya era una sola suite (`--suite`: ya se midió sola) ni en el árbol armado del privado.
  *    Topes: TYCON_INHERITED_BASE_MAX suites por corrida (3; 0 apaga esta parte y deja todo como antes) y
  *    TYCON_INHERITED_BASE_TIMEOUT_S segundos por suite (600).
  *
@@ -45,8 +51,8 @@
  *    segundos por suite (600).
  *
  * Lo heredado sale de `fallas` y de `ausentes` del resumen de run-suites-json.js y pasa a `inherited.suites`, cada una
- * con `measured_on` (`snapshot` o `base`). La cabecera `inherited` lleva la fecha de la foto (null sin foto que
- * perdonara) y, si alguna salió de la base, `base: {sha, at}`. Lo medido en la base queda en `base_check`, con el
+ * con `measured_on` (`snapshot`, `base` o `branch-alone`). La cabecera `inherited` lleva la fecha de la foto (null sin foto
+ * que perdonara) y, si alguna salió roja en la base, `base: {sha, at}`. Lo medido en la base queda en `base_check`, con el
  * veredicto y el motivo de cada suite. El informe y la lista de «repetir primero» ven sólo lo nuevo.
  *
  * Con suites sin medir en la corrida no se perdona nada: no decidir no es verde.
@@ -183,7 +189,7 @@ const ultimaLinea = (r) => String((r && (r.stderr || r.stdout)) || '').trim().sp
  * Corre las fallas sobre la base. Devuelve `{ base, suites, heredadas }`: `suites` con el veredicto de cada una
  * (`heredada` · `no-heredada` · `no-medido`, con su motivo) y `heredadas` las fallas que dieron rojo también ahí.
  */
-function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot = null, publicRoot = null, coverage = false }) {
+function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot = null, publicRoot = null, coverage = false, ramaSola = true }) {
   const suites = [];
   const heredadas = [];
   const todas = (motivo) => {
@@ -221,7 +227,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privat
     // el árbol que se mide puede ser una subcarpeta del repo (el portón acotado a un proyecto): en la base, la misma
     const prefijo = g('rev-parse', '--show-prefix').stdout.trim();
     const raizBase = prefijo ? path.join(arbolBase, prefijo) : arbolBase;
-    correrEnLaBase(medibles, { raizBase, raizRama: tree, dir, timeout, extra: [], suites, heredadas, coverage });
+    correrEnLaBase(medibles, { raizBase, raizRama: ramaSola ? tree : null, dir, timeout, extra: [], suites, heredadas, coverage });
     return fin(base);
   } finally {
     if (armado) g('worktree', 'remove', '--force', arbolBase);
@@ -264,12 +270,17 @@ function correrEnLaBase(medibles, { raizBase, raizRama = null, dir, timeout, ext
   // las skills de la base, no las del cambio: el corredor lee la variable antes que el clon
   const env = { ...process.env };
   delete env.TYCON_SKILLS_DIR;
+  // la marca con que el portón prende el juez de main no llega a la suite: en la corrida completa no estaba, y una suite
+  // que corre un portón de juguete adentro prendería un juez anidado
+  delete env.TYCON_MAIN_CHECK;
   // sin el medidor en la rama, tampoco el que llega heredado del ambiente: la base se mide en las mismas condiciones
-  // (vacía, no borrada: Node se la vuelve a poner a un hijo cuyo ambiente no la trae)
+  // (vacía, no borrada: Node se la vuelve a poner a un hijo cuyo ambiente no la trae; el corredor la borra antes de lanzar
+  // el medidor, que con la variable vacía no arranca)
   if (!coverage) env.NODE_V8_COVERAGE = '';
   // la misma suite sola en la rama, con el mismo corredor, tope y medidor que la base (las skills de la rama, como en la
   // corrida): `{ verde: true }`, o `{ verde: false, motivo }` (roja sola también, o no se pudo medir)
   const envRama = { ...process.env };
+  delete envRama.TYCON_MAIN_CHECK;
   if (!coverage) envRama.NODE_V8_COVERAGE = '';
   const correrSola = (raizR, ruta, i) => {
     const marcaR = path.join(dir, `tope-rama-${i}`);
@@ -302,7 +313,7 @@ function correrEnLaBase(medibles, { raizBase, raizRama = null, dir, timeout, ext
       // el rojo depende del orden o de la carga de la corrida y no del cambio: avisa, no frena (issue #1855)
       const sola = raizRama ? correrSola(raizRama, ruta, i) : null;
       if (sola && sola.verde) {
-        suites.push({ ruta, raiz, verdict: 'no-reproduce', motivo: 'verde en la base y verde sola en la rama: el rojo sale sólo en la corrida completa (orden o carga), no del cambio — avisa, no frena' });
+        suites.push({ ruta, raiz, verdict: 'no-reproduce', motivo: 'verde sola en la base y verde sola en la rama: no se reproduce sola (orden, carga u otra suite de la corrida); no se le cobra al cambio, pero no es heredada — avisa, no frena' });
         heredadas.push(f);
         return;
       }
@@ -404,7 +415,9 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
   }
   let baseCheck = null;
   if (max > 0 && (fallas.length || ausentes.length)) {
-    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot, publicRoot, coverage });
+    // una corrida de una sola suite (`--suite`) ya la midió sola en la rama: no hay otra corrida sola con qué compararla
+    const ramaSola = !summary.suite_only;
+    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot, publicRoot, coverage, ramaSola });
     const at = new Date().toISOString();
     baseCheck = { base: m.base, at, suites: m.suites };
     const vienen = new Set(m.heredadas);
@@ -417,7 +430,7 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
         ? `roja también en la base (${(m.base || '').slice(0, 10)}), sin el cambio: ${nombre(s.ruta)} — avisa, no frena`
         : `${nombre(s.ruta)}: ${s.motivo}`);
     }
-    if (m.heredadas.length) baseCheck.inheritedBase = { sha: m.base, at };
+    if (m.heredadas.some((f) => !noReproduce.has(rutaDe(f)))) baseCheck.inheritedBase = { sha: m.base, at };
   }
   // 3. LA PUNTA DE MAIN (lib/main-check.js): lo que la foto y la base no perdonaron se mide sobre la última versión de
   // origin/main. Lo que main también tiene roto, con los mismos casos, es de main: sigue rojo en el resumen (el informe

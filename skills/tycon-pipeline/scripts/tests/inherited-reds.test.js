@@ -153,10 +153,12 @@ function conBase({ foto = null, conOrden = false } = {}) {
   const t = path.join(raiz, 'scripts', 'tests');
   fs.mkdirSync(t, { recursive: true });
   const lista = (nombres) => JSON.stringify({ diarias: nombres.map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh` })), semanales: [] });
-  fs.writeFileSync(path.join(t, 'suites.json'), lista(['a', 'b', 's', ...(conOrden ? ['o'] : [])]));
+  fs.writeFileSync(path.join(t, 'suites.json'), lista(['a', 'b', 's', ...(conOrden ? ['o', 'm'] : [])]));
   fs.writeFileSync(path.join(t, 'a.test.sh'), suiteQueSale(1));
   // o.test.sh: sola pasa; en la corrida completa (acá, con la marca que la deja roja) falla, en la base y en la rama
   if (conOrden) fs.writeFileSync(path.join(t, 'o.test.sh'), suiteQueSale(0, '[ -n "$HEREDADOS_ORDEN" ] && exit 1'));
+  // m.test.sh: falla si le llega la marca con que el portón prende el juez de main (en la corrida completa no está)
+  if (conOrden) fs.writeFileSync(path.join(t, 'm.test.sh'), suiteQueSale(0, '[ -n "$TYCON_MAIN_CHECK" ] && exit 1'));
   fs.writeFileSync(path.join(t, 'b.test.sh'), suiteQueSale(0));
   fs.writeFileSync(path.join(t, 's.test.sh'), suiteQueSale(1, 'sleep 30'));
   if (foto) {
@@ -171,7 +173,7 @@ function conBase({ foto = null, conOrden = false } = {}) {
   git(raiz, 'checkout', '-q', '-b', 'cambio');
   fs.writeFileSync(path.join(t, 'b.test.sh'), suiteQueSale(1));
   fs.writeFileSync(path.join(t, 'n.test.sh'), suiteQueSale(1));
-  fs.writeFileSync(path.join(t, 'suites.json'), lista(['a', 'b', 'n', 's', ...(conOrden ? ['o'] : [])]));
+  fs.writeFileSync(path.join(t, 'suites.json'), lista(['a', 'b', 'n', 's', ...(conOrden ? ['o', 'm'] : [])]));
   git(raiz, 'add', '-A'); git(raiz, ...autor, 'commit', '-q', '-m', 'el cambio');
   return raiz;
 }
@@ -555,5 +557,25 @@ test('Heredado_VerdeEnLaBase_SolaEnLaRamaTambien_NoFrena @A75 — pasa sola en l
   assert.deepEqual(j.fallas.map((x) => x.entrada.ruta), ['tests/b.test.sh'], r.stderr);
   assert.match(r.stderr, /o\.test\.sh.*avisa, no frena/);
   assert.deepEqual(j.inherited.suites.map((s) => [s.entrada.ruta, s.measured_on]), [['tests/o.test.sh', 'branch-alone']]);
+  baseSinRestos(raiz);
+});
+
+// 🔴 Falla con (revisión de la A75): la repetición de una sola suite (`--suite`) comparada otra vez sola en la rama, que
+// perdonaba una roja de azar si la segunda vez pasaba; y la marca del juez de main (`TYCON_MAIN_CHECK`) que llegaba a la
+// suite en la base y en la rama sola, y no en la corrida completa.
+test('Heredado_RamaSola_NoEnUnaSolaSuite_NiConLaMarcaDelJuez @A75 — con --suite no se compara de nuevo; la marca no llega a la suite', () => {
+  const raiz = conBase({ conOrden: true });
+  // una sola suite: el rojo ya se midió sola en la rama, sigue siendo del cambio
+  const una = resumen(raiz, ['tests/o.test.sh'], { suite_only: 'tests/o.test.sh' });
+  let r = enLaBase(raiz, una);
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(veredicto(leer(una), 'tests/o.test.sh').verdict, 'no-heredada', r.stderr);
+  // con la marca del juez en el ambiente (el juez de main apagado por su tope): m sola pasa en la base y en la rama
+  const f = resumen(raiz, ['tests/m.test.sh', 'tests/b.test.sh']);
+  r = enLaBase(raiz, f, { TYCON_MAIN_CHECK: '1', TYCON_MAIN_CHECK_MAX: '0' });
+  const j = leer(f);
+  assert.equal(veredicto(j, 'tests/m.test.sh').verdict, 'no-reproduce', r.stderr);
+  // sólo una que no se reproduce: la cabecera no dice que algo salió rojo en la base
+  assert.equal(j.inherited.base, undefined, JSON.stringify(j.inherited));
   baseSinRestos(raiz);
 });
