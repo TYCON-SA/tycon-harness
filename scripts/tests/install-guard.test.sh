@@ -1468,7 +1468,10 @@ fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
   # (i) una máquina que no se mudó a ~/.tycon (el estado donde siempre) y nunca tuvo el freno: no hay un freno anterior
   # que diga dónde queda ese estado, y el instalador no lo adivina. Frena diciendo qué hacer (decisión del dueño,
   # 2026-11-26: las máquinas del equipo ya se mudaron)
-  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CASA30/.claude/.tycon-pipeline"; mv "$ESTADO30" "$CASA30/.claude/.tycon-pipeline/harness-state.json"; rmdir "$CASA30/.tycon/state" 2>/dev/null
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CASA30/.claude/.tycon-pipeline"; mv "$ESTADO30" "$CASA30/.claude/.tycon-pipeline/harness-state.json"
+  # una máquina no mudada no tiene ~/.tycon/state: la carpeta se aparta entera (con lo que dejaron los casos de antes, que
+  # rmdir no borraba y la hacían parecer mudada) y vuelve después
+  rm -rf "$TMP/estado30-aparte"; mv "$CASA30/.tycon/state" "$TMP/estado30-aparte"
   if ! PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=1 HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1 \
      && grep -q 'actualizá el arnés para que se mude a ~/.tycon' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon/bin" ]; then
     ok "T30s · con el estado en la carpeta de siempre y sin freno anterior, frena y dice que se actualice el arnés"
@@ -1476,7 +1479,7 @@ fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
   # (j) 🔴 el ancla contra un repo AJENO que GitHub verifica igual: el origen fijado en
   # /opt (root) la primera vez; otro repo en el estado —aunque exista y cierre— exige --change-origin y la confirmación por
   # teclado, como en el modo clon. (El estado vuelve a ~/.tycon/state para este caso.)
-  mkdir -p "$CASA30/.tycon/state"; mv "$CASA30/.claude/.tycon-pipeline/harness-state.json" "$ESTADO30"
+  mv "$TMP/estado30-aparte" "$CASA30/.tycon/state"; mv "$CASA30/.claude/.tycon-pipeline/harness-state.json" "$ESTADO30"
   # (i) frenó antes de instalar: el freno se vuelve a instalar entero, como lo dejaba (i), para los casos que siguen
   instala30 >/dev/null 2>&1 || no "T30s · no pude volver a instalar el freno para los casos siguientes"
   # (u) 🔴 LA MUDANZA OFICIAL A GITHUB. Una máquina que instaló desde el clon de Azure
