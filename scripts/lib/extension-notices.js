@@ -207,7 +207,7 @@ const PS_ASIGNACION_PEGADA = /^\$[A-Za-z_][\w:]*=(.+)$/;
 
 /**
  * Si el comando de la sesión dispara el comando declarado (`<cli> [palabra]`): algún tramo (los parte el segmentador de
- * la capa, scripts/lib/az-pr.js: lo que está entre comillas o en un heredoc es texto, y `$(…)` es su propio tramo),
+ * la capa, scripts/lib/command-tokens.js: lo que está entre comillas o en un heredoc es texto, y `$(…)` es su propio tramo),
  * salteadas las asignaciones y las palabras de la terminal del principio (`timeout`, `sudo` y `xargs` con sus opciones;
  * en PowerShell, `$x =`), empieza fuera de comillas con ese CLI (o una ruta que termina en él) y trae la palabra entre
  * las dos primeras que no son opciones.
@@ -216,7 +216,7 @@ const PS_ASIGNACION_PEGADA = /^\$[A-Za-z_][\w:]*=(.+)$/;
 function matchesCommand(command, declared, { powershell = false } = {}) {
   const [cli, word] = String(declared || '').trim().split(/\s+/);
   if (!cli) return false;
-  for (const seg of require(path.join(__dirname, 'az-pr.js')).segmentos(String(command || ''), { powershell })) {
+  for (const seg of require(path.join(__dirname, 'command-tokens.js')).segmentos(String(command || ''), { powershell })) {
     let i = 0;
     // el comando, cuando viene pegado a una asignación de PowerShell (`$x=az`)
     let pegado = null;

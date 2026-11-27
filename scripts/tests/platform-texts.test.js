@@ -45,7 +45,6 @@ const SE_QUEDAN = [
   { file: 'guides/maintaining/pieces-in-detail.md', has: '**El pedido de trabajo del líder**', why: 'describe work-items.js, sólo de Azure DevOps: se muda con su pieza' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '**El cruce «pedido cerrado, vulnerabilidad viva»**', why: 'describe work-items.js, sólo de Azure DevOps: se muda con su pieza' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '«No lo veo» no es «no hay»', why: 'el aviso de consultas fallidas reconoce los comandos de Azure DevOps: es lo que avisa' },
-  { file: 'guides/maintaining/pieces-in-detail.md', has: 'armado sobre el lector de `az-pr.js`', why: 'describe az-pr.js, sólo de Azure DevOps: se muda con su pieza' },
 ];
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 

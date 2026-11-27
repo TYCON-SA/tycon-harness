@@ -84,7 +84,7 @@ const CASOS = [
   },
   {
     nombre: 'AzPr_RepoPrCreate_SpacedDashes — az con opciones vacías y espacios antes de repos pr',
-    archivo: 'scripts/lib/az-pr.js', ancla: '!f.esBandera && /',
+    archivo: 'integrations/azure-devops/scripts/command-reader.js', ancla: '!f.esBandera && /',
     armado: `'az ' + '   -!'.repeat(${REPETICIONES}) + ' x'`,
     normales: ['az repos pr create', 'az --org x repos pr update', 'AZ.cmd -o json repos pr create', 'az --only-show-errors repos pr create', 'az -x repos pr create'],
   },
@@ -115,6 +115,6 @@ test('RegexBacktracking_NoMatches_StaySilent — lo que no reconocía lo sigue s
   assert.strictEqual(rx('scripts/hooks/session-collision-guard.js', 'const GIT_ESCRIBE = /').test('git stash list'), false);
   assert.strictEqual(rx('scripts/hooks/session-collision-guard.js', 'const GIT_ESCRIBE = /').test('git log --oneline'), false);
   assert.strictEqual(rx('scripts/setup/harness/startup-line.js', 'const PULL_FLAGS_RX = /').test(' origin main'), false);
-  assert.strictEqual(rx('scripts/lib/az-pr.js', '!f.esBandera && /').test('az repos pr list'), false);
+  assert.strictEqual(rx('integrations/azure-devops/scripts/command-reader.js', '!f.esBandera && /').test('az repos pr list'), false);
   assert.strictEqual(rx('skills/tycon-pipeline/scripts/on-bash-write-gate.js', 'const A_UN_SHELL = /').test('x | grep bash'), false);
 });

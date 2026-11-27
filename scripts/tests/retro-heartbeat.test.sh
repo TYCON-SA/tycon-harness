@@ -233,9 +233,10 @@ fi
 
 # ── default de --out y repo que no es git ─────────────────────────────────────────────────
 TCG="${BASE}/tcg"
-mkdir -p "${TCG}/scripts/metrics" "${TCG}/scripts/lib" "${TCG}/scripts/hooks" "${TCG}/.dashboard"
+mkdir -p "${TCG}/scripts/metrics" "${TCG}/scripts/lib" "${TCG}/scripts/hooks" "${TCG}/.dashboard" "${TCG}/integrations/azure-devops/scripts"
 cp "${LATIDO}" "${TCG}/scripts/metrics/"
-cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${TCG}/scripts/lib/"
+cp "${RAIZ}/integrations/azure-devops/scripts/command-reader.js" "${TCG}/integrations/azure-devops/scripts/"
+cp "${LIB}" "${RAIZ}/scripts/lib/command-tokens.js" "${RAIZ}/scripts/lib/command-readers.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${TCG}/scripts/lib/"
 cp "${RAIZ}/scripts/hooks/retro-pending.js" "${TCG}/scripts/hooks/"
 node "${TCG}/scripts/metrics/retro-heartbeat.js" --repo "${REPO}" --merge "${SHA1}" --story 9.9 > "${BASE}/stdout" 2> "${BASE}/stderr"
 RC=$?
@@ -531,7 +532,9 @@ fi
   mkdir -p "${H20}/scripts/hooks" "${H20}/scripts/lib" "${H20}/integrations/github/scripts" "${H20}/scripts/metrics" "${H20}/.dashboard" "${P20}/.tycon"
   cp "${RAIZ}/scripts/hooks/retro-pending.js" "${H20}/scripts/hooks/"
   cp "${LATIDO}" "${H20}/scripts/metrics/"
-  cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/command-readers.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" \
+  mkdir -p "${H20}/integrations/azure-devops/scripts"
+  cp "${RAIZ}/integrations/azure-devops/scripts/command-reader.js" "${H20}/integrations/azure-devops/scripts/"
+  cp "${LIB}" "${RAIZ}/scripts/lib/command-tokens.js" "${RAIZ}/scripts/lib/command-readers.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" \
      "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${H20}/scripts/lib/"
   cp "${RAIZ}/integrations/github/scripts/command-reader.js" "${H20}/integrations/github/scripts/"
   G20() { git -C "${P20}" -c user.email=p@example.invalid -c user.name=p "$@"; }

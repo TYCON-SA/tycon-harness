@@ -1516,7 +1516,7 @@ const GUARD_VARIABLES = new RegExp(`^${GUARD_NAMES}=|^\\$env:${GUARD_NAMES}(=|$)
  * (cualquier `push` de la línea cuenta, no sólo el de git): de menos, el empuje saldría con un freno ajeno.
  */
 function lineFacts(command) {
-  const az = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const az = require(path.join(ROOT, 'scripts', 'lib', 'command-tokens.js'));
   let sets = false;
   let pushes = false;
   for (const seg of az.segmentos(command)) {
@@ -1535,7 +1535,7 @@ function lineFacts(command) {
 const GOES_ELSEWHERE = /^(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|-C|--git-dir(=.*)?|--work-tree(=.*)?|GIT_(DIR|WORK_TREE)=.*)$/i;
 function pushMayBeHarness(command, cwd, env) {
   try {
-    const az = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+    const az = require(path.join(ROOT, 'scripts', 'lib', 'command-tokens.js'));
     if (az.segmentos(command).some((seg) => seg.some((f) => GOES_ELSEWHERE.test(f.texto)))) return true;
     const { top, known } = repoAt(cwd);
     if (!known) return true;

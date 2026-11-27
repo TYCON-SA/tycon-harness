@@ -63,11 +63,29 @@ let sesion; // la del evento, para la constancia; guard-record.js descarta una d
 try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).command || ''; sesion = ev.session_id; } catch { process.exit(0); }
 
 // Sólo mira la creación de un pull request. Actualizar, listar o abandonar no se tocan.
-// 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio. Un lector
+// 🔴 Se lee con el lector COMPARTIDO (el lector de `az` de su conector, pedido por `lib/command-readers.js`), no con un regex propio. Un lector
 // casero que no entienda la forma `--org=…`, ni `--project="…"`, ni las formas cortas `-p/-r/-s/-t`
 // cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
 // porque un regex de una línea falla con facilidad.
-const az = require('../lib/az-pr.js');
+let az = null;
+let sinLector = null;
+try { az = require('../lib/command-readers.js').lectorDe('az'); } catch (e) { sinLector = String((e && e.message) || e).slice(0, 200); }
+// Sin el lector, ¿el comando puede crear, actualizar o completar un pedido? De más: el programa `az` o `gh` como palabra,
+// az corrido por python (`-m azure.cli`), o un `repos … pr` o un `pr merge` en cualquier lugar; todo leído sin comillas
+// ni barras (un nombre partido con comillas es el mismo programa para la terminal).
+const puedeSerUnPedido = (texto) => {
+  if (typeof texto !== 'string') return false;
+  const t = texto.replace(/\\\r?\n/g, ' ').replace(/["'`\\]/g, '');
+  return /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(t) || /azure\.cli/i.test(t) || /\brepos\b[\s\S]*\bpr\b/i.test(t) || /\bpr\s+merge\b/i.test(t);
+};
+// sin el lector no se sabe qué hace el comando: si nombra a `az` o a `gh`, frena con el motivo
+if (sinLector) {
+  if (puedeSerUnPedido(cmd)) {
+    process.stderr.write(`[pr-uno-por-repo] 🔒 no pude leer el comando: ${sinLector}. Lo que no pude leer no está aprobado: revisá la instalación del arnés (el conector del lector) y repetí.\n`);
+    process.exit(2);
+  }
+  process.exit(0);
+}
 // los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
 const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
 // las opciones de un solo guion que llevan valor, por prefijo: se saltean con su valor, porque si no el valor se toma
