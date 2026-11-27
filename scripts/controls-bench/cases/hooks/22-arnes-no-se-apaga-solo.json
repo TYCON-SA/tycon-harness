@@ -41,6 +41,37 @@
           }
         },
         {
+          "id": "harness-c1-bloquea-persistir-un-control-bajado-a-aviso",
+          "type": "must-block",
+          "__doc": "TYCON_INTERNAL_HISTORY=warn no apaga el control de historia interna: lo deja avisando sin frenar. Fijo en el rc queda bajado en todas las sesiones futuras, igual que uno apagado.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'export TYCON_INTERNAL_HISTORY=warn' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C1"
+            ]
+          }
+        },
+        {
+          "id": "harness-c1-pass-persistir-un-control-subido",
+          "type": "must-not-block",
+          "__doc": "El gemelo: TYCON_INTERNAL_HISTORY=block sube el control a frenar, la dirección contraria a la que la regla vigila.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'export TYCON_INTERNAL_HISTORY=block' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
           "id": "harness-c1-pass-editar-el-rc-para-otra-cosa",
           "type": "must-not-block",
           "__doc": "La regla exige TYCON_ + valor de apagado + el rc como DESTINO de la escritura, las tres juntas. Un alias es vida normal del dev.",
