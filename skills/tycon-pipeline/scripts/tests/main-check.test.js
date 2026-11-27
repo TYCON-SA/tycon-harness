@@ -183,6 +183,36 @@ test('MC1 Judge_ThreeVerdicts_ByCase @story-8.294 @ac-1 — a main-falla; b y c 
   assert.ok(corridas(l).every((c) => c.includes('--main-check')), corridas(l).join('\n'));
 });
 
+// 🔴 Falla con: la punta de main medida sin el medidor de cobertura cuando la rama se midió con él, o lo guardado de una
+// condición reusado para la otra (issue #1855: una suite que depende del tiempo pasa sin el medidor y falla con él, y el
+// rojo de main se le cobraba a la historia)
+test('MC6 Judge_SameConditionsAsTheBranch @A71 — con cobertura en la rama, main se mide con cobertura; lo guardado no se cruza', () => {
+  const l = lab();
+  // una suite de main que pasa sin el medidor y falla con él (el medidor deja su carpeta en NODE_V8_COVERAGE)
+  const otro = tmp('mc-otro-');
+  git(otro, 'clone', '-q', l.remoto, otro);
+  const t = path.join(otro, 'scripts', 'tests');
+  fs.writeFileSync(path.join(t, 'suites.json'), lista(['a', 'b', 'c', 's', 'k']));
+  fs.writeFileSync(path.join(t, 'k.test.sh'), suite('k', { fallback: 0, extra: '[ -n "$NODE_V8_COVERAGE" ] && { echo "✖ k-1"; exit 1; }' }));
+  git(otro, 'add', '-A'); git(otro, 'commit', '-q', '-m', 'k depende del medidor');
+  git(otro, 'push', '-q', 'origin', 'main');
+  const K = 'tests/k.test.sh';
+  // con el medidor en la rama: main falla igual
+  const conCob = resumen(l, [[K, ['k-1']]], { coverage: { lcov: '/x.lcov', without_data: [] } });
+  let r = aplicar(l, conCob);
+  assert.equal(veredicto(leer(conCob), K).verdict, 'main-falla', r.stderr);
+  assert.match(veredicto(leer(conCob), K).motivo, /cobertura/);
+  // sin el medidor en la rama: main pasa (lo guardado con el medidor no se reusa)
+  const sinCob = resumen(l, [[K, ['k-1']]]);
+  r = aplicar(l, sinCob);
+  assert.equal(veredicto(leer(sinCob), K).verdict, 'main-pasa', r.stderr);
+  // y otra vez con el medidor: lo guardado de esa condición sí se reusa, con su veredicto
+  const otraVez = resumen(l, [[K, ['k-1']]], { coverage: { lcov: '/x.lcov', without_data: [] } });
+  r = aplicar(l, otraVez);
+  assert.equal(veredicto(leer(otraVez), K).verdict, 'main-falla', r.stderr);
+  assert.equal(veredicto(leer(otraVez), K).cached, true);
+});
+
 test('MC2 Copy_ReusedNotMergeTree_Locked @story-8.294 @ac-2 — una copia que se reusa en la punta nueva; el --merge intacto; candado vivo → no-se; candado muerto se rompe', () => {
   // 🔴 mutación: armar la copia de cero en cada juicio → la carpeta cambia, o usar `--merge` → el testigo desaparece.
   const l = lab();

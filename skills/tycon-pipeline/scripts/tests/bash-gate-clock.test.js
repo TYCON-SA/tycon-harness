@@ -178,12 +178,33 @@ test('T2b BashGateClock_RealGate_SameVerdicts @story-8.308 @ac-2 — el freno de
   r = f.correr('rm specs/story-1.1.md');
   assert.strictEqual(r.status, 2);
   assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/);
-  // la entrada de 1 MB tarda varios segundos en analizarse (5,8 s medidos en una máquina cargada): con el reloj de
-  // fábrica, en la cola de merge pasa la mitad y el freno deja su renglón de lento. Con el reloj más largo, el
-  // veredicto sale del análisis y no deja renglón
+  // la entrada de 1 MB tarda varios segundos en analizarse (5,8 s medidos en una máquina cargada; unos 30 s bajo el
+  // medidor de cobertura en una máquina de 4 núcleos, issue #1855). Con el reloj más largo, el veredicto sale del
+  // análisis, no del corte. El renglón de «lento» depende de la máquina: es un aviso, no un fallo, y no se mira
   r = f.correr(`rm specs/story-1.1.md # ${'a'.repeat(1024 * 1024)}`, { TYCON_BASH_GATE_TIMEOUT_S: '50' });
-  assert.strictEqual(r.status, 2, 'también con una entrada de 1 MB');
-  assert.strictEqual(f.registro(), '');
+  sinCorte(r, f.registro(), 'también con una entrada de 1 MB');
+});
+
+/** El veredicto salió del análisis: frenó por la historia, sin el corte del reloj ni el de una falla. */
+function sinCorte(r, registro, que) {
+  assert.strictEqual(r.status, 2, que);
+  assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, que);
+  assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, que);
+  assert.doesNotMatch(registro, /FRENÓ POR FALLA|FAILED/, que);
+}
+
+// 🔴 Falla con: la prueba del freno de verdad pide que no quede el renglón de «lento», que depende de la velocidad de la
+// máquina (issue #1855: bajo el medidor de cobertura, en una máquina de 4 núcleos, T2b daba rojo en main).
+test('T2c BashGateClock_RealGate_SlowMachine_SameVerdict @A71 — en una máquina lenta, el veredicto es el mismo y lo lento es un aviso', (t) => {
+  const c = corral(t);
+  // la máquina lenta, de juguete: el reloj de la pared avanza 40 s entre el arranque y el final (el corte usa el
+  // temporizador, que no se toca)
+  const previa = path.join(c.dir, 'reloj-lento.js');
+  fs.writeFileSync(previa, 'const r = Date.now; let n = 0; Date.now = () => r() + (++n > 1 ? 40000 : 0);\n');
+  const f = freno(t, ['-r', previa]);
+  const r = f.correr('rm specs/story-1.1.md', { TYCON_BASH_GATE_TIMEOUT_S: '50' });
+  sinCorte(r, f.registro(), 'en una máquina lenta');
+  assert.match(f.registro(), /on-bash-write-gate LENTO/, 'lo lento queda como aviso');
 });
 
 test('T3b BashGateClock_ClockDoesNotLoad_RunsAsToday @story-8.308 @ac-3 — sin el reloj, el freno decide como siempre y lo deja anotado', (t) => {

@@ -183,7 +183,7 @@ const ultimaLinea = (r) => String((r && (r.stderr || r.stdout)) || '').trim().sp
  * Corre las fallas sobre la base. Devuelve `{ base, suites, heredadas }`: `suites` con el veredicto de cada una
  * (`heredada` · `no-heredada` · `no-medido`, con su motivo) y `heredadas` las fallas que dieron rojo también ahí.
  */
-function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot = null, publicRoot = null }) {
+function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot = null, publicRoot = null, coverage = false }) {
   const suites = [];
   const heredadas = [];
   const todas = (motivo) => {
@@ -196,7 +196,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privat
   const g = (...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', tree, ...a], { windowsHide: true, encoding: 'utf8' });
   if (assembled && !(privateRoot && publicRoot)) { todas('no medido: el árbol armado del privado mezcla dos repos y no sé de qué repos'); return fin(null); }
   if (!fallas.length) return fin(null);
-  if (assembled) return medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin });
+  if (assembled) return medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin, coverage });
   if (g('rev-parse', '--is-inside-work-tree').status !== 0) { todas('no medido: el árbol no es un repo de git'); return fin(null); }
   if (g('rev-parse', '--verify', '--quiet', 'origin/main^{commit}').status !== 0) { todas('no medido: no hay origin/main contra qué medir'); return fin(null); }
   const mb = g('merge-base', 'HEAD', 'origin/main');
@@ -221,7 +221,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privat
     // el árbol que se mide puede ser una subcarpeta del repo (el portón acotado a un proyecto): en la base, la misma
     const prefijo = g('rev-parse', '--show-prefix').stdout.trim();
     const raizBase = prefijo ? path.join(arbolBase, prefijo) : arbolBase;
-    correrEnLaBase(medibles, { raizBase, dir, timeout, extra: [], suites, heredadas });
+    correrEnLaBase(medibles, { raizBase, dir, timeout, extra: [], suites, heredadas, coverage });
     return fin(base);
   } finally {
     if (armado) g('worktree', 'remove', '--force', arbolBase);
@@ -250,7 +250,7 @@ function losMedibles(fallas, max, suites) {
  * Corre cada falla sola sobre la base ya armada en `raizBase`, con el corredor de la puerta y su tope, y anota en `suites`
  * el veredicto de cada una (y en `heredadas` las que dieron rojo también ahí). `extra`: opciones más para el corredor.
  */
-function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, heredadas }) {
+function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, heredadas, coverage = false }) {
   let enLaBase = null;
   let ilegible = '';
   try {
@@ -274,7 +274,9 @@ function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, hered
     const out = path.join(dir, `resumen-${i}.json`);
     const marca = path.join(dir, `tope-${i}`);
     const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', marca, '--',
-      process.execPath, RUNNER, raizBase, out, '--suite', ruta, ...extra],
+      process.execPath, RUNNER, raizBase, out, '--suite', ruta, ...extra,
+      // con el medidor de cobertura si la rama se midió con él: la base se mide en las mismas condiciones (issue #1855)
+      ...(coverage ? ['--coverage', path.join(dir, `cov-${i}`)] : [])],
     { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
     if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
     if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
@@ -304,7 +306,7 @@ function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, hered
  * medido en el momento: un caso que la foto nocturna no conoce (una deuda que vence hoy) se perdona sólo si también falla
  * ahí. Sin `origin/main` en alguno o sin poder armarlo, cada falla queda «no medido», con el motivo.
  */
-function medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin }) {
+function medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, publicRoot, suites, heredadas, todas, fin, coverage = false }) {
   const medibles = losMedibles(fallas, max, suites);
   if (!medibles) return fin(null);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heredados-main-'));
@@ -315,7 +317,7 @@ function medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, public
       return fin(null);
     }
     const base = `${armado.private.commit.slice(0, 10)}+${armado.public.commit.slice(0, 10)}`;
-    correrEnLaBase(medibles, { raizBase: armado.tree, dir, timeout, extra: ['--skills', armado.skills], suites, heredadas });
+    correrEnLaBase(medibles, { raizBase: armado.tree, dir, timeout, extra: ['--skills', armado.skills], suites, heredadas, coverage });
     return fin(base);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -343,6 +345,8 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
   if (summary.no_medido || unmeasured.length) {
     return { code: 2, lines: [...lines, `la corrida tiene suites sin medir: no medido no es verde, no se perdona nada`] };
   }
+  // la rama se midió con el medidor de cobertura (el resumen trae su sección): la base y main, también
+  const coverage = Boolean(summary.coverage);
   let fallas = Array.isArray(summary.fallas) ? summary.fallas : [];
   let ausentes = Array.isArray(summary.ausentes) ? summary.ausentes : [];
   const rojos = [...new Set([...fallas.map((f) => nombre(f && f.ruta)), ...ausentes.map(nombre)])];
@@ -371,7 +375,7 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
   }
   let baseCheck = null;
   if (max > 0 && (fallas.length || ausentes.length)) {
-    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot, publicRoot });
+    const m = medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privateRoot, publicRoot, coverage });
     const at = new Date().toISOString();
     baseCheck = { base: m.base, at, suites: m.suites };
     const vienen = new Set(m.heredadas);
@@ -391,7 +395,7 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
   let mainCheck = null;
   let esperaMain = false;
   if (mainOn && (fallas.length || ausentes.length)) {
-    const m = require('./main-check.js').judge({ tree, fallas, ausentes, assembled, max: maxMain, timeout: timeoutMain });
+    const m = require('./main-check.js').judge({ tree, fallas, ausentes, assembled, max: maxMain, timeout: timeoutMain, coverage });
     mainCheck = { sha: m.sha, at: m.at, suites: m.suites };
     lines.push(...m.lines);
     const deMain = m.suites.filter((s) => s.verdict === 'main-falla');

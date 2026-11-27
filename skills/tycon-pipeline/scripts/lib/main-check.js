@@ -208,6 +208,13 @@ function updateState(paths, mainRepo, session, fn) {
   }
 }
 
+// Un resultado medido con el medidor de cobertura se guarda aparte del medido sin él: el medidor hace más lenta una suite
+// y una que depende del tiempo puede pasar sin él y fallar con él (issue #1855). Se compara con lo de la misma condición.
+const SUFIJO_COBERTURA = ' (con cobertura)';
+const claveDe = (ruta, coverage) => (coverage ? `${ruta}${SUFIJO_COBERTURA}` : ruta);
+/** ¿La suite pasó en `at` (los resultados de una punta), con o sin el medidor? */
+const verdeEn = (at, ruta) => [ruta, `${ruta}${SUFIJO_COBERTURA}`].some((k) => at[k] && at[k].estado === 'verde');
+
 /** Guarda los resultados de main de `sha` (`{ [ruta]: { estado, casos, casos_completos } }`) y poda los sha viejos. */
 function saveResults(state, sha, measured, session) {
   const at = new Date().toISOString();
@@ -234,7 +241,7 @@ function closeIfGreen(state, sha, { esMasNueva } = {}) {
   if (!rec || !sha || rec.sha === sha) return null;
   if (esMasNueva && rec.sha && !esMasNueva(rec.sha, sha)) return null;
   const at = state.results[sha] || {};
-  if (!(rec.suites || []).every((ruta) => at[ruta] && at[ruta].estado === 'verde')) return null;
+  if (!(rec.suites || []).every((ruta) => verdeEn(at, ruta))) return null;
   rec.closed = new Date().toISOString();
   rec.closedSha = sha;
   return rec;
@@ -277,7 +284,7 @@ function suitesOf(root) {
 }
 
 /** Corre una suite en la copia: `{ estado: 'verde' }`, `{ estado: 'roja', casos, casos_completos }` o `{ error }`. */
-function runInCopy(copyRoot, ruta, { timeout, workDir, i }) {
+function runInCopy(copyRoot, ruta, { timeout, workDir, i, coverage = false }) {
   const out = path.join(workDir, `main-${i}.json`);
   const mark = path.join(workDir, `cap-${i}`);
   // las skills de main, no las del cambio: el corredor lee la variable antes que el clon; y sin la variable del juez, para
@@ -285,7 +292,9 @@ function runInCopy(copyRoot, ruta, { timeout, workDir, i }) {
   const env = { ...process.env };
   delete env.TYCON_SKILLS_DIR;
   delete env.TYCON_MAIN_CHECK;
-  const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', mark, '--', process.execPath, RUNNER, copyRoot, out, '--suite', ruta],
+  // con el medidor de cobertura si la rama se midió con él: main se mide en las mismas condiciones (issue #1855)
+  const cobertura = coverage ? ['--coverage', path.join(workDir, `cov-${i}`)] : [];
+  const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', mark, '--', process.execPath, RUNNER, copyRoot, out, '--suite', ruta, ...cobertura],
     { windowsHide: true, cwd: copyRoot, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
   if (fs.existsSync(mark)) return { error: `pasó el tope de ${timeout} s` };
   if (r.status === 0) return { estado: 'verde' };
@@ -320,7 +329,7 @@ function verdictOf(falla, result) {
  */
 // `atajo`: si el árbol medido está en la punta y sin cambios, el rojo del portón es el de main (vale cuando el portón acaba
 // de correr esas suites en ese árbol). `wait` lo apaga: sus fallas no salen de una corrida de ahora.
-function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFAULTS.max, timeout = DEFAULTS.timeout, lockWait, fetchTimeout, session, home, atajo = true } = {}) {
+function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFAULTS.max, timeout = DEFAULTS.timeout, lockWait, fetchTimeout, session, home, atajo = true, coverage = false } = {}) {
   const at = new Date().toISOString();
   const lines = [];
   const suites = [];
@@ -362,7 +371,7 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
   const toMeasure = [];
   for (const f of medibles) {
     const ruta = pathOf(f);
-    if (cached[ruta]) results[ruta] = { ...cached[ruta], cached: true };
+    if (cached[claveDe(ruta, coverage)]) results[ruta] = { ...cached[claveDe(ruta, coverage)], cached: true };
     else toMeasure.push(f);
   }
 
@@ -402,7 +411,7 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
               if (list.error) { errors[ruta] = `la lista de suites de main no se deja leer (${list.error})`; return; }
               if (!list.entries.some((s) => s && s.ruta === ruta && (s.raiz || null) === raiz)) { errors[ruta] = 'la suite no está en main'; return; }
               touchLock(paths.copyLock);
-              const r = runInCopy(copyRoot, ruta, { timeout, workDir: work, i });
+              const r = runInCopy(copyRoot, ruta, { timeout, workDir: work, i, coverage });
               if (r.error) errors[ruta] = r.error;
               else measured[ruta] = r;
             });
@@ -421,12 +430,12 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
   const cierraConLoGuardado = () => {
     const st = readState(paths, mainRepo);
     const rec = openRecord(st);
-    return Boolean(rec && rec.sha !== sha && (rec.suites || []).length && rec.suites.every((r) => ((st.results[sha] || {})[r] || {}).estado === 'verde'));
+    return Boolean(rec && rec.sha !== sha && (rec.suites || []).length && rec.suites.every((r) => verdeEn(st.results[sha] || {}, r)));
   };
   if (Object.keys(measured).length || cierraConLoGuardado()) {
     try {
       const { out, broke } = updateState(paths, mainRepo, sid, (state) => {
-        if (Object.keys(measured).length) saveResults(state, sha, measured, sid);
+        if (Object.keys(measured).length) saveResults(state, sha, Object.fromEntries(Object.entries(measured).map(([ruta, r]) => [claveDe(ruta, coverage), r])), sid);
         return closeIfGreen(state, sha, { esMasNueva: masNuevaEn(tree) });
       });
       if (broke) lines.push(`main-check: ${broke}`);
@@ -449,7 +458,8 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
     if (errors[ruta]) { suites.push({ ruta, raiz, casos, verdict: 'no-se', motivo: `no se pudo medir main: ${errors[ruta]}` }); continue; }
     const r = results[ruta];
     const v = verdictOf(f, r);
-    const who = r.cached ? ` (main medido por ${shortSid(r.session)} a las ${hhmm(r.at)})` : (r.how ? ` (${r.how})` : '');
+    const con = coverage ? ', con el medidor de cobertura' : '';
+    const who = r.cached ? ` (main medido por ${shortSid(r.session)} a las ${hhmm(r.at)}${con})` : (r.how ? ` (${r.how})` : (con ? ` (${con.slice(2)})` : ''));
     suites.push({ ruta, raiz, casos, verdict: v.verdict, motivo: `${v.motivo}${who}`, measuredBy: r.session || sid, measuredAt: r.at || at, cached: !!r.cached });
   }
   return done(sha);
