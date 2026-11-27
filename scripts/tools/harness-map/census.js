@@ -67,7 +67,7 @@ const opcion = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 
 const TCG = path.resolve(opcion('--tcg', path.join(__dirname, '..', '..', '..')));
 // las carpetas de la máquina (la de Claude Code, las skills instaladas) las dice tycon-home.js
 const TH = require(path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'));
-const CLAUDE = path.basename(TH.claudeDir(os.homedir())).replace(/\./g, '\\.');
+const CLAUDE = path.basename(TH.claudeDir(os.homedir())).replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 // sin --skills, las skills instaladas de la máquina
 const SKILLS = path.resolve(opcion('--skills', path.join(TH.installedSkillsDir(os.homedir()), 'skills')));
 const MAPA = opcion('--map', path.join(TCG, 'artifacts', 'mapa-arnes.html'));

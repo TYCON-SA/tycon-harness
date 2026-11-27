@@ -1499,6 +1499,9 @@ function fixedCopyFiles(tree) {
   out.push({ id: `${PROGRAM_DIR}/harness/team-skill-extras.json`, src: path.join(setup, 'harness', 'team-skill-extras.json') });
   let mods = [];
   try { mods = fs.readdirSync(path.join(setup, 'harness')).filter((n) => n.endsWith('.js')).sort(); } catch (_) { mods = []; }
+  // tycon-home.js, primero: no carga nada, y bootstrap.js lo busca al lado por su ruta (no por un require que depsFirst
+  // vea), así que una copia cortada a mitad de camino nunca deja un bootstrap.js sin la definición de las carpetas
+  if (mods.includes('tycon-home.js')) mods = ['tycon-home.js', ...mods.filter((m) => m !== 'tycon-home.js')];
   for (const m of depsFirst(path.join(setup, 'harness'), mods)) out.push({ id: `${PROGRAM_DIR}/harness/${m}`, src: path.join(setup, 'harness', m) });
   // el programa, DESPUÉS de sus módulos: una copia cortada a mitad de camino no deja un harness.js nuevo sin el place.js
   // que carga al arrancar (rollback y uninstall corren desde acá)
