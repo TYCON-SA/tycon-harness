@@ -348,6 +348,8 @@ test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () =
     `ls specs | xargs -n1 sh -c 'echo x >> specs/"$0"'`,
     // una palabra de la fuente que no es una carpeta (un subcomando) no acota: va el comodín suelto
     'git ls-files | xargs rm -f',
+    // una carpeta nombrada en un filtro no acota: sólo la fuente (tercera vuelta de Fable)
+    "git diff --name-only | grep -v build | xargs sed -i '' s/draft/done/",
   ]) frena(c, cmd);
   for (const cmd of [
     "grep -rl foo src | xargs sed -i '' s/foo/bar/",

@@ -1325,7 +1325,9 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // cuerpo va pegado a otra ruta (`specs/{}`, `specs/"$0"`, `f=$0`: la entrada es un nombre suelto, como el de
         // `ls specs`) o cuando la fuente no nombra ninguna carpeta. Si no, `grep -rl x src | xargs sed -i` (el reemplazo
         // en bloque de `src/`) y todo `xargs rm` de otra carpeta frenaban por el comodín suelto en la raíz
-        const fuentes = k ? lista.slice(j, k).flatMap((t) => palabras(t).filter((w) => w !== '').slice(1)) : [];
+        // acotan sólo las palabras de la fuente: una carpeta nombrada en un filtro (`grep -v build`) no dice de dónde
+        // salen los archivos
+        const fuentes = fuente.slice(1);
         const esCarpeta = (w) => bases.some((b) => { try { return fs.statSync(resolver(w, b)).isDirectory(); } catch (_) { return false; } });
         const carpetas = fuentes.filter((w) => !w.startsWith('-') && !/[*?[]/.test(w) && esCarpeta(w)).map((w) => w.replace(/\/+$/, ''));
         const comodines = fuentes.filter((w) => !w.startsWith('-') && /[*?[]/.test(w));
