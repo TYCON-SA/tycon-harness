@@ -236,7 +236,7 @@ function updatePolicy(state) {
 // de controles corre este hook suelto) o con una fuente de ref fija, todo sigue como siempre.
 //
 // La fuente se busca por la CARPETA, no por el nombre: la copia pública es
-// UN solo repo —el estado trae una fuente, `harness`, y `~/.claude/agent-skills` es un enlace a ese mismo clon—. Buscando
+// UN solo repo —el estado trae una fuente, `harness`, y las skills instaladas son un enlace a ese mismo clon—. Buscando
 // `agent_skills` por nombre no aparece, la rama de casa queda en `main`, y cada sesión posterior a la primera
 // actualización arranca con «agent-skills FUERA de main» y el consejo `checkout main`, que deja a `update` bloqueado.
 // Un clon es de una fuente si su carpeta real ES la `dir` de esa fuente; y si dos de los repos que se recorren son el

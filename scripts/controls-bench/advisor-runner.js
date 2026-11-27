@@ -86,6 +86,10 @@ const { siblingsFromPacks } = require('../lib/installed-packs.js');
 
 const BENCH_DIR = __dirname;
 const TCG = path.resolve(BENCH_DIR, '..', '..');
+// las carpetas de la casa (la de Claude Code, las skills instaladas) las dice tycon-home.js; el lugar del arnés con sus
+// dos nombres, su fachada place.js
+const TH = require(path.join(TCG, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+const PLACE = require(path.join(TCG, 'scripts', 'setup', 'harness', 'place.js'));
 // La carpeta de los revisores: TYCON_AGENTS_DIR; si no, la `agents` del árbol del arnés (la que resuelve skills-dir.js,
 // como el pipeline); si no está, la de Claude Code. Una máquina sólo con Codex no tiene la de Claude Code.
 // El examen dice cuál eligió y por qué, y frena si no existe (ver main).
@@ -97,7 +101,7 @@ const { dir: AGENTS_DIR, origen: AGENTS_ORIGEN } = (() => {
     if (fs.existsSync(dir)) return { dir, origen: 'el árbol del arnés' };
     por = `el árbol no trae ${dir}`;
   } catch (e) { por = `no pude leer skills-dir.js (${(e && e.message) || e})`; }
-  return { dir: path.join(os.homedir(), '.claude', 'agent-skills', 'agents'), origen: `la carpeta de Claude Code: ${por}` };
+  return { dir: path.join(TH.installedSkillsDir(os.homedir()), 'agents'), origen: `la carpeta de Claude Code: ${por}` };
 })();
 const ADAPTERS_DIR = path.join(TCG, 'adapters', 'codex', 'agents');
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -589,7 +593,7 @@ function suiteDePaqueteProblema(s, archivo) {
   return null;
 }
 const CLAVES_DE_CASO_DE_PAQUETE = Object.freeze(['id', 'type', 'rule', 'files', 'git_commits', 'prompt', 'canario', 'nota']);
-const NOMBRES_QUE_SE_CARGAN_SOLOS = Object.freeze(['.git', '.gitattributes', '.gitmodules', '.claude', '.codex', '.mcp.json',
+const NOMBRES_QUE_SE_CARGAN_SOLOS = Object.freeze(['.git', '.gitattributes', '.gitmodules', path.basename(TH.claudeDir(os.homedir())), '.codex', '.mcp.json',
   'claude.md', 'claude.local.md', 'agents.md', 'agents.override.md']);
 /** null si `rel` es una ruta relativa que queda dentro de la carpeta temporal del caso; si no, el motivo. */
 function rutaDeCasoProblema(rel) {
@@ -905,13 +909,13 @@ function mkFormularioHermano(raiz, rel, nombre) {
 const PERMITIDO_FUERA_DEL_CORRAL = [
   // El lugar por el que los revisores nombran al arnés: el nombre viejo y el nuevo, los dos
   // mientras dure la transición (lista de los dos nombres en scripts/tests/fixtures/harness-place-names.json) …
-  path.join(os.homedir(), '.claude', 'tycon-claude-guides'),
-  path.join(os.homedir(), '.claude', 'tycon-harness'),
+  PLACE.legacyPlacePath(os.homedir()),
+  PLACE.placePath(os.homedir()),
   // 🔴 …y el clon REAL donde vive este archivo: si el enlace apunta a otro clon, o falta,
   // el encierro les negaría a los advisors las guías que su procedimiento les manda leer — sin error,
   // leen menos. Se deduce de __dirname, no del entorno.
   path.resolve(__dirname, '..', '..'),
-  path.join(os.homedir(), '.claude'),
+  TH.claudeDir(os.homedir()),
   path.join(os.homedir(), '.codex'),
   path.join(os.homedir(), '.bun'),
   path.join(os.homedir(), '.antigravity'),

@@ -47,12 +47,13 @@ FORCE=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIN_FILE="$SCRIPT_DIR/../../engram-version"
-# los sellos, en la carpeta de los registros sueltos (scripts/lib/state-dir.sh): ~/.claude en una máquina de siempre,
-# ~/.tycon/state en la que vive en la casa propia (la única que tiene una máquina sin Claude Code). Sin la biblioteca,
-# la de siempre. La marca de la migración a medias se lee también de la de siempre: la pudo dejar una versión anterior
-STAMP_DIR="$HOME/.claude"
-LEGACY_MARK="$STAMP_DIR/.tycon-engram-upgrade-failed"
-if [[ -f "$SCRIPT_DIR/../lib/state-dir.sh" ]] && . "$SCRIPT_DIR/../lib/state-dir.sh" 2>/dev/null; then STAMP_DIR="$(tycon_logs_dir)"; fi
+# los sellos, en la carpeta de los registros sueltos (scripts/lib/state-dir.sh): la de Claude Code en una máquina de
+# siempre, la del estado en la que vive en la casa propia (la única que tiene una máquina sin Claude Code). La marca de
+# la migración a medias se lee también de la carpeta de Claude Code: la pudo dejar una versión anterior. Sin la
+# biblioteca no hay dónde mirar los sellos: no se chequea (este guion corre siempre desde el árbol, con ella al lado).
+if ! { [[ -f "$SCRIPT_DIR/../lib/state-dir.sh" ]] && . "$SCRIPT_DIR/../lib/state-dir.sh" 2>/dev/null && type tycon_logs_dir >/dev/null 2>&1; }; then exit 0; fi
+STAMP_DIR="$(tycon_logs_dir)"
+LEGACY_MARK="$(tycon_claude_dir)/.tycon-engram-upgrade-failed"
 
 [[ -f "$PIN_FILE" ]] || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0

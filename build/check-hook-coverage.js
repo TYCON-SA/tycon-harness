@@ -50,7 +50,7 @@ const DEUDA_PATH = path.join(TCG, 'scripts', 'controls-bench', 'hook-debt.json')
 /**
  * Dónde están las skills que se censan, y si esa raíz se PIDIÓ por variable. Las ubica el resolvedor de todo el arnés
  * (scripts/lib/skills-dir.js): `TYCON_SKILLS_DIR` —la raíz del clon o su carpeta `skills/`— o, sin ella, el lugar de
- * instalación (~/.claude/agent-skills).
+ * instalación (~/.tycon/harness).
  *
  * 🔴 Armar las rutas con la HOME e ignorar la variable es un error: en una máquina
  *    sin instalación —la CI pública, que exporta la variable— las dos raíces de skills quedarían «sin censar» y el
@@ -265,7 +265,7 @@ function selftest() {
     // (sin la variable manda el propio clon cuando trae las skills adentro; si no, el lugar de instalación)
     ['sin TYCON_SKILLS_DIR se censan las del propio clon si trae las skills, o las del lugar de instalación, y la raíz no cuenta como pedida',
       skillsRoot({}).skills === (ownCloneHasSkills
-        ? path.join(TCG, 'skills') : path.join(os.homedir(), '.claude', 'agent-skills', 'skills'))
+        ? path.join(TCG, 'skills') : path.join(require(path.join(TCG, 'scripts', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir()), 'skills'))
         && skillsRoot({}).requested === false],
     ['una raíz de skills PEDIDA que no se puede enumerar BLOQUEA (no censar lo que se pidió no es un verde)',
       missingRoots([path.join(tmp, 'sk', 'acme', 'scripts')], path.join(tmp, 'sk'), true).blocking.length === 1],

@@ -30,7 +30,7 @@
  *
  * LA RAÍZ `agent-skills` SALE DE LA FUNCIÓN, NO DE QUIEN LLAMA: en el repo unido las suites con raíz `agent-skills`
  * viven en `<repo>/skills`. Con la raíz escrita en el
- * YAML (`$HOME/.claude/agent-skills/skills`), en un clon de trabajo se listarían las suites INSTALADAS en la máquina:
+ * YAML (`$HOME/.tycon/harness/skills`), en un clon de trabajo se listarían las suites INSTALADAS en la máquina:
  * el control daba verde sin haber corrido el cambio. Sin `--skills`, la raíz es la que contesta `resolveSkillsDirs()`
  * de scripts/lib/skills-dir.js (la variable › el propio clon si es unido › lo instalado), la misma que usan los demás
  * lectores de suites.json; la línea `ROOT` dice cuál fue y de qué regla salió. `--skills` sigue valiendo para quien

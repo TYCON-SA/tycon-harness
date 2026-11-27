@@ -60,7 +60,15 @@ function Get-OffStateDir {
     try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
     return $null
 }
-$stampDir = Join-Path $env:USERPROFILE '.claude\.tycon-pipeline'
+# con Claude Code, el estado de siempre (legacyStateDir de tycon-home.js); si no contesta, el temporal
+function Get-LegacyStateDir {
+    $lib = Join-Path (Join-Path $PSScriptRoot 'harness') 'tycon-home.js'
+    if (-not (Test-Path $lib)) { return $null }
+    try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).legacyStateDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
+    return $null
+}
+$stampDir = Get-LegacyStateDir
+if (-not $stampDir) { $stampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' }
 if ($env:TYCON_HARNESS_CLAUDE -eq 'off') { $stampDir = Get-OffStateDir; if (-not $stampDir) { $stampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' } }
 $stamp = Join-Path $stampDir 'sqlite3-install-last-try'
 $ahora = [int][double]::Parse((Get-Date -UFormat %s))
