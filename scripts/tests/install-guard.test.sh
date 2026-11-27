@@ -459,6 +459,20 @@ SH
     ok "T19c · el matcher administrado incluye Monitor y PowerShell"
   else no "T19c · el matcher administrado no cubre Monitor/PowerShell"; fi
 
+  # T824d @story-8.24 @ac-3 · el instalador deja al lado del freno los lugares de la persona, con lo que da tycon-home.js
+  # (el lanzador y la puerta, en bash, toman de ahí el nombre de la carpeta de Claude Code), y la plantilla administrada
+  # protege los archivos de producción del estado de siempre sin nombrar esa carpeta
+  p_json="$TMP/sys2/opt/tycon/places.json"; p_sh="$TMP/sys2/opt/tycon/places.sh"
+  p_esperado="$(node -e 'const T=require(process.argv[1]); console.log(T.claudeDir(process.argv[2]) + " " + T.legacyStateDir(process.argv[2]))' "$AQUI/scripts/setup/harness/tycon-home.js" "$HOME")"
+  p_json_val="$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log(d.claude_dir + " " + d.legacy_state_dir)' "$p_json" 2>/dev/null)"
+  p_sh_val="$( . "$p_sh" 2>/dev/null && printf '%s %s' "${TYCON_P_CLAUDE_DIR:-}" "${TYCON_P_LEGACY_STATE_DIR:-}")"
+  if [ -n "$p_esperado" ] && [ "$p_json_val" = "$p_esperado" ] && [ "$p_sh_val" = "$p_esperado" ]; then
+    ok "T824d · places.json y places.sh al lado del freno, con lo que da tycon-home.js"
+  else no "T824d · los lugares de al lado del freno no son los de tycon-home.js: json «${p_json_val}», sh «${p_sh_val}», esperado «${p_esperado}»"; fi
+  if grep -q 'Edit(//\*\*/\.tycon-pipeline/production-index\.json)' "$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json" 2>/dev/null; then
+    ok "T824e · la plantilla administrada protege el índice del estado de siempre"
+  else no "T824e · la plantilla administrada no protege .tycon-pipeline/production-index.json"; fi
+
   # T33o · el instalador anota los datos del intérprete junto a su huella, iguales a los del archivo instalado. Con
   # ellos el lanzador no lee los 122 MB del intérprete en cada comando. T19d, abajo, mide que no se reescriban.
   o_node="$TMP/sys2/opt/tycon/bin/node"; o_huellas="$TMP/sys2/opt/tycon/huellas.json"

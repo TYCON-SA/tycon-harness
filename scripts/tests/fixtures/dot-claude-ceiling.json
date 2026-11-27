@@ -2,10 +2,10 @@
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
     "date": "2026-11-26",
-    "direction": "baja: 77 → 56 (25 → 19 archivos)",
-    "reason": "Story 8.24, tanda B1c: lo que corre fuera del arnés y no es producción. install-tycon-hooks.ps1 le pregunta la carpeta de Claude Code a tycon-home.js una vez; ensure-sqlite3.ps1 y nightly-dod-notice.sh le piden el estado a la definición; los dos on-story-create.js, a la de su lado."
+    "direction": "baja: 56 → 40 (19 → 14 archivos)",
+    "reason": "Story 8.24, tanda B1d: el freno de producción. El lanzador y la puerta leen el nombre de la carpeta de Claude Code de /opt/tycon/places.sh, que escribe install-guard.sh con el node y el tycon-home.js de root; install-guard.sh pregunta los lugares viejos a la instalación anterior del freno; el cierre del firewall le pide el estado a tycon-home.js; la plantilla de los managed settings protege «.tycon-pipeline» sin nombrar la carpeta. Quedan los .toml de Codex (B2-4b)."
   },
-  "total": 56,
+  "total": 40,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -20,11 +20,6 @@
     "adapters/codex/agents/tycon-signed-scope-audit.toml": 3,
     "adapters/codex/agents/tycon-silent-failure-hunter.toml": 1,
     "adapters/codex/agents/tycon-spec-first-checker.toml": 3,
-    "adapters/codex/agents/tycon-story-validator.toml": 5,
-    "scripts/hooks/prod-firewall-close.js": 1,
-    "scripts/production/install-guard.sh": 9,
-    "scripts/production/managed-settings.tycon-production.json.template": 4,
-    "scripts/production/node-shim.sh": 1,
-    "scripts/production/tycon-prod-sql": 1
+    "adapters/codex/agents/tycon-story-validator.toml": 5
   }
 }

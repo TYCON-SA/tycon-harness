@@ -65,8 +65,19 @@ AQUI="$(cd "$(dirname "$0")" && pwd)"
 SECURITY="$RAIZ/usr/bin/security"
 CLIENTE="$RAIZ/opt/tycon/bin/sqlcmd"
 HUELLAS="$RAIZ/opt/tycon/huellas.json"
-# la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
-_ESTADO="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _ESTADO="$HOME/.tycon/state"
+# la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23,
+# tanda D). Si no, la de siempre, con el nombre de la carpeta de Claude Code que dejó el instalador del freno en
+# /opt/tycon/places.sh; en el árbol (pruebas, desarrollo), la que da state-dir.sh. Sin ninguno, la
+# casa propia: el instalador no deja la puerta sin su places.sh.
+_ESTADO="$HOME/.tycon/state"
+if [ ! -d "$_ESTADO" ]; then
+  if [ -f "$RAIZ/opt/tycon/places.sh" ]; then
+    _CDIR="$(. "$RAIZ/opt/tycon/places.sh" >/dev/null 2>&1; printf '%s' "${TYCON_P_CLAUDE_DIR:-}")"
+    [ -n "$_CDIR" ] && _ESTADO="$HOME/${_CDIR##*/}/.tycon-pipeline"
+  elif [ "$INSTALADO" = 0 ] && [ -f "$AQUI/../lib/state-dir.sh" ]; then
+    _ESTADO="$(. "$AQUI/../lib/state-dir.sh" && tycon_state_dir)"
+  fi
+fi
 REGISTRO="$_ESTADO/production.log"
 LLAVERO_PROPIO="$HOME/Library/Keychains/tycon-prod.keychain-db"
 MAX_FILAS=50

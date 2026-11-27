@@ -46,8 +46,19 @@ PATRON
 }
 
 registro_de() {
-  # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
-  _estado="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _estado="$HOME/.tycon/state"
+  # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23,
+  # tanda D). Si no, la de siempre, con el nombre de la carpeta de Claude Code que dejó el instalador del freno en
+  # /opt/tycon/places.sh; en el árbol (pruebas), la que da state-dir.sh. Bash puro: esto corre justo
+  # cuando node puede no estar. Sin ninguno, la casa propia.
+  _estado="$HOME/.tycon/state"
+  if [ ! -d "$_estado" ]; then
+    if [ -f "$RAIZ/opt/tycon/places.sh" ]; then
+      _cdir="$(. "$RAIZ/opt/tycon/places.sh" >/dev/null 2>&1; printf '%s' "${TYCON_P_CLAUDE_DIR:-}")"
+      [ -n "$_cdir" ] && _estado="$HOME/${_cdir##*/}/.tycon-pipeline"
+    elif [ ! -d /opt/tycon ] && [ -f "$(dirname "$0")/../lib/state-dir.sh" ]; then
+      _estado="$(. "$(dirname "$0")/../lib/state-dir.sh" && tycon_state_dir)"
+    fi
+  fi
   printf '%s' "$_estado/hook-errors.log"
 }
 

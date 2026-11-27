@@ -37,31 +37,6 @@
       "retired_by": "8.24"
     }
   ],
-  "until_d": [
-    {
-      "path": "scripts/production/node-shim.sh",
-      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/hooks/prod-firewall-close.js",
-      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el cierre de la regla de firewall corre desde los managed settings, le pide la carpeta del estado a tycon-home.js si está al lado y sólo sin él arma la de siempre bajo ~/.claude, como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/production/install-guard.sh",
-      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el instalador (con sudo, en shell) ubica el arnés bajo ~/.claude, lee ~/.claude/tycon.json y barre el estado viejo, sin poder importar tycon-home.js",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/production/managed-settings.tycon-production.json.template",
-      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: la plantilla de los managed settings es un JSON que lee Claude Code tal cual, sin poder importar nada",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    }
-  ],
+  "until_d": [],
   "__retiro": "Story 8.23 (AC 36, tanda E · 2026-10-08): cada ruta vieja bajo ~/.claude tiene su fecha de retiro (retire_after: 30 días después de publicada la E, la regla de la story 8.15) y la story que la retira (retired_by: 8.24, escrita, no implementada). Si antes de esa fecha el buzón o los nocturnos muestran usos del nombre viejo, la fecha se corre 30 días en un commit aparte que dice qué se vio (8.15, AC 18)."
 }
