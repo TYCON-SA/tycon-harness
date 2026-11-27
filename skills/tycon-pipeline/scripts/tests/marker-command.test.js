@@ -94,4 +94,5 @@ test('T5 MarkerCommand_PipeKeepsItsSource — el tramo después de un | sabe de 
   assert.deepStrictEqual(desde('echo a; grep b'), [null, null], 'un ; no es una tubería');
   assert.deepStrictEqual(desde('echo a |\n\ngrep b'), [null, 'echo'], 'tampoco con un renglón en blanco');
   assert.deepStrictEqual(guiones('cat <<EOF | (bash)\nnode marker.js clear\nEOF'), ['marker clear']);
+  assert.deepStrictEqual(guiones('cat <<EOF | (bash -c "sh")\nnode marker.js clear\nEOF'), ['marker clear'], 'con -c el destino se lee por el enlace');
 });

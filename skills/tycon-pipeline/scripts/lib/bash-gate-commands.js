@@ -23,7 +23,7 @@ const path = require('path');
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados, tok } = require('./bash-gate-words.js');
-const { conCarpetaDelComando, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, alcanzadasPorFind, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
+const { conCarpetaDelComando, LECTORES_DE_XARGS, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, alcanzadasPorFind, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 const { ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
 /**
@@ -1254,6 +1254,16 @@ function entradaPorCadena(cadena, crudas, asignados) {
   return [...new Set([...(sep ? palabra.split(sep) : []), ...palabra.split(/\s+/)].map((x) => x.trim()).filter(Boolean))];
 }
 
+/** El programa que corre un `xargs` (sus opciones, las que llevan valor con él, no cuentan). */
+function programaDelXargs(crudas) {
+  let i = 1;
+  for (; i < crudas.length && crudas[i].startsWith('-'); i++) {
+    if (crudas[i] === '--') { i++; break; }
+    if (XARGS_CON_VALOR.has(crudas[i]) || crudas[i] === '-I' || crudas[i] === '-J') i++;
+  }
+  return nombreDeComando(crudas[i] || '') || '';
+}
+
 /**
  * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
  * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
@@ -1299,9 +1309,11 @@ function comandosPorOtroPrograma(cmd, cwd) {
           const v = asignados.get(a || b) || [];
           return v.length ? v[v.length - 1] : m;
         });
-        // un `find` le da a la entrada los archivos que alcanza, no sus palabras
-        const entrada = escritor === 'find' ? alcanzadasPorFind(previas, absoluta)
-          : (/^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas).map(conValor);
+        const palabrasDeAntes = (/^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas).map(conValor);
+        // un `find` le suma a la entrada los archivos que alcanza (sus palabras siguen: si la lectura del `find` queda
+        // corta, frenan como antes). No se recorre si lo que corre el `xargs` sólo lee: el recorrido cuesta y no cambia nada
+        const entrada = escritor === 'find' && !LECTORES_DE_XARGS.has(programaDelXargs(crudas))
+          ? [...new Set([...palabrasDeAntes, ...alcanzadasPorFind(previas, absoluta)])] : palabrasDeAntes;
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }

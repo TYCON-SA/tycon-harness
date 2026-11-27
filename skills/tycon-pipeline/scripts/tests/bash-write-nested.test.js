@@ -638,6 +638,47 @@ test('T36 FindName_ClasesPosixYEscapes_Frena', () => {
   pasa(c, "find . -name 'story-1\\.1\\.txt' -exec rm {} \\;");
 });
 
+// T37 FindAXargs_LoQueLaLecturaNoAlcanza_SigueFrenando
+// 🔴 Falla con: reemplazar las palabras del `find` por los archivos que su lectura alcanza: cuando la lectura queda corta
+//    (un `\*` sin comillas, el patrón en una variable, `\!`, un comodín en la carpeta, una carpeta que coincide), la orden
+//    queda sin argumentos y la historia se borra.
+test('T37 FindAXargs_LoQueLaLecturaNoAlcanza_SigueFrenando', () => {
+  const c = corral();
+  for (const cmd of ['find . -name \\*.md | xargs rm', 'find . -name story-\\*.md | xargs rm',
+    "p='story-*.md'; find . -name \"$p\" | xargs rm", "find . \\! -name 'README.md' -type f | xargs rm",
+    "find * -name 'story-*.md' | xargs rm", "find {specs,docs} -name 'story-*.md' | xargs rm",
+    'find . -name specs | xargs rm -rf', 'find . -type d -name specs -print0 | xargs -0 rm -rf']) frena(c, cmd);
+});
+
+// T38 FindAXargsQueSoloLee_NoRecorre
+// 🔴 Falla con: recorrer lo que alcanza el `find` antes de saber qué corre el `xargs`: un `find | xargs ls` sobre una
+//    carpeta grande lee miles de carpetas (en /tmp, 15 s), y dos seguidos llegan al reloj del freno.
+test('T38 FindAXargsQueSoloLee_NoRecorre', () => {
+  const c = corral();
+  const grande = path.join(c.raiz, 'grande');
+  for (let i = 0; i < 20; i++) fs.mkdirSync(path.join(grande, `d${i}`, 'e', 'f'), { recursive: true });
+  const { comandosPorOtroPrograma } = require(path.join(__dirname, '..', 'lib', 'bash-gate-commands.js'));
+  const leer = fs.readdirSync;
+  let lecturas = 0;
+  fs.readdirSync = (...a) => { lecturas++; return leer(...a); };
+  try {
+    comandosPorOtroPrograma(`find ${grande} -name '*.log' | xargs grep -l x`, c.dir);
+    assert.strictEqual(lecturas, 0, 'un xargs que sólo lee no recorre');
+    comandosPorOtroPrograma(`find ${grande} -name '*.log' | xargs rm`, c.dir);
+    assert.ok(lecturas > 0, 'uno que borra sí');
+  } finally { fs.readdirSync = leer; }
+});
+
+// T39 Find_PwdPegadoAUnaCarpeta_EsEsaCarpeta
+// 🔴 Falla con: `"$PWD"/docs` partido en dos palabras: `$PWD` sola es el repo entero y frena por las historias de specs/.
+test('T39 Find_PwdPegadoAUnaCarpeta_EsEsaCarpeta', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), 'x\n');
+  pasa(c, "find \"$PWD\"/docs -name '*.md' -exec rm {} \\;");
+  frena(c, "find \"$PWD\"/specs -name '*.md' -exec rm {} \\;");
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {

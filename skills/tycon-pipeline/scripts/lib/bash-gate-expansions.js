@@ -1164,7 +1164,12 @@ function cumplePatronDeFind(patron, sinMayusculas) {
 /** Las historias que alcanza un `find`: sus carpetas de partida (resueltas con `absoluta`) filtradas por sus `-name`. */
 function alcanzadasPorFind(words, absoluta) {
   const carpetas = [];
-  for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) carpetas.push(words[i]);
+  for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) {
+    // `"$PWD"/docs` llega partido en dos palabras: la carpeta es una sola
+    const previa = carpetas[carpetas.length - 1];
+    if (previa !== undefined && words[i].startsWith('/') && conCarpetaDelComando(previa, '\0') === '\0') carpetas[carpetas.length - 1] = previa + words[i];
+    else carpetas.push(words[i]);
+  }
   if (!carpetas.length) carpetas.push('.');
   // con una negación, un «o» o un `-prune`, un `-name` ya no dice qué alcanza: se miran todas
   const filtros = [];
