@@ -137,7 +137,7 @@ self-audit —opcional desde 2026-09-16—, ACCOV-C10 convergencia entre
 iteraciones, ACCOV-C11 una guarda de frescura no se cierra sin verse verde en un
 checkout LIMPIO —y `mtime` de un archivo versionado NUNCA es «cuándo cambió el
 producto»: en un clon es la hora del checkout—) viven en
-`~/.claude/tycon-harness/guides/accov-governance-protocol.md`
+`~/.tycon/harness/guides/accov-governance-protocol.md`
 (extraídas 2026-06-09 — aplican 1 vez al transicionar a review/done, no en
 cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el pull request»
 y este advisor las cita por ID si detecta sus patrones, sin re-derivar el protocolo.

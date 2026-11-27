@@ -117,22 +117,24 @@ function dodEvidenceDirsFor(cwd) {
 // Parser muy simple del frontmatter YAML — solo extrae los campos planos que
 // nos interesan (no full YAML parser para mantener zero-dependency).
 function parseFrontmatter(content) {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
+  // la apertura y los saltos como en looksLikeStorySpec: `--- ` y el fin de renglón de Windows también abren
+  const m = String(content).match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
-  const lines = m[1].split('\n');
   const out = {};
-  for (const line of lines) {
-    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):\s*(.+)$/);
-    if (!mm) continue;
-    let val = mm[2].trim();
-    // Strip quotes
-    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
-    out[mm[1]] = val;
+  const vistas = new Set();
+  for (const line of m[1].split(/\r?\n/)) {
+    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):/);
+    if (!mm || vistas.has(mm[1])) continue;
+    vistas.add(mm[1]);
+    // cada clave, con el lector de los demás controles sobre el bloque entero (comillas, comentario de YAML, y gana el
+    // primer renglón aunque esté vacío): si leyera distinto, un cierre pasaría por uno y no por el otro
+    const val = fmScalar(m[1], mm[1]);
+    if (val !== null) out[mm[1]] = val;
   }
   return out;
 }
 
-const { isWorkStoryId, storiesConfigForGate } = require('./lib/story-discovery.js');
+const { isWorkStoryId, storiesConfigForGate, fmScalar } = require('./lib/story-discovery.js');
 const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion, evidenciaDeclaraFail } = require('./lib/closing-evidence.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 
@@ -151,11 +153,11 @@ function looksLikeStorySpec(content, idPattern) {
   const end = content.indexOf('\n---', 3);
   if (end < 0) return false;
   const fm = content.slice(3, end);
-  if (!/^status:\s*\S/m.test(fm)) return false;
-  const id = fm.match(/^story:\s*["']?([^"'\n]+?)["']?\s*$/m);
+  if (fmScalar(fm, 'status') === null) return false;
+  const id = fmScalar(fm, 'story');
   // El id además tiene que tener FORMA de trabajo: el material de un banco de evals declara
   // `story: "EV-1"` + `status:` y no es algo que haya que cerrar con evidencia de DoD.
-  return !!id && isWorkStoryId(id[1], idPattern);
+  return !!id && isWorkStoryId(id, idPattern);
 }
 
 /**
@@ -193,12 +195,12 @@ function storiesOutsidePattern(diffFiles, readStaged, readHead, idPattern) {
       const end = staged.indexOf('\n---', 3);
       if (end < 0) continue;
       const fm = staged.slice(3, end);
-      if (!/^status:\s*\S/m.test(fm)) continue;
-      const id = fm.match(/^story:\s*["']?([^"'\n]+?)["']?\s*$/m);
-      if (!id || isWorkStoryId(id[1], idPattern)) continue;
+      if (fmScalar(fm, 'status') === null) continue;
+      const id = fmScalar(fm, 'story');
+      if (!id || isWorkStoryId(id, idPattern)) continue;
       const before = String(parseFrontmatter(readHead(f)).status || '').trim().toLowerCase();
       const after = String(parseFrontmatter(staged).status || '').trim().toLowerCase();
-      if (isCriticalStatusTransition(before, after) || (before === 'review' && after === 'done')) out.push({ file: f, id: id[1].trim() });
+      if (isCriticalStatusTransition(before, after) || (before === 'review' && after === 'done')) out.push({ file: f, id });
     } catch (e) {
       out.push({ file: f, error: e.message });
     }
@@ -2165,7 +2167,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, usaNoVerify, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
+  parseFrontmatter, looksLikeStorySpec, selectStorySpecs, storiesOutsidePattern, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO, storyIsUiStory, getStagedDiff, limpiarStaged,
 };
 
 if (require.main === module) {

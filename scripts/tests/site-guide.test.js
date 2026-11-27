@@ -63,10 +63,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis; y, en Cloud Run, que el sitio renueva cada 10 minutos la conexión de cada máquina para
-// que Oficinas no quede vacía tras desplegar (SITE_OFFICE_RECONNECT_MINUTES).
+// que Oficinas no quede vacía tras desplegar (SITE_OFFICE_RECONNECT_MINUTES); y su párrafo «Al día» (la plataforma
+// cloudrun del actualizador).
 const HUELLA_INSTALACION = {
-  es: '46d0478217f91aa610b459d655037a7717e3d1a2d342a88972b2a7ec1ae2aafd',
-  en: '9d392227857ef1394fd9e0618100a31b13920e473b38cc0c535e20bc4300a0a2',
+  es: 'b7ca7316ad30b373729ce10c5f3008ca2b09abaf05f1430514ec338c37f59551',
+  en: '1f9133978a31d1380697a3cd848fa8fc5efb8d00c5de6b9ba2f10a09da760207',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

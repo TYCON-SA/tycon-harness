@@ -1,26 +1,12 @@
 {
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
-    "date": "2026-11-26",
-    "direction": "baja: 58 → 42 (20 → 15 archivos)",
-    "reason": "Story 8.24, tanda B1d: el freno de producción. El lanzador y la puerta leen el nombre de la carpeta de Claude Code de /opt/tycon/places.sh, que escribe install-guard.sh con el node y el tycon-home.js de root; install-guard.sh pregunta los lugares viejos a la instalación anterior del freno; el cierre del firewall le pide el estado a tycon-home.js; la plantilla de los managed settings protege «.tycon-pipeline» sin nombrar la carpeta. Quedan los .toml de Codex (B2-4b) y los dos efectos que nombra la portada (tanda C)."
+    "date": "2026-11-27",
+    "direction": "baja: 18 → 2",
+    "reason": "Story 8.24, tanda B1d: el freno de producción. El lanzador y la puerta leen el nombre de la carpeta de Claude Code de lo que dejó el instalador en /opt/tycon, y el instalador le pregunta los lugares viejos a la instalación anterior del freno. Quedan los dos efectos de la portada, que se van con el retiro (tanda C)."
   },
-  "total": 42,
+  "total": 2,
   "files": {
-    "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
-    "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
-    "adapters/codex/agents-native/tycon-retrospective-capturer.toml": 4,
-    "adapters/codex/agents-native/tycon-signed-scope-audit.toml": 3,
-    "adapters/codex/agents-native/tycon-silent-failure-hunter.toml": 1,
-    "adapters/codex/agents-native/tycon-spec-first-checker.toml": 3,
-    "adapters/codex/agents-native/tycon-story-validator.toml": 5,
-    "adapters/codex/agents/tycon-ac-coverage-checker.toml": 1,
-    "adapters/codex/agents/tycon-dod-runtime-checker.toml": 3,
-    "adapters/codex/agents/tycon-retrospective-capturer.toml": 4,
-    "adapters/codex/agents/tycon-signed-scope-audit.toml": 3,
-    "adapters/codex/agents/tycon-silent-failure-hunter.toml": 1,
-    "adapters/codex/agents/tycon-spec-first-checker.toml": 3,
-    "adapters/codex/agents/tycon-story-validator.toml": 5,
     "scripts/setup/install-effects.json": 2
   }
 }

@@ -1920,6 +1920,10 @@ revisión nueva; la oficina no parpadea. Vale desde el segundo despliegue con es
 todavía la instancia vieja. Quien despliega seguido lo baja con `SITE_OFFICE_RECONNECT_MINUTES` (de 1 a 60; `0` no corta).
 Para no esperar, reiniciá en cada máquina el servidor de la oficina: lo relanza la próxima sesión.
 
+**Al día en Cloud Run**: con `site.update: "auto"`, lo pone al día el nocturno de GitHub con la plataforma `cloudrun`, que
+trae el conector `gcs`: cambia sólo la imagen, por huella, espera la revisión nueva con todo el tráfico, la prueba y, si
+falla, vuelve a la anterior. Cómo darlo de alta: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»).
+
 ### Una red cerrada
 
 Sin salida a internet, el sitio no puede mirar la última publicada y lo dice. La actualización es a mano: en una máquina

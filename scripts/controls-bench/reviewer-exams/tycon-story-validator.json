@@ -1,7 +1,7 @@
 {
   "agent": "tycon-story-validator",
   "file": "agents/tycon-story-validator.md",
-  "hash": "2fcce5617451984ef99833ba5463673a1be720db",
+  "hash": "5fca498a72f3e2fe1ae5becb4669d87076df6d83",
   "passed": 15,
   "total": 15,
   "score": 1,

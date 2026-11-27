@@ -277,7 +277,9 @@ function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
       for (const it of doc.items || []) {
         if (!it || typeof it.name !== 'string') continue;
         const fecha = (v) => { const t = v ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
-        blobs.push({ nombre: it.name, largo: Number(it.size), md5: it.md5Hash || null, etag: it.etag || null, creado: fecha(it.timeCreated), modificado: fecha(it.updated) });
+        // `codificado`: un objeto guardado con Content-Encoding se sirve transformado (gzip llega descomprimido), así que
+        // nunca casa con el tamaño ni el MD5 del listado. La subida del arnés no lo pone nunca: la bajada lo ignora
+        blobs.push({ nombre: it.name, largo: Number(it.size), md5: it.md5Hash || null, etag: it.etag || null, creado: fecha(it.timeCreated), modificado: fecha(it.updated), codificado: typeof it.contentEncoding === 'string' && it.contentEncoding !== '' && it.contentEncoding !== 'identity' });
         if (Number.isSafeInteger(Number(it.size)) && Number(it.size) >= 0) largos.set(it.name, Number(it.size));
       }
       if (!doc.nextPageToken) return { blobs };
