@@ -5,6 +5,8 @@
  *
  *   UserPromptSubmit                → si el mensaje lo escribió la persona y dice «aprob…», lo anota
  *   PostToolUse sobre AskUserQuestion → anota un click por cada pregunta del cuadro cuya respuesta aprueba
+ *   PostToolUseFailure de un comando  → si salió 126 o 127 sin llegar a correr, el click que gastó vuelve a valer, una
+ *                                       vez (owner-window.js `devolverSiNoCorrio`)
  *
  * Lee sólo lo que trae el evento: el prompt y la respuesta real del cuadro (`tool_response`, nunca `tool_input`). Anota
  * sólo si lo lanzó la herramienta (el árbol de procesos), no la consola de un agente. No
@@ -53,6 +55,13 @@ function main() {
   if (process.env.TYCON_OWNER_APPROVALS === '0') return;
   let evento;
   try { evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, '')); } catch (_) { return; }
+  if (evento && evento.hook_event_name === 'PostToolUseFailure') {
+    const casa = require(path.join(LIB, 'real-home.js')).casaDeLaCuenta();
+    // como al anotar: sólo lo que lanza la herramienta, no un agente que corre el gancho a mano con un evento inventado
+    if (!require(path.join(LIB, 'owner-approvals.js')).lanzadoPorLaHerramienta({ casa }).ok) return;
+    require(path.join(LIB, 'owner-window.js')).devolverSiNoCorrio(evento, { casa });
+    return;
+  }
   const rs = registrosDe(evento);
   if (!rs.length) return;
   const casa = require(path.join(LIB, 'real-home.js')).casaDeLaCuenta();

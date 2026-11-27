@@ -442,7 +442,7 @@ const MINIMAL_HOOKS = [
   // perfiles: sólo en full, la mínima las perdería
   'PostToolUse:@tcg:extension-notices.js', 'PostToolUseFailure:@tcg:extension-notices.js',
   // el freno de comandos da un cuadro de firma: sin el gancho que anota el click, en la mínima ese cuadro nunca vale
-  'UserPromptSubmit:@tcg:owner-approval-record.js', 'PostToolUse:@tcg:owner-approval-record.js',
+  'UserPromptSubmit:@tcg:owner-approval-record.js', 'PostToolUse:@tcg:owner-approval-record.js', 'PostToolUseFailure:@tcg:owner-approval-record.js',
   // on-advisor-run.js anota cada revisor que sale; sin el que anota lo que reportó, en la mínima cada revisor quedaría
   // sin reporte y el cierre de «Hallazgos» frenaría siempre
   'SubagentStop:tycon-pipeline/scripts/on-advisor-done.js',
