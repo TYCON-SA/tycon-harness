@@ -15,6 +15,7 @@
 #   T6   SmokeRun_NoMeasureLines_NoField                 sin TYCON_MEASURE → sin measures, con duration_ms
 #   T22  Probe_Sleep3_TwoSecondBound_RedThenGreen        la sonda de la auditoría: matriz 1 FUERA-DE-COTA, después 0
 #   T25  SmokeRun_Sigterm_AfterMeasureLine_WritesNothing un humo cortado después de medir no escribe nada
+#   T26  SmokeRun_LastLineNotMeasured_Exit77              «⏭ <suite>: NO MEDIDO — …» al final con exit 0 → 77, no verde
 #
 # 🔴 HOME falso siempre: el espejo de los humos (`gates.log`) vive bajo el home.
 # stable-data: lee el reloj a propósito y no compara contra un valor fijo: la duración la pone smoke-run.sh con la hora
@@ -169,6 +170,62 @@ if [ "$v1" = FUERA-DE-COTA ] && [ "$rc1" = 1 ] && [ "$v2" = RUNTIME ] && [ "$rc2
   ok "T22 la sonda: sleep 3 → FUERA-DE-COTA y la matriz sale 1; sleep 1 → RUNTIME y sale 0"
 else
   no "T22 la sonda: primero $v1 (sale $rc1), después $v2 (sale $rc2)"
+fi
+
+# ── T26 — una suite que sale 0 diciendo «NO MEDIDO» en su última línea no es verde ───────────────────────────
+# La misma regla que el nocturno (pipelines/azure-pipelines-banco.yml): salir 0 con la última línea no vacía
+# «⏭ <suite>: NO MEDIDO — <motivo>» es «no se midió». El humo lo registra con exit 77 y el motivo, en el registro y en el
+# espejo, y la matriz no lo cuenta. Una marca que no es la última línea no cambia nada, y un rojo sigue rojo.
+Q="$TMP/no-medido"; mkdir -p "$Q/specs"; git init -q "$Q"
+cat > "$Q/specs/story-9.26-no-medido.md" <<'HISTORIA'
+---
+story: "9.26"
+status: in-progress
+---
+# Story 9.26
+
+## Acceptance Criteria
+
+1. **Given** el freno, **When** corre su suite, **Then** frena.
+
+### Tests
+
+| ID | Test | AC | Nivel | Escenario | Esperado |
+|---|---|---|---|---|---|
+| T1 | `Freno_Frena` | 1 | integration | x | y |
+HISTORIA
+QEV="$Q/.advisors/dod-runtime"; QR="$QEV/9.26-smoke-ledger.jsonl"
+matriz26(){ node "$SK/runtime-matrix.js" --story "$Q/specs/story-9.26-no-medido.md" --evidence-dir "$QEV" --json --no-write 2>/dev/null \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s);process.stdout.write(String(r.perAc[1].verdict))})'; }
+aviso26="$(bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
+  printf 'arranca\n⏭ prod-guard: NO MEDIDO — esta máquina tiene el freno instalado\n\n' 2>&1 >/dev/null)"; rc26=$?
+v26="$(matriz26)"
+if [ "$rc26" = 77 ] && [ "$(ultima "$QR" 'e.exit')" = 77 ] && [ "$(ultima "$GATES" 'e.exit')" = 77 ] \
+  && [ "$(ultima "$QR" 'e.not_measured')" = 'esta máquina tiene el freno instalado' ] \
+  && [ "$(ultima "$GATES" 'e.not_measured')" = 'esta máquina tiene el freno instalado' ] \
+  && [ "$v26" != RUNTIME ] && echo "$aviso26" | grep 'NO MEDIDO' >/dev/null; then
+  ok "T26 «⏭ …: NO MEDIDO» en la última línea con exit 0 → exit 77 con su motivo, y la matriz no lo cuenta ($v26)"
+else
+  no "T26 no medido: sale $rc26, matriz $v26, $(tail -1 "$QR" 2>/dev/null) · aviso: $aviso26"
+fi
+# con un proceso de fondo que deja la salida abierta, el guion agrega su aviso al final: la marca sigue contando
+bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
+  sh -c 'echo "⏭ prod-guard: NO MEDIDO — con un proceso de fondo"; sleep 7 &' >/dev/null 2>&1; rc26f=$?
+if [ "$rc26f" = 77 ] && [ "$(ultima "$QR" 'e.not_measured')" = 'con un proceso de fondo' ]; then
+  ok "T26 con un proceso de fondo que tapa la salida, la marca sigue dando exit 77"
+else
+  no "T26 proceso de fondo: sale $rc26f, $(tail -1 "$QR" 2>/dev/null)"
+fi
+bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
+  printf '⏭ una-parte: NO MEDIDO — sin pwsh\n✅ prod-guard: 12 ok\n' >/dev/null 2>&1; rc26b=$?
+v26b="$(matriz26)"
+bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
+  sh -c 'echo "⏭ prod-guard: NO MEDIDO — algo"; exit 1' >/dev/null 2>&1; rc26c=$?
+if [ "$rc26b" = 0 ] && [ "$v26b" = RUNTIME ] && [ "$rc26c" = 1 ] && [ "$(ultima "$QR" 'e.exit')" = 1 ] \
+  && [ "$(ultima "$QR" '"not_measured" in e')" = false ]; then
+  ok "T26 la marca antes de la última línea sigue verde, y un rojo con la marca sigue rojo (exit 1)"
+else
+  no "T26 controles: marca en el medio sale $rc26b (matriz $v26b); rojo con marca sale $rc26c, $(tail -1 "$QR" 2>/dev/null)"
 fi
 
 echo
