@@ -27,6 +27,15 @@
 'use strict';
 
 const RELOJ_MS = 5000;                    // el registro lo envuelve en timeout: 10
+// La segunda lectura de los heredocs (S247e): cuando un `<<` puede ser texto (adentro de una comilla, de un comentario
+// o del cuerpo de otro heredoc), el freno juzga el comando dos veces, una con cada lectura, y frena si una frena. La
+// segunda la juzga este mismo archivo en un proceso aparte, con esta marca en sus argumentos (la configuración que lo
+// registra no la lleva, y el asistente no le agrega argumentos al gancho). Ese proceso no anota los «pasó»: los anota
+// la primera lectura, una sola vez.
+const SEGUNDA_LECTURA = process.argv.includes('--quote-reading');
+// lo que puede tardar la segunda lectura: con el reloj propio de la primera (que vuelve a empezar después) entra en
+// los 10 s del registro
+const TOPE_SEGUNDA_MS = 3000;
 
 // 🔴 Las costuras de prueba (TYCON_PROD_ROOT, TYCON_PROD_SESSION_SINCE) existen SÓLO
 // donde el freno NO está instalado. En una máquina con /opt/tycon, ninguna variable cambia nada: una
@@ -35,12 +44,17 @@ const RELOJ_MS = 5000;                    // el registro lo envuelve en timeout:
 // tenían la puerta y el aviso; acá faltaba.
 const INSTALADO = (() => { try { return require('fs').statSync('/opt/tycon').isDirectory(); } catch { return false; } })();
 const costura = (nombre) => (INSTALADO ? undefined : process.env[nombre]);
-const t0 = Date.now();
+let t0 = Date.now();
 const vencido = () => Date.now() - t0 > RELOJ_MS;
 
 let raw = '';
 process.stdin.on('data', (d) => { raw += d; });
-process.stdin.on('end', () => { try { decidir(raw); } catch (e) { emergencia(raw, e); } });
+process.stdin.on('end', () => {
+  try {
+    if (SEGUNDA_LECTURA) require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js')).conLectura('comillas', () => decidir(raw));
+    else decidir(raw);
+  } catch (e) { emergencia(raw, e); }
+});
 process.stdin.on('error', (e) => emergencia(raw, e));
 
 // Clientes de base y la bandera con la que cada uno nombra el servidor. `sqlpackage` estaba en la
@@ -232,6 +246,7 @@ function loadGuardRecord() {
 }
 // La línea canónica que lee la cuenta del tablero (story 2.6). Nunca rompe ni cambia la decisión de quien la llama.
 function recordDecision(entry) {
+  if (SEGUNDA_LECTURA && entry && entry.veredicto !== 'bloqueo') return;
   const lib = loadGuardRecord();
   if (!lib) return;
   try { lib.anotar(entry); } catch { /* ayuda, no evidencia */ }
@@ -310,6 +325,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
 }
 
 function registrar(ctx, extra) {
+  if (SEGUNDA_LECTURA && !(extra && extra.bloqueo)) return;
   const os = require('os'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
   const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
   fs.mkdirSync(dir, { recursive: true });
@@ -612,8 +628,28 @@ function barrerFirewallVencido() {
   } catch (_) { /* el tope se vuelve a mirar en el próximo arranque o fin de sesión */ }
 }
 
+/**
+ * Juzga el comando con la otra lectura de los heredocs (`heredocsLeidos`), en un proceso aparte. Si frena, este freno
+ * frena con su motivo. Si no terminó, o se cayó, es «no pude mirar»: frena si el comando nombra bases o un borrado en
+ * Azure, y si no sigue con la primera lectura.
+ */
+function segundaLectura(entrada, cmd, nombraBases) {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync(process.execPath, [__filename, '--quote-reading'], { input: entrada, encoding: 'utf8', timeout: TOPE_SEGUNDA_MS, killSignal: 'SIGKILL', windowsHide: true, maxBuffer: 1 << 20 });
+  if (r.status === 2) {
+    process.stderr.write(r.stderr || mensaje('la otra lectura de los heredocs de este comando frena.'));
+    process.exit(2);
+  }
+  if (r.status !== 0 && (nombraBases || nombraBorradoAzure(cmd))) {
+    frenar('un `<<` de este comando puede ser texto o un heredoc, y la lectura que lo toma por texto no terminó; el comando nombra algo de bases.', [
+      'Escribí el comando sin un `<<` adentro de comillas o de un comentario, o partilo en dos.',
+    ], { cmd }, 'no-pude-mirar');
+  }
+  t0 = Date.now();                                   // el reloj propio vuelve a empezar para la primera lectura
+}
+
 function decidir(entrada) {
-  barrerFirewallVencido();
+  if (!SEGUNDA_LECTURA) barrerFirewallVencido();
   let payload = {};
   try { payload = JSON.parse(entrada || '{}'); } catch (e) {
     // AC 14: un payload que no se pudo leer no es «no hay base». Si el texto crudo nombra algo de
@@ -637,6 +673,10 @@ function decidir(entrada) {
       'Partilo en comandos más cortos, o pasá la consulta por la puerta.',
     ], { cmd: cmd.slice(0, 4096) });
     process.exit(0);
+  }
+
+  if (!SEGUNDA_LECTURA && !require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js')).lecturasCoinciden(cmd)) {
+    segundaLectura(entrada, cmd, nombraBases);
   }
 
   const { segmentos, tokens, PREFIJOS, expandir, variablesDelComando, parseSimpleCommand } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
