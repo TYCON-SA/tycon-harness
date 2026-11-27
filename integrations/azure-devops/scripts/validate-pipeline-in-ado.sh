@@ -75,7 +75,7 @@ case "$RC_NS" in
   *) echo "[validar] no_medido: validate-pipeline-in-ado.sh: no pude preguntar la plataforma de la organización ($POR_QUE)" >&2; exit 2 ;;
 esac
 # La organización sale de la configuración del arnés: --org › ADO_ORG / TYCON_ADO_ORG › `ado.org`
-# (perfil del equipo o ~/.claude/tycon.json). Sin organización, Azure DevOps está APAGADA en esta máquina: se dice en
+# (perfil del equipo o ~/.tycon/config.json). Sin organización, Azure DevOps está APAGADA en esta máquina: se dice en
 # una línea y sale 0 sin consultar nada. Nunca «válido».
 if [ -z "$ORG" ]; then
   CFG_ERR="$(mktemp)"
@@ -90,7 +90,7 @@ if [ -z "$ORG" ]; then
   fi
   rm -f "$CFG_ERR"
 fi
-[ -n "$ORG" ] || { echo "[validar] Azure DevOps apagado en esta máquina: no hay organización configurada, el pipeline no se validó (prender: ado.org en ~/.claude/tycon.json, TYCON_ADO_ORG, o pasá --org)"; exit 0; }
+[ -n "$ORG" ] || { echo "[validar] Azure DevOps apagado en esta máquina: no hay organización configurada, el pipeline no se validó (prender: ado.org en ~/.tycon/config.json, TYCON_ADO_ORG, o pasá --org)"; exit 0; }
 [ -n "$PROY" ] && [ -n "$PID" ] || { echo "[validar] faltan --project y --pipeline" >&2; exit 2; }
 [ -n "${AZURE_DEVOPS_EXT_PAT:-}" ] || { echo "[validar] falta AZURE_DEVOPS_EXT_PAT — sin credenciales NO puedo validar, y eso no es 'válido'" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "[validar] falta python3" >&2; exit 2; }

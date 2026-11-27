@@ -30,7 +30,7 @@
 #   { "tool_input": { "command": "..." } }
 
 # Dónde vive este hook: para llegar a `../lib/` (el criterio del índice y la constancia). Se
-# resuelve por symlink también, porque el instalador puede enlazarlo desde ~/.claude/hooks/.
+# resuelve por symlink también, porque el instalador puede enlazarlo desde la carpeta de hooks de Claude Code.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}")")" && pwd)"
 LIB_MANIFEST="$SCRIPT_DIR/../lib/manifest-engram.js"
 LIB_CONSTANCIA="$SCRIPT_DIR/../lib/guard-record.js"

@@ -31,7 +31,7 @@
 #   TYCON_NOTICE_DRYRUN=1   no manda nada: imprime "[dry-run] <texto>" y no toca los pendientes
 #   TYCON_NOTICE_NOTIFY     script de envío (sin ella, <repo>/scripts/lib/notify.js por los canales de la organización)
 #   TYCON_NOTICE_TODAY      fecha UTC de hoy (AAAA-MM-DD); para las pruebas
-#   TYCON_NOTICE_STATE_DIR  dónde viven los pendientes (default ~/.claude/.tycon-pipeline/aviso-dod)
+#   TYCON_NOTICE_STATE_DIR  dónde viven los pendientes (default: aviso-dod en el estado de siempre, el de state-dir.sh)
 #   TYCON_NOTICE_RETRIES    intentos de envío en total (default 3)
 #   TYCON_NOTICE_WAIT_S     segundos entre intentos (default 30)
 #   (los nombres viejos en castellano siguen valiendo hasta el retiro: scripts/lib/renames.json)
@@ -102,7 +102,18 @@ enviar() { # <mensaje>
   if [ -n "$NOTIFY" ]; then "$NOTIFY" "$1"; else node "$NOTIFY_JS" --side session -- "$1"; fi
 }
 HOY="${TYCON_NOTICE_TODAY:-$(date -u +%Y-%m-%d)}"
-ESTADO_DIR="${TYCON_NOTICE_STATE_DIR:-$HOME/.claude/.tycon-pipeline/aviso-dod}"
+# los pendientes, en el estado de siempre (.tycon-pipeline de la carpeta de Claude Code, que dice state-dir.sh del
+# árbol en el que vive este guion); sin la biblioteca no hay dónde guardarlos: se dice y se sale sin mandar nada
+if [ -z "${TYCON_NOTICE_STATE_DIR:-}" ]; then
+  # shellcheck disable=SC1091
+  if [ -f "$SELF_ROOT/scripts/lib/state-dir.sh" ] && . "$SELF_ROOT/scripts/lib/state-dir.sh" 2>/dev/null && type tycon_claude_dir >/dev/null 2>&1; then
+    TYCON_NOTICE_STATE_DIR="$(tycon_claude_dir)/.tycon-pipeline/aviso-dod"
+  else
+    echo "nightly-dod-notice: falta $SELF_ROOT/scripts/lib/state-dir.sh: no sé dónde guardar los pendientes; no mando nada" >&2
+    exit 1
+  fi
+fi
+ESTADO_DIR="$TYCON_NOTICE_STATE_DIR"
 PENDIENTES="$ESTADO_DIR/pendientes.tsv"
 REINTENTOS="${TYCON_NOTICE_RETRIES:-3}"
 ESPERA_S="${TYCON_NOTICE_WAIT_S:-30}"

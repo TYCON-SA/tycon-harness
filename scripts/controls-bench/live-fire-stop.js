@@ -147,7 +147,7 @@ function runSession(tool, sandbox, fixture, autonomous) {
     // workspace-write, NO read-only: bajo read-only tampoco se escribe el sids.txt DEL
     // workspace — el sandbox alcanza también a los hooks. workspace-write
     // es el modo con el que live-fire-guard ya probó verde que los hooks escriben (incluso
-    // fuera del workspace, a ~/.claude/safety-guard.log).
+    // fuera del workspace, a ~/.tycon/state/safety-guard.log).
     return spawnSync('codex', ['exec', '--sandbox', 'workspace-write', '--dangerously-bypass-hook-trust', PROMPT],
       { cwd: fixture, encoding: 'utf8', timeout: 300000, env });
   }

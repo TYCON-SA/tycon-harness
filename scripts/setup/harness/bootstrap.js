@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// bootstrap.js — la COPIA FIJA de arranque del arnés. Vive en ~/.claude/.tycon-pipeline/harness/,
+// bootstrap.js — la COPIA FIJA de arranque del arnés. Vive en la carpeta harness/ del estado (stateDir de tycon-home.js),
 // FUERA del árbol que actualiza; la línea de arranque de cada sesión llama a esta copia, no al árbol.
 //
 // Por qué: una máquina puede quedar muchos commits atrás durante días con el instalador diciendo «todo bien» si el
@@ -14,7 +14,7 @@
 //      (un clon descartable que se borró al reiniciar), VUELVE SOLO a `managed` sobre `tree_before`: re-apunta el enlace
 //      con `canonical-path.js --ensure-link --clone <tree_before> --link <tree_before>` de ese árbol, escribe el estado
 //      bajo el mismo candado por `mkdir` del programa (`harness/harness.lock`) y deja el aviso en `notice`.
-//   3. Resuelve el lugar del arnés: ~/.claude/tycon-harness y, si no resuelve, el nombre viejo ~/.claude/tycon-claude-guides
+//   3. Resuelve el lugar del arnés (placePath de tycon-home.js) y, si no resuelve, el nombre viejo (legacyPlacePath);
 //      ninguno → sale 1. Comprueba que exista <tree>/scripts/setup/harness.js (si no → sale 1).
 //      Los dos nombres van ESCRITOS acá (copia declarada en scripts/tests/fixtures/harness-place-names.json): esta copia
 //      no carga nada del árbol, tampoco scripts/setup/harness/place.js.
@@ -47,15 +47,47 @@ const HOME = os.homedir();
 const OWN_HOME = process.env.TYCON_HOME && path.isAbsolute(process.env.TYCON_HOME) ? process.env.TYCON_HOME : path.join(HOME, '.tycon');
 const OWN_STATE = path.join(OWN_HOME, 'state');
 const livesInOwnHome = (() => { try { return fs.statSync(OWN_STATE).isDirectory(); } catch (_) { return false; } })();
-const PIPE_DIR = livesInOwnHome ? OWN_STATE : path.join(HOME, '.claude', '.tycon-pipeline');
+// Las rutas de la carpeta de Claude Code (la del estado de siempre, el lugar y su nombre viejo) se las pide primero a
+// tycon-home.js de la copia fija del programa que vive con ésta (program/harness/: la de la misma versión, que pasó la
+// salud; no es el árbol) o, corrida desde el árbol, al que tiene al lado. Sin él, a places.json, que el instalador
+// escribe al lado con lo que da tycon-home.js (copyBootstrap de harness.js), y sólo si su `state_dir` es la carpeta de
+// arriba de esta copia: un archivo de otra casa o de otra regla no manda. Sin ninguno de los dos, las deduce de dónde
+// vive: <estado de siempre>/harness/bootstrap.js. Nunca se arman a mano.
+const realOr = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
+const PLACES = (() => {
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(__dirname, 'places.json'), 'utf8'));
+    if (!p || typeof p !== 'object' || typeof p.state_dir !== 'string' || realOr(p.state_dir) !== realOr(path.dirname(__dirname))) return {};
+    return p;
+  } catch (_) { return {}; }
+})();
+const TH_FIXED = (() => {
+  for (const p of [path.join(__dirname, 'program', 'harness', 'tycon-home.js'), path.join(__dirname, 'tycon-home.js')]) {
+    try { if (fs.existsSync(p)) { const m = require(p); if (m && typeof m.claudeDir === 'function' && typeof m.legacyStateDir === 'function') return m; } } catch (_) { /* rota: la que sigue */ }
+  }
+  return null;
+})();
+const absOrNull = (v) => (typeof v === 'string' && path.isAbsolute(v) ? v : null);
+const fromTh = (fn) => { try { return TH_FIXED ? absOrNull(TH_FIXED[fn](HOME)) : null; } catch (_) { return null; } };
+// la deducción sólo vale si esta copia está de verdad en el estado de siempre (<…>/.tycon-pipeline/harness/)
+const DEDUCED_PIPE = path.basename(__dirname) === 'harness' && path.basename(path.dirname(__dirname)) === '.tycon-pipeline' ? path.dirname(__dirname) : null;
+const LEGACY_PIPE = fromTh('legacyStateDir') || absOrNull(PLACES.legacy_state_dir) || DEDUCED_PIPE;
+if (!livesInOwnHome && !LEGACY_PIPE) {
+  process.stderr.write(`bootstrap.js: no sé dónde está el estado (no hay places.json al lado y esta copia no vive en <estado>/harness: ${__dirname}) — corre el respaldo en shell\n`);
+  process.exit(1);
+}
+const PIPE_DIR = livesInOwnHome ? OWN_STATE : LEGACY_PIPE;
+// la carpeta de Claude Code: la del archivo, o la de arriba del estado de siempre (sólo cuando el estado es ése)
+const CLAUDE_DIR = fromTh('claudeDir') || absOrNull(PLACES.claude_dir) || (livesInOwnHome || !DEDUCED_PIPE ? null : path.dirname(DEDUCED_PIPE));
 const HARNESS_DIR = path.join(PIPE_DIR, 'harness');
 const STATE_FILE = path.join(PIPE_DIR, 'harness-state.json');
 const LOCK_DIR = path.join(HARNESS_DIR, 'harness.lock');
 const LOG_FILE = path.join(HARNESS_DIR, 'startup.log');
 const PLACE_NAME = 'tycon-harness';
 const LEGACY_PLACE_NAME = 'tycon-claude-guides';
-const LINK = path.join(HOME, '.claude', PLACE_NAME);
-const LEGACY_LINK = path.join(HOME, '.claude', LEGACY_PLACE_NAME);
+// sin la carpeta de Claude Code (casa propia y sin places.json) no hay lugar que mirar: el árbol sale del estado
+const LINK = fromTh('placePath') || absOrNull(PLACES.place) || (CLAUDE_DIR ? path.join(CLAUDE_DIR, PLACE_NAME) : null);
+const LEGACY_LINK = fromTh('legacyPlacePath') || absOrNull(PLACES.legacy_place) || (CLAUDE_DIR ? path.join(CLAUDE_DIR, LEGACY_PLACE_NAME) : null);
 // La regla del candado es la de lock.js (que esta copia no puede cargar); una prueba compara las dos y sus constantes.
 const STALE_MS = 10 * 60 * 1000;            // dueño de otra máquina o ilegible: la edad de siempre
 const HARD_STALE_MS = 2 * 60 * 60 * 1000;   // dueño que parece vivo: el tope para un pid reusado sin reinicio
@@ -285,6 +317,7 @@ function main(argv) {
   }
   if (!tree) {
     const legacyThere = (() => { try { fs.lstatSync(LEGACY_LINK); return true; } catch (_) { return false; } })();
+    if (!LINK) return fail(1, 'no sé dónde está el lugar del arnés (sin tycon-home.js en la copia del programa, sin places.json y fuera del estado de siempre) y el estado no nombra un árbol: corre el respaldo en shell');
     return fail(1, `el lugar ${LINK} no resuelve (colgado o ausente)${legacyThere ? `, ni el nombre viejo ${LEGACY_LINK}` : ''}: corre el respaldo en shell`);
   }
   const harness = path.join(tree, 'scripts', 'setup', 'harness.js');

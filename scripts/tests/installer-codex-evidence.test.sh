@@ -82,6 +82,8 @@ mkdir -p "$T/tcg/scripts/lib" "$T/tcg/scripts/hooks" "$T/tcg/scripts/setup"; cp 
 cp "$RAIZ/scripts/setup/apply-hooks.js" "$RAIZ/scripts/setup/hooks-list.json" "$T/tcg/scripts/setup/"
 # el aplicador usa scripts/setup/harness/plugin-dirs.js (y éste, place.js): la carpeta viaja entera
 cp -R "$RAIZ/scripts/setup/harness" "$T/tcg/scripts/setup/"
+# el instalador sabe dónde están las skills instaladas por state-dir.sh y skills-dir.js: viajan con él
+cp "$RAIZ/scripts/lib/state-dir.sh" "$RAIZ/scripts/lib/skills-dir.js" "$T/tcg/scripts/lib/"
 echo "throw new Error('modulo-roto-de-prueba');" > "$T/tcg/scripts/lib/harness-parity.js"
 S="$(correr "$T/tcg/scripts/install-tycon-hooks.sh" "$CON")"
 case "$S" in

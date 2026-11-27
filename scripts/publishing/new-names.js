@@ -27,7 +27,7 @@
 // mirar» nunca es verde. Sin la lista de denegación ni el perfil del equipo (`team-profile.json`, o `perfil-equipo.json`; un laboratorio; la copia pública tiene su
 // modo, más abajo) no dice nada: ahí no hay lista por diseño. Sin el otro repo (agent-skills para un commit del arnés),
 // avisa fuerte y deja pasar. `TYCON_NEW_NAMES=0` lo apaga y lo dice en cada commit. Cada commit que tuvo algo que mirar
-// deja una línea de conteos —nunca un texto encontrado— en ~/.claude/.tycon-pipeline/new-names.jsonl y en el registro
+// deja una línea de conteos —nunca un texto encontrado— en ~/.tycon/state/new-names.jsonl y en el registro
 // de frenos.
 //
 // EN EL REPO UNIDO (el arnés con agent-skills adentro) no hay «otro repo»: el pre-commit corre el freno una

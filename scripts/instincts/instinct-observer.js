@@ -45,6 +45,8 @@ const { spawnSync } = require('child_process');
 // ============================================================
 // Este guion vive en scripts/instincts/: la raíz del arnés está dos niveles arriba.
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+// las skills instaladas de la máquina (la carpeta la dice tycon-home.js)
+const skillsInstaladas = () => require(path.join(REPO_ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir());
 // Observations son LOCALES por máquina (no van al repo).
 // Setup 50/50 multi-máquina: cada máquina analiza su propio JSONL.
 // Dónde: la carpeta de los registros sueltos (scripts/lib/loose-logs.js), la misma en la que graba la grabadora.
@@ -205,7 +207,7 @@ function callModel(prompt, executor) {
     return r.stdout.trim();
   }
   if (executor === 'codex') {
-    // codex exec: prompt por stdin, --skip-git-repo-check (el observer corre desde ~/.claude, no
+    // codex exec: prompt por stdin, --skip-git-repo-check (el observer corre desde la carpeta de Claude Code, no
     // un repo), -s read-only (solo genera texto, no ejecuta nada — exec ya es no-interactivo, no
     // pide aprobación), -o escribe SOLO el mensaje final a un archivo (evita el ruido de eventos).
     const outFile = path.join(os.tmpdir(), `instinct-codex-${process.pid}.txt`);
@@ -312,15 +314,15 @@ function loQueYaExiste() {
       return fs.readdirSync(dir).filter((f) => re.test(f)).map((f) => f.replace(re, '$1')).sort();
     } catch (_) { return []; }
   };
-  const advisors = nombres(path.join(os.homedir(), '.claude', 'agent-skills', 'agents'), /^(tycon-.+)\.md$/);
+  const advisors = nombres(path.join(skillsInstaladas(), 'agents'), /^(tycon-.+)\.md$/);
   // Los hooks viven en DOS repos: los del arnés y los del pipeline (en agent-skills). Leer sólo uno
   // dejaría fuera justo los que gatean el commit — `on-pre-commit`, `on-atdd-preedit`,
   // `on-frontmatter-write` — que son los que más se re-proponen.
   const hooks = [...new Set([
     ...nombres(path.join(REPO_ROOT, 'scripts', 'hooks'), /^(.+)\.(?:js|sh)$/),
-    ...nombres(path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts'), /^(on-.+)\.js$/),
+    ...nombres(path.join(skillsInstaladas(), 'skills', 'tycon-pipeline', 'scripts'), /^(on-.+)\.js$/),
   ])].sort();
-  const skills = nombres(path.join(os.homedir(), '.claude', 'agent-skills', 'skills'), /^(tycon-.+)$/);
+  const skills = nombres(path.join(skillsInstaladas(), 'skills'), /^(tycon-.+)$/);
   if (!advisors.length && !hooks.length && !skills.length) return '';
 
   const linea = (t, xs) => (xs.length ? `${t} (${xs.length}): ${xs.join(', ')}\n` : '');
@@ -558,7 +560,7 @@ function catalogoDetallado() {
     try { return fs.readFileSync(archivo, 'utf-8'); } catch (_) { return ''; }
   };
   // los revisores y las skills de la máquina; sin esa carpeta (el agente de la noche no la tiene), los del árbol
-  const enCasa = path.join(os.homedir(), '.claude', 'agent-skills');
+  const enCasa = skillsInstaladas();
   const agentSkills = fs.existsSync(enCasa) ? enCasa : REPO_ROOT;
   const revisores = listar(path.join(agentSkills, 'agents'), /^(.+)\.md$/).filter((n) => n !== 'README')
     .map((n) => [n, descripcionDeRevisor(leer(path.join(agentSkills, 'agents', `${n}.md`)))]);
@@ -1082,7 +1084,7 @@ function main() {
     const s = require(path.join(__dirname, '..', 'lib', 'notify.js')).canalesDeLaSesion({ env: process.env });
     if (s.problema) { log(s.problema); process.exit(2); }
     if (!s.canales.length) log('ningún canal de aviso elegido en el perfil del equipo: el aviso de instintos nuevos no se va a mandar');
-    else if (s.origen === 'antes' && !s.chat && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
+    else if (s.origen === 'antes' && !s.chat && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.tycon/config.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
   }
   const executor = resolveExecutor();
   if (!executor) {

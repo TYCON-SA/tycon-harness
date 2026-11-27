@@ -67,7 +67,8 @@ EOF
 linteada 1-2-sin-cierre.md "ROTA modo 1 (sin cierre) → se lintea igual"
 con_error 1-2-sin-cierre.md "ROTA modo 1 → bloquea"
 
-# Modo de rotura 2: comillas dobles en el comentario inline rompen el scalar de OTRO campo.
+# Antes modo de rotura 2: las comillas dobles del comentario inline rompían el escalar viejo, y el estado salía vacío.
+# Es YAML válido, y desde la A34 el lint lee como el descubridor, el portón y el freno del commit: el estado es `done`.
 cat > "$FX/1-3-comillas.md" <<'EOF'
 ---
 story: "1.3"
@@ -76,8 +77,8 @@ status: done  # cerrada con la "evidencia" de DoD
 ---
 # Story 1.3
 EOF
-linteada 1-3-comillas.md "ROTA modo 2 (comillas) → se lintea"
-con_error 1-3-comillas.md "ROTA modo 2 → bloquea"
+linteada 1-3-comillas.md "comentario con comillas → se lintea"
+sin_error 1-3-comillas.md "comentario con comillas → el estado se lee (done) y no bloquea"
 
 # 🔴 Contraejemplo del criterio "forma de id en el NOMBRE" (descartado: 463 stories reales de la
 # máquina se llaman story-N.M-slug y ningún patrón de id razonable las matchea).

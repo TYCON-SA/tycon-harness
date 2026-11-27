@@ -75,10 +75,8 @@ const TOPE_ARCHIVOS = 15;
 const TOPE_HALLAZGOS = 12;
 const TOPE_MOTIVO = 120;
 
-const stateDir = (() => {
-  const lib = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(os.homedir()) : path.join(os.homedir(), '.claude', '.tycon-pipeline');
-})();
+// la carpeta del estado la dice tycon-home.js, que viaja en el mismo árbol
+const stateDir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
 
 function args(argv) {
   const a = { repos: [], out: null, teamRepos: null, orgConfig: null, clones: null, maxChars: null, budget: null, model: 'opus',

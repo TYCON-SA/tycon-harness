@@ -487,7 +487,7 @@ emergencia_vale() {
 }
 
 # El `cwd` como lo escribe Windows (`C:\Users\…`), con barras hacia adelante: así lo leen las reglas que lo
-# miran (GIT-C4 compara su texto con `/.claude/agent-skills` y lo recorre por sus `/`), y Git Bash lo entiende
+# miran (GIT-C4 compara su texto con la ruta de las skills instaladas y lo recorre por sus `/`), y Git Bash lo entiende
 # igual (`C:/Users/…`). Las rutas que el comando nombra con `cd` ya se normalizan así (git_c4_try).
 CWD="${CWD//\\//}"
 
@@ -813,9 +813,13 @@ Saltear este freno lo decide la persona, no el agente: se repite el comando con 
     DOD_BYPASS) block "ESC-C1" \
         "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
         "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona." ;;
-    TYCON_STATUS_GATE) block "ESC-C1" \
+    TYCON_STATUS_GATE)
+      # las skills instaladas, de state-dir.sh (existen en las dos clases de máquina), con $HOME escrito tal cual
+      _esc_marker="<las skills instaladas>"
+      if type tycon_skills_dir >/dev/null 2>&1; then _esc_marker="$(tycon_skills_dir)"; [[ -n "${HOME:-}" && "$_esc_marker" == "$HOME"/* ]] && _esc_marker="\$HOME${_esc_marker#"$HOME"}"; fi
+      block "ESC-C1" \
         "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
-        "El estado lo cambia el orquestador, que corre los controles del cierre: node \"\$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+        "El estado lo cambia el orquestador, que corre los controles del cierre: node \"${_esc_marker}/skills/tycon-pipeline/scripts/marker.js\" update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
     TYCON_MUTATION_CHECK) block "ESC-C1" \
         "TYCON_MUTATION_CHECK=off saltea el chequeo de mutantes: las pruebas cuentan sin que nadie mire si verifican algo (también si la trae un --env-file)." \
         "Cerrá el paso sin la variable: el chequeo corre solo. Saltearlo lo decide la persona, con su firma escape:TYCON_MUTATION_CHECK." ;;
@@ -1293,10 +1297,17 @@ if [[ "$_esc_c2" == *".claude/projects/"* ]]; then
     _esc_hit=1
   fi
 fi
-# PowerShell, sobre el comando como llegó: la ruta de Windows lleva barras invertidas, que la copia de arriba saca
-if [[ "$_esc_hit" == "0" ]] && tool_is_ps && ps_match "(>|out-file|set-content|add-content|copy-item|move-item)[^;|]*\.claude[\\\\/]projects[\\\\/]" \
-   && ! ps_match "\.claude[\\\\/]projects[\\\\/][^\\\\/[:space:]]+[\\\\/]memory"; then
-  _esc_hit=1
+# PowerShell, sobre el comando como llegó: la ruta de Windows lleva barras invertidas, que la copia de arriba saca. La
+# carpeta de Claude Code, por su nombre de state-dir.sh y con el punto escapado; sin el ayudante, cualquier carpeta
+# `projects` (frena de más, nunca de menos), y sin la excepción de la memoria: sin el nombre de la carpeta, esa excepción
+# valdría para cualquier `projects\<x>\memory` del comando.
+if [[ "$_esc_hit" == "0" ]] && tool_is_ps; then
+  _esc_claude=""
+  if type tycon_claude_dir >/dev/null 2>&1; then _esc_claude="$(tycon_claude_dir)"; _esc_claude="${_esc_claude##*/}"; _esc_claude="${_esc_claude//./\\.}"; fi
+  if ps_match "(>|out-file|set-content|add-content|copy-item|move-item)[^;|]*${_esc_claude}[\\\\/]projects[\\\\/]" \
+     && { [[ -z "$_esc_claude" ]] || ! ps_match "${_esc_claude}[\\\\/]projects[\\\\/][^\\\\/[:space:]]+[\\\\/]memory"; }; then
+    _esc_hit=1
+  fi
 fi
 if [[ "$_esc_hit" == "1" ]]; then
   block "ESC-C2" \
@@ -1520,19 +1531,21 @@ if [[ "$CMD" == *git* ]] && { [[ "$CMD" == *reset* || "$CMD" == *stash* || "$CMD
 fi
 
 # GIT-C4: staging masivo en el repo AgentSkills.
-# ~/.claude/agent-skills mezcla lo propio del equipo (tycon-*) con ~100 archivos
+# El árbol de las skills instaladas (tycon_skills_dir) mezcla lo propio del equipo (tycon-*) con ~100 archivos
 # bmad-* en drift permanente (M esperado, NUNCA se commitea). `git add -A`/`.`
 # ahí stagea el drift entero → commits que pisan BMAD. Staging selectivo SIEMPRE.
 #
 # 🔴 El árbol del que salen las skills instaladas, sea cual sea su carpeta.
 # Con el arnés y agent-skills en UN repo, las skills de la máquina no salen por fuerza de
-# ~/.claude/agent-skills: salen del árbol al que resuelve ~/.claude/skills, que puede ser el clon
-# del repo unido en cualquier carpeta. Mirar sólo si la ruta dice `/.claude/agent-skills` dejaría pasar
+# las skills instaladas: salen del árbol al que resuelve ~/.claude/skills, que puede ser el clon
+# del repo unido en cualquier carpeta. Mirar sólo si la ruta termina como la de las skills instaladas dejaría pasar
 # `git add -A` parado en ese clon, con todo lo ajeno que vive en ese árbol. Frena:
-#   · donde la ruta dice `/.claude/agent-skills` (no se le saca nada), y
+#   · donde la ruta dice cómo terminan las skills instaladas bajo cualquier casa (no se le saca nada), y
 #   · en el árbol de las skills instaladas: ~/.claude/skills enlazada a <árbol>/skills, o una carpeta
 #     real con un enlace por skill (ahí decide la entrada tycon-pipeline). Tiene que ser un clon
-#     (trae .git) y no ~/.claude mismo: skills que son una carpeta real de la HOME no tienen «árbol».
+#     (trae .git) y no la carpeta de Claude Code misma: skills que son una carpeta real de la HOME no tienen «árbol».
+# Las dos carpetas (la de Claude Code y la de las skills instaladas) las dice scripts/lib/state-dir.sh, como
+# tycon-home.js: sin el ayudante, GIT-C4 frena el git add masivo (frena de más, nunca de menos).
 # En un clon de trabajo cualquiera NO frena: ahí no hay nada ajeno que stagear.
 # Sólo lo que trae bash: `cd`, `pwd -P`, `[[ … ]]` (con `-d`, `-L`, `-e` y `-ef`), expansión de parámetros
 # y comparación de texto. Sin `jq`, sin `node`, sin ninguna herramienta del PATH; corre en el bash 3.2 de Mac.
@@ -1541,7 +1554,7 @@ fi
 # 🔴 Dos huecos que la regla cierra, los dos acá adentro:
 #
 # 1. EL `cd` EN EL MISMO COMANDO. Decidir sólo por el `cwd` que reporta el hook dejaría pasar
-#    `cd ~/.claude/agent-skills && git add -A` corrido desde otra carpeta, y lo mismo
+#    `cd <las skills instaladas> && git add -A` corrido desde otra carpeta, y lo mismo
 #    `cd <árbol>; git add --all`, `(cd <árbol> && git add .)` y `git -C <árbol> add -A`. Las dos
 #    últimas exigen reconocer el `git add` masivo con el `-C` en el medio, y con un espacio o el
 #    final después del `.` (en el subshell viene un `)`).
@@ -1586,7 +1599,7 @@ fi
 #    escrito con otras mayúsculas el freno no dispararía nunca. «¿Es la misma carpeta?»
 #    se contesta con `[[ a -ef b ]]` (mismo dispositivo y mismo inodo: es de bash, no del PATH), y «¿está
 #    adentro del árbol?», subiendo por sus carpetas madre y probando `-ef` en cada nivel. La comparación
-#    del texto `/.claude/agent-skills` se conserva además: frena aunque la carpeta no exista.
+#    del texto de la ruta de las skills instaladas se conserva además: frena aunque la carpeta no exista.
 #
 # b. EL RECORRIDO MIRA TODAS LAS CARPETAS DE CADA TRAMO. Una expresión voraz que fuera del primer `git` al ÚLTIMO
 #    ` -C ` sin `;`, `&` ni `|` en el medio —el salto de línea no cortaría— dejaría sin mirar todo `cd`/`-C` del
@@ -1633,7 +1646,7 @@ fi
 #    cuenta como irse. Y de una ruta absoluta con un final que no se lee (`$S/foto-$r` en un lazo) alcanza
 #    con su carpeta madre, si existe y no está en el árbol ni lo tiene adentro (y el comando no trae
 #    ningún `..`). Siguen frenados: funciones con `$1`, guiones escritos con un heredoc que traen su
-#    propio `git add`, `bash -c '…'`, lazos con `cd`, y el que de verdad nombra ~/.claude/agent-skills.
+#    propio `git add`, `bash -c '…'`, lazos con `cd`, y el que de verdad nombra las skills instaladas.
 #
 # f. EL RECORRIDO TIENE QUE VER LAS COMILLAS (es un esquive posible del punto c). Para decidir si un `cd`
 #    arranca un comando, mirar sólo el carácter anterior no sabe si está dentro de una comilla abierta.
@@ -1848,21 +1861,21 @@ git_c4_mask() {
 }
 
 # git_c4_is_tree <carpeta> — sale 0 si ES (mismo dispositivo e inodo) la raíz de un árbol frenado:
-# $SKILLS_TREE o ~/.claude/agent-skills. Con una carpeta que no existe, `-ef` da falso.
+# $SKILLS_TREE o las skills instaladas (tycon_skills_dir). Con una carpeta que no existe, `-ef` da falso.
 git_c4_is_tree() {
   if [[ -n "$SKILLS_TREE" && "$1" -ef "$SKILLS_TREE" ]]; then return 0; fi
-  if [[ "$1" -ef "${HOME}/.claude/agent-skills" ]]; then return 0; fi
+  if [[ -n "$GIT_C4_INSTALLED" && "$1" -ef "$GIT_C4_INSTALLED" ]]; then return 0; fi
   return 1
 }
 
-# git_c4_in_tree <carpeta> — sale 0 si esa carpeta cae en un árbol frenado: la ruta dice
-# `/.claude/agent-skills` (tal cual o ya resuelta), o ella o alguna de sus carpetas madre ES la raíz de
+# git_c4_in_tree <carpeta> — sale 0 si esa carpeta cae en un árbol frenado: la ruta termina como las skills
+# instaladas (GIT_C4_TAIL, tal cual o ya resuelta), o ella o alguna de sus carpetas madre ES la raíz de
 # uno (git_c4_is_tree). De una carpeta que no existe se mira la carpeta madre más honda que sí exista:
 # no es un error, el `cd` del comando va a fallar solo.
 git_c4_in_tree() {
   local dir="$1" up="" real="" walk="" steps=0
   if [[ -z "$dir" ]]; then return 1; fi
-  if [[ "$dir" == *"/.claude/agent-skills"* ]]; then return 0; fi
+  if [[ -n "$GIT_C4_TAIL" && "$dir" == *"$GIT_C4_TAIL"* ]]; then return 0; fi
   # Sólo se resuelve una ruta absoluta: con una relativa, `cd` podría irse por CDPATH a otra carpeta.
   case "$dir" in
     /*|[A-Za-z]:*) ;;
@@ -1875,7 +1888,7 @@ git_c4_in_tree() {
   # Como la lee `cd` (los `..` se resuelven por el texto, antes de seguir enlaces): la ruta física de
   # donde queda el shell, y sus carpetas madre recortando el texto.
   real="$(cd "$up" 2>/dev/null && pwd -P)" || real=""
-  if [[ "$real" == *"/.claude/agent-skills"* ]]; then return 0; fi
+  if [[ -n "$GIT_C4_TAIL" && "$real" == *"$GIT_C4_TAIL"* ]]; then return 0; fi
   walk="$real"
   while [[ -n "$walk" ]]; do
     if git_c4_is_tree "$walk"; then return 0; fi
@@ -1900,7 +1913,7 @@ git_c4_in_tree() {
 # sube desde la raíz de cada árbol probando `-ef`. Una carpeta que no existe no tiene nada adentro.
 git_c4_holds_tree() {
   local root="" walk="" steps=0
-  for root in "$SKILLS_TREE" "${HOME}/.claude/agent-skills"; do
+  for root in "$SKILLS_TREE" "$GIT_C4_INSTALLED"; do
     if [[ -z "$root" || ! -d "$root" ]]; then continue; fi
     walk="$root"
     steps=0
@@ -2003,7 +2016,7 @@ git_c4_made_before() {
 git_c4_try() {
   local cand="$1" kind="git" i=0
   if [[ "$SKILLS_TREE_HIT" == "1" || "$GIT_C4_OVERFLOW" == "1" ]]; then return 0; fi
-  if [[ "$cand" == *"/.claude/agent-skills"* ]]; then SKILLS_TREE_HIT=1; return 0; fi
+  if [[ -n "$GIT_C4_TAIL" && "$cand" == *"$GIT_C4_TAIL"* ]]; then SKILLS_TREE_HIT=1; return 0; fi
   if [[ ! -d "$cand" && "$2" != "1" ]]; then return 0; fi
   # El otro tope: cuántas candidatas se resuelven en total (cada una cuesta un proceso).
   GIT_C4_TRIES=$((GIT_C4_TRIES + 1))
@@ -2042,7 +2055,7 @@ git_c4_blind_notice() {
 }
 
 # ── PowerShell: las carpetas como las escribe Windows ─────────────────────────────────
-# Por la herramienta PowerShell, `cd ~\.claude\agent-skills; git add -A`, `cd $env:USERPROFILE\…`,
+# Por la herramienta PowerShell, `cd ~\<las skills instaladas>; git add -A`, `cd $env:USERPROFILE\…`,
 # `Set-Location …`, `sl …`, `Push-Location …` y `git -C ~\… add -A` pasarían sin esto: el recorrido de abajo lee la
 # barra invertida como un escape de bash y sólo conoce `cd`, `pushd` y `-C`. Para esa herramienta GIT-C4 mira una
 # copia del comando con las barras hacia adelante (en PowerShell la `\` no escapa nada: el escape es el acento
@@ -2078,7 +2091,15 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   SKILLS_TREE=""
   SKILLS_PROBE=""
   GIT_C4_BLIND=""
-  GIT_C4_SKILLS="${HOME}/.claude/skills"
+  # La carpeta de Claude Code y las skills instaladas, de state-dir.sh (las de tycon-home.js). GIT_C4_TAIL es cómo
+  # termina la ruta de las skills bajo cualquier casa (`/<carpeta de Claude Code>/agent-skills`): se busca en el texto.
+  GIT_C4_CLAUDE=""; GIT_C4_INSTALLED=""; GIT_C4_TAIL=""
+  if type tycon_skills_dir >/dev/null 2>&1; then
+    GIT_C4_CLAUDE="$(tycon_claude_dir)"
+    GIT_C4_INSTALLED="$(tycon_skills_dir)"
+    GIT_C4_TAIL="${GIT_C4_INSTALLED#"${HOME:-}"}"
+  fi
+  GIT_C4_SKILLS="${GIT_C4_CLAUDE}/skills"
   GIT_C4_ENTRY="${GIT_C4_SKILLS}/tycon-pipeline"
   # Lo que no existe no es un error del freno: es «no hay árbol», y se calla. Lo que EXISTE y no se
   # puede resolver es «no pude mirar», y se dice (GIT_C4_BLIND). El `2>/dev/null` de cada `cd` no
@@ -2086,7 +2107,12 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   # línea de stderr al aviso.
   # El árbol es la carpeta madre de `skills` (o de `skills/tycon-pipeline`). Que la sonda termine en esos
   # nombres se prueba por identidad (`-ef`), no por texto: el enlace pudo quedar escrito `…/SKILLS`.
-  if [[ -d "$GIT_C4_ENTRY" ]] && SKILLS_PROBE="$(cd "$GIT_C4_ENTRY" 2>/dev/null && pwd -P)"; then
+  # Sin el ayudante no hay ni el texto ni la carpeta con qué comparar: frena de más, nunca de menos (como ESC-C2).
+  if [[ -z "$GIT_C4_CLAUDE" ]]; then
+    block "GIT-C4" \
+      "Este comando trae un git add -A / git add . y al freno le falta scripts/lib/state-dir.sh, el que le dice dónde están las skills instaladas: no puede saber si el git add cae en ese árbol. Lo que no se pudo mirar no pasa callado." \
+      "Stageá por nombre (git add <archivo>), y reinstalá el arnés para que el freno vuelva a tener su ayudante (/tycon-harness dice si quedó bien instalado)."
+  elif [[ -d "$GIT_C4_ENTRY" ]] && SKILLS_PROBE="$(cd "$GIT_C4_ENTRY" 2>/dev/null && pwd -P)"; then
     if [[ "$SKILLS_PROBE" == */*/* && "${SKILLS_PROBE%/*/*}/skills/tycon-pipeline" -ef "$SKILLS_PROBE" ]]; then SKILLS_TREE="${SKILLS_PROBE%/*/*}"; fi
   elif [[ -L "$GIT_C4_SKILLS" ]] && SKILLS_PROBE="$(cd "$GIT_C4_SKILLS" 2>/dev/null && pwd -P)"; then
     if [[ "$SKILLS_PROBE" == */* && "${SKILLS_PROBE%/*}/skills" -ef "$SKILLS_PROBE" ]]; then SKILLS_TREE="${SKILLS_PROBE%/*}"; fi
@@ -2098,11 +2124,11 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     GIT_C4_BLIND="~/.claude/skills/tycon-pipeline es un enlace que no lleva a ninguna carpeta (¿el clon se movió o se borró?)"
   elif [[ -d "$GIT_C4_ENTRY" ]]; then
     GIT_C4_BLIND="no se puede entrar a ~/.claude/skills/tycon-pipeline (permisos)"
-  elif [[ -d "${HOME}/.claude" ]] && ! ( cd "${HOME}/.claude" ) 2>/dev/null; then
-    GIT_C4_BLIND="no se puede entrar a ~/.claude (permisos)"
+  elif [[ -d "$GIT_C4_CLAUDE" ]] && ! ( cd "$GIT_C4_CLAUDE" ) 2>/dev/null; then
+    GIT_C4_BLIND="no se puede entrar a la carpeta de Claude Code, ${GIT_C4_CLAUDE} (permisos)"
   fi
-  # Tiene que ser un clon (trae .git) y no ~/.claude mismo: si no, no hay «árbol».
-  if [[ -n "$SKILLS_TREE" ]] && [[ ! -e "${SKILLS_TREE}/.git" || "$SKILLS_TREE" -ef "${HOME}/.claude" ]]; then SKILLS_TREE=""; fi
+  # Tiene que ser un clon (trae .git) y no la carpeta de Claude Code misma: si no, no hay «árbol».
+  if [[ -n "$SKILLS_TREE" ]] && [[ ! -e "${SKILLS_TREE}/.git" || "$SKILLS_TREE" -ef "$GIT_C4_CLAUDE" ]]; then SKILLS_TREE=""; fi
 
   # --- 2. Cada carpeta que el propio comando nombra, de izquierda a derecha (punto b de arriba) ---
   # Las carpetas se sacan del comando CRUDO (para frenar: de más, nunca de menos). Si cada una prueba que
@@ -2227,7 +2253,7 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   fi
 
   if [[ "$SKILLS_TREE_HIT" == "1" ]]; then
-    block "GIT-C4"     "git add -A / git add . en el árbol del que salen las skills instaladas (~/.claude/agent-skills, o el clon al que resuelve ~/.claude/skills) stagea todo lo ajeno que vive ahí: el drift bmad-* completo (~100 archivos M que NUNCA se commitean). Cuenta cada carpeta que el propio comando nombra con cd, pushd o -C y, si el comando no se va a otra carpeta antes del git add, la carpeta donde corre."     "Staging selectivo: git add skills/tycon-pipeline skills/<tu-skill> agents/tycon-*.md — solo lo propio. Ver guides/git-commit-conventions.md."
+    block "GIT-C4"     "git add -A / git add . en el árbol del que salen las skills instaladas (su carpeta en la de Claude Code, o el clon al que resuelve ~/.claude/skills) stagea todo lo ajeno que vive ahí: el drift bmad-* completo (~100 archivos M que NUNCA se commitean). Cuenta cada carpeta que el propio comando nombra con cd, pushd o -C y, si el comando no se va a otra carpeta antes del git add, la carpeta donde corre."     "Staging selectivo: git add skills/tycon-pipeline skills/<tu-skill> agents/tycon-*.md — solo lo propio. Ver guides/git-commit-conventions.md."
   fi
   if [[ "$GIT_C4_OVERFLOW" == "1" ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."

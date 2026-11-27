@@ -8,7 +8,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Todas las máquinas suben sus corridas al buzón de Azure Storage con una llave que sólo escribe
  * (`upload-runs.js`). Leerlas pide el rol «Storage Blob Data Reader» sobre el contenedor, que tienen
  * sólo quienes el dueño del buzón autorizó. Este guion baja lo nuevo o cambiado a
- * `~/.claude/.tycon-pipeline/corridas-buzon/<maquina>/`, que es de donde lee la vista de corridas.
+ * `~/.tycon/state/corridas-buzon/<maquina>/`, que es de donde lee la vista de corridas.
  *
  * Con la sesión de `az` que la persona YA tiene: pide un token para storage con el tenant del buzón
  * (`corridas-buzon.json → tenant` — DevB es invitado en ese tenant, y su `az` por default pediría el token
@@ -30,7 +30,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Lo demás se cuenta como `ignorados` y no toca el disco. Cada archivo se escribe entero o no se escribe
  * (temporal + rename, verificando tamaño y Content-MD5). Qué ya está al día: tamaño + Content-MD5 del
  * listado contra el archivo local; si el listado no trae MD5, la Etag que se recordó al bajarlo
- * (`~/.claude/.tycon-pipeline/mailbox-downloads.json`). El índice y el sello diario de «sin permiso»
+ * (`~/.tycon/state/mailbox-downloads.json`). El índice y el sello diario de «sin permiso»
  * (`download-runs-no-permission.seal`) tienen un nombre nuevo: si sólo está el
  * anterior, se lee ése, y antes de escribir el nuevo se le pasa su contenido (scripts/lib/renames.json).
  *
