@@ -1174,6 +1174,33 @@ test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la v
 
 // A64: el registro no se abre a mano (el freno de escritura lo para también al leerlo con un intérprete); lo que se
 // necesita de él —qué agente le tocó a cada revisor, para escribirle— lo da pipeline.js reviewer-agents
+test('ReviewerAgents_DosSesionesYLeidoComoElCruce @A64 — cada sesión tiene su vuelta; un reporte no pisa a otro agente; leído si alguno se leyó', (t) => {
+  // 🔴 rojo si: dos «vuelta 1» de sesiones distintas se funden (el agente nuevo sale con el reporte del viejo), el último
+  // reporte ilegible tapa uno legible, o un renglón null o roto tira el subcomando
+  const l = lab({ advisors: [SEC, 'tycon-plugin-tests-coverage'] });
+  t.after(() => fs.rmSync(l.base, { recursive: true, force: true }));
+  const otra = path.join(path.dirname(l.registro), 'sesion-vieja.jsonl');
+  fs.mkdirSync(path.dirname(otra), { recursive: true });
+  const enOtra = (x) => fs.appendFileSync(otra, `${JSON.stringify({ story: '9.92', run: l.run, ...x })}\n`);
+  enOtra(LANZADO(at(-500), 1));
+  enOtra({ ts: at(-499), kind: 'launch-agent', advisor: SEC, iter: 1, agent_id: 'ag-VIEJO' });
+  enOtra({ ...REPORTE(at(-450), [], { iter: 1, readable: false, reason: 'murió' }), agent_id: 'ag-VIEJO' });
+  l.anotar(LANZADO(at(-400), 1));
+  l.anotar({ ts: at(-399), kind: 'launch-agent', advisor: SEC, iter: 1, agent_id: 'ag-NUEVO' });
+  const TC = 'tycon-plugin-tests-coverage';
+  l.anotar(LANZADO(at(-300), 1, TC));
+  l.anotar(REPORTE(at(-200), [], { iter: 1, advisor: TC }));
+  l.anotar(REPORTE(at(-100), [], { iter: 1, advisor: TC, readable: false, reason: 'el reporte no trae el renglón' }));
+  fs.appendFileSync(l.registro, 'null\n{roto\n');
+  const r = spawnSync(process.execPath, [PIPELINE, 'reviewer-agents', '--json'], { cwd: l.repo, encoding: 'utf8', env: l.env });
+  assert.equal(r.status, 0, out(r));
+  const j = JSON.parse(r.stdout);
+  const sec = j.revisores[SEC].map((x) => `${x.agent_id}:${x.reporte}`).sort();
+  assert.deepEqual(sec, ['ag-NUEVO:sin reporte', 'ag-VIEJO:no se leyó (murió)'], 'cada sesión su fila');
+  assert.deepEqual(j.revisores[TC], [{ iter: 1, agent_id: `ag-${TC}-1`, reporte: 'leído' }], 'leído si alguno se leyó');
+  assert.equal(j.ilegibles, 1, 'el renglón roto se cuenta');
+});
+
 test('ReviewerAgents_MapaDeLaCorrida @A64 — por revisor, cada salida con su vuelta, su agente y si su reporte se leyó; y el freno lo nombra', (t) => {
   // 🔴 rojo si: el subcomando no existe, no ata el agente a su salida, mezcla otra historia, o el mensaje del freno no
   // dice cómo obtener el agente sin abrir el registro

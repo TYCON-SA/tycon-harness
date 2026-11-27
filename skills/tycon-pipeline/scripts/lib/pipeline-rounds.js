@@ -772,29 +772,46 @@ function agentesDeLaCorrida() {
   const all = rc.readAll(stateDirOf(os.homedir()));
   if (all.error) return { error: `no pude leer el registro de críticos (${all.error})` };
   const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
-  const revisores = {};
-  const salidaDe = (advisor, iter) => {
-    const lista = (revisores[advisor] = revisores[advisor] || []);
-    let x = lista.find((y) => y.iter === iter);
-    if (!x) { x = { iter, agent_id: null, reporte: 'sin reporte' }; lista.push(x); }
+  // una fila por salida: la sesión que la anotó, el revisor y la vuelta. La vuelta se cuenta por sesión, así que dos
+  // sesiones de la misma corrida tienen cada una su «vuelta 1». El reporte ya trae la vuelta de su salida (la ató el arnés
+  // al anotarlo); sin vuelta, dos agentes distintos no comparten fila
+  const revisores = Object.create(null);
+  const filas = [];
+  const salidaDe = (l, agente) => {
+    const iter = l.iter ?? null;
+    let x = filas.find((y) => y.sesion === l.sessionKey && y.advisor === l.advisor && y.iter === iter
+      && (iter !== null || !agente || !y.agent_id || y.agent_id === agente));
+    if (!x) {
+      x = { sesion: l.sessionKey, advisor: l.advisor, iter, agent_id: null, leido: false, motivo: null, reportes: 0 };
+      filas.push(x);
+    }
+    if (agente && !x.agent_id) x.agent_id = agente;
     return x;
   };
   for (const l of lines) {
-    if (!l || !l.advisor) continue;
-    if (l.kind === 'launched') salidaDe(l.advisor, l.iter ?? null);
-    else if (l.kind === 'launch-agent') salidaDe(l.advisor, l.iter ?? null).agent_id = l.agent_id || null;
+    if (!l || typeof l !== 'object' || typeof l.advisor !== 'string' || !l.advisor) continue;
+    if (l.kind === 'launched') salidaDe(l, null);
+    else if (l.kind === 'launch-agent') salidaDe(l, l.agent_id || null);
     else if (l.kind === 'report') {
-      const x = salidaDe(l.advisor, l.iter ?? null);
-      if (l.agent_id && !x.agent_id) x.agent_id = l.agent_id;
-      x.reporte = l.readable ? 'leído' : `no se leyó${l.reason ? ` (${l.reason})` : ''}`;
+      const x = salidaDe(l, l.agent_id || null);
+      x.reportes += 1;
+      // leída si alguno de sus reportes se leyó, como el cruce
+      if (l.readable) x.leido = true;
+      else x.motivo = l.reason || x.motivo;
     }
   }
+  for (const x of filas) {
+    const reporte = x.leido ? 'leído' : x.reportes ? `no se leyó${x.motivo ? ` (${x.motivo})` : ''}` : 'sin reporte';
+    (revisores[x.advisor] = revisores[x.advisor] || []).push({ iter: x.iter, agent_id: x.agent_id, reporte });
+  }
   for (const lista of Object.values(revisores)) lista.sort((a, b) => (a.iter ?? 0) - (b.iter ?? 0));
-  return { story: String(marker.storyId), run: runDir ? path.basename(runDir) : null, revisores };
+  return { story: String(marker.storyId), run: runDir ? path.basename(runDir) : null, revisores: { ...revisores },
+    ...(all.unreadable ? { ilegibles: all.unreadable } : {}) };
 }
 
 function cmdReviewerAgents(cmd, args) {
-  const r = agentesDeLaCorrida();
+  let r;
+  try { r = agentesDeLaCorrida(); } catch (e) { r = { error: `no pude leer la corrida (${(e && (e.code || e.message)) || 'error'})` }; }
   if (r.error) { process.stderr.write(`⛔ reviewer-agents: ${r.error}\n`); process.exit(2); }
   if (r.sinCorrida) {
     if (args.json) process.stdout.write(`${JSON.stringify({ story: null, run: null, revisores: {} })}\n`);
@@ -805,6 +822,7 @@ function cmdReviewerAgents(cmd, args) {
   const nombres = Object.keys(r.revisores).sort();
   const out = [`Revisores de la corrida de la historia ${r.story}${r.run ? ` (${r.run})` : ''}:`];
   if (!nombres.length) out.push('  (ninguna salida anotada todavía)');
+  if (r.ilegibles) out.push(`  ⚠️ ${r.ilegibles} renglón(es) del registro no se pudieron leer: lo que falta puede estar ahí.`);
   for (const n of nombres) {
     for (const x of r.revisores[n]) out.push(`  ${n} · vuelta ${x.iter ?? '?'} · agente ${x.agent_id || '(sin dato)'} · ${x.reporte}`);
   }

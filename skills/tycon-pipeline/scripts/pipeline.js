@@ -173,11 +173,11 @@ function main() {
     '       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
+    '  node pipeline.js reviewer-agents [--json]   (por revisor de la corrida: vuelta, agente y si su reporte se leyó)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
     '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n' +
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
-    '  node pipeline.js reviewer-agents [--json]   (por revisor de la corrida: vuelta, agente y si su reporte se leyó)\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +
     '       requiere marker.js snapshot-iter (N-1) previo. Valida --files. Emite\n' +
