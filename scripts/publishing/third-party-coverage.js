@@ -22,7 +22,7 @@
 //
 // A mano:
 //   node scripts/publishing/third-party-coverage.js [--repo <agent-skills>] [--manifest <json>] [--skip-content] [--json]
-//   Sin --repo: el agent-skills de scripts/lib/skills-dir.js (TYCON_SKILLS_DIR o ~/.claude/agent-skills).
+//   Sin --repo: el agent-skills de scripts/lib/skills-dir.js (TYCON_SKILLS_DIR o las skills instaladas).
 //   --skip-content: sólo universos, declaraciones y enlaces (lo que corre el pre-commit, en milisegundos).
 
 const fs = require('fs');
@@ -228,15 +228,18 @@ function listVersioned(repo) {
 }
 
 // ── el control ─────────────────────────────────────────────────────────────────────────────────────────────────
+// La carpeta de Claude Code de un repo se llama como la de la persona: el nombre lo dice tycon-home.js.
+const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/\./g, '\\.');
+
 /** La unidad con que se nombra un hallazgo: la carpeta de la skill (skills/x, .agents/skills/x) o la ruta. */
 function unitOf(p) {
-  const m = /^((?:\.agents\/|\.claude\/)?skills\/[^/]+)/.exec(p);
+  const m = new RegExp(`^((?:\\.agents\\/|${CLAUDE}\\/)?skills\\/[^/]+)`).exec(p);
   return m ? m[1] : p;
 }
 
 // La copia pública de un solo repo trae el arnés en la misma raíz que agent-skills: se reconoce por
 // este mismo control versionado en su lugar del arnés. Ahí sólo se mira lo que aporta agent-skills.
-const AREA_AGENT_SKILLS = /^(?:skills|agents|packs|\.agents|\.claude)\//;
+const AREA_AGENT_SKILLS = new RegExp(`^(?:skills|agents|packs|\\.agents|${CLAUDE})\\/`);
 const DEL_ARNES = 'scripts/publishing/third-party-coverage.js';
 
 function checkCoverage({ repo, manifest, skipContent = false }) {

@@ -190,6 +190,8 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
   const hpCopy = path.join(sep, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'harness-path.js');
   fs.mkdirSync(path.dirname(hpCopy), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'harness-path.js'), hpCopy);
+  // con la definición del lado de las skills al lado, como en un clon de skills de verdad
+  fs.copyFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'), path.join(path.dirname(hpCopy), 'state-dir.js'));
   const sepGot = inChild(`console.log(JSON.stringify(require(${JSON.stringify(hpCopy)}).resolver({ home: ${JSON.stringify(home)}, env: {} }).dir))`, { home });
   assert.strictEqual(sepGot, clone, 'harness-path.js sin tycon-home.js al lado dejó de resolver');
   // y si tycon-home.js ESTÁ al lado y no carga, harness-path.js tira: no sigue callado con su copia
@@ -549,6 +551,73 @@ it('T3e DotClaudeCeiling_PrivateOwnFile_NotCompared @story-8.128 @ac-6 — en el
   assert.deepStrictEqual([v.up, v.down], [[], []], 'el archivo del privado no se compara');
   lab.git(['checkout', '--quiet', lab.tip]);
   assert.deepStrictEqual(ceilingVerdict(lab.root, { files: { 'scripts/propio.json': 2 } }, new Set()).down, ['scripts/propio.json: 2 → 0'], 'sin superposición se compara como siempre');
+});
+
+// ── T824a · T824b: lo que no le puede preguntar a tycon-home.js lee su ruta de un archivo del instalador ────────────────
+// Ningún archivo de B1_DONE arma una ruta vieja a mano: las copias fijas de arranque leen places.json / places.sh, que el
+// instalador escribe al lado, y la línea del índice le pregunta a tycon-home.js. Ninguno sigue en legacy-home-names.json,
+// que al final queda sólo con las definiciones (tycon-home.js, su copia firmada del freno, state-dir.sh y
+// npm/home-paths.json, que no le pueden preguntar a nadie).
+// stable-data: una lista de rutas; el nombre del gancho de git no es un commit
+const B1_DONE = ['scripts/setup/harness/bootstrap.js', 'scripts/setup/harness/bootstrap-fallback.sh', 'scripts/hooks/git-pre-commit-global.sh',
+  'scripts/setup/harness/team-stories/githooks-pre-commit', 'scripts/hooks/test-scope-guard-pre.sh',
+  'scripts/setup/harness/bootstrap-fallback.ps1', 'scripts/setup/harness/import-line.js',
+  'scripts/install-tycon-hooks.ps1', 'scripts/setup/ensure-sqlite3.ps1', 'scripts/ci/nightly-dod-notice.sh', 'scripts/hooks/harness-bootstrap-heal.sh',
+  'integrations/azure-devops/scripts/on-story-create.js', 'skills/tycon-story-followup-link/scripts/on-story-create.js'];
+it('T824a B1_FixedCopiesOutOfTheList_NoDotClaude @story-8.24 @ac-3', () => {
+  const L = legacy();
+  const listed = new Set([...L.entries, ...(L.until_d || [])].map((e) => e.path));
+  for (const f of B1_DONE) {
+    assert.ok(!listed.has(f), `legacy-home-names.json: ${f} ya no arma rutas viejas y sigue en la lista`);
+    // como el techo: un enchufe de Claude Code (settings.json, CLAUDE.md, skills…) no cuenta
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const n = [...text.matchAll(/(?<![A-Za-z0-9_.-])\.claude(?![A-Za-z0-9_])/g)].filter((m) => !PLUG_AFTER.test(text.slice(m.index + m[0].length))).length;
+    assert.strictEqual(n, 0, `${f}: nombra «.claude» ${n} vez/veces (pedíselo a places.json / places.sh o a tycon-home.js)`);
+  }
+});
+
+// El archivo del instalador al lado de las copias fijas, y la copia que da las mismas rutas con él y sin él (la primera
+// sesión después de una actualización que hizo el código de antes no lo tiene).
+it('T824b Places_WrittenByInstaller_SamePathsWithAndWithout @story-8.24 @ac-3', () => {
+  const home = fs.realpathSync(tmp('tycon-home-t3c-'));
+  const H = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
+  const TH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  const prev = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, TYCON_HOME: process.env.TYCON_HOME };
+  process.env.HOME = home; process.env.USERPROFILE = home; delete process.env.TYCON_HOME;
+  try {
+    H.copyBootstrap({ home, env: { ...process.env } }, ROOT, {});
+    const dir = path.join(TH.legacyStateDir(home), 'harness');
+    const places = JSON.parse(fs.readFileSync(path.join(dir, 'places.json'), 'utf8'));
+    assert.deepStrictEqual(places, {
+      state_dir: TH.legacyStateDir(home), legacy_state_dir: TH.legacyStateDir(home), claude_dir: TH.claudeDir(home),
+      skills_dir: TH.installedSkillsDir(home), place: TH.placePath(home), legacy_place: TH.legacyPlacePath(home), config_file: TH.configFile(home),
+    });
+    const sh = fs.readFileSync(path.join(dir, 'places.sh'), 'utf8');
+    assert.ok(sh.includes(`TYCON_P_PLACE='${TH.placePath(home)}'`), sh);
+    // la copia fija: el mismo lugar con el archivo y sin él (el árbol no está: sale 1 nombrando el lugar que buscó)
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    for (const k of Object.keys(env)) if (/^TYCON_/.test(k)) delete env[k];
+    const run = () => spawnSync(process.execPath, [path.join(dir, 'bootstrap.js'), 'version'], { env, encoding: 'utf8' });
+    const con = run();
+    fs.renameSync(path.join(dir, 'places.json'), path.join(dir, 'places.json.aparte'));
+    const sin = run();
+    assert.strictEqual(con.status, 1, con.stderr);
+    assert.ok(con.stderr.includes(TH.placePath(home)), `con places.json nombra el lugar: ${con.stderr}`);
+    assert.deepStrictEqual([sin.status, sin.stderr], [con.status, con.stderr], 'sin places.json, las mismas rutas');
+    // primero manda tycon-home.js de la copia del programa: un places.json con otro lugar no le gana
+    fs.writeFileSync(path.join(dir, 'places.json'), JSON.stringify({ state_dir: path.dirname(dir), place: path.join(home, 'otro-lugar') }));
+    assert.deepStrictEqual([run().status, run().stderr], [con.status, con.stderr], 'con la copia del programa, el archivo no manda');
+    // sin la copia del programa, manda el archivo… si es de esta casa (su estado es la carpeta de arriba de la copia)
+    fs.renameSync(path.join(dir, 'program'), path.join(dir, 'program.aparte'));
+    const otro = run();
+    assert.ok(otro.stderr.includes(path.join(home, 'otro-lugar')), otro.stderr);
+    fs.writeFileSync(path.join(dir, 'places.json'), JSON.stringify({ state_dir: path.join(home, 'otra-casa'), place: path.join(home, 'otro-lugar') }));
+    const ajeno = run();
+    assert.deepStrictEqual([ajeno.status, ajeno.stderr], [con.status, con.stderr], 'un places.json de otra casa no manda');
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 // ── T37: el retiro tiene fecha y story ─────────────────────────────────────────────────────────────────────────────

@@ -301,6 +301,23 @@ test('T18 EscC2_EscribirLaConversacion_Frena — el agente no puede escribir en 
   assert.match(ps.stderr, /ESC-C2/);
 });
 
+test('T18b SinAyudante_FrenaDeMas @story-8.24 — sin scripts/lib/state-dir.sh al lado, GIT-C4 frena el git add masivo y ESC-C2 no aplica la excepción de la memoria', () => {
+  // una copia suelta del freno, sin la carpeta lib/ al lado: el ayudante no carga
+  const suelta = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-sin-ayudante-'));
+  fs.mkdirSync(path.join(suelta, 'hooks'));
+  const hook = path.join(suelta, 'hooks', 'safety-guard-pre.sh');
+  fs.copyFileSync(HOOK, hook);
+  try {
+    const c4 = freno('cd /tmp && git add -A', { hook });
+    assert.strictEqual(veredicto(c4), 'deny', `git add -A sin ayudante: ${c4.stderr}`);
+    assert.match(c4.stderr, /GIT-C4/);
+    assert.match(c4.stderr, /state-dir\.sh/, 'dice qué le falta');
+    // la excepción de la memoria pedía la carpeta de Claude Code por su nombre: sin él no vale para otro `projects\<x>\memory`
+    const ps = freno('Set-Content -Path C:\\Users\\x\\.claude\\projects\\p\\s.jsonl -Value "{}"; ls D:\\projects\\foo\\memory', { herramienta: 'PowerShell', hook });
+    assert.strictEqual(veredicto(ps), 'deny', `ESC-C2 sin ayudante: ${ps.stderr}`);
+  } finally { fs.rmSync(suelta, { recursive: true, force: true }); }
+});
+
 test('T19 EscC1_MotivoEnElCartel — el cartel de ESC-C1 dice por qué la ventana no lo dejó pasar y cómo se firma', () => {
   const r = freno('TYCON_NEW_NAMES=0 git commit -m x', { codex: true, conversacion: [deLaPersona('autorizo TYCON_NEW_NAMES', 45)] });
   assert.strictEqual(r.status, 2);

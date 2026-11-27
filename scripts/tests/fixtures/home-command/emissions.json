@@ -39,12 +39,6 @@
       "forma": "home"
     },
     {
-      "archivo": "scripts/hooks/safety-guard-pre.sh",
-      "linea": 607,
-      "viejo": "node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso.",
-      "forma": "home"
-    },
-    {
       "archivo": "scripts/setup/harness.js",
       "linea": 1231,
       "viejo": "node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set",
@@ -102,18 +96,6 @@
       "archivo": "scripts/setup/harness/report.js",
       "linea": 163,
       "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js",
-      "forma": "home"
-    },
-    {
-      "archivo": "scripts/setup/install-effects.json",
-      "linea": 146,
-      "viejo": "node ~/.claude/tycon-claude-guides/scripts/lib/tycon-config.js set ado.org <url>",
-      "forma": "home"
-    },
-    {
-      "archivo": "scripts/setup/install-effects.json",
-      "linea": 147,
-      "viejo": "node ~/.claude/tycon-claude-guides/scripts/lib/tycon-config.js set telegram.chat_id <chat>",
       "forma": "home"
     },
     {

@@ -5,7 +5,7 @@
  *
  * Los frenos y los escapes del tablero no son «de esta máquina»: cada máquina sube sus dos registros completos
  * al buzón (`upload-runs.js`, una vez por día, comprimidos, con una `cobertura.json` que dice si pudo leerlos), la
- * bajada los deja en `~/.claude/.tycon-pipeline/corridas-buzon/<maquina>/registros/`, y este archivo los
+ * bajada los deja en `~/.tycon/state/corridas-buzon/<maquina>/registros/`, y este archivo los
  * CUENTA —junto con los de esta máquina, leídos del disco— y le entrega al tablero sólo números.
  *
  * 🔴 LO QUE SALE DE ACÁ LO VE TODO EL EQUIPO (la página del tablero se commitea). Los registros traen

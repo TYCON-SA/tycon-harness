@@ -91,14 +91,16 @@ function signature(pid, list) {
 /**
  * Las carpetas de tareas de la sesión `sid`. Claude Code las nombra por la carpeta donde arrancó la sesión, con todo lo
  * que no es letra ni número cambiado por `-`. Esa carpeta es la que dice su archivo, o el repo del que sale su carpeta
- * de trabajo aislada (`<repo>/.claude/worktrees/<nombre>`) si entró después. No se recorre la carpeta entera: puede
- * tener miles, y esto corre en cada turno de la coordinadora.
+ * de trabajo aislada (`worktrees/<nombre>` en la carpeta de Claude Code del repo) si entró después. No se recorre la
+ * carpeta entera: puede tener miles, y esto corre en cada turno de la coordinadora.
  */
+// la carpeta de Claude Code de un repo se llama como la de la persona: el nombre lo dice tycon-home.js
+const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/\./g, '\\.');
 function taskDirs(sid, root, cwd) {
   if (!cwd) return [];
   const slug = (p) => String(p).replace(/[^a-zA-Z0-9]/g, '-');
   const raices = new Set([slug(cwd)]);
-  const aislada = /^(.*?)[/\\]\.claude[/\\]worktrees[/\\]/.exec(String(cwd));
+  const aislada = new RegExp(`^(.*?)[/\\\\]${CLAUDE}[/\\\\]worktrees[/\\\\]`).exec(String(cwd));
   if (aislada) raices.add(slug(aislada[1]));
   return [...raices].map((s) => path.join(root, s, sid, 'tasks')).filter((d) => { try { return fs.statSync(d).isDirectory(); } catch (_) { return false; } });
 }

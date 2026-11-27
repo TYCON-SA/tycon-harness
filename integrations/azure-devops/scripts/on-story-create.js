@@ -80,7 +80,9 @@ if (!filePath.endsWith('.md')) process.exit(0);
 
 // Skip tooling/config — no son stories de implementación.
 const home = os.homedir();
-if (filePath.startsWith(path.join(home, '.claude'))) process.exit(0);
+// la carpeta de Claude Code, de tycon-home.js del árbol (esta integración vive en él)
+const claudeDir = (() => { try { return require(path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js')).claudeDir(home); } catch (_) { return null; } })();
+if (claudeDir && filePath.startsWith(claudeDir)) process.exit(0);
 // el arnés por cualquiera de sus dos nombres, como segmento de ruta (escritos acá, para correr aunque falte
 // scripts/lib al lado — copia declarada en scripts/tests/fixtures/harness-place-names.json)
 if (/(^|[\\/])(tycon-claude-guides|tycon-harness)([\\/]|$)/.test(filePath)) process.exit(0);

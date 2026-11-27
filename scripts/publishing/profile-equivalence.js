@@ -12,7 +12,7 @@
  * actual, en esta máquina, con el perfil del equipo:
  *
  *   1. los HOOKS que registra el instalador, por NOMBRE (evento + matcher + script): los dos instaladores
- *      corren con `--check` en HOMEs temporales con `~/.claude/agent-skills` enlazado al real (sin él abortan),
+ *      corren con `--check` en HOMEs temporales con `~/.tycon/harness` enlazado al real (sin él abortan),
  *      con `TYCON_CODEX=0` y todos los `TYCON_NO_*` (el instalador lanza suites, el refresco de `az`, el
  *      despliegue Codex y sesiones LLM reales aun con HOME temporal). Por nombre y no por comando: cada clon
  *      registra la ruta absoluta de sus hooks;
@@ -35,7 +35,7 @@
  * Uso: node scripts/publishing/profile-equivalence.js --base <sha> [--out <md>] [--json]
  *        [--real-clone <dir>]     el checkout que el equipo usa (por defecto, este clon); en un clon descartable
  *                                 conviene pasar el checkout real: la base compara contra la carpeta fija de entonces
- *        [--agent-skills <dir>]   el repo de agent-skills (por defecto TYCON_SKILLS_DIR o ~/.claude/agent-skills)
+ *        [--agent-skills <dir>]   el repo de agent-skills (por defecto TYCON_SKILLS_DIR o las skills instaladas)
  *
  *      node scripts/publishing/profile-equivalence.js --settings <antes.json> <despues.json>
  *        Modo APARTE: compara dos `settings.json` por los hooks DEL ARNÉS (evento → matcher → nombre del script →
@@ -107,8 +107,10 @@ function correr(cmd, args, opts = {}) {
 /** Un HOME temporal como el del instalador: agent-skills enlazado; el resto vacío. */
 function casa(skills) {
   const h = tmp('equiv-perfil-home-');
-  fs.mkdirSync(path.join(h, '.claude'), { recursive: true });
-  fs.symlinkSync(skills, path.join(h, '.claude', 'agent-skills'));
+  // las skills instaladas, donde las busca tycon-home.js
+  const instaladas = require('../setup/harness/tycon-home.js').installedSkillsDir(h);
+  fs.mkdirSync(path.dirname(instaladas), { recursive: true });
+  fs.symlinkSync(skills, instaladas);
   return h;
 }
 function envDe(home, extra = {}) { return Object.assign({ PATH: process.env.PATH, HOME: home, TMPDIR: os.tmpdir() }, SIN_EFECTOS, extra); }
@@ -221,7 +223,7 @@ function main() {
   const clonReal = real(arg('--real-clone', RAIZ)) || RAIZ;
   let skills = arg('--agent-skills');
   // «No pude preguntar» no es «está en el lugar de siempre»: la biblioteca tira cuando su vecina está y no carga, y
-  // seguir con ~/.claude/agent-skills mediría en silencio las skills instaladas en vez de las del clon.
+  // seguir con ~/.tycon/harness mediría en silencio las skills instaladas en vez de las del clon.
   if (!skills) {
     try { skills = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs().repo; } catch (e) {
       console.error(`no pude resolver la carpeta de skills: ${String((e && e.message) || e).split('\n')[0]} (o decila con --agent-skills <dir>)`);
@@ -387,7 +389,9 @@ function isHarnessClone(dir) { try { return Boolean(dir) && fs.existsSync(path.j
 function isHarnessHook(cmd) {
   const P = require('../setup/harness/place.js');
   const names = `(?:${P.PLACE_NAME}|${P.LEGACY_PLACE_NAME})`;
-  if (new RegExp(`(?:^|[\\s"'/\\\\])${names}[/\\\\]scripts[/\\\\]hooks[/\\\\]|agent-skills/skills/|\\.claude[/\\\\]${names}(?![\\w.-])`).test(cmd)) return true;
+  // la carpeta de Claude Code por su nombre, de tycon-home.js
+  const claude = path.basename(require('../setup/harness/tycon-home.js').claudeDir(os.homedir())).replace(/\./g, '\\.');
+  if (new RegExp(`(?:^|[\\s"'/\\\\])${names}[/\\\\]scripts[/\\\\]hooks[/\\\\]|agent-skills/skills/|${claude}[/\\\\]${names}(?![\\w.-])`).test(cmd)) return true;
   const m = /([^\s"']*)\/scripts\/hooks\/[\w.-]+/.exec(cmd);
   return Boolean(m && isHarnessClone(m[1].replace(/^~(?=\/)/, os.homedir()).replace(/^\$HOME(?=\/)/, os.homedir())));
 }

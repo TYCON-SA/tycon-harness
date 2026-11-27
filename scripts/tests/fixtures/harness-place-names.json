@@ -23,7 +23,6 @@
     { "path": "scripts/hooks/git-pre-commit-global.sh", "why": "se instala COPIADO en ~/.git-hooks: no tiene el árbol al lado" },
     { "path": ".githooks/pre-commit-checks", "why": "los controles del commit del arnés: su parte de las skills busca el arnés, igual que el lector de las skills" },
     { "path": "packs/bizuit/templates/stories/githooks-pre-commit.template", "why": "(viaja con el perfil del equipo, en su paquete) la plantilla del hook de pre-commit del repo de historias de un producto: se copia a ese repo, que no tiene el árbol del arnés al lado, y busca el arnés por sus dos lugares" },
-    { "path": "scripts/setup/harness/team-stories/githooks-pre-commit", "why": "(story 8.40, el cierre) la plantilla genérica del hook de pre-commit del repo de historias de un equipo nuevo, que copia harness.js team-init: corre en ese repo, que no tiene el árbol del arnés al lado ni puede cargar su biblioteca, y busca el arnés por sus dos lugares" },
     { "path": "scripts/production/install-guard.sh", "why": "corre con sudo y busca el clon del arnés antes de tener el árbol" },
     { "path": "scripts/lib/tycon-config.js", "why": "viaja solo a la copia del freno de producción en /opt (install-guard.sh, ARCHIVOS)" },
     { "path": "scripts/lib/legacy-names.js", "why": "viaja solo a la copia del freno de producción en /opt; además genera los envoltorios" },
@@ -53,7 +52,7 @@
     { "path": "integrations/azure-devops/scripts/on-story-create.js", "member": "salteo del arnés", "imports": false, "why": "integración: corre igual si le falta scripts/lib al lado, con los nombres escritos" },
     { "path": "skills/tycon-story-followup-link/scripts/on-story-create.js", "member": "salteo del arnés", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
     { "path": "skills/tycon-pipeline/scripts/package-equivalence.js", "member": "SALTAR", "imports": false, "why": "skills: pueden vivir en un clon aparte sin scripts/ al lado" },
-    { "path": "scripts/controls-bench/advisor-runner.js", "member": "PERMITIDO_FUERA_DEL_CORRAL", "imports": false, "why": "lo que los revisores pueden leer fuera de su fixture: los dos nombres del lugar mientras dure la transición (segunda vuelta, M4); el banco corre este archivo suelto" }
+    { "path": "scripts/controls-bench/advisor-runner.js", "member": "PERMITIDO_FUERA_DEL_CORRAL", "imports": true, "why": "lo que los revisores pueden leer fuera de su fixture: los dos nombres del lugar mientras dure la transición (segunda vuelta, M4); desde la 8.24 B2-4a los pide a place.js del árbol, que el banco tiene al lado" }
   ],
   "legacy_only": [
     { "path": "scripts/setup/harness/startup-line.js", "member": "REPO_RX / repoOf / isLinkPath", "why": "reconoce las líneas de arranque VIEJAS escritas en las máquinas (git pull por el nombre viejo)" },
@@ -112,8 +111,6 @@
     { "path": "scripts/ci/check-public-workflow.js", "member": "--publisher", "why": "el aviso de npm-publish.yml nombra el publicador de confianza (org / repo / workflow): es el nombre del repo en GitHub, no el lugar" }
   ],
   "place_text": [
-    { "path": "scripts/tools/context-budget.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" },
-    { "path": "scripts/tools/rules-distill.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" }
   ],
   "generated": [
     { "mark": "tycon-legacy-shim:", "why": "los envoltorios de los nombres viejos: los escribe legacy-names.js --write-shims desde sus tres plantillas, que nombran sólo el lugar (AC 10)" }

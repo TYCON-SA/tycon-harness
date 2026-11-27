@@ -65,7 +65,11 @@ require('../../lib/legacy-names.js').aliasArgv('scripts/tools/harness-map/census
 const args = process.argv.slice(2);
 const opcion = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const TCG = path.resolve(opcion('--tcg', path.join(__dirname, '..', '..', '..')));
-const SKILLS = path.resolve(opcion('--skills', path.join(os.homedir(), '.claude', 'agent-skills', 'skills')));
+// las carpetas de la máquina (la de Claude Code, las skills instaladas) las dice tycon-home.js
+const TH = require(path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'));
+const CLAUDE = path.basename(TH.claudeDir(os.homedir())).replace(/\./g, '\\.');
+// sin --skills, las skills instaladas de la máquina
+const SKILLS = path.resolve(opcion('--skills', path.join(TH.installedSkillsDir(os.homedir()), 'skills')));
 const MAPA = opcion('--map', path.join(TCG, 'artifacts', 'mapa-arnes.html'));
 const FUERA = opcion('--outside', path.join(TCG, 'scripts', 'tools', 'harness-map', 'fuera-del-mapa.json'));
 
@@ -103,7 +107,7 @@ const REGLAS = [
   [/^(ci-templates|pipelines)\//, 'pipeline'],
   [/^(scripts|build|adapters)\//, 'script'],
   [/^specs\//, 'especificación'],
-  [/^(engram-version|~\/\.claude\/settings\.json)$/, 'configuración'],
+  [new RegExp(`^(engram-version|~\\/${CLAUDE}\\/settings\\.json)$`), 'configuración'],
 ];
 
 // El tipo de una ficha: el de la ruta de su primer archivo (null = ruta sin regla).

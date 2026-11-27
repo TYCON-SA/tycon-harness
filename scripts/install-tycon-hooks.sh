@@ -13,7 +13,7 @@
 #     viejo, que no conoce esa variable) las sigue haciendo.
 #   - Opt-out via env var: `TYCON_NO_AUTOINSTALL=1` → exit 0 silencioso.
 #   - Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js): sólo lo de fondo de una lista cerrada, y nada
-#     en ~/.claude (ver «Sin Claude Code», más abajo). Las skills, también las de terceros, las enlaza harness.js en
+#     en la carpeta de Claude Code (ver «Sin Claude Code», más abajo). Las skills, también las de terceros, las enlaza harness.js en
 #     ~/.codex/skills desde la versión bajada: no pasan por acá.
 #   - Atomic write (tmp + mv).
 #   - Cross-platform: bash + python3 + node (sin dependencia de jq).
@@ -58,7 +58,7 @@ fi
 # ============================================================
 CHECK_ONLY=0
 REPORT_JSON=""     # --report-json <archivo>: la lista de piezas del arnés que quedan en la máquina
-# --link <ruta>: la ÚNICA forma de re-apuntar el lugar del arnés (~/.claude/tycon-harness) a otro clon
+# --link <ruta>: la ÚNICA forma de re-apuntar el lugar del arnés (placePath de tycon-home.js) a otro clon
 ENLACE_FORZAR=""
 PLAN_JSON=""       # --plan-json <archivo>: con --check, el plan como datos para harness.js install
 # Los nombres viejos de las opciones siguen andando. Sin argumentos —como corre en cada arranque de
@@ -126,11 +126,13 @@ fi
 # La carpeta del estado (el candado, los sellos, los registros de lo de fondo)
 # ============================================================
 # La dice scripts/lib/state-dir.sh, con la regla de tycon-home.js: en una máquina que vive en la casa propia del arnés,
-# <casa>/state; si no, la carpeta del mecanismo de siempre. Sin el ayudante (un árbol a medias) se queda con la de
-# siempre, como antes de que existiera.
+# <casa>/state; si no, la carpeta del mecanismo de siempre. De ahí sale también la carpeta de las skills instaladas
+# (INSTALLED_SKILLS). Sin el ayudante (un árbol a medias) el estado va a la carpeta temporal y no hay skills instaladas
+# conocidas.
 _SD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/state-dir.sh"
-if [[ -f "$_SD_LIB" ]] && . "$_SD_LIB" 2>/dev/null; then STATE_DIR="$(tycon_state_dir)"
-else STATE_DIR="${HOME}/.claude/.tycon-pipeline"; fi
+INSTALLED_SKILLS=""
+if [[ -f "$_SD_LIB" ]] && . "$_SD_LIB" 2>/dev/null; then STATE_DIR="$(tycon_state_dir)"; INSTALLED_SKILLS="$(tycon_skills_dir)"
+else STATE_DIR="${TMPDIR:-/tmp}/tycon-state"; fi
 unset _SD_LIB
 
 # ============================================================
@@ -143,7 +145,7 @@ unset _SD_LIB
 # el AGENTS.md puntero en los repos de proyecto (Codex los usa igual).
 # Todo lo demás —el lugar del arnés, los enlaces, settings.json, el paso de skills de este archivo, los bloques de
 # CLAUDE.md, los comandos, el rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y
-# nada se escribe en ~/.claude. Las skills de esa máquina no faltan: las del arnés y las de terceros vienen en la versión
+# nada se escribe en la carpeta de Claude Code. Las skills de esa máquina no faltan: las del arnés y las de terceros vienen en la versión
 # bajada (release.js repone las de terceros al instalar y al actualizar) y harness.js las enlaza en ~/.codex/skills.
 # Cada bloque saltado lleva la guarda `CLAUDE_OFF`.
 CLAUDE_OFF=0; [[ "${TYCON_HARNESS_CLAUDE:-}" == "off" ]] && CLAUDE_OFF=1
@@ -266,7 +268,7 @@ plan_copy() { # plan_copy <kind> <origen> <destino> <id>: igual → keep · dist
 # tocar el settings.json real). Default = el real del dev.
 SETTINGS="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
 
-# Hooks que viven en este repo (~/.claude/tycon-harness/scripts/hooks/), no en
+# Hooks que viven en este repo (`scripts/hooks/` del lugar del arnés), no en
 # agent-skills. Se distribuyen via git pull del repo + install-tycon-hooks.sh.
 # Resolvemos al directorio padre del script actual (cross-symlink-safe).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -284,7 +286,7 @@ HNODE="$(harness_node_bin)"
 if [[ "$HNODE" != "node" ]]; then node() { "$HNODE" "$@"; }; fi
 
 # ── Dónde están las skills: lo contesta la regla, no una ruta escrita ───────────────────────────────────────────────
-# Una ruta escrita (`AGENT_SKILLS="$HOME/.claude/agent-skills/skills"`) de la que salga todo —los hooks que registra y
+# Una ruta escrita (`AGENT_SKILLS=<las skills instaladas>/skills`) de la que salga todo —los hooks que registra y
 # las seis suites rápidas que corre en cada arranque— haría que, con un clon de trabajo que trae sus propias skills, el
 # instalador corrido desde él probara las INSTALADAS: daría verde sin haber probado el cambio. La regla vive
 # en scripts/lib/skills-dir.js (contrato C3) y acá se le pregunta de las dos formas que tiene:
@@ -315,7 +317,7 @@ if [[ -f "$SCRIPT_DIR/lib/legacy-names.sh" ]]; then . "$SCRIPT_DIR/lib/legacy-na
 # ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (el lugar del arnés, los enlaces, settings.json y las skills) no corre
 if [[ "$CLAUDE_OFF" != "1" ]]; then
 
-# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo ─────────────────────────────────────────
+# ── El lugar del arnés (placePath de tycon-home.js) y el nombre viejo ─────────────────────────────────────────
 # Los prompts de revisores, pasos y skills nombran al arnés por este lugar (un prompt no lee una
 # variable) y el clon puede vivir en cualquier carpeta. La regla de nacimiento vive en canonical-path.js: el lugar nace
 # apuntando a donde apunta el nombre viejo (o a lo que dice el estado) y no al clon que corre este instalador; el viejo
@@ -346,7 +348,7 @@ fi
 
 # ── Los enlaces del repo único ──────────────────────────────────────────────────────────────
 # Cuando ESTE clon trae skills/ y agents/ en su raíz (el repo público: el arnés y agent-skills juntos), todo lo que
-# busca a agent-skills tiene que encontrarlo acá sin ninguna variable puesta: ~/.claude/agent-skills → el clon,
+# busca a agent-skills tiene que encontrarlo acá sin ninguna variable puesta: las skills instaladas → el clon,
 # ~/.claude/agents → <clon>/agents y ~/.claude/skills → <clon>/skills, con las mismas reglas del enlace de arriba (se
 # crean si faltan, se reparan colgados, no se mueve uno que apunta a otro lado que sirve, nunca se pisa una carpeta real:
 # ahí va un enlace por entrada). Dos llamadas: ACÁ sólo agent-skills (la verificación de abajo y el paso de terceros lo
@@ -354,7 +356,7 @@ fi
 # corrida. En el clon del equipo (sin skills/ en la raíz) no imprime ni toca nada. Respeta --check; las piezas `link` las
 # anota el propio guion en TYCON_REPORT_PIECES. Detalle y casos: scripts/lib/canonical-path.js.
 # El clon del equipo TAMBIÉN trae skills/ y agents/, y la máquina puede tener además su clon viejo de agent-skills en
-# ~/.claude/agent-skills (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
+# las skills instaladas (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
 # (`separateSkillsClone`), igual para este archivo y para el .ps1. Una carpeta real en ese lugar que NO es un clon de
 # agent-skills sigue avisando.
 _repo_links() { # _repo_links agent-skills|entries
@@ -379,7 +381,7 @@ fi
 # Si no existe settings.json → crear skeleton mínimo. Con --check no se escribe: el python de más
 # abajo lee un settings.json que falta como vacío y reporta lo que faltaría.
 if [[ ! -f "$SETTINGS" && "$CHECK_ONLY" != "1" ]]; then
-  mkdir -p "$HOME/.claude"
+  mkdir -p "$(dirname "$SETTINGS")"
   cat > "$SETTINGS" <<'JSON'
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
@@ -389,7 +391,7 @@ JSON
 fi
 
 # Verificar que agent-skills está: dónde ESCRIBE esta corrida (ver `_skills_dir`, arriba). Va acá y no antes: en el repo
-# único, `_repo_links agent-skills` acaba de dejar el enlace ~/.claude/agent-skills, que es «lo instalado».
+# único, `_repo_links agent-skills` acaba de dejar el enlace de las skills instaladas, que es «lo instalado».
 #   · lo instalado existe            → ésa es la ruta de siempre, la que queda en settings.json (dos clones, o el enlace).
 #   · no existe y el clon es unido   → sólo con --check: --check no crea los enlaces, así que
 #                                      esta corrida mira las skills en el propio clon —donde el enlace las va a dejar—.
@@ -406,14 +408,15 @@ if [[ -f "$SKILLS_DIR_JS" ]]; then
     _SKILLS_WHY="$(_skills_dir write --skills 2>&1 >/dev/null | head -1 | sed 's/^skills-dir: //')" || true
   fi
 else
-  # Sin la biblioteca (una copia parcial de este archivo, como las que arman algunas pruebas): lo de siempre, la ruta
-  # instalada. Es el único lugar donde queda escrita, y sólo vale cuando no hay a quién preguntarle.
-  AGENT_SKILLS="$HOME/.claude/agent-skills/skills"; _SKILLS_FROM="installed"
+  # Sin la biblioteca (una copia parcial de este archivo, como las que arman algunas pruebas): lo de siempre, las skills
+  # instaladas que dice state-dir.sh. Sin él tampoco, no hay a quién preguntarle: se dice y se sale.
+  if [[ -n "$INSTALLED_SKILLS" ]]; then AGENT_SKILLS="$INSTALLED_SKILLS/skills"; _SKILLS_FROM="installed"
+  else _SKILLS_WHY="faltan scripts/lib/skills-dir.js y scripts/lib/state-dir.sh al lado del instalador: no sé dónde están las skills"; fi
 fi
 if [[ -n "$AGENT_SKILLS" && ! -d "$AGENT_SKILLS/tycon-pipeline" ]]; then
   _SKILLS_WHY="$AGENT_SKILLS no trae tycon-pipeline"
 elif [[ -n "$AGENT_SKILLS" && "$_SKILLS_FROM" != "installed" && "$CHECK_ONLY" != "1" ]]; then
-  _SKILLS_WHY="~/.claude/agent-skills no está (el enlace al clon no se pudo crear) y sin él no registro hooks hacia $AGENT_SKILLS"
+  _SKILLS_WHY="las skills instaladas no están${INSTALLED_SKILLS:+ en $INSTALLED_SKILLS} (el enlace al clon no se pudo crear) y sin él no registro hooks hacia $AGENT_SKILLS"
 fi
 if [[ -n "$_SKILLS_WHY" ]]; then
   echo "✗ tycon: agent-skills no encontrado — ${_SKILLS_WHY} — ver el README.md del arnés, 'Instalación'" >&2
@@ -422,7 +425,7 @@ fi
 AGENT_SKILLS_REPO="$(dirname "$AGENT_SKILLS")"   # la raíz que trae skills/ y agents/ (el contrato: skills = <raíz>/skills)
 if [[ "$_SKILLS_FROM" != "installed" ]]; then
   _CHECK_IN_CLONE="$AGENT_SKILLS_REPO"   # el paso de terceros de más abajo también mira ahí
-  echo "(--check) tycon: ~/.claude/agent-skills todavía no está: esta revisión mira las skills en $AGENT_SKILLS (el instalador crea el enlace)"
+  echo "(--check) tycon: las skills instaladas todavía no están: esta revisión mira las skills en $AGENT_SKILLS (el instalador crea el enlace)"
 fi
 
 # ── Las skills de terceros vuelven a su lugar ──────────────────────────────────────────────────────────────────────
@@ -463,8 +466,8 @@ fi
 # manifiesto): completa y en su lugar → keep; si no → add (sin red puede quedar pendiente: lo dice el cierre de install).
 if [[ -n "$PLAN_PIECES_TMP" && "${TYCON_THIRD_PARTY:-1}" != "0" && -f "$SCRIPT_DIR/publishing/third-party-skills.json" ]]; then
   # dónde mira si ya está (el clon, en el repo único sin el enlace todavía) y con qué ruta la anota: la del reporte y el
-  # estado, ~/.claude/agent-skills/…, aunque el enlace todavía no exista
-  _TP_WHERE="$AGENT_SKILLS_REPO"; [[ -n "${_CHECK_IN_CLONE:-}" ]] && _TP_WHERE="$HOME/.claude/agent-skills"
+  # estado, la de las skills instaladas, aunque el enlace todavía no exista
+  _TP_WHERE="$AGENT_SKILLS_REPO"; [[ -n "${_CHECK_IN_CLONE:-}" && -n "$INSTALLED_SKILLS" ]] && _TP_WHERE="$INSTALLED_SKILLS"
   python3 - "$SCRIPT_DIR/publishing/third-party-skills.json" "$STATE_DIR/third-party-state.json" "${_CHECK_IN_CLONE:-$AGENT_SKILLS_REPO}" "$_TP_WHERE" >> "$PLAN_PIECES_TMP" 2>/dev/null <<'PY' || PLAN_INCOMPLETE=1
 import json, os, sys
 manifest, state_file, repo, where_root = sys.argv[1:5]
@@ -492,7 +495,7 @@ fi
 
 # ============================================================
 # Integraciones — cada una tiene su llave en la configuración del arnés
-# (scripts/lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA) y, apagada, este
+# (scripts/lib/tycon-config.js: variable › ~/.tycon/config.json › perfil del equipo › APAGADA) y, apagada, este
 # instalador no registra sus hooks ni llama a su servicio. Un hook compartido con el núcleo no se desregistra:
 # saltea su parte adentro (el despachador de ediciones con el control de la integración de horas; bench-notice con lo
 # nocturno).
@@ -541,7 +544,7 @@ ENGRAM_HOOK_ON="$TYCON_INTEG_ENGRAM"
 if [[ -n "${TYCON_ENGRAM_HOOK-}" ]]; then if [[ "$TYCON_ENGRAM_HOOK" == "0" ]]; then ENGRAM_HOOK_ON=0; else ENGRAM_HOOK_ON=1; fi; fi
 # ============================================================
 # El perfil de instalación: `minimal` o `full`, de la configuración del arnés
-# (`install.profile`: TYCON_INSTALL_PROFILE › ~/.claude/tycon.json › perfil del equipo). Se lee UNA vez.
+# (`install.profile`: TYCON_INSTALL_PROFILE › ~/.tycon/config.json › perfil del equipo). Se lee UNA vez.
 #   · full, o SIN VALOR → todo, byte a byte (el perfil del equipo fija full; sin elegir se comporta como full).
 #   · minimal → sólo los hooks que scripts/setup/install-effects.json marca `minimal` (ocho, con el freno de
 #     comandos destructivos, que está en los dos perfiles y sólo lo apaga TYCON_SAFETY_GUARD=0, y el portón de edición,
@@ -584,7 +587,7 @@ PY
   fi
 fi
 case "$PROFILE_STATE" in
-  ok) [[ "$TYCON_PROFILE_VALUE" == "minimal" ]] && echo "tycon: perfil de instalación: minimal — con el freno de comandos destructivos y el de editar código sin historia ni ajuste puntual, sin los demás frenos, sin los bloques que cambian cómo contesta el asistente, sin los ajustes de settings.json, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" ;;
+  ok) [[ "$TYCON_PROFILE_VALUE" == "minimal" ]] && echo "tycon: perfil de instalación: minimal — con el freno de comandos destructivos y el de editar código sin historia ni ajuste puntual, sin los demás frenos, sin los bloques que cambian cómo contesta el asistente, sin los ajustes de settings.json, sin hooks de git ni tareas de fondo (full: install.profile en ~/.tycon/config.json)" ;;
   rota) echo "⚠ tycon: la configuración del arnés está ROTA — lo del perfil de instalación queda como estaba (ni se registra ni se saca; los dos frenos de comandos se registran igual) hasta arreglarla: node $SCRIPT_DIR/lib/tycon-config.js validate" ;;
   *) echo "⚠ tycon: sin scripts/lib/tycon-config.js (o sin node): no sé qué perfil de instalación tiene esta máquina — lo del perfil queda como estaba (los dos frenos de comandos se registran igual)" ;;
 esac
@@ -894,7 +897,7 @@ fi
 # causa. 0 = sí · 10 = no · cualquier otra cosa = no pude saberlo → se avisa con la causa.
 # ============================================================
 CODEX_ON=0
-# La llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil del equipo › apagada):
+# La llave es `integrations.codex` (TYCON_CODEX › ~/.tycon/config.json › perfil del equipo › apagada):
 # `1` sí · `0` no · `detect` lo que diga el disco (es lo que trae el perfil). Sin configuración: apagada —
 # afuera nadie despliega Codex sin pedirlo. Configuración ROTA: nada de Codex hasta arreglarla (ya se avisó arriba).
 # Sin lector (copia parcial de este archivo): la variable.
@@ -1025,7 +1028,7 @@ fi
 # un AGENTS.md de puntero ("las reglas viven en CLAUDE.md — leelo y aplicalo") en cada repo
 # bajo la raíz de repos de esta máquina que tenga CLAUDE.md y NO tenga AGENTS.md. Nunca pisa un
 # AGENTS.md existente (propio o de otro origen). El dev lo commitea una vez y le llega al equipo.
-# La raíz sale de scripts/lib/repos-root.js (TYCON_REPOS_ROOT, ~/.claude/tycon.json,
+# La raíz sale de scripts/lib/repos-root.js (TYCON_REPOS_ROOT, ~/.tycon/config.json,
 # las sesiones) y «repo del equipo» se decide con la organización configurada (ado.org): sin raíz o
 # sin organización no se deposita nada, y se dice. Opt-out: TYCON_NO_AGENTSMD_POINTER=1.
 if [[ "$CODEX_ON" == "1" && "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]]; then
@@ -1046,7 +1049,7 @@ if [[ "$CODEX_ON" == "1" && "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]]; then
   if [[ "$_RC_RAIZ" == "2" || "$_RC_ORG" == "2" ]]; then
     :
   elif [[ -z "$_REPOS_ROOT" ]]; then
-    echo "ℹ tycon/codex: sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no deposito punteros AGENTS.md"
+    echo "ℹ tycon/codex: sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.tycon/config.json): no deposito punteros AGENTS.md"
   elif [[ -z "$_ORG_NOMBRE" ]]; then
     echo "ℹ tycon/codex: sin organización de Azure DevOps configurada (ado.org): no sé cuáles repos son del equipo, no deposito punteros AGENTS.md"
   else
@@ -1578,6 +1581,18 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
     fi
   fi
   if cmp -s "$GIT_HOOK_SRC" "$GIT_HOOK_DST" 2>/dev/null; then record git-hook "$GIT_HOOK_DST" pre-commit; fi
+  # Al lado del gancho, el lugar del arnés que él no puede preguntarle a nadie (corre copiado, sin el árbol): places.sh,
+  # con la carpeta de Claude Code de state-dir.sh (los dos nombres del lugar los busca el gancho con esa carpeta), entre
+  # comillas simples, con la comilla simple escapada. Lo saca uninstall junto con el gancho (remove.js).
+  if [[ "$CHECK_ONLY" != "1" && -f "$GIT_HOOK_DST" ]] && type tycon_claude_dir >/dev/null 2>&1; then
+    _gh_q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+    _gh_cdir="$(tycon_claude_dir)"
+    _gh_places="$GIT_HOOKS_DIR/places.sh"
+    {
+      printf '%s\n' '# places.sh — lo escribe install-tycon-hooks.sh al instalar los ganchos globales de git; lo carga su harness_dir().'
+      printf 'TYCON_P_CLAUDE_DIR=%s\n' "$(_gh_q "$_gh_cdir")"
+    } > "$_gh_places.tmp.$$" 2>/dev/null && mv -f "$_gh_places.tmp.$$" "$_gh_places" 2>/dev/null || rm -f "$_gh_places.tmp.$$" 2>/dev/null
+  fi
   # El hooksPath global es lo que hace que ese archivo se use. Si NO está seteado, el
   # hook no corre en ningún lado y el sync de engram tampoco: se avisa, no se fuerza
   # (tocar la config global de git de otro sin avisar es peor que el problema).

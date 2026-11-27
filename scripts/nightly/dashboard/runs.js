@@ -6,7 +6,7 @@
  * Una fila por corrida del pipeline —cuánto duró, dónde se fue el tiempo y los tokens, qué control
  * encontró un error o frenó, cuántas vueltas dio, cuántos agentes lanzó— y una capa ejecutiva
  * arriba que resume el conjunto. Segunda página de la misma pieza: la genera
- * `node scripts/nightly/dashboard/dashboard.js --view runs` y escribe `~/.claude/.tycon-pipeline/runs-dashboard.html`.
+ * `node scripts/nightly/dashboard/dashboard.js --view runs` y escribe `~/.tycon/state/runs-dashboard.html`.
  *
  * 🔴 NO SE COMMITEA: una copia en `artifacts/` mostraría las corridas de UNA máquina —la que la
  * regenerara—, y el total cambiaría según quién la hubiera armado por última vez. La vista completa
@@ -14,20 +14,20 @@
  * sesión de Azure de quien tiene el permiso llena sola al arrancar.
  *
  * VARIAS MÁQUINAS: si en esta máquina está la carpeta bajada del buzón de corridas
- * (`~/.claude/.tycon-pipeline/corridas-buzon/`, la llena `scripts/metrics/download-runs.js` en las
+ * (`~/.tycon/state/corridas-buzon/`, la llena `scripts/metrics/download-runs.js` en las
  * máquinas de quienes pueden leer el buzón), la vista la lee también —`<carpeta>/<maquina>/`—, suma la
  * columna y el filtro por máquina, el sello dice qué máquinas cubre, y la página se escribe en
  * `<carpeta>/runs-dashboard.html`. Con o sin buzón, NUNCA en el repo del equipo (se niega con exit 2).
  * `--mailbox <dir>` la fuerza; `--local-only` la apaga (sólo las corridas de esta máquina).
  *
- * DE DÓNDE LEE: del registro global del archivador, `~/.claude/.tycon-pipeline/timing-history/`
+ * DE DÓNDE LEE: del registro global del archivador, `~/.tycon/state/timing-history/`
  * (un volcado JSON por corrida). Es superset de lo que hay en cada repo y es local: una máquina
  * sin pipeline corrido NO rompe el tablero — la fuente se declara NO obligatoria en sources.json
  * y la página sale gris con motivo, exit 0.
  *
  * LO QUE LEE DEL HILO: sólo las ediciones y escrituras de archivos con su cambio, y los
  * commits (`changes.js`). Como los cambios traen
- * código de cliente, la página NO se commitea (vive en ~/.claude, o en la carpeta
+ * código de cliente, la página NO se commitea (vive en la carpeta del estado, o en la carpeta
  * bajada del buzón, que sólo leen quienes tienen permiso), así que el detalle de cada corrida los
  * muestra, saneados (credenciales tapadas) y con tope de largo. Los prompts y las respuestas del hilo
  * siguen sin publicarse. El cambio va comprimido adentro de la página y se abre a pedido.
@@ -1215,7 +1215,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   else try {
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), origen: maquinaLocal, maquina: maquinaLocal, motivo: motivoLocal });
   } catch (e) {
-    out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de ejecuciones (${e.code || 'ilegible'}): vive en ~/.claude/.tycon-pipeline/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
+    out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de ejecuciones (${e.code || 'ilegible'}): vive en ~/.tycon/state/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
     if (!multi) return out;
   }
   if (multi) {
@@ -1727,7 +1727,7 @@ function pie(M, opts = {}) {
   const x = (k, v) => esc(L(I, k, v));
   const deDondeSale = opts.sitio
     ? x('v.pieDeDondeSitio')
-    : `${x('v.pieDeDondeNoche1')} (<span class="mono">~/.claude/.tycon-pipeline/timing-history</span>)${x('v.pieDeDondeNoche2')}${M.multi ? ` <b>${x('v.pieDeDondeBuzon1')}</b>${x('v.pieDeDondeBuzon2')}` : ''}`;
+    : `${x('v.pieDeDondeNoche1')} (<span class="mono">~/.tycon/state/timing-history</span>)${x('v.pieDeDondeNoche2')}${M.multi ? ` <b>${x('v.pieDeDondeBuzon1')}</b>${x('v.pieDeDondeBuzon2')}` : ''}`;
   const nota = (t, cuerpo) => `<div><b>${x(t)}</b><span>${cuerpo}</span></div>`;
   return `<footer><div class="pie">
   ${nota('v.pieDeDonde', deDondeSale)}
@@ -3057,7 +3057,7 @@ const BUZON_DEFAULT = path.join(stateDirOf(os.homedir()), 'corridas-buzon');
 
 /**
  * De dónde sale la carpeta bajada del buzón: `--mailbox` explícito, o la carpeta por defecto
- * (`TYCON_MAILBOX_DIR` o ~/.claude/.tycon-pipeline/corridas-buzon) si existe — pero SÓLO si no se pasó
+ * (`TYCON_MAILBOX_DIR` o ~/.tycon/state/corridas-buzon) si existe — pero SÓLO si no se pasó
  * `--runs-dir`: una suite que fabrica su registro nunca lee la carpeta real de la máquina. `--local-only`
  * la apaga siempre (la página sale sólo con las corridas de esta máquina).
  * Una carpeta por defecto que no existe es «esta máquina no baja el buzón», no un error: la página sale
@@ -3146,7 +3146,7 @@ function reposDelEquipo() {
 /** Devuelve el código de salida; dashboard.js hace el exit. */
 function main(opts = {}) {
   if (opts.clonRetirado) {
-    console.error('--clone ya no existe (story 2.16, rediseño): las ejecuciones de otras máquinas se leen de la carpeta bajada del buzón — usá --mailbox <dir>, o nada para ~/.claude/.tycon-pipeline/corridas-buzon');
+    console.error('--clone ya no existe (story 2.16, rediseño): las ejecuciones de otras máquinas se leen de la carpeta bajada del buzón — usá --mailbox <dir>, o nada para ~/.tycon/state/corridas-buzon');
     return 2;
   }
   const runsDir = path.resolve(opts.runsDir || RUNS_DEFAULT);
@@ -3176,7 +3176,7 @@ function main(opts = {}) {
   //    commiteada una foto de UNA máquina que cambia según quién la armó.
   const salida = path.resolve(opts.salida || (M.multi ? path.join(buzon, 'runs-dashboard.html') : SALIDA_DEFAULT));
   if (dentroDelRepoDelEquipo(salida)) {
-    console.error(`se niega a escribir ${path.relative(RAIZ, salida) || salida}: esa ruta es del repo del equipo, que lo clona todo el equipo${M.multi ? ', y la página tiene ejecuciones del buzón' : ''}. La vista de ejecuciones no se commitea: sin --output va a ${M.multi ? '<carpeta bajada>/runs-dashboard.html' : '~/.claude/.tycon-pipeline/runs-dashboard.html'}.`);
+    console.error(`se niega a escribir ${path.relative(RAIZ, salida) || salida}: esa ruta es del repo del equipo, que lo clona todo el equipo${M.multi ? ', y la página tiene ejecuciones del buzón' : ''}. La vista de ejecuciones no se commitea: sin --output va a ${M.multi ? '<carpeta bajada>/runs-dashboard.html' : '~/.tycon/state/runs-dashboard.html'}.`);
     return 2;
   }
   if (!opts.salida) { try { fs.mkdirSync(path.dirname(salida), { recursive: true }); } catch (_) { /* lo dice el write */ } }

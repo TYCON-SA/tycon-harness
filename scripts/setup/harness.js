@@ -1512,11 +1512,48 @@ function bootstrapSha(tree) {
 }
 /** Copia (temporal + rename: una copia fija a medias no arranca) los archivos del árbol a la copia fija y deja sus sha256
  *  en el estado; los módulos del programa que el árbol ya no trae se borran (la copia es la del árbol, no una suma). */
+/**
+ * Las rutas que las copias fijas de arranque no le pueden preguntar a tycon-home.js (no cargan nada del árbol), escritas
+ * al lado de ellas: `places.json` (lo leen bootstrap.js y bootstrap-fallback.ps1) y `places.sh` (lo carga
+ * bootstrap-fallback.sh con «.»). Con lo que da tycon-home.js en esta máquina; cada valor entre comillas simples, con la
+ * comilla simple escapada. Va ANTES de copiar las copias: una copia nueva nunca queda sin su archivo. Devuelve si cambió.
+ */
+function writePlaces(ctx, bootstrapDir) {
+  const TH = mod('tycon-home');
+  const home = ctx.home;
+  const places = {
+    state_dir: path.dirname(bootstrapDir),
+    legacy_state_dir: TH.legacyStateDir(home),
+    claude_dir: TH.claudeDir(home),
+    skills_dir: TH.installedSkillsDir(home),
+    place: TH.placePath(home),
+    legacy_place: TH.legacyPlacePath(home),
+    config_file: TH.configFile(home),
+  };
+  const json = `${JSON.stringify(places, null, 2)}\n`;
+  // en Windows el respaldo en shell corre en Git Bash: la ruta con barras derechas (C:/Users/…), que entiende sin cygpath
+  const forSh = (v) => (process.platform === 'win32' ? String(v).replace(/\\/g, '/') : String(v));
+  const q = (v) => `'${forSh(v).replace(/'/g, `'\\''`)}'`;
+  const sh = ['# places.sh — lo escribe harness.js (copyBootstrap) con lo que da tycon-home.js; lo carga bootstrap-fallback.sh.',
+    ...Object.entries(places).map(([k, v]) => `TYCON_P_${k.toUpperCase()}=${q(v)}`), ''].join('\n');
+  let changed = false;
+  for (const [name, text] of [['places.json', json], ['places.sh', sh]]) {
+    const dst = path.join(bootstrapDir, name);
+    let was = null; try { was = fs.readFileSync(dst, 'utf8'); } catch (_) { was = null; }
+    if (was === text) continue;
+    const tmp = `${dst}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, dst);
+    changed = true;
+  }
+  return changed;
+}
+
 function copyBootstrap(ctx, tree, state, { version = null } = {}) {
   const { bootstrapDir } = mod('state').paths(ctx.home);
   fs.mkdirSync(bootstrapDir, { recursive: true });
   const before = JSON.stringify(state.bootstrap && state.bootstrap.sha256);
-  let changed = false;
+  let changed = writePlaces(ctx, bootstrapDir);
   const sha = {};
   const files = fixedCopyFiles(tree);
   for (const f of files) {
@@ -3140,6 +3177,12 @@ function cmdStartup(ctx) {
   const S = mod('state'), L = mod('lock'), R = mod('report');
   const log = (l) => R.log(ctx.home, l);
   const say = (line) => ({ code: 0, lines: line ? [line] : [] });
+  // las rutas al lado de las copias fijas, con las de ESTA versión: una actualización las escribió con el código de antes
+  // (copyBootstrap corre en el programa que actualiza), y un archivo viejo no tiene que quedar hasta el próximo install
+  try {
+    const bootDir = S.paths(ctx.home).bootstrapDir;
+    if (fs.existsSync(path.join(bootDir, 'bootstrap.js')) && writePlaces(ctx, bootDir)) log('startup: places.json y places.sh puestos al día');
+  } catch (e) { log(`startup: no pude poner al día places.json / places.sh (${e.message})`); }
   // Lo largo corre APARTE del hook de arranque, que Claude Code corta por su tope —con el
   // candado tomado, y en una máquina con mucho atraso en CADA arranque—. El hook espera hasta 20 s: si termina, sale con
   // su código (un error temprano sigue cayendo al respaldo en shell); si no, sale 0 y la actualización sigue sola.
@@ -5340,4 +5383,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, applierRunsWithoutClaude, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome };
+module.exports = { COMMANDS, NODE_FLOOR, INSTALL_NODE_FLOOR, installNodeProblem, TREE, parse, usage, main, applierReportEnv, requirementsFor, requirementChecks, findInPath, applierRunsWithoutClaude, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems, doctorBranchApprovalItems, dropForProfile, behaviorDiff, ensureImport, restoreFixedCopy, rollbackOutcome, copyBootstrap, writePlaces };

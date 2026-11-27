@@ -26,14 +26,14 @@ if (require.main === module) { try { require('../../lib/node-floor.js').guard();
  *   exit 1 → error de uso.
  *
  * Uso:
- *   node scripts/nightly/dashboard/dashboard.js                 # en una máquina: genera ~/.claude/.tycon-pipeline/tablero-del-arnes.html
+ *   node scripts/nightly/dashboard/dashboard.js                 # en una máquina: genera ~/.tycon/state/tablero-del-arnes.html
  *   node scripts/nightly/dashboard/dashboard.js --nightly --mailbox <dir> --mailbox-state <json>
  *                                                               # el nocturno de Azure: genera artifacts/tablero-del-arnes.html
  *   node scripts/nightly/dashboard/dashboard.js --dry-run       # mide e imprime, NO escribe
  *   node scripts/nightly/dashboard/dashboard.js --json          # el modelo de vista, para otra pieza
  *   node scripts/nightly/dashboard/dashboard.js --output <ruta>
- *   node scripts/nightly/dashboard/dashboard.js --logs <dir>    # la carpeta de registros de la máquina (default ~/.claude/.tycon-pipeline)
- *   node scripts/nightly/dashboard/dashboard.js --view runs [--runs-dir <dir>]   # la vista de corridas → ~/.claude/.tycon-pipeline/runs-dashboard.html (no se commitea)
+ *   node scripts/nightly/dashboard/dashboard.js --logs <dir>    # la carpeta de registros de la máquina (default ~/.tycon/state)
+ *   node scripts/nightly/dashboard/dashboard.js --view runs [--runs-dir <dir>]   # la vista de corridas → ~/.tycon/state/runs-dashboard.html (no se commitea)
  *     [--mailbox <dir>] [--local-only]  # con la carpeta bajada del buzón lee las corridas de todas las máquinas y escribe en <carpeta>/runs-dashboard.html; --local-only = sólo las corridas de esta máquina. Nunca escribe en el repo
  *
  * 🔴 UN SOLO ESCRITOR. La página del repo la escribe el nocturno (`pipelines/azure-pipelines-tablero.yml`), con
