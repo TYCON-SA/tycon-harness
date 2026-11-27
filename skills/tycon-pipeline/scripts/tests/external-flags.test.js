@@ -195,6 +195,9 @@ function integracion(E, comportamiento) {
     accion: 'console.log(JSON.stringify({ action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
     // la sesión tiene una entrada abierta en su archivo: la integración la nombra cuando el núcleo pregunta
     abierta: 'const ev = JSON.parse(d); console.log(JSON.stringify(ev.event === "entry" ? { entryId: "entry-777" } : { action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
+    // anota sus entradas y no tiene ninguna anotada (la entrada se abrió en la herramienta y no se anotó)
+    sinAnotar: 'const ev = JSON.parse(d); console.log(JSON.stringify(ev.event === "entry" ? { tracked: true } : { action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
+    anotada: 'const ev = JSON.parse(d); console.log(JSON.stringify(ev.event === "entry" ? { entryId: "entry-777", tracked: true } : { action: "abrí la entrada con la herramienta mcp__juguete__abrir" }));',
   }[comportamiento];
   fs.writeFileSync(path.join(dir, 'scripts', 'on-work.js'), `let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{${salida}});\n`);
   return { TYCON_TIME_TRACKING: 'juguete', TYCON_INTEGRATIONS_DIR: path.join(E.base, 'integraciones') };
@@ -243,6 +246,22 @@ test('T16 WorkSignal_FormasLegitimasDelAviso @story-8.93 @ac-8 — PowerShell, r
   // los gemelos que no: un echo con redirección, y otra herramienta de otro servidor
   assert.strictEqual(EF.enRegistros(regs('Bash', 'echo node pipeline.js work-signal start 2>&1', ABRIR, 'mcp__clockify__create-clockify-time-entry', '{"id":"69a1b2c3d4"}'), '69a1b2c3d4').ok, false);
   assert.strictEqual(EF.enRegistros(regs('Bash', 'node pipeline.js work-signal start', ABRIR, 'mcp__memoria__guardar', '69a1b2c3d4'), '69a1b2c3d4').ok, false);
+});
+
+test('T16z WorkSignal_EntradaSinAnotar_NoMarca @A68 — la entrada abierta en la herramienta y sin anotar no se marca', () => {
+  // 🔴 rojo si: el arnés marca la acción con el id en la conversación aunque la integración diga que no quedó anotada
+  // (el cierre no la ve y la entrada queda en 0 minutos)
+  const E = entorno({ ado: false });
+  E.arrancar('s-t16z');
+  conversacion(E, 's-t16z', '{"id":"entry-777","description":"9.9"}');
+  const r = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t16z', integracion(E, 'sinAnotar'));
+  assert.strictEqual(r.status, 1, r.stderr + r.stdout);
+  assert.match(r.stderr, /no quedó anotada/);
+  assert.notStrictEqual(E.leer('s-t16z').workSignalStarted, true);
+  // anotada: marca
+  const r2 = E.correr('pipeline.js', ['work-signal', 'start', '--action-done', 'entry-777'], 's-t16z', integracion(E, 'anotada'));
+  assert.strictEqual(r2.status, 0, r2.stderr + r2.stdout);
+  assert.strictEqual(E.leer('s-t16z').workSignalStarted, true);
 });
 
 test('T16 WorkSignal_EmiteYMarca @story-8.93 @ac-8 — el aviso de trabajo marca sólo con evidencia', () => {

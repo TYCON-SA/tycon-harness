@@ -74,6 +74,24 @@ const { isInside } = require('./atdd-preedit.js');
 const { homePath, signatureCommand, pipelineRel } = require('./home-command.js');
 const claudeDirName = () => require('./state-dir.js').claudeDirName();
 const estadoParaMostrar = () => { const sd = require('./state-dir.js'); return sd.paraMostrar(sd.stateDir()); };
+// El registro de una integración en la carpeta del estado (el de horas, por ejemplo) lo escribe el comando que ella declara
+// en su manifiesto (`looseStores[].writer`, scripts/lib/loose-logs.js): `{ label, writer }`, o null
+function escritorDeIntegracion(f) {
+  try {
+    const L = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'loose-logs.js'));
+    const fs = require('fs');
+    let real = String(f);
+    try { real = fs.realpathSync(String(f)); } catch { try { real = path.join(fs.realpathSync(path.dirname(String(f))), path.basename(String(f))); } catch { /* la escrita */ } }
+    const home = require('os').homedir();
+    for (const s of L.integrationStores()) {
+      if (!s.writer) continue;
+      // el lugar de ahora, y el viejo en la carpeta de Claude Code (queda como enlace y lo nombran instrucciones viejas)
+      const dirs = [L.looseLogPath(s.name), s.linkOld ? path.join(require('./state-dir.js').claudeDir(home), s.name) : null].filter(Boolean);
+      if (dirs.some((dir) => isInside(dir, String(f)) || isInside(dir, real))) return { label: s.label, writer: s.writer };
+    }
+  } catch { /* sin el árbol, el mensaje de siempre */ }
+  return null;
+}
 
 // Código = lo que `atdd-order` ya considera código, más lo que en los stacks del equipo se edita
 // como implementación y no es "markup de specs": SQL (migraciones), estilos, templates .NET/HTML.
@@ -657,6 +675,16 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       viaLine.replace(/\n$/, ''),
       `   Para esto: node ${BOARD_JS} set T-41 estado=curso nota="…"`,
       '   (una fila nueva: add; cerrarla: close T-41; el tablero entero: save --from <tu archivo aparte>)',
+    ].filter((l) => l !== '').join('\n');
+  }
+  const integracion = r.kind === 'state-dir' ? escritorDeIntegracion(f) : null;
+  if (integracion) {
+    return [
+      `⛔ el estado de la integración ${integracion.label} no se escribe a mano`,
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Vive en la carpeta del estado del arnés, que no se escribe con Write ni por consola. Lo escribe su comando:',
+      `   node "${integracion.writer}" …   (su skill dice cómo; sin argumentos, el uso)`,
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'state-dir') {
