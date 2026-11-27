@@ -1868,6 +1868,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/site-disk-opens.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
+        "scripts/site/**",
+        "scripts/nightly/dashboard/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/download-runs-size-cap.test.js",
       "requiere": [],
       "gate_only_when_touching": [
@@ -4857,6 +4867,12 @@
       "__nota": "story 8.14, tanda A (T7-T16): las 119 formas del shell de la medición como prueba — el freno real contra cada fila (frena o pasa) y la columna «toca» re-medida con zsh y bash de verdad; corre en un HOME de laboratorio.",
       "raiz": "arnes",
       "ruta": "tests/prod-guard-shell-forms.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "S247e (T1-T3): un `<<` que puede ser texto (adentro de una comilla, de un comentario o del cuerpo de otro heredoc) no le esconde al freno de producción lo que corre: el freno juzga las dos lecturas de los heredocs y frena si una frena; las formas de siempre pasan y la segunda lectura no anota un «pasó» de más. Corre en un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-heredoc-readings.test.sh",
       "requiere": []
     },
     {

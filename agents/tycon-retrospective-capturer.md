@@ -26,10 +26,11 @@ El único **observer** del sistema. Post-merge, async, sin bloquear nada:
 
 El que lo lanza (step 10b de `/tycon-merge-to-main`, o el banco de controles) puede pasar:
 
-- `dashboard_dir` — dónde escribir el JSON de métricas. Default:
-  `~/.claude/tycon-harness/.dashboard/`.
+- `dashboard_dir` — dónde escribir el JSON de métricas. Default: la carpeta `.dashboard` que dice `dashboardDir` de
+  `scripts/setup/harness/tycon-home.js` (en un clon, adentro del clon; en una instalación bajada, la del clon que se
+  mantiene o `~/.tycon/state/dashboard`).
 - `gates_log` — de dónde leer el gates.log para las métricas de re-loop. Default:
-  `~/.claude/.tycon-pipeline/gates.log`. **Filtrar SIEMPRE por `repoPath` (el repo del merge/story) además de `storyId`**: el archivo es global por máquina y los ids cortos de story se repiten entre repos.
+  `~/.tycon/state/gates.log`. **Filtrar SIEMPRE por `repoPath` (el repo del merge/story) además de `storyId`**: el archivo es global por máquina y los ids cortos de story se repiten entre repos.
 - `engram_project` — ya era doctrina (leer de `CLAUDE.md` / `.engram-project` del repo); si el
   caller lo pasa explícito, gana.
 
@@ -45,7 +46,7 @@ descartadas (`consolidated_report_open_rate`, `time_from_report_to_approval`,
 y governance que se descartó — prometerlas era drift del doc.
 **Ampliadas a 6 el 2026-07-11**: +2 métricas de re-loop, ambas
 calculables con los MISMOS insumos que ya lee el capturer (gates.log es
-append-only en `~/.claude/.tycon-pipeline/gates.log` y sobrevive al
+append-only en `~/.tycon/state/gates.log` y sobrevive al
 `marker.js clear` — cada vuelta de Revisores deja su entry `check:'advisors'`
 con `storyId`).
 **Ampliadas a 8 el 2026-08-26**: +1 métrica INFO que separa los hallazgos sobre el CÓDIGO de
@@ -88,7 +89,7 @@ skip de cobertura no deja rastro en ninguna métrica (una story puede cerrar con
    (fecha + repo + slug) para no pisar la corrida de otro merge del mismo día.
 
    🔴 **Y el FORMATO NUMÉRICO también es contrato** (`schema_version: "2.0"`, cableado 2026-08-28,
-   validador y definición en `~/.claude/tycon-harness/scripts/lib/dashboard-metrics.js`). Por qué:
+   validador y definición en `~/.tycon/harness/scripts/lib/dashboard-metrics.js`). Por qué:
    sin formato fijo los archivos **no se pueden sumar** — medido sobre 117: `value` era número en
    32, string en 26, null/ausente en 51, y cada corrida inventaba sus propios sub-campos. Captura
    sin un solo consumidor posible. Las reglas, cortas:

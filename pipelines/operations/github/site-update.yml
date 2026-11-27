@@ -11,9 +11,13 @@
 # - Render: el hook de redespliegue es el secreto obligatorio (SITE_RENDER_DEPLOY_HOOK); el optativo SITE_RENDER_API_KEY,
 #   con la variable SITE_RENDER_SERVICE_ID, deja preguntar a Render qué imagen corre. Sin cargar llegan vacíos y todo
 #   sigue igual. Ninguno sale en el registro.
+# - Google Cloud Run: entra con Workload Identity Federation (`google-github-actions/auth`, `id-token: write`), sin llave
+#   guardada; la herramienta de la nube ya viene en la máquina de GitHub. Los permisos, en guides/integrations/gcs-mailbox.md.
 #
-# Variables del repo (no son secretos): SITE_PLATFORM (azure o render), SITE_IMAGE_NAME, SITE_RESOURCE_GROUP, SITE_APP,
-# SITE_URL, y para Azure SITE_UPDATE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+# Variables del repo (no son secretos): SITE_PLATFORM (azure, render o cloudrun), SITE_IMAGE_NAME, SITE_URL; para Azure
+# SITE_RESOURCE_GROUP, SITE_APP, SITE_UPDATE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID; para Cloud Run
+# SITE_SERVICE, SITE_GCP_REGION, SITE_GCP_PROJECT, SITE_GCP_WIF_PROVIDER (el proveedor de identidad:
+# projects/<número>/locations/global/workloadIdentityPools/<pool>/providers/<proveedor>) y SITE_GCP_SERVICE_ACCOUNT.
 name: site-update
 
 on:
@@ -86,12 +90,20 @@ jobs:
         run: bash harness/pipelines/operations/github/prepare-tree.sh
 
       - name: Entrar a Azure con la credencial federada
-        if: vars.SITE_PLATFORM != 'render'
+        if: vars.SITE_PLATFORM != 'render' && vars.SITE_PLATFORM != 'cloudrun'
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.SITE_UPDATE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # la herramienta de la nube ya viene en la máquina de GitHub; este paso le da la credencial federada
+      - name: Entrar a Google Cloud con Workload Identity Federation (Cloud Run)
+        if: vars.SITE_PLATFORM == 'cloudrun'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.SITE_GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.SITE_GCP_SERVICE_ACCOUNT }}
 
       - name: Comparar con stable y, si corresponde, actualizar el sitio
         working-directory: harness
@@ -104,10 +116,14 @@ jobs:
           SITE_RENDER_DEPLOY_HOOK: ${{ secrets.SITE_RENDER_DEPLOY_HOOK }}
           SITE_RENDER_API_KEY: ${{ secrets.SITE_RENDER_API_KEY }}
           SITE_RENDER_SERVICE_ID: ${{ vars.SITE_RENDER_SERVICE_ID }}
+          SITE_SERVICE: ${{ vars.SITE_SERVICE }}
+          SITE_GCP_REGION: ${{ vars.SITE_GCP_REGION }}
+          SITE_GCP_PROJECT: ${{ vars.SITE_GCP_PROJECT }}
         run: |
           set -uo pipefail
           node scripts/site/deploy/update-site.js --platform "$SITE_PLATFORM" --image "$SITE_IMAGE_NAME" \
             --resource-group "$SITE_RESOURCE_GROUP" --app "$SITE_APP" --site-url "$SITE_URL" \
+            --service "$SITE_SERVICE" --region "$SITE_GCP_REGION" --project "$SITE_GCP_PROJECT" \
             --operations-json operations.json --state-dir .dashboard/site-update
           rc=$?
           [ $rc -eq 0 ] || echo "::warning::el sitio no se actualizó (ver el resultado en .dashboard/site-update)"

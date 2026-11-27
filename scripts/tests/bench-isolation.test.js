@@ -157,3 +157,19 @@ test('Runner_UsaElAislamiento — el corredor lanza claude y codex con el aislam
   assert.match(src, /spawn\('engram', \['serve', puerto\]/, 'el servidor del examen se levanta en su puerto');
   assert.match(src, /process\.on\('exit', /, 'y se limpia al salir, también si la corrida falla');
 });
+
+// los revisores nombran el arnés y su estado por la casa propia (~/.tycon/harness, ~/.tycon/state).
+// Si el encierro del examen no la deja leer, el revisor lee menos sin error y el examen mide otra cosa.
+test('Corral_DejaLeerLaCasaPropia — toda ruta ~/.tycon que nombra un revisor queda dentro de lo permitido', () => {
+  const { PERMITIDO_FUERA_DEL_CORRAL: permitidos } = require(RUNNER);
+  assert.ok(Array.isArray(permitidos), 'el corredor exporta la lista de lo permitido fuera del corral');
+  const dirAgentes = path.join(RAIZ, 'agents');
+  const rutas = new Set();
+  for (const f of fs.readdirSync(dirAgentes).filter((n) => n.endsWith('.md'))) {
+    for (const m of fs.readFileSync(path.join(dirAgentes, f), 'utf8').matchAll(/~\/\.tycon\/[A-Za-z0-9_./-]+/g)) rutas.add(m[0]);
+  }
+  assert.ok(rutas.size > 0, 'algún revisor nombra la casa propia');
+  const cubre = (p) => permitidos.some((d) => { const r = path.relative(path.resolve(d), p); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); });
+  const fuera = [...rutas].filter((r) => !cubre(path.join(os.homedir(), r.slice(2))));
+  assert.deepStrictEqual(fuera, [], `rutas que el revisor nombra y el examen no le deja leer:\n${fuera.join('\n')}`);
+});
