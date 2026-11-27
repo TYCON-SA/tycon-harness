@@ -252,6 +252,41 @@ test('T21b 2.24-TeamConfig_PermisosPropios_LlaveRota_SeDicen', () => {
   assert.match(noCarga.problema, /no se pudo cargar scripts\/metrics\/upload-runs\.js \(SyntaxError\)/);
 });
 
+// Una SAS puesta por error en otro campo, o una «sas» que trae sólo la firma, no sale en el panel ni en el motivo.
+test('T21c TeamConfig_LlaveMalPuesta_NoMuestraElSecreto', () => {
+  const tree = path.join(__dirname, '..', '..');
+  const dir = tmp('buzon-c');
+  const SECRETO = 'sv=2022-11-02&sr=c&sig=FIRMASECRETA123';
+  const base = { cuenta: 'cuentadeprueba', contenedor: 'corridas', vence: '2099-01-01', sas: 'sv=2022-11-02&si=p&sr=c&sig=x' };
+  const escribir = (n, o) => { const f = path.join(dir, `${n}.json`); fs.writeFileSync(f, JSON.stringify({ ...base, ...o })); return f; };
+  // la SAS en «vence»: el motivo dice qué falta, sin repetir el valor
+  const enVence = TC.mailboxSummary(tree, escribir('vence', { vence: SECRETO }));
+  assert.strictEqual(enVence.hay, false);
+  assert.match(enVence.problema, /"vence" tiene que ser una fecha/);
+  assert.doesNotMatch(JSON.stringify(enVence), /FIRMASECRETA/, 'el motivo no repite el valor de "vence"');
+  // la SAS en «politica»: la llave no se usa (la subida repite la política en sus avisos) y el valor no sale
+  const enPolitica = TC.mailboxSummary(tree, escribir('politica', { politica: SECRETO }));
+  assert.strictEqual(enPolitica.hay, false);
+  assert.match(enPolitica.problema, /"politica" no tiene forma de nombre/);
+  assert.doesNotMatch(JSON.stringify(enPolitica), /FIRMASECRETA/, 'el motivo no repite una "politica" con forma de SAS');
+  // «sp» codificado dos veces trae la firma adentro: ni el panel ni la negativa de la subida la muestran
+  const spSucio = TC.mailboxSummary(tree, escribir('sp', { sas: 'sv=2022-11-02&sr=c&sp=c%26sig%3DFIRMASECRETA123&sig=x' }));
+  assert.doesNotMatch(JSON.stringify(spSucio), /FIRMASECRETA/, 'los permisos propios no traen la firma');
+  const UR = require(path.join(__dirname, '..', 'metrics', 'upload-runs.js'));
+  assert.doesNotMatch(JSON.stringify(UR.negativaDeLaLlave('sv=2022-11-02&sr=c&sp=c%26sig%3DFIRMASECRETA123&sig=x')), /FIRMASECRETA/, 'la negativa no repite «sp»');
+  // la bajada tampoco repite un «sp» sucio
+  const DR = require(path.join(__dirname, '..', 'metrics', 'download-runs.js'));
+  assert.doesNotMatch(String(DR.negativaDeLectura('sv=2022-11-02&sr=c&si=p&sp=c%26sig%3DFIRMASECRETA123&sig=x')), /FIRMASECRETA/, 'la negativa de la bajada no repite «sp»');
+  assert.match(String(DR.negativaDeLectura('sv=2022-11-02&sr=c&si=p&sp=rwl&sig=x')), /«rwl»/, 'unos permisos de verdad sí se nombran');
+  // una «sas» corta sin «=» tampoco sale como nombre de parámetro
+  assert.doesNotMatch(JSON.stringify(TC.mailboxSummary(tree, escribir('corta', { sas: 'abcdefgh' }))), /abcdefgh/);
+  // un nombre de política de verdad sí se muestra
+  assert.strictEqual(TC.mailboxSummary(tree, escribir('politica-ok', { politica: 'escribir-corridas' })).politica, 'escribir-corridas');
+  // «sas» con sólo la firma: el nombre del parámetro sería la firma entera
+  const soloFirma = TC.mailboxSummary(tree, escribir('solo-firma', { sas: 'FIRMASECRETA123%2Bxyz' }));
+  assert.doesNotMatch(JSON.stringify(soloFirma), /FIRMASECRETA/, 'los parámetros de la SAS no traen la firma');
+});
+
 // La línea de los instintos en el panel del buzón: prendida o apagada, y de dónde sale. Sólo lectura, como el panel.
 test('T29 TeamConfig_ShowsInstinctsLineInMailboxPanel @story-4.7 @ac-40', async () => {
   const tree = path.join(__dirname, '..', '..');
