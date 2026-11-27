@@ -441,6 +441,40 @@ test('T56 Sitio_ConversacionesPendientes_LaVistaSeArmaYLoDice', { skip: SIN_BACK
   assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer' } }), /3 archivo/, 'la banda nombra lo que falta');
 });
 
+test('T-A45 Sitio_ArchivoQuePasaSuTopeDeBajada_LaPasadaSigueEntera_YQuienMantieneLoVe', { skip: SIN_BACKEND }, async () => {
+  // un registro que el listado dice de 5 GB no se pide nunca: la pasada sale entera (no queda «parcial» para siempre),
+  // el registro del sitio lo nombra y la pestaña se lo dice a quien mantiene, no a quien sólo ve lo suyo
+  const blobs = blobsDe(2);
+  blobs['maq-a/registros/gates.log.gz'] = 'chico';
+  // (A59) y un juego nuevo con su cobertura rota: tampoco deja la pasada a medias, y cuenta en la banda
+  blobs['maq-a/registros/v20261121T000000000Z/gates.log.gz'] = 'nuevo';
+  blobs['maq-a/registros/v20261121T000000000Z/cobertura.json'] = 'no es json';
+  const buzon = await H.arrancarBuzon({ blobs });
+  buzon.st.largos['maq-a/registros/gates.log.gz'] = 5 * 1024 * 1024 * 1024;
+  const raiz = tmp('mbx-tope-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-tope-datos-');
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const registro = [];
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: (l) => registro.push(l), urlBuzon: buzon.base });
+  try {
+    await fuentes.refrescar();
+    const e = fuentes.buzonEstado();
+    assert.strictEqual(e.completo, true, `la pasada queda entera: ${registro.slice(-4).join(' | ')}`);
+    assert.strictEqual(e.grandes, 2, `y dice cuántos no baja (el enorme y la cobertura rota): ${JSON.stringify(e)}`);
+    assert.ok(registro.some((l) => /gates\.log\.gz.*tope de bajada/.test(l) || /tope de bajada.*gates\.log\.gz/.test(l)), registro.join('\n'));
+    assert.ok(!buzon.pedidos.some((p) => /registros\/gates\.log\.gz$/.test(p.ruta)), 'no se pidió');
+  } finally { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); }
+  const M = runs.modelo(tmp('mbx-tope-reg-'), { buzon: path.join(datos, 'buzon'), soloBuzon: true, sinUnificar: true });
+  M.multi = true;
+  M.buzon = { estado: 'leido', grandes: 1 };
+  assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer' } }), /pasa su tope de bajada/, 'la banda lo dice');
+});
+
 // rojo si: confiando en el índice la bajada mira el disco igual (re-baja lo que el índice da por bajado), o sin
 // confiar no repone lo que falta en el disco.
 test('Bajada_ConfiandoEnElIndice_NoMiraElDisco_YSinConfiarRepone', async () => {

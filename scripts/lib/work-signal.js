@@ -131,6 +131,8 @@ function emit(event, fields = {}, { env = process.env, home } = {}) {
   const out = {};
   if (event === 'stop' && Number.isInteger(result.seconds) && result.seconds >= 0) out.seconds = result.seconds;
   if (event === 'entry' && typeof result.entryId === 'string' && result.entryId.trim()) out.entryId = result.entryId.trim().slice(0, 120);
+  // `entry` sin entrada, de una integración que anota sus entradas: «no hay ninguna anotada» (no es «no sé»)
+  if (event === 'entry' && result.tracked === true) out.tracked = true;
   if (typeof result.action === 'string' && result.action.trim()) out.action = result.action.trim().slice(0, 600);
   return { ran: true, result: out, warnings };
 }

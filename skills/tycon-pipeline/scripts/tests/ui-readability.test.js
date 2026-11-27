@@ -934,6 +934,57 @@ test('Capa_PantallaRepetida_EsOtroCasoDeLaCapa @capa-de-la-maqueta', () => {
   assert.match(r.out, /ninguna prueba muestra adentro el caso «con error» \(«(Probar la plantilla», «)?La plantilla tiene un error»\)/);
 });
 
+// 🔴 Falla con: leer el botón y la pantalla de abajo hasta el primer «»»: un botón «Siguiente »» deja la capa sin reconocer.
+test('Capa_DisparadorConComilla_SeReconoce @capa-de-la-maqueta', () => {
+  const mk = require(path.join(__dirname, '..', 'mockup.js'));
+  const abajo = { name: 'Paso »', elements: [{ kind: 'heading', text: 'Paso uno' }, { kind: 'button', text: 'Siguiente »' }] };
+  const capa = { name: 'Confirmar', presentation: 'layer', over: 'Paso »', trigger: 'Siguiente »', elements: [{ kind: 'heading', text: '¿Seguimos?' }] };
+  const html = mk.renderMockup({ title: 'Pasos', screens: [abajo, capa] });
+  const capas = mk.mockupLayers(html);
+  assert.deepStrictEqual(capas.map((c) => [c.name, c.trigger, c.over]), [['Confirmar', 'Siguiente »', 'Paso »']]);
+});
+
+// 🔴 Falla con: exigir dentro de la ventana el texto de ayuda de un campo (placeholder): la prueba en vivo lee el texto, no
+//    los atributos, y la capa salía «sin» él aunque estuviera.
+test('Capa_PlaceholderNoSeExigeAdentro @capa-de-la-maqueta', () => {
+  const conCampo = { ...CAPA_PROBAR, elements: [...CAPA_PROBAR.elements, { kind: 'field', label: 'Nombre', placeholder: 'Escribí el nombre' }] };
+  const m = mundoConCapa([CAPA_EDITAR, conCampo], PANTALLA_CAPA.replace('</div>;', '<label>Nombre<input placeholder="Escribí el nombre" /></label></div>;'));
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Nombre'] });
+  const r = checkCon(m.s);
+  assert.doesNotMatch(r.out, /\(12\)[^\n]*Escribí el nombre/, r.out);
+});
+
+// 🔴 Falla con: sin navegador, dar por visible un menú escondido por CSS (display:none, visibility:hidden, una clase) y el
+//    texto escondido dentro de la ventana.
+test('LayerProbe_EscondidoPorCss_NoCuenta @capa-de-la-maqueta', () => {
+  const lp = require(LAYER_PROBE);
+  const estilos = new Map();
+  const win = { getComputedStyle: (n) => estilos.get(n) || { display: 'block', visibility: 'visible' } };
+  const ownerDocument = { defaultView: win };
+  const texto = (t) => ({ nodeType: 3, textContent: t });
+  const el = (attrs, hijos, padre = null) => {
+    const e = { nodeType: 1, getAttribute: (k) => attrs[k] ?? null, hidden: false, parentElement: padre, ownerDocument, childNodes: hijos };
+    Object.defineProperty(e, 'textContent', { get: () => hijos.map((h) => h.textContent).join('') });
+    for (const h of hijos) if (h.nodeType === 1) h.parentElement = e;
+    return e;
+  };
+  const doc = (els) => ({ querySelectorAll: (sel) => (sel.includes('role="menu"') ? els : []) });
+  const antes = lp.antesDe(doc([]));
+  const menu = el({ role: 'menu' }, [texto('Editar Borrar')]);
+  estilos.set(menu, { display: 'none', visibility: 'visible' });
+  let r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar'], antes });
+  assert.strictEqual(r.dialog, false, 'un menú con display:none no está abierto');
+  estilos.set(menu, { display: 'block', visibility: 'hidden' });
+  r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar'], antes });
+  assert.strictEqual(r.dialog, false, 'ni con visibility:hidden');
+  // una ventana visible con una parte escondida: lo escondido no cuenta como adentro
+  const oculto = el({}, [texto(' Borrar')]);
+  const ventana = el({ role: 'menu' }, [texto('Editar'), oculto]);
+  estilos.set(oculto, { display: 'none', visibility: 'visible' });
+  r = lp.probeDocument(doc([ventana]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes });
+  assert.deepStrictEqual([r.dialog, r.texts], [true, ['Editar']]);
+});
+
 test('Capa_MotivoDeUnaCasilla_NoSeExigeAdentro @capa-de-la-maqueta', () => {
   // el motivo de una casilla deshabilitada va como atributo title: la prueba en vivo lee el texto, no los atributos
   const conCasilla = { ...CAPA_PROBAR, elements: [...CAPA_PROBAR.elements, { kind: 'checkbox', label: 'Publicar', disabled: true, title: 'Requiere permiso de publicación' }] };

@@ -321,7 +321,7 @@ if [[ "$CLAUDE_OFF" != "1" ]]; then
 # Los prompts de revisores, pasos y skills nombran al arnés por este lugar (un prompt no lee una
 # variable) y el clon puede vivir en cualquier carpeta. La regla de nacimiento vive en canonical-path.js: el lugar nace
 # apuntando a donde apunta el nombre viejo (o a lo que dice el estado) y no al clon que corre este instalador; el viejo
-# se re-apunta al lugar y no se borra; si el lugar apunta a OTRO clon válido, avisa y NO lo mueve —el equipo trabaja
+# ya no se mantiene: si es un enlace al lugar y sólo lo usan permisos, se retira; si el lugar apunta a OTRO clon válido, avisa y NO lo mueve —el equipo trabaja
 # desde clones descartables—: sólo `--link <ruta>` lo re-apunta. Una carpeta real en ese lugar no se pisa. Respeta
 # --check. Detalle y casos: scripts/lib/canonical-path.js.
 if [[ -f "$SCRIPT_DIR/lib/canonical-path.js" ]] && command -v node >/dev/null 2>&1; then

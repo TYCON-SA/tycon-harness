@@ -48,10 +48,23 @@ function leer(texto) {
   return out;
 }
 
-// visible: ni él ni un contenedor suyo escondidos (hidden o aria-hidden)
+// escondido por sí mismo: hidden, aria-hidden o, con el estilo calculado del documento (jsdom lo tiene), display:none o
+// visibility:hidden, que es lo que deja una clase de CSS
+const escondido = (n) => {
+  if (n.hidden || n.getAttribute('aria-hidden') === 'true') return true;
+  const win = n.ownerDocument && n.ownerDocument.defaultView;
+  if (!win || typeof win.getComputedStyle !== 'function') return false;
+  try { const cs = win.getComputedStyle(n); return cs.display === 'none' || cs.visibility === 'hidden'; } catch { return false; }
+};
+// visible: ni él ni un contenedor suyo escondidos
 const visible = (el) => {
-  for (let n = el; n && typeof n.getAttribute === 'function'; n = n.parentElement) if (n.hidden || n.getAttribute('aria-hidden') === 'true') return false;
+  for (let n = el; n && typeof n.getAttribute === 'function'; n = n.parentElement) if (escondido(n)) return false;
   return true;
+};
+// el texto que se ve de un elemento visible: sin lo de sus hijos escondidos
+const textoVisible = (el) => {
+  if (!el.childNodes) return el.textContent || '';
+  return Array.from(el.childNodes).map((h) => (h.nodeType === 1 ? (typeof h.getAttribute === 'function' && escondido(h) ? '' : textoVisible(h)) : (h.nodeType === 3 ? h.textContent : ''))).join('');
 };
 const todos = (document, sel) => { try { return Array.from(document.querySelectorAll(sel)); } catch { return []; } };
 
@@ -76,7 +89,7 @@ function encimaDe(document, antes) {
  */
 function probeDocument(document, { screen, trigger, texts, antes }) {
   const ventanas = encimaDe(document, antes);
-  const adentro = norm(ventanas.map((v) => v.textContent).join(' '));
+  const adentro = norm(ventanas.map(textoVisible).join(' '));
   return { screen, trigger, dialog: ventanas.length > 0, texts: ventanas.length ? (texts || []).filter((t) => adentro.includes(norm(t))) : [] };
 }
 

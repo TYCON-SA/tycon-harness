@@ -690,7 +690,8 @@ function stageLinks(ctx, j, H, log) {
   // el lugar: lo asegura la biblioteca del árbol NUEVO (una carpeta real no se pisa: queda, y se dice)
   if (isRealDir(p.placeLink)) notes.push(`${p.placeLink} es una carpeta real (el clon vive ahí): queda; el arnés corre desde ${p.own.harness} igual`);
   else {
-    const l = H.ensureLink(ctx, p.own.harness, { link: p.own.harness, prefer: p.own.harness });
+    // el nombre viejo no se retira acá: lo retira el arranque siguiente, y así deshacer la mudanza no tiene que reponerlo
+    const l = H.ensureLink(ctx, p.own.harness, { link: p.own.harness, prefer: p.own.harness, keepLegacy: true });
     if (!l.ok) notes.push(`no pude re-apuntar ${p.placeLink}: ${l.out || l.err}`);
     else log(`mudanza: ${p.placeLink} → ${p.own.harness}`);
   }

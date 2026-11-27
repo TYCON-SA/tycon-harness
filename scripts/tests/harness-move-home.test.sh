@@ -15,6 +15,9 @@
 #         reintenta en cada sesión; un fallo DURANTE deshace, queda `failed` y no se reintenta solo (a mano sí).
 #   T28r · la raíz de los repos: si sale de los repos al lado del clon y no está declarada, la mudanza la anota en
 #         paths.repos; una declarada no se pisa; una carpeta sin otros repos no se anota.
+#   T5  · el nombre viejo del lugar: install y la mudanza no lo crean; la regla del lugar lo retira sólo si es
+#         un enlace al lugar y lo registrado con él son sólo permisos (que se van); un enlace roto, una carpeta real o un
+#         hook registrado lo dejan, y doctor lo dice. T5c: la máquina mudada sin él arranca por la copia fija y el respaldo.
 #   T14 · un clon de antes del lector de team-repos.json se muda con una capa que lo trae: la capa se juzga con los lectores
 #         de la versión que baja (el plan lo dice); una capa que esa versión rechaza sigue frenando, con la HOME idéntica.
 #
@@ -22,7 +25,7 @@
 # skills, más el servidor de versiones de juguete). Nunca ~/.claude ni ~/.tycon de verdad. 🔴 Sin pipes sobre el comando
 # medido.
 #
-# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T28r|T29|T32|T13|T14]
+# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T28r|T29|T32|T13|T14|T5]
 set -uo pipefail
 # partida en dos (scripts/tests/lib/suite-parts.sh): cada parte es harness-move-home.p<k>.test.sh; a mano corre todo
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
@@ -204,6 +207,11 @@ if suite_part 1 && runs T28; then
   [ "$RC" = 0 ] && [ -z "$F" ] && ok "doctor en verde" || bad "doctor: rc $RC: ${F:-$OUT}"
   OUT="$(harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "d['sources'][0]['kind']")" = release ] && ok "un arranque más: sigue release y sale 0" || bad "el arranque tras la mudanza: rc $RC: $OUT"
+  # la línea de arranque de una máquina mudada llama a la copia fija por la carpeta del estado en uso: la de siempre se
+  # retira, y la versión bajada arranca por su propio camino (release.js), que también la pasa
+  if hook_cmds | grep '\.tycon/state/harness/bootstrap\.js' >/dev/null && ! hook_cmds | grep '\.tycon-pipeline/harness/bootstrap\.js' >/dev/null; then
+    ok "la línea de arranque nombra ~/.tycon/state/harness/ y no la carpeta de siempre"
+  else bad "la línea de arranque tras la mudanza y un arranque: $(hook_cmds | grep bootstrap | tr '\n' ' ')"; fi
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
   # ── (2) camino feliz entero, sin cortes: el estado se escribe al final y la salida cuenta ──
@@ -796,6 +804,122 @@ if suite_part 2 && runs T14; then
   STATE="$LAB_HOME/.tycon/state/harness-state.json"
   [ "$(j "$STATE" "d['team']['commit']")" = "$(harness_lab_team_head)" ] && [ "$(j "$STATE" "d['team']['files']")" = 3 ] && ok "(c) el estado trae team con el commit de la punta y los 3 archivos" || bad "(c) el estado no trae team: $(j "$STATE" "d.get('team')")"
   [ "$(j "$STATE" "d['sources'][0]['kind']")" = release ] && ok "(c) …y la máquina es release" || bad "(c) no es release"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T5 ────────────────────────────────────────────
+# El nombre viejo del lugar (LEGACY_PLACE_NAME de place.js) se retira. `install` y la
+# mudanza no lo crean; la regla del lugar de la versión nueva (la que corre el aplicador, install-tycon-hooks.sh, en
+# cada instalación y en cada versión que llega) lo saca con un `unlink` sólo si es un enlace al lugar y lo registrado
+# con él son sólo permisos, que se van en el mismo paso; lo dice una vez y `doctor` lo dice en una línea. Un enlace
+# roto, una carpeta real o un hook registrado con él: queda, y `doctor` lo dice. `.tycon-pipeline` sigue (es la C2).
+# T5c: la máquina mudada sin el nombre viejo arranca por la copia fija y por el respaldo en shell.
+if suite_part 2 && runs T5; then
+  echo "T5 · el nombre viejo del lugar: install y la mudanza no lo crean; la regla del lugar lo retira sólo si es un enlace al lugar con sólo permisos"
+  clone_machine "$BASE/lab5"
+  OLDN="$LAB_HOME/.claude/$VIEJO"; PLACEN="$LAB_HOME/.claude/$PLACE"
+  gone() { [ ! -e "$1" ] && [ ! -L "$1" ]; }
+  gone "$OLDN" && ok "install no crea el nombre viejo" || bad "install creó el nombre viejo: $(ls -la "$OLDN" 2>&1)"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "la mudanza sale 0" || bad "la mudanza: rc $RC: $OUT"
+  gone "$OLDN" && ok "la mudanza no crea el nombre viejo" || bad "la mudanza creó el nombre viejo: $(ls -la "$OLDN" 2>&1)"
+  SETTINGS_0="$BASE/t5-settings.json"; cp "$TYCON_SETTINGS_PATH" "$SETTINGS_0"
+  # la regla del lugar de la versión instalada, como la corre su aplicador (sin --home: la casa de la sesión)
+  place_rule() { node "$(NEW_TREE)/scripts/lib/canonical-path.js" --ensure-link --clone "$(NEW_TREE)" 2>&1; }
+  settings_has() { python3 -c 'import json,sys; s=json.load(open(sys.argv[1], encoding="utf-8")); print(sum(json.dumps(s).count(x) for x in sys.argv[2:]))' "$TYCON_SETTINGS_PATH" "$@"; }
+  perms() { python3 - "$TYCON_SETTINGS_PATH" "$@" <<'PY'
+import json, sys
+p, *items = sys.argv[1:]
+s = json.load(open(p, encoding="utf-8"))
+s.setdefault("permissions", {}).setdefault("allow", []).extend(items)
+json.dump(s, open(p, "w", encoding="utf-8"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
+PY
+  }
+  allow_list() { python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1], encoding="utf-8")).get("permissions",{}).get("allow",[])))' "$TYCON_SETTINGS_PATH"; }
+
+  # (a) un enlace al lugar y sólo permisos: uno con la forma vieja sola, otro con las dos formas
+  ln -s "$PLACEN" "$OLDN"
+  perms "Bash(node ~/.claude/$VIEJO/scripts/setup/harness.js doctor)" "Bash(node ~/.claude/$VIEJO/scripts/x.js)" "Bash(node ~/.claude/$PLACE/scripts/x.js)"
+  OUT="$(place_rule)"; RC=$?
+  [ "$RC" = 0 ] && ok "(a) la regla del lugar sale 0" || bad "(a) rc $RC: $OUT"
+  gone "$OLDN" && ok "(a) el enlace viejo se retiró" || bad "(a) el enlace viejo sigue: $(ls -la "$OLDN" 2>&1) — $OUT"
+  [ -L "$PLACEN" ] && [ "$(cd "$PLACEN" && pwd -P)" = "$(cd "$(NEW_TREE)" && pwd -P)" ] && ok "(a) …y el lugar sigue apuntando a ~/.tycon/harness" || bad "(a) el lugar cambió: $(link_to "$PLACEN")"
+  [ "$(settings_has "/$VIEJO/")" = 0 ] && ok "(a) ningún permiso nombra el nombre viejo" || bad "(a) quedan permisos con el nombre viejo: $(allow_list | tr '\n' ' ')"
+  [ "$(allow_list | grep -cxF "Bash(node ~/.claude/$PLACE/scripts/setup/harness.js doctor)")" = 1 ] && ok "(a) el permiso que sólo tenía la forma vieja queda con la nueva" || bad "(a) se perdió el permiso: $(allow_list | tr '\n' ' ')"
+  [ "$(allow_list | grep -cxF "Bash(node ~/.claude/$PLACE/scripts/x.js)")" = 1 ] && ok "(a) el que tenía las dos formas queda una vez" || bad "(a) el permiso con las dos formas: $(allow_list | tr '\n' ' ')"
+  ls "$TYCON_SETTINGS_PATH".bak-retire-* >/dev/null 2>&1 && ok "(a) settings.json se respaldó antes de escribirlo" || bad "(a) sin respaldo de settings.json"
+  [ "$(printf '%s\n' "$OUT" | grep -c "$VIEJO")" = 1 ] && ok "(a) lo dice en una línea" || bad "(a) la salida no lo dice en una línea: $OUT"
+  S1="$(shasum -a 256 < "$TYCON_SETTINGS_PATH")"
+  OUT="$(place_rule)"
+  case "$OUT" in *"$VIEJO"*) bad "(a) la segunda corrida lo vuelve a decir: $OUT" ;; *) ok "(a) la segunda corrida no lo vuelve a decir" ;; esac
+  [ "$(shasum -a 256 < "$TYCON_SETTINGS_PATH")" = "$S1" ] && gone "$OLDN" && ok "(a) …ni escribe nada" || bad "(a) la segunda corrida escribió"
+  OUT="$(harness doctor 2>&1)"; JSON="$(harness doctor --json 2>/dev/null)"
+  [ "$(printf '%s\n' "$OUT" | grep -c "$VIEJO")" = 1 ] && case "$OUT" in *"$VIEJO"*retir*) true ;; *) false ;; esac && ok "(a) doctor dice el retiro en una línea" || bad "(a) doctor: $(printf '%s\n' "$OUT" | grep "$VIEJO")"
+  [ "$(printf '%s' "$JSON" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("fail",[])))' 2>/dev/null)" = 0 ] && ok "(a) …y doctor no da rojo" || bad "(a) doctor da rojo: $JSON"
+
+  # (b) un enlace roto: queda, y doctor lo dice
+  cp "$SETTINGS_0" "$TYCON_SETTINGS_PATH"
+  ln -s "$LAB_HOME/no-existe" "$OLDN"
+  OUT="$(place_rule)"
+  [ -L "$OLDN" ] && [ "$(link_to "$OLDN")" = "$LAB_HOME/no-existe" ] && ok "(b) el enlace roto queda como estaba" || bad "(b) el enlace roto se tocó: $(ls -la "$OLDN" 2>&1) — $OUT"
+  case "$(harness doctor 2>&1)" in *"$VIEJO"*colgado*) ok "(b) doctor lo dice" ;; *) bad "(b) doctor no dice el enlace roto: $(harness doctor 2>&1 | grep "$VIEJO")" ;; esac
+  rm -f "$OLDN"
+
+  # (c) una carpeta real: queda intacta, y doctor lo dice
+  mkdir -p "$OLDN"; printf 'mío\n' > "$OLDN/nota.txt"
+  OUT="$(place_rule)"
+  [ -d "$OLDN" ] && [ ! -L "$OLDN" ] && [ "$(cat "$OLDN/nota.txt")" = "mío" ] && ok "(c) la carpeta real queda intacta" || bad "(c) la carpeta real se tocó — $OUT"
+  case "$(harness doctor 2>&1)" in *"$VIEJO"*carpeta*) ok "(c) doctor lo dice" ;; *) bad "(c) doctor no dice la carpeta: $(harness doctor 2>&1 | grep "$VIEJO")" ;; esac
+  rm -rf "$OLDN"
+
+  # (d) un enlace al lugar con un hook registrado por él: es un uso; queda, el hook sigue, y doctor lo dice
+  ln -s "$PLACEN" "$OLDN"
+  python3 - "$TYCON_SETTINGS_PATH" "$VIEJO" <<'PY'
+import json, sys
+p, old = sys.argv[1:3]
+s = json.load(open(p, encoding="utf-8"))
+s.setdefault("hooks", {}).setdefault("PreToolUse", []).append({"matcher": "Bash", "hooks": [{"type": "command", "command": "node \"$HOME/.claude/%s/scripts/hooks/lab-hook.js\"" % old}]})
+s.setdefault("permissions", {}).setdefault("allow", []).append("Bash(node ~/.claude/%s/scripts/x.js)" % old)
+json.dump(s, open(p, "w", encoding="utf-8"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
+PY
+  S1="$(shasum -a 256 < "$TYCON_SETTINGS_PATH")"
+  OUT="$(place_rule)"
+  [ -L "$OLDN" ] && ok "(d) con un hook registrado, el enlace queda" || bad "(d) el enlace se retiró con un hook registrado — $OUT"
+  [ "$(shasum -a 256 < "$TYCON_SETTINGS_PATH")" = "$S1" ] && ok "(d) …y settings.json no se tocó (ni el hook ni el permiso)" || bad "(d) settings.json cambió"
+  case "$(harness doctor 2>&1)" in *"registrado por el nombre viejo: settings.json 2"*) ok "(d) doctor dice lo registrado por el nombre viejo" ;; *) bad "(d) doctor: $(harness doctor 2>&1 | grep -i registrado)" ;; esac
+  rm -f "$OLDN"; cp "$SETTINGS_0" "$TYCON_SETTINGS_PATH"
+
+  # .tycon-pipeline no es de esta tanda: sigue siendo el enlace al estado
+  [ -L "$LAB_HOME/.claude/.tycon-pipeline" ] && [ "$(cd "$LAB_HOME/.claude/.tycon-pipeline" && pwd -P)" = "$(cd "$LAB_HOME/.tycon/state" && pwd -P)" ] && ok ".tycon-pipeline sigue siendo el enlace al estado" || bad ".tycon-pipeline cambió: $(link_to "$LAB_HOME/.claude/.tycon-pipeline")"
+
+  echo "T5c · la máquina mudada sin el nombre viejo arranca por la copia fija y por el respaldo en shell"
+  gone "$OLDN" || bad "T5c precondición: el nombre viejo sigue"
+  BOOT="$LAB_HOME/.tycon/state/harness"
+  OUT="$(node "$BOOT/bootstrap.js" startup 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "T5c la copia fija arranca (sale 0)" || bad "T5c la copia fija: rc $RC: $OUT"
+  case "$OUT" in *"$VIEJO"*) bad "T5c la copia fija nombra el nombre viejo: $OUT" ;; *) ok "T5c …sin nombrar el nombre viejo" ;; esac
+  fallback_lines() { local n; n="$(grep -c ' fallback: ' "$BOOT/startup.log" 2>/dev/null)"; printf '%s' "${n:-0}"; }
+  N0="$(fallback_lines)"
+  bash "$BOOT/bootstrap-fallback.sh" >/dev/null 2>&1; RC=$?
+  LAST="$(grep ' fallback: ' "$BOOT/startup.log" 2>/dev/null | tail -1)"
+  [ "$RC" = 0 ] && [ "$(fallback_lines)" -gt "$N0" ] && ok "T5c el respaldo en shell corre (sale 0 y anota su línea)" || bad "T5c el respaldo: rc $RC, línea «${LAST}»"
+  case "$LAST" in *"no resuelve"*|*"$VIEJO"*) bad "T5c el respaldo no encontró el árbol: $LAST" ;; *) ok "T5c …y encontró el árbol sin el nombre viejo" ;; esac
+  gone "$OLDN" && ok "T5c el arranque no vuelve a crear el nombre viejo" || bad "T5c el arranque creó el nombre viejo"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+
+  # la mudanza de una máquina que TIENE el nombre viejo (un enlace al lugar, con un permiso): no lo retira a mitad de
+  # camino —así deshacerla no tiene que reponerlo—; lo deja llevando a ~/.tycon/harness y lo retira la corrida siguiente
+  echo "T5 · la mudanza con el nombre viejo: no lo retira durante; lo retira la corrida siguiente"
+  clone_machine "$BASE/lab5m"
+  OLDN="$LAB_HOME/.claude/$VIEJO"; PLACEN="$LAB_HOME/.claude/$PLACE"
+  ln -s "$PLACEN" "$OLDN"
+  perms "Bash(node ~/.claude/$VIEJO/scripts/x.js)"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(m) la mudanza sale 0" || bad "(m) la mudanza: rc $RC: $OUT"
+  [ -L "$OLDN" ] && [ "$(cd "$OLDN" && pwd -P)" = "$(cd "$(NEW_TREE)" && pwd -P)" ] && ok "(m) la mudanza no lo retira: queda llevando a ~/.tycon/harness" || bad "(m) el nombre viejo tras la mudanza: $(ls -la "$OLDN" 2>&1)"
+  [ "$(settings_has "/$VIEJO/")" -ge 1 ] && ok "(m) …y su permiso sigue como estaba" || bad "(m) la mudanza tocó el permiso: $(allow_list | tr '\n' ' ')"
+  OUT="$(place_rule)"
+  gone "$OLDN" && [ "$(settings_has "/$VIEJO/")" = 0 ] && ok "(m) la corrida siguiente lo retira, con su permiso" || bad "(m) la corrida siguiente no lo retiró: $(ls -la "$OLDN" 2>&1) — $OUT"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

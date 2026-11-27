@@ -163,3 +163,42 @@ test('S8 TopeDeRechazos_AjusteRoto_LoDice — un .tycon/advisors.yaml que no se 
     assert.match(err, /review\.max_rounds[^\n]*no es YAML/, err);
   } finally { CS.leerCommiteado = antes; }
 });
+
+// S9 · 🔴 Falla con: una parte que no está en la historia (o un bloque pipelines que no se lee) devuelve null callada, y se
+//      mide la historia entera sin decirlo.
+test('S9 Parte_NoValida_LoDice — buscar una parte que no está no se calla', () => {
+  const BS = require(path.join(SCRIPTS, 'lib', 'batch-scope.js'));
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'parte-no-esta-')), 'h.md');
+  fs.writeFileSync(f, historia());
+  const { valor, err } = conStderr(() => BS.parteMedible(f, 'Z-no-existe'));
+  assert.strictEqual(valor, null);
+  assert.match(err, /Z-no-existe/, err);
+});
+
+// S10 · 🔴 Falla con: un review.max_rounds del repo que no es un número válido (o fuera del rango) cae callado al de la
+//       organización.
+test('S10 TopeDeRechazos_ValorInvalido_LoDice — un max_rounds que no sirve no cae callado al de la organización', () => {
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  const CS = require(path.join(SCRIPTS, 'lib', 'config-source.js'));
+  const antes = CS.leerCommiteado;
+  CS.leerCommiteado = () => 'review:\n  max_rounds: tres\n';
+  try {
+    const { valor, err } = conStderr(() => PR.topeDeRechazos({ review: { max_rounds: 3 } }, '/un/repo'));
+    assert.strictEqual(valor, 3, 'vale el de la organización');
+    assert.match(err, /review\.max_rounds[^\n]*tres/, err);
+  } finally { CS.leerCommiteado = antes; }
+});
+
+// S11 · 🔴 Falla con: la lista de lo sensible (save-ok.js) que no carga deja `esSensible` en null sin decirlo: el delegado
+//       no guarda nada y nadie sabe por qué.
+test('S11 FrenoDeLaLista_SensiblesSinCargar_LoDice — sin la lista de lo sensible, se dice', () => {
+  const SB = require(path.join(SCRIPTS, 'lib', 'save-brake.js'));
+  const ruta = require.resolve(path.join(SCRIPTS, 'lib', 'save-ok.js'));
+  const antes = require.cache[ruta];
+  require.cache[ruta] = { id: ruta, filename: ruta, loaded: true, exports: { get esSensible() { throw new Error('no cargó'); } } };
+  try {
+    const { valor, err } = conStderr(() => SB.cargarEsSensible());
+    assert.strictEqual(valor, null);
+    assert.match(err, /lo sensible[^\n]*no cargó/, err);
+  } finally { if (antes) require.cache[ruta] = antes; else delete require.cache[ruta]; }
+});

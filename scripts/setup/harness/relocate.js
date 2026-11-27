@@ -75,7 +75,7 @@ function preconditions(ctx, state, { bootstrap }) {
   // textual y no necesita que el viejo exista
   const rp = real(place); const rl = st ? real(legacy) : null;
   if (!rp) out.problems.push(`el lugar ${place} no resuelve, y sin él no hay a dónde mudar — harness.js install (o install-tycon-hooks.sh) lo crea; después, harness.js relocate`);
-  else if (rl && !PLACE.samePath(rp, rl, ctx.platform)) out.problems.push(`el lugar (→ ${rp}) y el nombre viejo (→ ${rl}) son carpetas distintas: elegí una con install-tycon-hooks.sh --link <ruta>; después, harness.js relocate`);
+  else if (rl && !PLACE.samePath(rp, rl, ctx.platform)) out.problems.push(`el lugar (→ ${rp}) y el nombre viejo (→ ${rl}) son carpetas distintas: el nombre viejo ya no se mantiene; si querés esa carpeta, install-tycon-hooks.sh --link ${rl}; después, harness.js relocate`);
   const b = bootstrap || { missing: [], vsState: [], vsTree: [] };
   const stale = [...b.missing, ...b.vsState, ...b.vsTree];
   if (stale.length) out.problems.push(`la copia fija de arranque no es la del árbol (${[...new Set(stale)].join(', ')}): la vieja no sabe desinstalar un hook registrado por el lugar — harness.js update (o install) la refresca; después, harness.js relocate`);

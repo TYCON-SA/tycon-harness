@@ -517,6 +517,15 @@ function negativaDeLaLlave(sas) {
 function negativaDeLaLlaveDe(cfg) {
   return esDeAzure(cfg) ? negativaDeLaLlave(cfg.sas) : null;
 }
+/** El último archivo que esta máquina subió a este destino (su nombre en el buzón), para la sonda de lectura, o null. */
+function subidoConocido(registro, maquina) {
+  let mejor = null;
+  for (const e of Object.values((registro && registro.archivos) || {})) {
+    if (!e || typeof e.blob !== 'string' || !maquina || !e.blob.startsWith(`${maquina}/`)) continue;
+    if (!mejor || String(e.subido || '') > String(mejor.subido || '')) mejor = e;
+  }
+  return mejor ? mejor.blob : null;
+}
 const esDeAzure = (cfg) => cfg.provider === undefined || cfg.provider === 'azure-blob';
 /** El buzón de una llave, como lo anotan los registros locales: `<cuenta>/<contenedor>`, o el `destino` de su conector. */
 const destinoDe = (cfg) => (esDeAzure(cfg) ? `${cfg.cuenta}/${cfg.contenedor}` : cfg.destino);
@@ -891,6 +900,29 @@ function carpetaPreparada(destino, folder) {
  * qué tipo, si apunta al lugar nuevo y lo registrado con él. Lo lee `legacy-retire-check.js --home`. tycon-home.js se
  * carga si está, como en stateDirOf: este archivo viaja suelto.
  */
+/**
+ * Qué línea de arranque tiene la máquina: `vieja` si llama a la copia fija por la carpeta del estado de siempre en una
+ * máquina mudada (o es una forma de antes de la copia fija), `nueva` si llama a la de la carpeta del estado en uso, y
+ * `sin-medir` si no se pudo leer o no hay línea del arnés. El retiro de la carpeta de siempre espera a que no quede
+ * ninguna `vieja` ni `sin-medir`.
+ */
+function startupLineFact(home, platform) {
+  let SL;
+  let file;
+  try {
+    SL = require(path.join(__dirname, '..', 'setup', 'harness', 'startup-line.js'));
+    file = path.join(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).claudeDir(home), 'settings.json');
+  } catch (_) { return 'sin-medir'; }
+  let cmds;
+  try {
+    const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+    cmds = ((s && s.hooks && Array.isArray(s.hooks.SessionStart)) ? s.hooks.SessionStart : [])
+      .flatMap((e) => (e && Array.isArray(e.hooks) ? e.hooks : [])).map((h) => (h && typeof h.command === 'string' ? h.command : '')).filter(Boolean);
+  } catch (_) { return 'sin-medir'; }
+  if (cmds.some((c) => SL.isStale(c, home, platform) || SL.classify(c))) return 'vieja';
+  return cmds.some((c) => SL.isNew(c, home)) ? 'nueva' : 'sin-medir';
+}
+
 function oldPlacesFacts(home, tree, kindOf, notMeasured, code) {
   const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   if (!fs.existsSync(lib)) return notMeasured('tycon-home.js no está en este árbol');
@@ -959,6 +991,7 @@ function placeFactsForMailbox(day, folder = null) {
     out.registered_by_legacy = { total: c.total, files, unreadable: c.notes.length };
   } catch (e) { out.registered_by_legacy = notMeasured(`no se pudo contar (${code(e)})`); }
   out.old_places = oldPlacesFacts(home, where.dir || tree, kindOf, notMeasured, code);
+  out.startup_line = startupLineFact(home, process.platform);
   const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
   try {
     if (!tree) throw Object.assign(new Error('sin tree'), { code: 'NO_TREE' });
@@ -1500,7 +1533,7 @@ async function subir(opts = {}) {
   // 🔴 una llave de un conector se prueba antes de cada tanda, antes de subir nada: sólo sigue si NO puede listar
   const almacen = almacenDeLaLlave(cfg);
   if (typeof almacen.probarListado === 'function' && res.a_subir) {
-    const prueba = await almacen.probarListado();
+    const prueba = await almacen.probarListado({ maquina, conocido: subidoConocido(registro, maquina) });
     if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
   }
   if (cambioRegistro) { try { guardar(); } catch (_) { /* sólo ahorra hashes */ } }
@@ -1707,7 +1740,7 @@ async function chequearSoloCrear(opts = {}) {
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
     // una llave de un conector pasa antes por el listado de prueba: si puede listar, no se manda nada
     if (typeof almacen.probarListado === 'function') {
-      const prueba = await almacen.probarListado();
+      const prueba = await almacen.probarListado({ maquina, conocido: blob });
       if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
     }
     const r = await almacen.poner(blob, cuerpo, md5, 30000, { pisar: true });
@@ -1727,7 +1760,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, negativaDeLaLlaveDe, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, startupLineFact, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, negativaDeLaLlaveDe, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

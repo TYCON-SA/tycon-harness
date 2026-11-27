@@ -142,7 +142,8 @@ async function ingresarGithub(h, gh, usuario, { alterar } = {}) {
  */
 async function arrancarBuzon({ blobs = {}, contenedor = 'runs' } = {}) {
   const pedidos = [];
-  const st = { modo: 'ok', blobs: { ...blobs }, fallar: new Set() };   // fallar: nombres cuyo GET contesta 500
+  // fallar: nombres cuyo GET contesta 500 · largos: el largo que el listado dice de un nombre (uno enorme sin juntarlo)
+  const st = { modo: 'ok', blobs: { ...blobs }, fallar: new Set(), largos: {} };
   const md5 = (b) => crypto.createHash('md5').update(b).digest('base64');
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
@@ -153,7 +154,7 @@ async function arrancarBuzon({ blobs = {}, contenedor = 'runs' } = {}) {
     if (u.searchParams.get('comp') === 'list') {
       // `prefix`, como Azure: sólo los nombres que empiezan así
       const prefijo = u.searchParams.get('prefix') || '';
-      const items = Object.keys(st.blobs).filter((n) => n.startsWith(prefijo)).sort().map((n) => { const b = Buffer.from(st.blobs[n]); return `<Blob><Name>${n}</Name><Properties><Content-Length>${b.length}</Content-Length><Content-MD5>${md5(b)}</Content-MD5><Etag>e-${md5(b)}</Etag></Properties></Blob>`; });
+      const items = Object.keys(st.blobs).filter((n) => n.startsWith(prefijo)).sort().map((n) => { const b = Buffer.from(st.blobs[n]); return `<Blob><Name>${n}</Name><Properties><Content-Length>${(st.largos && st.largos[n]) || b.length}</Content-Length><Content-MD5>${md5(b)}</Content-MD5><Etag>e-${md5(b)}</Etag></Properties></Blob>`; });
       res.writeHead(200, { 'content-type': 'application/xml' });
       res.end(`<?xml version="1.0"?><EnumerationResults><Blobs>${items.join('')}</Blobs><NextMarker/></EnumerationResults>`);
       return;

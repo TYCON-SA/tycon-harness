@@ -151,6 +151,11 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
       'Producto Y': { staging: pipeline('Producto Y', 'Producto Y Backend', 'Staging'), production: pipeline('Producto Y', 'Producto Y Backend', 'Production') },
     } };
     ops.notify = { channel: 'teams' };
+    // precios inventados de dos modelos inventados: el ejemplo del costo estimado de «Horas y tokens»
+    ops.site.prices = {
+      'modelo-grande': { lectura: 4, escritura: 20, cache: 0.2, cache_escrita_1h: 8, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
+      'modelo-chico': { lectura: 0.5, escritura: 2.5, cache: 0.05, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
+    };
   }
   const archivos = archivosDeOperaciones({ hoy, ayer, config: ops });
   // los proyectos del día: dos productos con sus stories (sólo número, estado y días en el estado)
@@ -534,8 +539,12 @@ function jornadasDeEjemplo(ahora = Date.now()) {
   const out = { 'maquina-a': {}, 'maquina-b': {} };
   for (let n = 1; n <= 10; n += 1) {
     const d = dia(n);
-    out['maquina-a'][d] = JSON.stringify({ v: 1, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
-      tokens: { lectura: 120000 * n, escritura: 18000 * n, cache: 2400000 * n, medido: true } });
+    // los días de maquina-a traen el reparto por modelo (la versión 2); los de maquina-b, no (la versión 1): el costo dice
+    // «sin dato de modelo» para esos
+    const grande = { lectura: 100000 * n, escritura: 15000 * n, cache: 2000000 * n, cache_escrita_1h: 60000 * n };
+    const chico = { lectura: 20000 * n, escritura: 3000 * n, cache: 400000 * n };
+    out['maquina-a'][d] = JSON.stringify({ v: 2, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
+      tokens: { lectura: 120000 * n, escritura: 18000 * n, cache: 2400000 * n, medido: true, por_modelo: { 'modelo-grande': grande, 'modelo-chico': chico } } });
     if (n === 1) continue;
     // las horas de sesión nunca son menos que las horas con el arnés trabajando
     out['maquina-b'][d] = JSON.stringify({ v: 1, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (2 + (n % 2)), sesion_segundos: 3600 * (2 + (n % 2) + (n % 3)), sesiones: 1 + (n % 3), medido: true },

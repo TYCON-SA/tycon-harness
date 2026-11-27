@@ -6,7 +6,7 @@
   "offer": {"does": "registra tus horas en Clockify: propone abrir y cerrar el timer según lo que pedís en cada sesión", "needs": "una cuenta de Clockify y su servidor MCP registrado en Claude Code"},
   "onWork": "scripts/on-work.js",
   "looseStores": [
-    { "name": "clocki", "linkOld": true, "why": "la mudanza del aplicador (scripts/lib/loose-logs.js) lleva el estado a la carpeta del estado; el lugar viejo queda como enlace porque la skill de una versión anterior y las instrucciones propias de una persona lo nombran" }
+    { "name": "clocki", "linkOld": true, "writer": "scripts/state.js", "why": "la mudanza del aplicador (scripts/lib/loose-logs.js) lleva el estado a la carpeta del estado; el lugar viejo queda como enlace porque la skill de una versión anterior y las instrucciones propias de una persona lo nombran. El estado lo escribe scripts/state.js: el freno de la carpeta del estado no deja escribirlo a mano" }
   ],
   "mcp": { "server": "clockify", "machine": true },
   "hooks": [

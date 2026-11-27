@@ -462,7 +462,36 @@ que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el
 día? Sólo la ve quien mantiene: una persona con rol de programador no ve la pestaña, y la dirección `/api/horas` le
 contesta que no tiene permiso.
 
-Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
+**Arriba, la semana.** Los 7 días más nuevos, contra los 7 de antes. Cuatro fichas: las horas por día con el arnés
+trabajando, promedio del equipo por día medido; los tokens de la semana sin caché; los días sin medir (máquina × día); y
+el costo estimado de la semana. Debajo, una fila por persona: junta las máquinas de cada una según `people.machines`, y
+una máquina sin persona sale con su nombre. Dice las horas por día medido, el total de la semana, cuántos días de los 7
+se midieron, los tokens sin caché y el costo estimado. Una persona sin ningún día medido dice «no medido», no cero. No
+salen las máquinas ocultas ni las que nunca subieron horas (nombres viejos, máquinas de CI): la página dice cuántas
+quedaron afuera.
+
+**El costo es una estimación.** Multiplica los tokens de cada modelo por su precio, en dólares por millón: la lectura
+(la entrada sin caché), la escritura (la salida) y la lectura de caché. Los precios van en `operations.json`, en
+`site.prices`, con la página de donde salió cada uno y el día en que se tomó; se cambian con un pedido al repo de
+operaciones. Nada se cuenta como cero sin saberlo:
+
+- Un día subido por un arnés anterior no trae los tokens por modelo: dice «sin dato de modelo».
+- Un modelo que no está en `site.prices` dice «sin precio para <modelo>».
+- Si parte de la semana tiene costo y parte no, sale el costo de lo que se pudo contar y, debajo, lo que no se contó.
+
+La lectura de un modelo de Claude incluye la escritura de caché, que cuesta más que la entrada y distinto según dure 5
+minutos o 1 hora. Se cobra con su propio precio (`cache_escrita_5m` y `cache_escrita_1h` en `site.prices`). Si el modelo
+no trae ese precio, esa parte no se cuenta como entrada: la página dice «sin precio de escritura de caché para
+<modelo>».
+
+**Las últimas 6 semanas.** Dos gráficos de barras, uno por medida: las horas con el arnés trabajando por persona,
+apiladas por semana, y los tokens sin caché por semana. Una semana sin medir queda vacía y dice «sin medir», nunca cero.
+Al pasar el mouse cada barra dice su valor. Las fichas de arriba llevan una flecha contra la semana anterior, sólo si
+las dos se midieron. Si una máquina sube ejecuciones pero ningún día de horas (un arnés viejo), la página lo avisa con
+su nombre: hay que actualizar el arnés en esa máquina.
+
+**Abajo, plegada, la tabla de cada día.** Primero una fila por persona con las horas de cada día; adentro, plegada otra
+vez, la de siempre por máquina. Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
 (su zona horaria), y sólo llegan días cerrados: lo de hoy se mira en la oficina. Cada celda trae:
 
 - **Horas con el arnés trabajando:** el tiempo en que hubo al menos una sesión trabajando en esa máquina. Dos sesiones a

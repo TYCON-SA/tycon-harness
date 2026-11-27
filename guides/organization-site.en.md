@@ -462,7 +462,35 @@ says it cannot be used, it is fixed by hand in the profile repo: until then the 
 Maintainers only: a person with the developer role does not see the tab, and the `/api/horas` address answers that
 they have no permission.
 
-It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
+**At the top, the week.** The 7 newest days, against the 7 before. Four cards: the hours per day with the harness
+working, team average per measured day; the week's tokens without cache; the days not measured (machine × day); and the
+estimated cost of the week. Below, one row per person: it groups each person's machines through `people.machines`, and
+a machine without a person shows its own name. It gives the hours per measured day, the week total, how many of the 7
+days were measured, the tokens without cache and the estimated cost. A person with no measured day says "not
+measured", not zero. Hidden machines and those that never uploaded hours (old names, CI machines) are left out: the page
+says how many.
+
+**The cost is an estimate.** It multiplies each model's tokens by its price, in dollars per million: read (input
+without cache), write (output) and cache read. The prices live in `operations.json`, under `site.prices`, with the page
+each one came from and the day it was taken; they change through a pull request to the operations repo. Nothing counts
+as zero without knowing it:
+
+- A day uploaded by an older harness does not carry tokens per model: it says "no model data".
+- A model missing from `site.prices` says "no price for <model>".
+- If part of the week has a cost and part does not, the page shows the cost of what could be counted and, below it,
+  what was not counted.
+
+The read tokens of a Claude model include cache writes, which cost more than input and differ by whether they last 5
+minutes or 1 hour. They are priced on their own (`cache_escrita_5m` and `cache_escrita_1h` in `site.prices`). If the
+model has no such price, that part is not counted as input: the page says "no cache-write price for <model>".
+
+**The last 6 weeks.** Two bar charts, one per measure: the hours with the harness working per person, stacked by week,
+and the tokens without cache per week. A week not measured stays empty and says "not measured", never zero. Hovering
+over a bar shows its value. The cards at the top carry an arrow against the previous week, only if both were measured.
+If a machine uploads runs but no day of hours (an old harness), the page names it: the harness needs an update there.
+
+**Below, folded, the day-by-day table.** First one row per person with the hours of each day; inside, folded again, the
+usual one by machine. It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
 (its time zone), and only closed days arrive: today is watched in the office. Each cell has:
 
 - **Hours with the harness working:** the time when at least one session was working on that machine. Two sessions at

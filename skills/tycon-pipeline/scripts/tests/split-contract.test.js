@@ -208,6 +208,8 @@ const CASOS_PIPELINE = [
   { id: 'validators', argv: ['validators', '--story', '{STORY}', '--repo', '{REPO}'] },
   { id: 'smart-reloop-sin-args', argv: ['smart-reloop'] },
   { id: 'smart-reloop-sin-foto', marcador: true, argv: ['smart-reloop', '--iter', '2', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'reviewer-agents-sin-corrida', argv: ['reviewer-agents'] },
+  { id: 'reviewer-agents-json', marcador: true, argv: ['reviewer-agents', '--json'] },
   { id: 'preflight-frontmatter', argv: ['preflight-frontmatter', '--story-path', '{STORY}', '--target-status', 'review'] },
   { id: 'reviewers-run-sin-args', argv: ['reviewers-run'] },
   { id: 'check-count-sin-marcador', argv: ['check-count', '--ran', 'a,b'] },

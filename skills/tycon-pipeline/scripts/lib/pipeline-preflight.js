@@ -438,6 +438,18 @@ function cmdWorkSignal(cmd, args) {
         });
       }
       process.stderr.write(`work-signal start --action-done: no marco — ${v.motivo}\n`);
+      if (v.sinConfirmar) {
+        const persona = require('./steps.js').startWarningPersonLine({ part: 'time-tracking', message: v.motivo, unconfirmed: true });
+        if (persona) process.stderr.write(`${persona}\n`);
+      }
+      process.exit(1);
+    }
+    // la entrada abierta en la herramienta y sin anotar no la ve ni el cierre por inactividad ni el de la historia: hasta
+    // que quede anotada, no se marca (A68)
+    const repoDeLaCorrida = marker ? nn(marker.repoPath, null) : null;
+    const sesionDeLaCorrida = (marker && marker.sessionId) || (sid === '_nosession' ? null : sid);
+    if (EF.entradaAnotada({ repo: repoDeLaCorrida, sessionId: sesionDeLaCorrida, id: String(args.actionDone).trim() }) === false) {
+      process.stderr.write(`work-signal start --action-done: no marco — la entrada «${String(args.actionDone).trim().slice(0, 120)}» está abierta en la herramienta pero no quedó anotada en el estado de la integración: el cierre no la va a ver. Anotala con el comando que nombra el aviso de trabajo (pipeline.js work-signal start) y repetí esto; si no se puede, marker.js start-warning time-tracking "<motivo>"\n`);
       process.exit(1);
     }
     if (!v.verificado) process.stderr.write(`work-signal start --action-done: marco sin verificar — ${v.motivo}\n`);

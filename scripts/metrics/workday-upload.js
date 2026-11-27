@@ -7,8 +7,13 @@
  * scripts/metrics/upload-runs.js lo suba como `<maquina>/jornadas/v<versión>/<AAAA-MM-DD>.json`. Lo llama la subida en
  * cada pasada; no sube nada por su cuenta.
  *
- *   { v: 1, dia, tz, horas: { arnes_segundos, sesion_segundos, sesiones, medido: true },
- *                    tokens: { lectura, escritura, cache, medido: true } }
+ *   { v: 2, dia, tz, horas: { arnes_segundos, sesion_segundos, sesiones, medido: true },
+ *                    tokens: { lectura, escritura, cache, medido: true, por_modelo: { <modelo>: { lectura, escritura, cache } } } }
+ *
+ * `por_modelo` reparte los mismos tokens por modelo, para el costo estimado del sitio; lo que llegó sin modelo va a
+ * `sin_modelo`. Un modelo de Claude puede traer además `cache_escrita_5m` y `cache_escrita_1h`: la escritura de caché de
+ * cada plazo, que es parte de su lectura y tiene su propio precio. La versión 1 es la misma sin `por_modelo`: un día ya armado antes que se rearma con sus tokens de entonces
+ * sale en la versión 2 sin `por_modelo` (no tiene el reparto y no se inventa).
  *
  * `arnes_segundos` es el tiempo con al menos una sesión trabajando (la unión de los tramos); `sesion_segundos`, la suma.
  * Una parte que no se pudo leer va `{ medido: false, motivo }`, con el motivo sin rutas; `horas.ilegibles`,
@@ -95,13 +100,10 @@ function listConversations(home, env, since) {
   return { convs, problema };
 }
 
-/** La resta de dos totales acumulados de Codex, en las tres partes de la tarjeta de la oficina. */
-function codexDiff(base, last) {
-  const n = (t, k) => Number((t && t[k]) || 0);
-  const input = Math.max(0, n(last, 'input_tokens') - n(base, 'input_tokens'));
-  const cached = Math.max(0, n(last, 'cached_input_tokens') - n(base, 'cached_input_tokens'));
-  return { lectura: Math.max(0, input - cached), escritura: Math.max(0, n(last, 'output_tokens') - n(base, 'output_tokens')), cache: cached };
-}
+const { codexDiff } = TT;
+
+/** El reparto por modelo sin los modelos que quedaron en cero. */
+const soloConTokens = (pm) => Object.fromEntries(Object.entries(pm).filter(([, v]) => v.lectura || v.escritura || v.cache));
 
 /** El total guardado más nuevo de una conversación de Codex, de un día anterior a `day`, o null. */
 function savedBefore(totals, key, day) {
@@ -187,6 +189,8 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
       continue;
     } else {
       const t = { lectura: 0, escritura: 0, cache: 0, sinHora: 0, ilegibles: 0 };
+      const porModelo = {};
+      const sumarTodo = (pm) => { for (const [modelo, v] of Object.entries(pm || {})) TT.sumarModelo(porModelo, modelo, v); };
       let hubo = false;
       let hayCodex = false;
       // el día en que se tocó por última vez una conversación que no se pudo leer se arma siempre (sin medir); los otros
@@ -213,9 +217,16 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
               const base = savedBefore(totals, g.conv.key, d) || b.codex.primero;
               const diff = codexDiff(base, b.codex.ultimo);
               for (const k of ['lectura', 'escritura', 'cache']) t[k] += diff[k];
+              // el reparto sigue la misma resta: lo que creció hasta el primer conteo del día es del modelo de ese conteo.
+              // Si un total bajó en el medio, los pasos no suman la resta: entonces la resta entera va a sin_modelo
+              const suyo = {};
+              TT.sumarModelo(suyo, b.codex.modeloPrimero || TT.SIN_MODELO, codexDiff(base, b.codex.primero));
+              for (const [modelo, v] of Object.entries(b.codex.pasos || {})) TT.sumarModelo(suyo, modelo, v);
+              const cierra = ['lectura', 'escritura', 'cache'].every((k) => Object.values(suyo).reduce((a, v) => a + v[k], 0) === diff[k]);
+              if (cierra) sumarTodo(suyo); else TT.sumarModelo(porModelo, TT.SIN_MODELO, diff);
               totals[d] = { ...(totals[d] || {}), [g.conv.key]: b.codex.ultimo };
             }
-          } else for (const k of ['lectura', 'escritura', 'cache']) t[k] += b[k];
+          } else { for (const k of ['lectura', 'escritura', 'cache']) t[k] += b[k]; sumarTodo(b.porModelo); }
         }
         for (const a of g.agents) {
           const ab = a[d];
@@ -224,6 +235,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
           t.sinHora += ab.sinHora;
           t.ilegibles += ab.ilegibles;
           for (const k of ['lectura', 'escritura', 'cache']) t[k] += ab[k];
+          sumarTodo(ab.porModelo);
         }
       }
       if (!rastroGancho && !hubo && !rotaEseDia) { armados[d] = { vacio: true, armadoAt }; dias[d] = 'sin_rastro'; continue; }
@@ -234,7 +246,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
       else if (hayCodex && leidos.problema) motivo = `los totales guardados de Codex no se pudieron leer (${leidos.problema})`;
       tokens = motivo
         ? { medido: false, motivo }
-        : { lectura: t.lectura, escritura: t.escritura, cache: t.cache, medido: true, ...(t.sinHora ? { sin_hora: t.sinHora } : {}), ...(t.ilegibles ? { ilegibles: t.ilegibles } : {}) };
+        : { lectura: t.lectura, escritura: t.escritura, cache: t.cache, medido: true, ...(t.sinHora ? { sin_hora: t.sinHora } : {}), ...(t.ilegibles ? { ilegibles: t.ilegibles } : {}), por_modelo: soloConTokens(porModelo) };
       dias[d] = 'armado';
     }
     let contenido;
@@ -245,7 +257,7 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
       else if (!rastroGancho) horas = { medido: false, motivo: 'el gancho de estado no anotó ese día (apagado o sin instalar)' };
       else horas = { arnes_segundos: m.arnes_segundos, sesion_segundos: m.sesion_segundos, sesiones: m.sesiones, medido: true, ...(m.ilegibles ? { ilegibles: m.ilegibles } : {}) };
       const tz = (m.abierto && typeof m.abierto.tz === 'string' && m.abierto.tz) || WT.tzOf(WT.midnightOf(d));
-      contenido = `${JSON.stringify({ v: 1, dia: d, tz, horas, tokens })}\n`;
+      contenido = `${JSON.stringify({ v: 2, dia: d, tz, horas, tokens })}\n`;
       armados[d] = { armadoAt, tokens, contenido };
     }
     const name = `${d}.json`;

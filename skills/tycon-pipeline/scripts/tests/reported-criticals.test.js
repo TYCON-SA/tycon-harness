@@ -1171,3 +1171,67 @@ test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la v
   assert.deepEqual(rc.extractResolved(texto), []);
   assert.deepEqual(rc.extractResolved('Veredicto: hallazgos (SEC-C1) · bloquea: sí\n\nVeredicto: limpio · resueltos (SEC-C1)'), [{ rule: 'SEC-C1', count: 1 }]);
 });
+
+// A64: el registro no se abre a mano (el freno de escritura lo para también al leerlo con un intérprete); lo que se
+// necesita de él —qué agente le tocó a cada revisor, para escribirle— lo da pipeline.js reviewer-agents
+test('ReviewerAgents_DosSesionesYLeidoComoElCruce @A64 — cada sesión tiene su vuelta; un reporte no pisa a otro agente; leído si alguno se leyó', (t) => {
+  // 🔴 rojo si: dos «vuelta 1» de sesiones distintas se funden (el agente nuevo sale con el reporte del viejo), el último
+  // reporte ilegible tapa uno legible, o un renglón null o roto tira el subcomando
+  const l = lab({ advisors: [SEC, 'tycon-plugin-tests-coverage'] });
+  t.after(() => fs.rmSync(l.base, { recursive: true, force: true }));
+  const otra = path.join(path.dirname(l.registro), 'sesion-vieja.jsonl');
+  fs.mkdirSync(path.dirname(otra), { recursive: true });
+  const enOtra = (x) => fs.appendFileSync(otra, `${JSON.stringify({ story: '9.92', run: l.run, ...x })}\n`);
+  enOtra(LANZADO(at(-500), 1));
+  enOtra({ ts: at(-499), kind: 'launch-agent', advisor: SEC, iter: 1, agent_id: 'ag-VIEJO' });
+  enOtra({ ...REPORTE(at(-450), [], { iter: 1, readable: false, reason: 'murió' }), agent_id: 'ag-VIEJO' });
+  l.anotar(LANZADO(at(-400), 1));
+  l.anotar({ ts: at(-399), kind: 'launch-agent', advisor: SEC, iter: 1, agent_id: 'ag-NUEVO' });
+  const TC = 'tycon-plugin-tests-coverage';
+  l.anotar(LANZADO(at(-300), 1, TC));
+  l.anotar(REPORTE(at(-200), [], { iter: 1, advisor: TC }));
+  l.anotar(REPORTE(at(-100), [], { iter: 1, advisor: TC, readable: false, reason: 'el reporte no trae el renglón' }));
+  fs.appendFileSync(l.registro, 'null\n{roto\n');
+  const r = spawnSync(process.execPath, [PIPELINE, 'reviewer-agents', '--json'], { cwd: l.repo, encoding: 'utf8', env: l.env });
+  assert.equal(r.status, 0, out(r));
+  const j = JSON.parse(r.stdout);
+  const sec = j.revisores[SEC].map((x) => `${x.agent_id}:${x.reporte}`).sort();
+  assert.deepEqual(sec, ['ag-NUEVO:sin reporte', 'ag-VIEJO:no se leyó (murió)'], 'cada sesión su fila');
+  assert.deepEqual(j.revisores[TC], [{ iter: 1, agent_id: `ag-${TC}-1`, reporte: 'leído' }], 'leído si alguno se leyó');
+  assert.equal(j.ilegibles, 1, 'el renglón roto se cuenta');
+});
+
+test('ReviewerAgents_MapaDeLaCorrida @A64 — por revisor, cada salida con su vuelta, su agente y si su reporte se leyó; y el freno lo nombra', (t) => {
+  // 🔴 rojo si: el subcomando no existe, no ata el agente a su salida, mezcla otra historia, o el mensaje del freno no
+  // dice cómo obtener el agente sin abrir el registro
+  const l = lab({ advisors: [SEC, 'tycon-plugin-tests-coverage'] });
+  t.after(() => fs.rmSync(l.base, { recursive: true, force: true }));
+  l.anotar({ ...LANZADO(at(-400), 1), tool_use_id: 'tu-1' });
+  l.anotar({ ts: at(-399), kind: 'launch-agent', advisor: SEC, iter: 1, agent_id: 'ag-sec-1', tool_use_id: 'tu-1' });
+  l.anotar(REPORTE(at(-300), [], { iter: 1 }));
+  l.anotar(LANZADO(at(-290), 1, 'tycon-plugin-tests-coverage'));
+  l.anotar(REPORTE(at(-200), [], { iter: 1, advisor: 'tycon-plugin-tests-coverage', readable: false, reason: 'sin veredicto' }));
+  // otra historia: no es de la corrida
+  fs.appendFileSync(l.registro, `${JSON.stringify({ ts: at(-100), kind: 'launched', advisor: 'otro-revisor', iter: 1, story: '9.99' })}\n`);
+  const r = spawnSync(process.execPath, [PIPELINE, 'reviewer-agents', '--json'], { cwd: l.repo, encoding: 'utf8', env: l.env });
+  assert.equal(r.status, 0, out(r));
+  const j = JSON.parse(r.stdout);
+  assert.equal(j.story, '9.92');
+  assert.deepEqual(Object.keys(j.revisores).sort(), [SEC, 'tycon-plugin-tests-coverage'].sort(), 'sólo los de la corrida');
+  assert.deepEqual(j.revisores[SEC], [{ iter: 1, agent_id: 'ag-sec-1', reporte: 'leído' }]);
+  assert.equal(j.revisores['tycon-plugin-tests-coverage'][0].agent_id, 'ag-tycon-plugin-tests-coverage-1', 'sin launch-agent, el agente del reporte');
+  assert.match(j.revisores['tycon-plugin-tests-coverage'][0].reporte, /no se leyó \(sin veredicto\)/);
+  // en texto, un renglón por salida
+  const r2 = spawnSync(process.execPath, [PIPELINE, 'reviewer-agents'], { cwd: l.repo, encoding: 'utf8', env: l.env });
+  assert.equal(r2.status, 0, out(r2));
+  assert.match(r2.stdout, new RegExp(`${SEC} · vuelta 1 · agente ag-sec-1 · leído`));
+  // sin corrida abierta en la sesión: 1, y lo dice
+  const sin = spawnSync(process.execPath, [PIPELINE, 'reviewer-agents'], { cwd: l.repo, encoding: 'utf8', env: { ...l.env, CLAUDE_CODE_SESSION_ID: 'otra-sesion' } });
+  assert.equal(sin.status, 1, out(sin));
+  assert.match(out(sin), /no hay una corrida abierta/);
+  // el freno que para la lectura del registro con un intérprete dice cómo obtenerlo
+  const lectura = `python3 -c "import json; print([json.loads(x) for x in open('${l.registro}').read().replace('a','a').splitlines()])"`;
+  const g = spawnSync(process.execPath, [BASH_GATE], { input: JSON.stringify({ session_id: SID, tool_name: 'Bash', tool_input: { command: lectura }, cwd: l.repo }), encoding: 'utf8', env: l.env });
+  assert.equal(g.status, 2, out(g));
+  assert.match(out(g), /pipeline\.js reviewer-agents/);
+});

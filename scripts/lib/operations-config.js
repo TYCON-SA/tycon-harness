@@ -36,7 +36,14 @@
 //                                                            prueba y vuelve atrás si falla; sin la clave, "notice"
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
 //                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
-//                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
+//                          "dark": "invert" | "keep" },       qué hacer con él en el tema oscuro (por defecto, invertirlo)
+//               "prices": { "<modelo>": { "lectura": <n>,    opcional — los precios del costo estimado de la pestaña
+//                   "escritura": <n>, "cache": <n>,          «Horas y tokens», en dólares por millón de tokens (lectura:
+//                   "cache_escrita_5m": <n>,                 la entrada sin caché; escritura: la salida; cache: la lectura
+//                   "cache_escrita_1h": <n>,                 de caché; cache_escrita_*: la escritura de caché de 5 minutos
+//                   "fuente": "https://…",                   y de 1 hora, opcionales), con la página de donde salió cada
+//                   "fecha": "AAAA-MM-DD" } } },             uno y el día en que se tomó. Un modelo sin precio no se
+//                                                            cuenta como cero
 //     "work_items": { "type": <tipo de work item>,             opcional — el pedido de una vulnerabilidad: su tipo; si
 //                                                            no existe en un proyecto, va su elemento de backlog
 //         "fixed_fields": { <campo>: texto | número },        los campos de todos los pedidos de ese tipo
@@ -112,7 +119,15 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations', 'offices'];
+const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations', 'offices', 'prices'];
+// los precios del costo estimado: tres números por modelo, en dólares por millón, con su fuente y su fecha
+const PRICE_KEYS = ['lectura', 'escritura', 'cache', 'cache_escrita_5m', 'cache_escrita_1h', 'fuente', 'fecha'];
+const PRICE_PARTS = ['lectura', 'escritura', 'cache'];
+// la escritura de caché de 5 minutos y de 1 hora: opcionales (sin ellas, esa parte del costo no se cuenta y se dice)
+const PRICE_OPTIONAL_PARTS = ['cache_escrita_5m', 'cache_escrita_1h'];
+// el nombre de un modelo como lo escriben las conversaciones (claude-opus-5-5, gpt-5.6-terra, kimi-k2.7-code:cloud): la
+// misma forma que sube cada máquina (scripts/lib/transcript-tokens.js)
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const OFFICES_KEYS = ['visibility'];
 const OFFICES_VISIBILITY = ['maintainers', 'everyone'];
 // la marca de cada persona invitada desde el sitio: quién la invitó y cuándo (la invitación la manda el sitio)
@@ -276,6 +291,28 @@ function invitationsProblems(inv, access) {
   return problems;
 }
 
+/** Los precios del costo estimado: `{ "<modelo>": { lectura, escritura, cache, fuente, fecha } }`. */
+function pricesProblems(prices) {
+  if (!isObject(prices)) return [{ path: 'site.prices', message: 'tiene que ser un objeto { "<modelo>": { lectura, escritura, cache, fuente, fecha } }' }];
+  const problems = [];
+  for (const [modelo, p] of Object.entries(prices)) {
+    if (comment(modelo)) continue;
+    const at = `site.prices.${modelo}`;
+    if (!MODEL_NAME.test(modelo)) { problems.push({ path: at, message: `«${modelo}» no es el nombre de un modelo (letras, números, «.», «_», «:» y «-», sin espacios)` }); continue; }
+    if (!isObject(p)) { problems.push({ path: at, message: 'tiene que ser un objeto { lectura, escritura, cache, fuente, fecha }' }); continue; }
+    problems.push(...siteKeyProblems(p, PRICE_KEYS, at));
+    for (const k of PRICE_PARTS) {
+      if (typeof p[k] !== 'number' || !Number.isFinite(p[k]) || p[k] < 0) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un número de cero en adelante: dólares por millón de tokens' });
+    }
+    for (const k of PRICE_OPTIONAL_PARTS) {
+      if (p[k] !== undefined && (typeof p[k] !== 'number' || !Number.isFinite(p[k]) || p[k] < 0)) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un número de cero en adelante: dólares por millón de tokens' });
+    }
+    if (!siteUrlOk(p.fuente)) problems.push({ path: `${at}.fuente`, message: 'tiene que ser la dirección https:// de la página de precios de donde salió' });
+    problems.push(...dayProblems(p.fecha, `${at}.fecha`));
+  }
+  return problems;
+}
+
 function siteProblems(site) {
   if (!isObject(site)) return [{ path: 'site', message: 'tiene que ser un objeto' }];
   const problems = siteKeyProblems(site, SITE_KEYS, 'site');
@@ -337,6 +374,7 @@ function siteProblems(site) {
       if (site.offices.visibility !== undefined && !OFFICES_VISIBILITY.includes(site.offices.visibility)) problems.push({ path: 'site.offices.visibility', message: `tiene que ser una de: ${OFFICES_VISIBILITY.join(', ')}` });
     }
   }
+  if (site.prices !== undefined) problems.push(...pricesProblems(site.prices));
   if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {

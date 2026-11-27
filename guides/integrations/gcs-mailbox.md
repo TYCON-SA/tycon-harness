@@ -45,8 +45,14 @@ núcleo del arnés no lo nombra. Azure Blob Storage sigue igual.
   llave: el secreto no sale nunca.
 - Antes de cada tanda la subida intenta **listar** el bucket y sólo sigue si la respuesta es 403 `AccessDenied`: una llave
   que puede listar no es la del buzón (sale 2, `llave_con_lectura`, sin subir nada). Después pide por su nombre un
-  objeto que no existe: la cuenta que sólo crea contesta 403 `AccessDenied`; una que lee objetos sin poder listarlos
-  contesta 404 `NoSuchKey`, y también sale 2. `--check-create-only` pasa por las mismas dos pruebas.
+  objeto que no existe, bajo la carpeta de la máquina (así se ve también una lectura dada por prefijo o por carpeta
+  administrada), y uno que esa máquina ya subió: la cuenta que sólo crea contesta 403 `AccessDenied` a los dos; una que
+  lee objetos sin poder listarlos contesta 404 `NoSuchKey` o 200, y también sale 2. `--check-create-only` pasa por las
+  mismas pruebas.
+- **Un bucket sin acceso uniforme deja a las máquinas sin subir.** Con permisos por objeto, quien sube un objeto lo
+  puede leer; como la llave es una sola para todas las máquinas, leería las ejecuciones de las demás. Por eso, desde la
+  segunda tanda de cada máquina, la subida sale 2 (`llave_con_lectura`) y lo dice. Se arregla prendiendo el acceso
+  uniforme del bucket (`gcloud storage buckets update gs://<bucket> --uniform-bucket-level-access`).
 
 ## El perfil del equipo
 
@@ -84,6 +90,7 @@ Medidos en un bucket de laboratorio (`acme-buzon-lab` en los ejemplos) con la AP
 | Listar con la cuenta que sólo crea | 403 `AccessDenied` | la prueba de antes de la tanda pasa |
 | Leer por su nombre un objeto que no existe, con la cuenta que sólo crea | 403 `AccessDenied` | la prueba de antes de la tanda pasa |
 | Lo mismo con una cuenta que lee objetos | 404 `NoSuchKey` | `llave_con_lectura`: sale 2, sin subir nada |
+| Leer un objeto que la máquina ya subió, en un bucket sin acceso uniforme | 200 | `llave_con_lectura`: sale 2 y pide prender el acceso uniforme |
 | La firma no casa (secreto equivocado) | 403 `SignatureDoesNotMatch` | `llave_invalida` |
 | La clave HMAC desactivada | 401 `KeyInactive` | `llave_invalida` |
 | El bucket no existe | 404 `NoSuchBucket` | `llave_invalida`, con el bucket en el motivo |

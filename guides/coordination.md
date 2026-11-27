@@ -1163,8 +1163,9 @@ la de un producto. Cada una, con su porqué.
   espera no es un pedido roto.
 - **Nunca se cierra un turno con «¿seguimos?».** Una sesión que espera recibe trabajo. Por qué: con el dueño ausente,
   esa pregunta no la contesta nadie y la sesión queda parada.
-- **Con el dueño ausente no se abre un cuadro.** Se le avisa por el canal de avisos del equipo y se espera a que
-  escriba. Por qué: un cuadro abierto de madrugada dejó a la coordinadora seis horas parada, y a las sesiones sin
+- **Con el dueño ausente no se abre un cuadro.** Se le avisa por el canal de avisos del equipo, si el perfil lo pide
+  (`coordination.away_notify`, de fábrica `signatures`; con `broken-only` o `never` no se le avisa de una firma), y se
+  espera a que escriba. El modo entero, para quien lo usa: [El modo autónomo de la coordinadora](autonomous-mode.md). Por qué: un cuadro abierto de madrugada dejó a la coordinadora seis horas parada, y a las sesiones sin
   trabajo.
 - **Antes de correr el comando de firma de otra sesión que pidió el sí del dueño, se le pregunta al dueño.** Por qué: una
   firma que el perfil le delega a la coordinadora sale sola al correr el comando, sin que el dueño la vea.

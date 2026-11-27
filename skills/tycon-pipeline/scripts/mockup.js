@@ -554,12 +554,15 @@ function mockupLayers(html) {
   const textos = mockupTexts(s);
   if (!textos) return null;
   const out = [];
-  for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
+  // el botón y la pantalla de abajo pueden traer «»» (`Siguiente »`): se leen hasta el «» en «» y el «».</p>» del final
+  for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^<]*?)» en «([^<]*?)»\.<\/p>/g)) {
     const screen = Number(m[1]);
     // los otros casos van al final de la sección, en sus tarjetas: lo de antes es la ventana
     const fin = s.indexOf('</section>', m.index);
     const seccion = s.slice(m.index, fin === -1 ? undefined : fin);
-    const textosDe = (t, n = screen) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)].filter((x) => Number(x[3]) === n && x[2] !== 'title').map((x) => decode(x[1]));
+    // el texto de ayuda de un campo (placeholder) va como atributo, igual que el motivo de una casilla: no se exige adentro
+    const esAyuda = (t, i) => /(?:<span class="ph">|vacío dice )<span class="t" $/.test(t.slice(Math.max(0, i - 60), i));
+    const textosDe = (t, n = screen) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)].filter((x) => Number(x[3]) === n && x[2] !== 'title' && !esAyuda(t, x.index)).map((x) => decode(x[1]));
     const corte = seccion.indexOf('<div class="variants">');
     const variants = corte === -1 ? [] : seccion.slice(corte).split('<div class="variant">').slice(1)
       .map((tarjeta) => ({ when: decode(((/<p class="variant-when">([^<]*)/.exec(tarjeta) || [])[1] || '').trim()), texts: textosDe(tarjeta) }))

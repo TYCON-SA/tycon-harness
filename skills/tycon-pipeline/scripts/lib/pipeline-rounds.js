@@ -815,4 +815,81 @@ function cmdSmartReloop(cmd, args) {
   return;
 }
 
-module.exports = { cmdReviewRounds, cmdSmartReloop, computeSmartReloop, gitArchivosDelWorkingTree };
+/**
+ * Los agentes de los revisores de la corrida de esta sesión, del registro de críticos reportados (lib/reported-criticals.js):
+ * por revisor, cada salida con su vuelta, su agente (el `agentId` para escribirle con un mensaje) y si su reporte se leyó.
+ * El registro no se abre a mano (el freno de escritura lo para también al leerlo con un intérprete): esto es lo que se
+ * lee de él. Uso: pipeline.js reviewer-agents [--json]. Sale 1 sin una corrida abierta en esta sesión, 2 si no pudo leer.
+ */
+function agentesDeLaCorrida() {
+  const leido = readSessionMarkerStrict();
+  if (leido.estado === 'ilegible') return { error: `no pude leer el marcador de la sesión (${leido.motivo})` };
+  const marker = leido.marcador;
+  if (!marker || !marker.storyId) return { sinCorrida: true };
+  const rc = require('./reported-criticals.js');
+  const base = marker.repoPath || process.cwd();
+  const suya = marker.storyPath ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(base, marker.storyPath)) : null;
+  const runDir = marker.runDir ? path.resolve(base, marker.runDir)
+    : resolveRunDir(base, String(marker.storyId), false, suya, { marker });
+  const all = rc.readAll(stateDirOf(os.homedir()));
+  if (all.error) return { error: `no pude leer el registro de críticos (${all.error})` };
+  const lines = rc.linesOfRun(all.lines, { story: marker.storyId, since: marker.startedAt || null, ...rc.corridaDelMarcador(marker, runDir) });
+  // una fila por salida: la sesión que la anotó, el revisor y la vuelta. La vuelta se cuenta por sesión, así que dos
+  // sesiones de la misma corrida tienen cada una su «vuelta 1». El reporte ya trae la vuelta de su salida (la ató el arnés
+  // al anotarlo); sin vuelta, dos agentes distintos no comparten fila
+  const revisores = Object.create(null);
+  const filas = [];
+  const salidaDe = (l, agente) => {
+    const iter = l.iter ?? null;
+    let x = filas.find((y) => y.sesion === l.sessionKey && y.advisor === l.advisor && y.iter === iter
+      && (iter !== null || !agente || !y.agent_id || y.agent_id === agente));
+    if (!x) {
+      x = { sesion: l.sessionKey, advisor: l.advisor, iter, agent_id: null, leido: false, motivo: null, reportes: 0 };
+      filas.push(x);
+    }
+    if (agente && !x.agent_id) x.agent_id = agente;
+    return x;
+  };
+  for (const l of lines) {
+    if (!l || typeof l !== 'object' || typeof l.advisor !== 'string' || !l.advisor) continue;
+    if (l.kind === 'launched') salidaDe(l, null);
+    else if (l.kind === 'launch-agent') salidaDe(l, l.agent_id || null);
+    else if (l.kind === 'report') {
+      const x = salidaDe(l, l.agent_id || null);
+      x.reportes += 1;
+      // leída si alguno de sus reportes se leyó, como el cruce
+      if (l.readable) x.leido = true;
+      else x.motivo = l.reason || x.motivo;
+    }
+  }
+  for (const x of filas) {
+    const reporte = x.leido ? 'leído' : x.reportes ? `no se leyó${x.motivo ? ` (${x.motivo})` : ''}` : 'sin reporte';
+    (revisores[x.advisor] = revisores[x.advisor] || []).push({ iter: x.iter, agent_id: x.agent_id, reporte });
+  }
+  for (const lista of Object.values(revisores)) lista.sort((a, b) => (a.iter ?? 0) - (b.iter ?? 0));
+  return { story: String(marker.storyId), run: runDir ? path.basename(runDir) : null, revisores: { ...revisores },
+    ...(all.unreadable ? { ilegibles: all.unreadable } : {}) };
+}
+
+function cmdReviewerAgents(cmd, args) {
+  let r;
+  try { r = agentesDeLaCorrida(); } catch (e) { r = { error: `no pude leer la corrida (${(e && (e.code || e.message)) || 'error'})` }; }
+  if (r.error) { process.stderr.write(`⛔ reviewer-agents: ${r.error}\n`); process.exit(2); }
+  if (r.sinCorrida) {
+    if (args.json) process.stdout.write(`${JSON.stringify({ story: null, run: null, revisores: {} })}\n`);
+    else process.stderr.write('reviewer-agents: no hay una corrida abierta en esta sesión (sin marcador o sin historia).\n');
+    process.exit(1);
+  }
+  if (args.json) { process.stdout.write(`${JSON.stringify(r, null, 2)}\n`); process.exit(0); }
+  const nombres = Object.keys(r.revisores).sort();
+  const out = [`Revisores de la corrida de la historia ${r.story}${r.run ? ` (${r.run})` : ''}:`];
+  if (!nombres.length) out.push('  (ninguna salida anotada todavía)');
+  if (r.ilegibles) out.push(`  ⚠️ ${r.ilegibles} renglón(es) del registro no se pudieron leer: lo que falta puede estar ahí.`);
+  for (const n of nombres) {
+    for (const x of r.revisores[n]) out.push(`  ${n} · vuelta ${x.iter ?? '?'} · agente ${x.agent_id || '(sin dato)'} · ${x.reporte}`);
+  }
+  process.stdout.write(`${out.join('\n')}\n`);
+  process.exit(0);
+}
+
+module.exports = { cmdReviewRounds, cmdSmartReloop, computeSmartReloop, gitArchivosDelWorkingTree, cmdReviewerAgents, agentesDeLaCorrida };
