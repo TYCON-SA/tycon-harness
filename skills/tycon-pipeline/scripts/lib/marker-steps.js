@@ -113,13 +113,20 @@ function cmdSnapshotIter(nRaw, flags) {
   // falta la de `iterations`. Nunca pisa una de la misma historia; la de otra historia (un cambio de historia o un
   // `start` en la misma sesión) no es de esta corrida y se reemplaza. Su hora es la del sello: lo que vio cada revisor.
   if (alLanzar) {
+    // sólo con el sello de esa vuelta: una foto al lanzar de una vuelta que no se selló taparía lo que cambió después
+    if (!congelada || congelada.etiqueta !== `rev-iter${n}`) {
+      appendLog('gates.log', { name: 'advisors-iter', storyId: marker.storyId || null, iter: n, status: 'blocked', foto: 'al-lanzar', motivo: 'sin el sello de esa vuelta' });
+      console.error(`marker.js snapshot-iter ${n} --at-launch: la vuelta ${n} no tiene su sello (la última sellada es ${congelada ? congelada.etiqueta : 'ninguna'}). La foto al lanzar la toma pipeline.js al sellar la vuelta; a mano no se toma.`);
+      process.exit(2);
+    }
     marker.fotosAlLanzar = marker.fotosAlLanzar || {};
     const previa = marker.fotosAlLanzar[String(n)];
     if (previa && Array.isArray(previa.filesSnapshot) && String(previa.story) === String(marker.storyId || null)) {
       return salida({ iter: n, foto: 'ya-estaba', ts: previa.ts, snapshot_size: previa.filesSnapshot.length }, 0);
     }
     marker.fotosAlLanzar[String(n)] = {
-      ts: horaDelSello || nowIso(),
+      // la hora del sello mismo (lo que leyó cada revisor); la que pasa pipeline.js, si el sello no la trae
+      ts: congelada.ts || horaDelSello || nowIso(),
       story: marker.storyId || null,
       filesSnapshot: foto,
       ...(probesFuera ? { probes_excluidos: probesFuera } : {}),

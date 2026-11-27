@@ -701,8 +701,10 @@ test('SnapshotIter_AtLaunch_NeverOverwritesAnExistingPhoto', () => {
   const repo = mkRepoGit();
   const ts = new Date(Date.now() - 60000).toISOString();
   const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js', 'src/b.js'], fotosAlLanzar: { 2: { ts, story: '9.3.1', filesSnapshot: ['src/a.js'] } } });
+  // a mano, sin el sello de la vuelta 2, no se toma; y la que había queda igual
   const r = spawnSync(process.execPath, [MARKER, 'snapshot-iter', '2', '--at-launch'], { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
-  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no tiene su sello/);
   assert.deepStrictEqual(leerMarcador(home).fotosAlLanzar['2'], { ts, story: '9.3.1', filesSnapshot: ['src/a.js'] });
 });
 
@@ -748,9 +750,44 @@ test('SnapshotIter_AtLaunch_OtherStoryPhoto_IsReplacedAndNotUsed', () => {
   const home = mkHome({ storyId: '9.3.1', repoPath: repo, filesTouched: ['src/a.js'], fotosAlLanzar: { 1: vieja } });
   const { out } = reloopIter(repo, home, 2);
   assert.equal(out.mode, 'no-prev-snapshot-fallback', 'la foto de otra historia no cuenta');
-  const r = spawnSync(process.execPath, [MARKER, 'snapshot-iter', '1', '--at-launch'], { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: SID } });
-  assert.equal(r.status, 0, r.stderr);
+  // sellar la vuelta 1 de esta historia la reemplaza
+  reloopIter(repo, home, 1);
   const nueva = leerMarcador(home).fotosAlLanzar['1'];
   assert.equal(nueva.story, '9.3.1');
   assert.notEqual(nueva.ts, vieja.ts);
+});
+
+// Caso: la ronda de la vuelta 1 se completó, pero un arreglo se hizo después del sello y antes de lanzar al último
+// revisor. Ese revisor leyó la copia sellada, sin el arreglo: vuelve en la vuelta 2.
+// 🔴 Falla con: el revisor lanzado después del arreglo salteado con «ya vio lo que cambió».
+test('SmartReloop_RondaCompleta_RevisorLanzadoDespuesDeUnArreglo_NoLoVio', () => {
+  const repo = mkRepoGit();
+  const archivo = path.join(repo, 'src', 'PluginManager.cs');
+  fs.writeFileSync(archivo, 'try { Run(); } catch (Exception e) { }\n');
+  const home = mkHome({ storyId: '9.3.1', repoPath: repo, storyPath: path.join(repo, 'story.md'), filesTouched: [archivo],
+    fileEvents: [{ path: archivo, ts: new Date(Date.now() - 60000).toISOString() }] });
+  const A = 'tycon-plugin-security-basics';
+  const { out: o1 } = reloopIter(repo, home, 1);
+  const reg = path.join(home, '.claude', '.tycon-pipeline', 'advisor-runs', `${SID}.jsonl`);
+  const otros = o1.rerun.filter((x) => x !== A);
+  dormir(300);
+  // el primero se lanza enseguida (lee la copia sellada)
+  fs.appendFileSync(reg, `${JSON.stringify({ ts: new Date().toISOString(), advisor: otros[0], story: '9.3.1', repo })}\n`);
+  dormir(1100);
+  // el arreglo, en la carpeta viva, después del sello
+  fs.writeFileSync(archivo, 'try { Run(); } catch (Exception e) { Log(e); }\n');
+  const mp = path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`);
+  let m = leerMarcador(home);
+  m.fileEvents.push({ path: archivo, ts: new Date().toISOString() });
+  fs.writeFileSync(mp, JSON.stringify(m));
+  dormir(1100);
+  // el resto, y A el último: la ronda se completa y el arnés toma la foto (iterations[1]) en ese momento
+  const ahora = new Date().toISOString();
+  for (const x of [...otros.slice(1), A]) fs.appendFileSync(reg, `${JSON.stringify({ ts: ahora, advisor: x, story: '9.3.1', repo })}\n`);
+  m = leerMarcador(home);
+  m.iterations = { 1: { ts: ahora, filesSnapshot: [archivo] } };
+  fs.writeFileSync(mp, JSON.stringify(m));
+  dormir(300);
+  const { out } = reloopIter(repo, home, 2);
+  assert.ok(out.rerun.includes(A), `${A} vuelve: ${JSON.stringify((out.skipped || []).find((s) => s.name === A))}`);
 });

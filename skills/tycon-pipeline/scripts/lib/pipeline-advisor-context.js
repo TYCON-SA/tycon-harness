@@ -552,7 +552,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     return null;
   }
   // una vuelta sin código no lanza revisores: se cierra sola, sin tope ni firma. Queda anotada
-  if (sinCodigo && !estadoPipeline.paraOtra) {
+  // pasado el tope, sólo si «Preparar» pasaría: la misma comparación con lo revisado (lib/reviewed-diff.js). Lo que el
+  // re-loop no revisa y se ejecuta (la configuración, un workflow), o código que el delta por horas no vio, frena acá
+  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLoRevisado({ storyId, repoAbs, args }) : null;
+  if (sinCambiosRevisables && !sinCambiosRevisables.vacio) {
+    process.stderr.write(`⚠️  La vuelta ${iter} no trae revisores, pero no se cierra sola pasado el tope: ${sinCambiosRevisables.motivo}.\n`);
+  }
+  if (sinCodigo && !estadoPipeline.paraOtra && sinCambiosRevisables && sinCambiosRevisables.vacio) {
     if (args.extraRound) return `🛑 La vuelta ${iter} no trae código: se cierra sola, sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
     anotar({ name: 'no-code-round', status: 'ok', tope: tope.value });
     process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} sin revisores: desde la última vuelta no cambió código, y se cierra sola, sin firma.\n`);
@@ -660,6 +666,28 @@ function fotoAlLanzar(iter, horaDelSello) {
   }
 }
 
+// ¿Cambió algo desde la última vuelta sellada de esta sesión que «Preparar» contaría? `{ vacio: true }` si nada, o
+// `{ vacio: false, motivo }` (lo cambiado, o por qué no se pudo mirar: ante la duda, no está vacío).
+function cambiosDesdeLoRevisado({ storyId, repoAbs, args }) {
+  try {
+    const ft = require('./frozen-tree.js');
+    const sid = sessionIdFileKey();
+    const v = ft.ultimaVuelta(stateDirOf(os.homedir()), sid, 'revisores');
+    if (!v || !(v.repos || []).length) return { vacio: false, motivo: 'no hay una vuelta sellada con qué comparar' };
+    if (v.story !== undefined && v.story !== null && String(v.story) !== String(storyId)) return { vacio: false, motivo: 'la última vuelta sellada es de otra historia' };
+    const { marcador } = readSessionMarkerStrict();
+    const marker = marcador || { storyId, repoPath: repoAbs };
+    const storyArg = args.story || marker.storyPath || null;
+    const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
+    const { STEPS_TABLE } = require('./pipeline-shared.js');
+    const c = require('./reviewed-diff.js').comparar({ marker, v, storyAbs, stateDir: stateDirOf(os.homedir()), cierre: STEPS_TABLE.reviewersClose(marker) });
+    if (c.error) return { vacio: false, motivo: c.error };
+    if (!c.distintos.length) return { vacio: true };
+    const lista = c.distintos.map((d) => d.f);
+    return { vacio: false, motivo: `cambió después de la última vuelta revisada ${lista.slice(0, 5).join(', ')}${lista.length > 5 ? '…' : ''}` };
+  } catch (e) { return { vacio: false, motivo: `no pude comparar con lo revisado (${(e && e.message) || e})` }; }
+}
+
 // El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
 // contra la rama principal (ni commits propios ni cambios sin commitear), los revisores leerían la principal y dirían
 // «no está el código». Pasa cuando algo aparta los cambios mientras corre la vuelta (un `git stash` de fondo). Null si
@@ -747,10 +775,12 @@ function movidaDesde(desde, marcador) {
   // revisor = del set (núcleo y paquetes) y no de otra etapa: lo mismo que cuenta el gancho de lanzamientos
   const { esRevisor } = require('./late-snapshot.js');
   const catalogo = revisoresDelCatalogo();
-  return lineas.some((l) => {
-    if (!l.trim()) return false;
-    try { const d = JSON.parse(l); return esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde; } catch { return false; }
-  });
+  const parsed = lineas.map((l) => { if (!l.trim()) return null; try { return JSON.parse(l); } catch { return null; } });
+  // sólo lo anotado después del último pedido de vuelta (su `step5-start`): lo de antes es de vueltas anteriores, aunque
+  // su hora diga otra cosa
+  let desdeIdx = 0;
+  for (let i = parsed.length - 1; i >= 0; i -= 1) if (parsed[i] && parsed[i].event === 'step5-start') { desdeIdx = i + 1; break; }
+  return parsed.slice(desdeIdx).some((d) => d && esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde);
 }
 
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.

@@ -362,10 +362,15 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   } catch (e) {
     vista = { medible: false, motivo: `no se pudo leer el registro de lanzamientos (${(e && e.message) || e})` };
   }
-  // Con la foto al lanzar, la ronda no se completó: cada revisor leyó la copia sellada, así que un arreglo hecho después
-  // del sello no lo vio aunque se haya lanzado más tarde. Su lanzamiento no cuenta después de la hora del sello.
-  if (vista.medible && fotoPrevia.alLanzar && vista.lanzamientos instanceof Map) {
-    const selloMs = Date.parse(fotoPrevia.ts);
+  // Cada revisor leyó la copia sellada de su vuelta, así que un arreglo hecho después del sello no lo vio aunque se haya
+  // lanzado más tarde: su lanzamiento no cuenta después de la hora del sello. La hora es la de la foto al lanzar de esa
+  // vuelta (de esta historia), también cuando la ronda se completó y la base es la foto de siempre.
+  const alLanzarDeLaPrevia = fotoPrevia.alLanzar ? fotoPrevia : (() => {
+    const al = at(at(marker, 'fotosAlLanzar'), String(prev));
+    return al && String(al.story) === String(at(marker, 'storyId') || null) ? al : null;
+  })();
+  if (vista.medible && alLanzarDeLaPrevia && vista.lanzamientos instanceof Map) {
+    const selloMs = Date.parse(alLanzarDeLaPrevia.ts);
     if (Number.isFinite(selloMs)) for (const [adv, t] of vista.lanzamientos) if (Number.isFinite(t) && t > selloMs) vista.lanzamientos.set(adv, selloMs);
   }
   const ultimaEdicion = new Map();     // path → ms de su edición más reciente, por cualquiera de las fuentes
@@ -421,7 +426,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const pideVueltaAdentro = (f) => pideVuelta(f) && politica.pideVuelta(tipoDe(f));
   // lo que cuenta siempre (una instrucción para un agente, una imagen de una prueba visual) no deja cerrar sola la vuelta
   const cuentaSiempre = require('./reloop-code.js').cuentaSiempre;
-  if (delta.length && !delta.some(pideVueltaAdentro) && !delta.some((f) => cuentaSiempre(f)) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+  // ni con la foto al lanzar de base: esa vuelta no completó su ronda, y lo sellado puede no haberlo visto nadie
+  if (delta.length && !fotoPrevia.alLanzar && !delta.some(pideVueltaAdentro) && !delta.some((f) => cuentaSiempre(f)) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
     logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
     return {
       ...fullSet,
@@ -748,7 +754,8 @@ function cmdSmartReloop(cmd, args) {
   }
   if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js smart-reloop: ${congelada.aviso}.\n`);
   result.frozen = congelada.repos;
-  fotoAlLanzar(args.iter, horaDelSello);
+  // una vuelta sin revisores no deja foto: no hay ronda que mirar
+  if ((result.rerun || []).length) fotoAlLanzar(args.iter, horaDelSello);
   const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
   contextoConLaCopia(ctx, congelada.repos);
   result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));

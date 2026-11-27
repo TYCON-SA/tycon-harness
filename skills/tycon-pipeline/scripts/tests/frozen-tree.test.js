@@ -1415,6 +1415,91 @@ test('PrepareCommit_NoSeEjecuta_NoFrena_InstruccionesEImagenesDePrueba_Si', () =
   }
 });
 
+// ── La vuelta sin código: sólo con lo revisado visto, y pasado el tope sólo si «Preparar» pasaría ──
+const dormirMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const conTopeCommiteado = (C, n) => {
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'), `review:\n  max_rounds: ${n}\n`);
+  for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+    const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', C.codigo.repo, ...a], { encoding: 'utf8' });
+    assert.strictEqual(g.status, 0, g.stderr);
+  }
+};
+const editarConEvento = (C, rel, txt) => {
+  const abs = path.join(C.codigo.repo, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, txt);
+  C.escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), abs])], fileEvents: [...(m.fileEvents || []), { path: abs, ts: new Date().toISOString() }] }));
+};
+const tocarLaHistoria = (C, t) => {
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', `- hoy: escrita\n- después: ${t}`));
+  C.escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), C.story])], fileEvents: [...(m.fileEvents || []), { path: C.story, ts: new Date().toISOString() }] }));
+};
+
+// Caso: la vuelta 1 se pidió y no se lanzó ningún revisor (la sesión se cortó); después sólo cambió la historia. La vuelta
+// siguiente no puede cerrarse sola: nadie vio lo que se selló.
+// 🔴 Falla con: la vuelta 2 cerrada sola (no_code_delta, sin revisores) sobre una vuelta 1 que nadie lanzó.
+test('SmartReloop_VueltaPedidaSinLanzar_NoSeCierraSola', () => {
+  const C = corrida('s-ft-sinlanzar');
+  const archivo = path.join(C.estado(), 'active', `${C.sid}.json`);
+  const escribir = (cambios) => { const m = JSON.parse(fs.readFileSync(archivo, 'utf8')); fs.writeFileSync(archivo, JSON.stringify({ ...m, ...cambios(m) }, null, 2)); };
+  escribir((m) => ({ stepScheme: 2, stepsCompleted: [...new Set([...(m.stepsCompleted || []), 'start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'])] }));
+  const a = path.join(C.codigo.repo, 'src', 'a.js');
+  fs.writeFileSync(a, A_CODIGO);
+  escribir(() => ({ filesTouched: [a], fileEvents: [{ path: a, ts: new Date().toISOString() }] }));
+  dormirMs(50);
+  // la vuelta 1 se pide y no se lanza ningún revisor
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  dormirMs(50);
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', '- hoy: escrita\n- después: algo'));
+  escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), C.story])], fileEvents: [...(m.fileEvents || []), { path: C.story, ts: new Date().toISOString() }] }));
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  assert.ok(!v2.json.no_code_delta, `se cerró sola sobre una vuelta que nadie lanzó: ${salida(v2.r).slice(0, 300)}`);
+  assert.ok((v2.json.rerun || []).length > 0, JSON.stringify(v2.json.rerun));
+});
+
+// Caso: pasado el tope, cambió código; la vuelta frena. Una foto «al lanzar» tomada a mano no tapa ese código: sin el
+// sello de esa vuelta no se toma, y la vuelta sin código siguiente no sella el código sin firma.
+// 🔴 Falla con: `snapshot-iter N --at-launch` que escribe una foto sin el sello de la vuelta N, o «Preparar» que pasa con
+//    el código cambiado después de la última vuelta revisada.
+test('Tope_FotoAMano_NoTapaCodigo', () => {
+  const C = corridaRevisada('s-ft-fotoamano', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  assert.strictEqual(C.vuelta(2).r.status, 3, 'el código pasado el tope frena');
+  const s = C.correr('marker.js', ['snapshot-iter', '2', '--at-launch']);
+  assert.notStrictEqual(s.status, 0, `la foto a mano se tomó sin el sello de la vuelta 2: ${salida(s)}`);
+  assert.ok(!(C.marcador().fotosAlLanzar || {})['2'], 'no quedó la foto');
+  dormirMs(50);
+  tocarLaHistoria(C, 'dos');
+  dormirMs(50);
+  const v3 = C.vuelta(3);
+  assert.strictEqual(v3.r.status, 3, `la vuelta se cerró sola con código sin revisar: ${salida(v3.r).slice(0, 400)}`);
+});
+
+// Pasado el tope, lo que se ejecuta y no es código por su extensión (la configuración de una herramienta, un workflow,
+// un Dockerfile, una vista) no pasa como vuelta sin código: «Preparar» lo frena, y la vuelta tampoco lo sella sola.
+// 🔴 Falla con: la vuelta que se cierra sola pasado el tope con uno de esos archivos cambiado.
+test('Tope_LoQueSeEjecuta_NoPasaComoVueltaSinCodigo', () => {
+  for (const [rel, txt] of [['package.json', '{"scripts":{"postinstall":"true"}}\n'], ['.github/workflows/deploy.yml', 'on: push\n'],
+    ['Dockerfile', 'FROM scratch\n'], ['appsettings.json', '{"AllowedHosts":"*"}\n']]) {
+    const C = corridaRevisada(`s-ft-ejec-${rel.length}`, { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+    conTopeCommiteado(C, 1);
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+    dormirMs(1100);
+    editarConEvento(C, rel, txt);
+    dormirMs(50);
+    const v = C.vuelta(2);
+    assert.strictEqual(v.r.status, 3, `${rel}: ${salida(v.r).slice(0, 400)}`);
+    assert.match(v.r.stderr, /tope de 1/, rel);
+  }
+});
+
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
   const tercera = (C) => {
     const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));
