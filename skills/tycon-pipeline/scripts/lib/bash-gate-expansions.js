@@ -1435,4 +1435,42 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
 }
 
 
-module.exports = { MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, conCarpetasNombradas, conCarpetasPorTramo, CD_DEL_TRAMO, alcanzadasPorFind };
+/**
+ * Las formas que puede tomar una palabra con las variables asignadas en el comando (A57). La primera es la de siempre: la
+ * última asignación de cada variable. Después, cada combinación de las demás: la última del texto puede ser posterior al
+ * uso (`f=h.md; echo $f | xargs rm; f=otro`) y un bucle puede usar cualquiera. Hasta `TOPE_DE_VARIANTES`; con más,
+ * `{ variantes, pasado: true }`: quien llama lo trata como una entrada que no se ve.
+ */
+const TOPE_DE_VARIANTES = 16;
+function variantesDeVariables(w, asignados) {
+  const texto = String(w);
+  const ultima = texto.replace(EXPANSION_DE_VARIABLE, (m, a, b) => {
+    const v = asignados.get(a || b) || [];
+    return v.length ? v[v.length - 1] : m;
+  });
+  let variantes = [texto];
+  let pasado = false;
+  for (const m of texto.matchAll(EXPANSION_DE_VARIABLE)) {
+    const v = [...new Set(asignados.get(m[1] || m[2]) || [])];
+    if (!v.length) continue;
+    const siguientes = variantes.flatMap((x) => v.map((valor) => x.replace(m[0], () => valor)));
+    if (siguientes.length > TOPE_DE_VARIANTES) { pasado = true; break; }
+    variantes = siguientes;
+  }
+  return { variantes: [...new Set([ultima, ...(pasado ? [] : variantes)])], pasado };
+}
+
+/**
+ * Las entradas alternativas de una lista de palabras: la alternativa `i` toma la variante `i` de cada palabra (o su
+ * última, si tiene menos). Cada alternativa es una entrada entera, así las posiciones no se corren (`printf '%s/%s'`,
+ * `sh -c 'rm $1'`). `pasado`: alguna palabra pasó el tope.
+ */
+function entradasAlternativas(words, asignados) {
+  const vs = words.map((w) => variantesDeVariables(w, asignados));
+  const n = Math.max(1, ...vs.map((v) => v.variantes.length));
+  const alternativas = [];
+  for (let i = 0; i < n; i++) alternativas.push(vs.map((v) => v.variantes[Math.min(i, v.variantes.length - 1)]));
+  return { alternativas, pasado: vs.some((v) => v.pasado) };
+}
+
+module.exports = { TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, conCarpetasNombradas, conCarpetasPorTramo, CD_DEL_TRAMO, alcanzadasPorFind };

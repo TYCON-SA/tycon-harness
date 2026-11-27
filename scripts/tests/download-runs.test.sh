@@ -652,12 +652,15 @@ bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] && [ ! -e "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" ] \
   && ok "2.24-T16b un 500 al leer la cobertura del juego más nuevo: servicio_fallo, exit 1, completo false, no baja la versión vieja" \
   || mal "2.24-T16b 500: rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo)"
+# Una cobertura ilegible NO deja la pasada «parcial» (cambió el 27/11, A59): con la llave de sólo crear, una carpeta
+# nueva con una cobertura rota congelaba el sitio en cada vuelta. Va como lo que no va a bajar nunca (A45): se nombra
+# en `grandes_nombres`, se cuenta en `coberturas_ilegibles` y el espejo queda con la versión anterior.
 rm -f "${T}/b/falla-get"; echo "maq-x/registros/${VB}/cobertura.json" > "${T}/b/corromper"
 bajar "${T}" "${T}/bin/az"
-[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" completo)" = "false" ] && [ "$(campo "${T}" versiones_incompletas)" = "0" ] \
-  && campo "${T}" no_leidos | grep 'cobertura ilegible' >/dev/null && cmp -s "${C}/${VA}/gates.log.gz" "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" \
-  && ok "2.24-T16c una cobertura ilegible se nombra (parcial, exit 1, completo false), no cuenta como incompleta, y el espejo queda con la versión anterior" \
-  || mal "2.24-T16c ilegible: rc=${RC} estado=$(campo "${T}" estado) incompletas=$(campo "${T}" versiones_incompletas) no_leidos=$(campo "${T}" no_leidos)"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" completo)" = "true" ] && [ "$(campo "${T}" versiones_incompletas)" = "0" ] && [ "$(campo "${T}" coberturas_ilegibles)" = "1" ] \
+  && campo "${T}" grandes_nombres | grep 'no se puede leer' >/dev/null && cmp -s "${C}/${VA}/gates.log.gz" "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" \
+  && ok "2.24-T16c una cobertura ilegible se nombra, no deja la pasada parcial (exit 0, completo true), no cuenta como incompleta, y el espejo queda con la versión anterior" \
+  || mal "2.24-T16c ilegible: rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo) ilegibles=$(campo "${T}" coberturas_ilegibles) nombres=$(campo "${T}" grandes_nombres)"
 
 # ── T17 · VersionMalFormada_Ignorada ── 🔴 Falla con: una versión mal formada se baja o tumba la pasada.
 T="${BASE}/t224-17"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token

@@ -470,7 +470,14 @@ las horas por día medido, el total de la semana, cuántos días de los 7 se mid
 sin ningún día medido dice «no medido», no cero. No salen las máquinas ocultas ni las que nunca subieron horas (nombres
 viejos, máquinas de CI): la página dice cuántas quedaron afuera.
 
-**Abajo, plegada, la tabla de cada día.** Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
+**Las últimas 6 semanas.** Dos gráficos de barras, uno por medida: las horas con el arnés trabajando por persona,
+apiladas por semana, y los tokens sin caché por semana. Una semana sin medir queda vacía y dice «sin medir», nunca cero.
+Al pasar el mouse cada barra dice su valor. Las fichas de arriba llevan una flecha contra la semana anterior, sólo si
+las dos se midieron. Si una máquina sube ejecuciones pero ningún día de horas (un arnés viejo), la página lo avisa con
+su nombre: hay que actualizar el arnés en esa máquina.
+
+**Abajo, plegada, la tabla de cada día.** Primero una fila por persona con las horas de cada día; adentro, plegada otra
+vez, la de siempre por máquina. Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
 (su zona horaria), y sólo llegan días cerrados: lo de hoy se mira en la oficina. Cada celda trae:
 
 - **Horas con el arnés trabajando:** el tiempo en que hubo al menos una sesión trabajando en esa máquina. Dos sesiones a
