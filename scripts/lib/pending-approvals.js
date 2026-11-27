@@ -22,7 +22,11 @@
  *   · `revisarNuevas`: lo que trae un commit. Cada pendiente que se abre en el commit —un renglón nuevo, o uno tachado
  *     que vuelve a `- [ ]`— trae su aprobación firmada en el mismo commit, con su renglón en el registro del arnés de
  *     esta cuenta: un código que ya tenía aprobación no sirve para abrir otro pendiente. La corre el pre-commit, junto
- *     con `revisar` sobre lo que se va a commitear.
+ *     con `revisar` sobre lo que se va a commitear. Una línea se reconoce por lo que es, no por cómo está escrita: la
+ *     firmada por su huella y la de base por su código (`claveDeLinea`). La misma aprobación con otro espaciado no es
+ *     nueva, y cambiarle a una ya commiteada un campo que su huella no cubre se nombra.
+ *   · `aprobacionVigente`: lo que mira `approve-pending` antes de pedir la firma, contra el último commit y contra el
+ *     ancestro común con la rama principal, que es lo que compara la validación del pedido.
  * La revisión de la noche no ve el registro del arnés ni la historia: una línea fabricada, o un pendiente reabierto con
  * un código ya aprobado, que llegan a main sin el pre-commit, no los ve.
  *
@@ -176,6 +180,26 @@ function renglonesDeFirma(texto) {
   return out;
 }
 
+/** Lo que dice una línea, sin cómo está escrita: el JSON con sus campos en orden, o el texto si no es un objeto. */
+function contenidoDe(x) {
+  const v = x && x.valor;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return `texto:${x && x.texto}`;
+  return JSON.stringify(Object.keys(v).sort().map((k) => [k, v[k]]));
+}
+
+/**
+ * Qué aprobación es una línea: la firmada por su huella (el código, la hora y la máquina), la de base por su código, y
+ * otra cosa por lo que dice. Dos líneas con la misma clave son la misma aprobación, escritas de otro modo.
+ */
+function claveDeLinea(x) {
+  const v = x && x.valor;
+  if (v && typeof v === 'object' && !Array.isArray(v) && typeof v.id === 'string') {
+    if (v.via === 'base') return `base:${v.id}`;
+    if (typeof v.huella === 'string' && v.huella === huella(v)) return `firmada:${v.huella}`;
+  }
+  return contenidoDe(x);
+}
+
 /**
  * Lo que trae un commit que no vale: `[{ id, motivo }]`. `antes`/`despues` son el registro en el último commit y en el
  * que se arma; `todoAntes`/`todoDespues`, la lista. Una línea nueva del registro vale firmada con su renglón en
@@ -198,21 +222,30 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
     }
     return tramite;
   };
-  const previas = new Set(leerRegistro(antes).lineas.map((x) => x.texto));
+  // las líneas ya commiteadas, por lo que son y no por cómo están escritas: la misma aprobación con otro espaciado u
+  // otro orden de campos no es nueva, y no vuelve a abrir un pendiente
+  const previas = new Map();
+  const anotar = (x) => { const k = claveDeLinea(x); if (!previas.has(k)) previas.set(k, new Set()); previas.get(k).add(contenidoDe(x)); };
+  leerRegistro(antes).lineas.forEach(anotar);
   const nacimiento = !leerRegistro(antes).lineas.length;
   const abiertosAntes = new Set(pendientesAbiertos(todoAntes).map((p) => p.clave));
   for (const o of otrosPadres) {
     const lineas = leerRegistro(o.registro || '').lineas;
-    for (const x of lineas) previas.add(x.texto);
+    lineas.forEach(anotar);
     const aprobados = new Set(lineas.filter((x) => !motivoDe(x.valor)).map((x) => x.valor.id));
     for (const p of pendientesAbiertos(o.todo || '')) if (aprobados.has(p.clave)) abiertosAntes.add(p.clave);
   }
   const malas = [];
   const firmadasNuevas = new Set();
   for (const x of leerRegistro(despues).lineas) {
-    if (previas.has(x.texto)) continue;
     const l = x.valor;
     const id = l && l.id;
+    const ya = previas.get(claveDeLinea(x));
+    if (ya) {
+      // una aprobación ya commiteada a la que se le cambió un campo que su huella no cubre (la vía, quién)
+      if (!ya.has(contenidoDe(x))) malas.push({ id, motivo: 'cambia una aprobación ya commiteada: lo que dice una aprobación no se reescribe' });
+      continue;
+    }
     const m = motivoDe(l);
     if (m) malas.push({ id, motivo: m });
     else if (l.via === 'base') {
@@ -248,6 +281,78 @@ function registroDelNacimiento({ antes = '', registro = '', todoAntes = '' }) {
   return { texto: lineas.length ? `${lineas.join('\n')}\n` : '', base: ids.length, firmadas: firmadas.length, descartadas: r.lineas.length - firmadas.length };
 }
 
+/**
+ * Los puntos contra los que se va a revisar el próximo commit de `repo`: el último commit (el pre-commit) y el ancestro
+ * común con la rama principal del remoto (la validación del pedido, que compara el pedido entero contra ese ancestro).
+ * Cada uno `{ donde, abierto(id), registro }`, con `registro` el registro unido de ese commit. Sin commits, ninguno; sin
+ * rama principal conocida (`origin/HEAD`, `origin/main` u `origin/master`), sólo el último commit. Lanza si git falla
+ * leyendo un commit que sí está.
+ */
+function puntosDeComparacion(repo) {
+  const { execFileSync } = require('child_process');
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+  const intento = (...a) => { try { return git(...a).trim(); } catch (_) { return null; } };
+  const head = intento('rev-parse', '--verify', '-q', 'HEAD^{commit}');
+  if (!head) return [];
+  let principal = intento('symbolic-ref', '-q', 'refs/remotes/origin/HEAD');
+  if (!principal) principal = ['refs/remotes/origin/main', 'refs/remotes/origin/master'].find((r) => intento('rev-parse', '--verify', '-q', `${r}^{commit}`)) || null;
+  const ancestro = principal ? intento('merge-base', head, principal) : null;
+  const commits = ancestro && ancestro !== head ? [head, ancestro] : [head];
+  // los archivos de los dos commits en un solo proceso de git (`cat-file --batch`): con cientos de aprobaciones, uno por
+  // archivo pasa el plazo del chequeo previo de la firma
+  const pedidos = [];
+  const porCommit = commits.map((commit) => {
+    const nombres = git('ls-tree', '-r', '-z', '--name-only', commit, '--', `${RECORD_DIR}/`).split('\0').filter(esArchivoDeLaCarpeta).sort();
+    const rutas = [TODO, RECORD, ...nombres];
+    for (const r of rutas) pedidos.push(`${commit}:${r}`);
+    return rutas;
+  });
+  const textos = leerEnLote(repo, pedidos);
+  let k = 0;
+  return commits.map((commit, i) => {
+    const [todo, viejo, ...archivos] = porCommit[i].map(() => textos[k++]);
+    const abiertos = new Set(pendientesAbiertos(todo || '').map((x) => x.codigo).filter(Boolean));
+    return { donde: commit, abierto: (id) => abiertos.has(id), registro: unirRegistro(viejo, archivos) };
+  });
+}
+
+/**
+ * El texto de cada `<commit>:<ruta>` de `pedidos`, en orden, con un solo `git cat-file --batch`; null el que no está.
+ * Lanza si git falla o su salida no se entiende: no leer no es «no está».
+ */
+function leerEnLote(repo, pedidos) {
+  if (!pedidos.length) return [];
+  const { execFileSync } = require('child_process');
+  const out = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], { windowsHide: true, input: `${pedidos.join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 });
+  const textos = [];
+  let pos = 0;
+  for (const p of pedidos) {
+    const fin = out.indexOf(10, pos);
+    if (fin < 0) throw new Error(`git cat-file cortó la salida en ${p}`);
+    const cabeza = out.slice(pos, fin).toString('utf8');
+    pos = fin + 1;
+    if (/ missing$/.test(cabeza)) { textos.push(null); continue; }
+    const m = /^[0-9a-f]{40,64} (\w+) (\d+)$/.exec(cabeza);
+    if (!m) throw new Error(`git cat-file no se entiende en ${p}: ${cabeza.slice(0, 80)}`);
+    const tam = Number(m[2]);
+    textos.push(m[1] === 'blob' ? out.slice(pos, pos + tam).toString('utf8') : null);
+    pos += tam + 1;
+  }
+  return textos;
+}
+
+/**
+ * ¿Una línea del registro ya aprueba el pendiente `id` para el próximo commit? Vale si, en cada punto contra el que se
+ * va a revisar (`puntosDeComparacion`), el pendiente ya estaba abierto o esa aprobación es nueva: una aprobación que ya
+ * estaba en un punto donde el pendiente estaba cerrado es vieja, y el control de ese punto no la acepta para reabrirlo.
+ * La aprobación se reconoce por lo que es (`claveDeLinea`), no por cómo está escrita.
+ */
+function aprobacionVigente({ id, registro, puntos = [] }) {
+  const previos = puntos.map((pt) => ({ abierto: pt.abierto(id), claves: new Set(leerRegistro(pt.registro).lineas.map(claveDeLinea)) }));
+  return leerRegistro(registro).lineas.some((x) => !motivoDe(x.valor) && x.valor.id === id
+    && previos.every((pt) => pt.abierto || !pt.claves.has(claveDeLinea(x))));
+}
+
 /** Los comandos que piden la firma de un pendiente: el de la coordinadora desde su pestaña (o la ventana), y el de la terminal. */
 function comandos(id, repo) {
   const base = `marker.js approve-pending --id ${id}${repo ? ` --repo ${repo}` : ''}`;
@@ -256,5 +361,5 @@ function comandos(id, repo) {
 
 module.exports = {
   TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, viaDeLaFirma, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
-  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos,
+  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos, claveDeLinea, puntosDeComparacion, leerEnLote, aprobacionVigente,
 };
