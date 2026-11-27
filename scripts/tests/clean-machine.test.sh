@@ -395,6 +395,8 @@ tally() {
       "❌ clean-machine: "*) CM_TOTAL=$((CM_TOTAL + 1)); CM_FAILS=$((CM_FAILS + 1)); echo "${line}" ;;
       "⏭ clean-machine: NO MEDIDO"*) CM_SKIPPED=$((CM_SKIPPED + 1)); echo "${line}" ;;
       "clean-machine: fin del escenario ${scenario}") ended=1 ;;
+      # el registro del arranque de un escenario que falló (lib.sh, scenario_end): pasa a la salida, sin contarse
+      "clean-machine: registro del arranque"*|"   │ "*) echo "${line}" ;;
     esac
   done < "${STEP_LOG}"
   if [ "${rc}" -ne 0 ]; then step_red "${name}" "${rc}"

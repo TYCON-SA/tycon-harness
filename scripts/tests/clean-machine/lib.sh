@@ -93,7 +93,19 @@ scenario_begin() { # <nombre>
   echo "clean-machine: escenario $1 · $(id -un) · HOME=${HOME} · copia ${COPY_DIR} en lugar de ${PUBLIC_URL}"
 }
 # La última línea de todo escenario: sin ella el anfitrión lo toma por un escenario que no terminó (rojo).
-scenario_end() { echo "clean-machine: fin del escenario $1"; }
+# scenario_end <escenario> — la última línea del escenario. Si hubo algún ❌, antes muestra el final del registro del
+# arranque: el contenedor corre con --rm y se borra al terminar, así que lo que no salga en su salida se pierde. Cada
+# renglón va con sangría: no se cuenta como un ✅ ni un ❌ (el anfitrión, tally, lo pasa tal cual a la salida del paso).
+scenario_end() {
+  local f="${HOME}/.claude/.tycon-pipeline/harness/startup.log"
+  if [ "${CM_FAILS}" -gt 0 ]; then
+    if [ -s "${f}" ]; then
+      echo "clean-machine: registro del arranque (${f}), las últimas 80 líneas:"
+      tail -n 80 "${f}" | sed 's/^/   │ /'
+    else echo "clean-machine: registro del arranque: no hay (${f})"; fi
+  fi
+  echo "clean-machine: fin del escenario $1"
+}
 
 # json <archivo> <expresión sobre d> → el valor (texto tal cual; lo demás, como JSON). Vacío y exit 1 si no se puede leer.
 json() {
