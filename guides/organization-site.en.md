@@ -470,7 +470,13 @@ gives the hours per measured day, the week total, how many of the 7 days were me
 person with no measured day says "not measured", not zero. Hidden machines and those that never uploaded hours (old
 names, CI machines) are left out: the page says how many.
 
-**Below, folded, the day-by-day table.** It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
+**The last 6 weeks.** Two bar charts, one per measure: the hours with the harness working per person, stacked by week,
+and the tokens without cache per week. A week not measured stays empty and says "not measured", never zero. Hovering
+over a bar shows its value. The cards at the top carry an arrow against the previous week, only if both were measured.
+If a machine uploads runs but no day of hours (an old harness), the page names it: the harness needs an update there.
+
+**Below, folded, the day-by-day table.** First one row per person with the hours of each day; inside, folded again, the
+usual one by machine. It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
 (its time zone), and only closed days arrive: today is watched in the office. Each cell has:
 
 - **Hours with the harness working:** the time when at least one session was working on that machine. Two sessions at

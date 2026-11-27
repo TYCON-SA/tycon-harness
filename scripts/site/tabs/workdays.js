@@ -20,6 +20,12 @@ const TX = require('../texts.js');
 const views = require('../views.js');
 
 const DIAS = 30;
+// la evolución: 6 semanas, así que la pestaña lee 42 días; la tabla de cada día sigue mostrando 30
+const SEMANAS = 6;
+const DIAS_EVOLUCION = SEMANAS * 7;
+// los colores de las personas en el gráfico, en orden fijo (la paleta de referencia, validada en claro y oscuro); de la
+// novena persona en adelante van juntas en «otras», en gris
+const SERIES = 8;
 const MAQUINA = /^[a-z0-9][a-z0-9._-]*$/;
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
 // un día de verdad: la forma y una fecha que existe (un 2026-13-45 tiene la forma y no es un día)
@@ -76,13 +82,15 @@ function jornadasDe(crudo) {
 function leerJornadas(dirBuzon) {
   const crudo = {};
   const ilegibles = {};
+  // las que suben ejecuciones (tienen carpeta en el buzón) y ningún día de horas: una máquina con un arnés viejo
+  const sinJornadas = [];
   let maquinas = [];
   try { maquinas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory() && MAQUINA.test(e.name)).map((e) => e.name); } catch (e) {
     return e.code === 'ENOENT' ? { maquinas: {}, ilegibles } : { maquinas: {}, ilegibles, problema: e.code || 'error' };
   }
   for (const maq of maquinas) {
     let nombres = [];
-    try { nombres = fs.readdirSync(path.join(dirBuzon, maq, 'jornadas')); } catch (e) { if (e.code !== 'ENOENT') ilegibles[maq] = e.code || 'error'; continue; }
+    try { nombres = fs.readdirSync(path.join(dirBuzon, maq, 'jornadas')); } catch (e) { if (e.code !== 'ENOENT') ilegibles[maq] = e.code || 'error'; else sinJornadas.push(maq); continue; }
     crudo[maq] = {};
     for (const n of nombres) {
       const m = ARCHIVO.exec(n);
@@ -90,7 +98,7 @@ function leerJornadas(dirBuzon) {
       try { crudo[maq][m[1]] = fs.readFileSync(path.join(dirBuzon, maq, 'jornadas', n), 'utf8'); } catch { crudo[maq][m[1]] = null; }
     }
   }
-  return { ...jornadasDe(crudo), ilegibles };
+  return { ...jornadasDe(crudo), ilegibles, sinJornadas };
 }
 
 const diaMas = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
@@ -100,13 +108,13 @@ const diaMas = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 864e5).
  * máquinas, cada celda y el total de cada día. Celda: `{ estado: 'no_medido' | 'raro' | 'medido', horas, tokens,
  * horasMotivo, tokensMotivo }`. El total suma lo medido de cada máquina, cada hora por separado, y cuenta las no medidas.
  */
-function armarTabla({ maquinas, ilegibles = {}, problema = null }, { ayer }) {
+function armarTabla({ maquinas, ilegibles = {}, problema = null, sinJornadas = [] }, { ayer, dias: cuantos = DIAS }) {
   // una máquina cuya carpeta no se pudo leer sigue en la tabla, con sus celdas «no se pudo leer»
   const nombres = [...new Set([...Object.keys(maquinas), ...Object.keys(ilegibles)])].sort();
   // la tabla termina en el día más nuevo que se entendió: un archivo raro no corre la ventana
   let nuevo = ayer;
   for (const m of Object.keys(maquinas)) for (const [d, v] of Object.entries(maquinas[m])) if (v && v.ok && esDia(d) && d > nuevo) nuevo = d;
-  const dias = Array.from({ length: DIAS }, (_, i) => diaMas(nuevo, -i));
+  const dias = Array.from({ length: cuantos }, (_, i) => diaMas(nuevo, -i));
   const celdas = {};
   const totales = {};
   for (const d of dias) {
@@ -129,7 +137,7 @@ function armarTabla({ maquinas, ilegibles = {}, problema = null }, { ayer }) {
     }
     totales[d] = t;
   }
-  return { dias, maquinas: nombres, celdas, totales, problema };
+  return { dias, maquinas: nombres, celdas, totales, problema, sinJornadas: sinJornadas.slice().sort() };
 }
 
 const horasDe = (s) => `${(s / 3600).toFixed(1)} h`;
@@ -155,7 +163,7 @@ function htmlTabla(tabla, idioma) {
   const t = (k, v) => TX.t(idioma, k, v);
   if (!tabla.maquinas.length) return `<p>${esc(t('horas.sinMaquinas'))}</p>`;
   const cab = `<tr><th>${esc(t('horas.dia'))}</th>${tabla.maquinas.map((m) => `<th>${esc(m)}</th>`).join('')}<th>${esc(t('horas.total'))}</th></tr>`;
-  const filas = tabla.dias.map((d) => {
+  const filas = tabla.dias.slice(0, DIAS).map((d) => {
     const celdas = tabla.maquinas.map((m) => {
       const c = tabla.celdas[d][m];
       if (c.estado === 'no_medido') return `<td class="no-medido">${esc(t('horas.noMedido'))}</td>`;
@@ -222,7 +230,22 @@ function resumen(tabla, people) {
   };
   let sinMedir = 0;
   for (const m of visibles) for (const d of semana) { const c = tabla.celdas[d][m]; if (!(c && c.estado === 'medido' && c.horas)) sinMedir += 1; }
-  return { semana: { ...equipo(semana), sinMedir }, anterior: equipo(anterior), personas, fuera: tabla.maquinas.length - visibles.length };
+  // hasta 6 semanas enteras, de la más nueva a la más vieja; una persona sin días medidos en una semana va en null
+  const semanas = [];
+  for (let i = 0; i < SEMANAS && (i + 1) * 7 <= tabla.dias.length; i++) {
+    const ds = tabla.dias.slice(i * 7, i * 7 + 7);
+    const porPersona = {};
+    let tokens = 0; let conTokens = false; let medida = false;
+    for (const [persona, maqs] of grupos) {
+      const f = medir(maqs, ds);
+      porPersona[persona] = f.segundos;
+      if (f.segundos !== null) medida = true;
+      if (f.tokens !== null) { tokens += f.tokens; conTokens = true; }
+    }
+    semanas.push({ desde: ds[6], hasta: ds[0], porPersona, tokens: conTokens ? tokens : null, medida });
+  }
+  const sinHoras = (tabla.sinJornadas || []).filter((m) => !Object.prototype.hasOwnProperty.call(ocultas, m));
+  return { semana: { ...equipo(semana), sinMedir }, anterior: equipo(anterior), personas, fuera: tabla.maquinas.length - visibles.length, semanas, sinHoras };
 }
 
 /** El resumen en HTML: cuatro fichas (la del costo dice «sin dato de modelo») y la tabla por persona. */
@@ -231,26 +254,92 @@ function htmlResumen(r, idioma) {
   const nm = esc(t('horas.noMedido'));
   const h = (s) => (s === null ? nm : horasDe(s));
   const tk = (n) => (n === null ? nm : abreviar(n));
-  const ant = (v) => `<div class="ficha-ant">${esc(t('horas.anterior', { valor: v }))}</div>`;
+  const ant = (v, ahora, antes) => {
+    // la flecha sólo cuando las dos semanas se midieron: contra una sin medir no hay comparación
+    const flecha = ahora === null || antes === null || antes === undefined ? '' : ahora > antes ? ' ↑' : ahora < antes ? ' ↓' : ' =';
+    return `<div class="ficha-ant">${esc(t('horas.anterior', { valor: v }))}${flecha}</div>`;
+  };
   const ficha = (titulo, valor, extra = '') => `<div class="ficha"><div class="ficha-titulo">${esc(titulo)}</div><div class="ficha-valor">${valor}</div>${extra}</div>`;
   const dias = r.semana.dias;
   const titulo = dias.length ? `<h2>${esc(t('horas.semanaTitulo', { desde: dias[dias.length - 1], hasta: dias[0] }))}</h2>` : '';
-  const fichas = `<div class="fichas">${ficha(t('horas.fichaHoras'), h(r.semana.promedioDia), ant(r.anterior.promedioDia === null ? t('horas.noMedido') : horasDe(r.anterior.promedioDia)))}`
-    + `${ficha(t('horas.fichaTokens'), tk(r.semana.tokens), ant(r.anterior.tokens === null ? t('horas.noMedido') : abreviar(r.anterior.tokens)))}`
+  const fichas = `<div class="fichas">${ficha(t('horas.fichaHoras'), h(r.semana.promedioDia), ant(r.anterior.promedioDia === null ? t('horas.noMedido') : horasDe(r.anterior.promedioDia), r.semana.promedioDia, r.anterior.promedioDia))}`
+    + `${ficha(t('horas.fichaTokens'), tk(r.semana.tokens), ant(r.anterior.tokens === null ? t('horas.noMedido') : abreviar(r.anterior.tokens), r.semana.tokens, r.anterior.tokens))}`
     + `${ficha(t('horas.fichaSinMedir'), String(r.semana.sinMedir))}${ficha(t('horas.fichaCosto'), esc(t('horas.sinModelo')))}</div>`;
   const filas = r.personas.map((f) => `<tr><th scope="row">${esc(f.persona)}${f.maquinas.length > 1 || f.maquinas[0] !== f.persona ? `<div class="maquinas">${esc(t('horas.maquinasDe', { lista: f.maquinas.join(', ') }))}</div>` : ''}</th>`
     + `<td>${h(f.promedioDia)}</td><td>${h(f.segundos)}</td><td>${esc(t('horas.nDe7', { n: f.diasMedidos }))}</td><td>${tk(f.tokens)}</td></tr>`).join('');
   const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><table class="horas-personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th></tr></thead><tbody>${filas}</tbody></table>` : '';
   const fuera = r.fuera ? `<p class="nota">${esc(r.fuera === 1 ? t('horas.fuera1') : t('horas.fueraN', { n: r.fuera }))}</p>` : '';
-  return `${titulo}${fichas}${tabla}${fuera}`;
+  const avisos = (r.sinHoras || []).map((m) => `<p class="aviso">${esc(t('horas.sinHoras', { maquina: m }))}</p>`).join('');
+  return `${titulo}${avisos}${fichas}${tabla}${fuera}`;
+}
+
+/**
+ * La evolución en dos gráficos chicos, uno por medida (nunca dos escalas en el mismo): horas por persona apiladas por
+ * semana, y tokens sin caché por semana. Una semana sin medir queda vacía y rotulada, nunca en cero. Cada barra dice su
+ * valor al pasar el mouse; la leyenda nombra a cada persona, y la tabla por persona y la diaria son la vista en tabla.
+ */
+function htmlSemanas(r, idioma) {
+  const t = (k, v) => TX.t(idioma, k, v);
+  const semanas = (r.semanas || []).slice().reverse();
+  if (!semanas.length) return '';
+  const nombres = r.personas.map((p) => p.persona);
+  const color = (i) => (i < SERIES ? `var(--serie-${i + 1})` : 'var(--nm)');
+  const W = 640; const H = 200; const IZQ = 48; const ABAJO = 24; const ARRIBA = 10;
+  const ancho = (W - IZQ - 10) / semanas.length;
+  const barra = Math.min(48, ancho * 0.6);
+  const ejeX = (i) => IZQ + i * ancho + (ancho - barra) / 2;
+  const fecha = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  const grafico = (titulo, valores, formato, pila) => {
+    const max = Math.max(1, ...valores.map((v) => (pila ? v.reduce((a, x) => a + (x.valor || 0), 0) : v || 0)));
+    const y = (v) => ARRIBA + (H - ABAJO - ARRIBA) * (1 - v / max);
+    const grilla = [0, max / 2, max].map((v) => `<line class="grilla" x1="${IZQ}" x2="${W - 10}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="eje" x="${IZQ - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(formato(v))}</text>`).join('');
+    const barras = semanas.map((s, i) => {
+      const x = ejeX(i);
+      const etiqueta = `<text class="eje" x="${(x + barra / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(fecha(s.desde))}</text>`;
+      if (!s.medida) return `${etiqueta}<text class="sin-medir" x="${(x + barra / 2).toFixed(1)}" y="${(H - ABAJO - 6).toFixed(1)}" text-anchor="middle">${esc(t('horas.sinMedirCorto'))}</text>`;
+      if (!pila) {
+        const v = valores[i];
+        if (v === null) return `${etiqueta}<text class="sin-medir" x="${(x + barra / 2).toFixed(1)}" y="${(H - ABAJO - 6).toFixed(1)}" text-anchor="middle">${esc(t('horas.sinMedirCorto'))}</text>`;
+        return `${etiqueta}<rect class="barra-tokens" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${barra.toFixed(1)}" height="${(y(0) - y(v)).toFixed(1)}" rx="2"><title>${esc(`${s.desde} a ${s.hasta}: ${formato(v)}`)}</title></rect>`;
+      }
+      let base = 0;
+      const partes = valores[i].filter((p) => p.valor).map((p) => {
+        const y0 = y(base); base += p.valor; const y1 = y(base);
+        // 2 px de superficie entre partes: cada persona se distingue también sin el color
+        return `<rect class="barra-persona" x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${barra.toFixed(1)}" height="${Math.max(0, y0 - y1 - 2).toFixed(1)}" rx="2" style="fill:${color(p.i)}"><title>${esc(`${p.persona} · ${s.desde} a ${s.hasta}: ${formato(p.valor)}`)}</title></rect>`;
+      }).join('');
+      return `${etiqueta}${partes}`;
+    }).join('');
+    return `<figure class="grafico"><figcaption>${esc(titulo)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">${grilla}${barras}</svg></figure>`;
+  };
+  const horas = semanas.map((s) => nombres.map((persona, i) => ({ persona, i, valor: s.porPersona[persona] })).filter((p) => p.valor !== null));
+  const leyenda = `<ul class="leyenda">${nombres.map((n, i) => `<li><span class="muestra" style="background:${color(i)}"></span>${esc(i < SERIES ? n : `${n} (${t('horas.otras')})`)}</li>`).join('')}</ul>`;
+  return `<h3>${esc(t('horas.evolucion'))}</h3>${grafico(t('horas.graficoHoras'), horas, horasDe, true)}${leyenda}${grafico(t('horas.graficoTokens'), semanas.map((s) => s.tokens), abreviar, false)}`;
+}
+
+/** La tabla de cada día por persona: las horas con el arnés trabajando de sus máquinas sumadas, o «no medido». */
+function htmlDiaPorPersona(tabla, r, idioma) {
+  const t = (k, v) => TX.t(idioma, k, v);
+  const dias = tabla.dias.slice(0, DIAS);
+  const cab = `<tr><th>${esc(t('horas.persona'))}</th>${dias.map((d) => `<th>${esc(d.slice(5))}</th>`).join('')}</tr>`;
+  const filas = r.personas.map((p) => {
+    const celdas = dias.map((d) => {
+      let s = 0; let medido = false;
+      for (const m of p.maquinas) { const c = tabla.celdas[d][m]; if (c && c.estado === 'medido' && c.horas) { s += c.horas.arnes_segundos; medido = true; } }
+      return medido ? `<td>${horasDe(s)}</td>` : `<td class="no-medido">${esc(t('horas.noMedido'))}</td>`;
+    }).join('');
+    return `<tr><th scope="row">${esc(p.persona)}</th>${celdas}</tr>`;
+  }).join('');
+  return `<div class="desliza"><table class="por-persona"><thead>${cab}</thead><tbody>${filas}</tbody></table></div>`;
 }
 
 function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
   const solo = ['maintainer'];
-  const tabla = () => {
+  // la página lee 42 días (la evolución de 6 semanas); /api/horas sigue dando los 30 de siempre
+  const tabla = (dias = DIAS) => {
     let jornadas = { maquinas: {} };
     try { jornadas = typeof fuentes.jornadas === 'function' ? fuentes.jornadas() : jornadas; } catch (e) { log(`horas y tokens: no se pudieron leer los días (${e.code || e.message})`); }
-    const t = armarTabla(jornadas, { ayer: diaMas(new Date(ahora()).toISOString().slice(0, 10), -1) });
+    const t = armarTabla(jornadas, { ayer: diaMas(new Date(ahora()).toISOString().slice(0, 10), -1), dias });
     if (t.problema) log(`horas y tokens: el espejo del buzón no se pudo leer (${t.problema})`);
     for (const [m, codigo] of Object.entries(jornadas.ilegibles || {})) log(`horas y tokens: los días de ${m} no se pudieron leer (${codigo})`);
     return t;
@@ -260,13 +349,15 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
       method: 'GET', path: '/horas', needs: solo, pestana: { id: 'horas', titulo: 'Horas y tokens', orden: 50 },
       handler: (ctx) => {
         const idioma = views.idiomaDe(ctx);
-        const tab = tabla();
+        const tab = tabla(DIAS_EVOLUCION);
         // el espejo que no se pudo leer se dice arriba: la tabla vacía no es «no llegó nada»
         const aviso = tab.problema ? `<p>${esc(TX.t(idioma, 'horas.espejoIlegible', { motivo: tab.problema }))}</p>` : '';
         let people = null;
         try { const c = typeof fuentes.config === 'function' ? fuentes.config() : null; people = c && c.people; } catch (e) { log(`horas y tokens: no se pudo leer la configuración de personas (${e.code || e.message})`); }
-        const diario = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorDia'))}</summary>${htmlTabla(tab, idioma)}</details>`;
-        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${tab.maquinas.length ? htmlResumen(resumen(tab, people), idioma) : ''}${diario}`;
+        const r = tab.maquinas.length ? resumen(tab, people) : null;
+        const porMaquina = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorMaquina'))}</summary>${htmlTabla(tab, idioma)}</details>`;
+        const diario = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorDia'))}</summary>${r ? htmlDiaPorPersona(tab, r, idioma) : ''}${porMaquina}</details>`;
+        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${r ? htmlResumen(r, idioma) + htmlSemanas(r, idioma) : ''}${diario}`;
         return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, TX.t(idioma, 'pestana.horas'), cuerpo) };
       },
     },
@@ -274,4 +365,4 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
   ];
 }
 
-module.exports = { crearRutas, leerJornadas, jornadasDe, validarDia, armarTabla, htmlTabla, abreviar, resumen, htmlResumen };
+module.exports = { crearRutas, leerJornadas, jornadasDe, validarDia, armarTabla, htmlTabla, abreviar, resumen, htmlResumen, htmlSemanas, htmlDiaPorPersona };
