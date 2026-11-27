@@ -258,10 +258,14 @@ test('E1 E2E_HorasYTokens_QuienMantiene @story-8.209 @ac-16 @ac-17',{ skip: SIN_
     await page.getByRole('link', { name: 'Horas y tokens' }).first().click();
     await page.waitForURL(/\/horas$/);
     // arriba, el resumen de la semana por persona; la tabla de cada día, plegada abajo
-    const resumen = page.locator('table.personas');
+    const resumen = page.locator('table.horas-personas');
     await resumen.waitFor({ timeout: 20000 });
     assert.match(await page.locator('.fichas').innerText(), /sin dato de modelo/);
-    await page.getByText('Ver día por día, por máquina').click();
+    // la evolución: dos gráficos, horas por persona y tokens
+    assert.strictEqual(await page.locator('figure.grafico svg').count(), 2);
+    await page.getByText('Ver día por día', { exact: true }).click();
+    await page.locator('table.por-persona').waitFor({ timeout: 20000 });
+    await page.getByText('Ver por máquina', { exact: true }).click();
     const tabla = page.locator('table.horas');
     await tabla.waitFor({ timeout: 20000 });
     const texto = await tabla.innerText();
@@ -353,4 +357,62 @@ test('OH2 Resumen_PersonaSinNingunDiaEnLaSemana_DiceNoMedido — una persona con
   assert.strictEqual(r.anterior.promedioDia, 3600, 'la semana anterior sí tiene un día medido');
   const html = WD().htmlResumen(r, 'es');
   assert.match(html, /beto@acme\.example[\s\S]*?no medido/);
+});
+
+// ── O-horas, parte 2: la evolución de 6 semanas, la flecha, la máquina que no sube horas y el día a día por persona ────
+
+const diasAtras = (desde, n) => Array.from({ length: n }, (_, i) => new Date(Date.parse(`${desde}T00:00:00Z`) - i * 864e5).toISOString().slice(0, 10));
+
+test('OH3 Semanas_SeisSemanas_SinMedirVaciaNoCero — horas por persona por semana; una semana sin medir queda vacía y rotulada', () => {
+  const todos = diasAtras('2026-11-09', 42);
+  // ana todos los días 1 h; beto sólo la semana más nueva, 2 h; la cuarta semana nadie midió
+  const cuarta = new Set(todos.slice(21, 28));
+  const maquinas = {
+    'maquina-a': Object.fromEntries(todos.filter((d) => !cuarta.has(d)).map((d) => [d, dia(d, { arnes: 3600, lectura: 1000, escritura: 0 })])),
+    'maquina-c': Object.fromEntries(todos.slice(0, 7).map((d) => [d, dia(d, { arnes: 7200, sesion: 9000, lectura: 500, escritura: 0 })])),
+  };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09', dias: 42 });
+  assert.strictEqual(t.dias.length, 42);
+  const r = WD().resumen(t, PEOPLE);
+  assert.strictEqual(r.semanas.length, 6);
+  assert.deepStrictEqual(r.semanas.map((s) => s.hasta), [todos[0], todos[7], todos[14], todos[21], todos[28], todos[35]]);
+  assert.strictEqual(r.semanas[0].porPersona['ana@acme.example'], 7 * 3600);
+  assert.strictEqual(r.semanas[0].porPersona['beto@acme.example'], 7 * 7200);
+  assert.strictEqual(r.semanas[1].porPersona['beto@acme.example'], null, 'beto no midió la segunda: null, no cero');
+  assert.strictEqual(r.semanas[3].medida, false, 'la cuarta semana nadie midió');
+  assert.strictEqual(r.semanas[3].tokens, null);
+  assert.strictEqual(r.semanas[0].tokens, 7 * 1000 + 7 * 500);
+  const svg = WD().htmlSemanas(r, 'es');
+  assert.match(svg, /<svg[^>]*role="img"/);
+  assert.strictEqual((svg.match(/class="barra-persona"/g) || []).length, 6, 'ana en las 5 semanas medidas y beto en 1');
+  assert.match(svg, /sin medir/, 'la semana sin medir se rotula');
+  assert.match(svg, /ana@acme\.example/, 'leyenda con la persona');
+  assert.match(svg, /<title>[^<]*ana@acme\.example[^<]*7\.0 h/, 'cada barra dice su valor al pasar el mouse');
+  // horas y tokens en dos gráficos, nunca en dos escalas del mismo
+  assert.strictEqual((svg.match(/<svg/g) || []).length, 2);
+});
+
+test('OH4 Flecha_YMaquinaQueNoSubeHoras — la flecha contra la semana anterior y el aviso de la máquina que sube ejecuciones pero no horas', () => {
+  const todos = diasAtras('2026-11-09', 14);
+  const maquinas = { 'maquina-a': Object.fromEntries(todos.map((d, i) => [d, dia(d, { arnes: i < 7 ? 7200 : 3600, sesion: 9000 })])) };
+  const dir = espejo(maquinas);
+  // una máquina con ejecuciones y sin días de horas, y una oculta igual: sólo la primera se avisa
+  for (const m of ['maquina-nb', 'maquina-vieja']) { fs.mkdirSync(path.join(dir, m), { recursive: true }); fs.writeFileSync(path.join(dir, m, 's1.json'), '{}'); }
+  const t = WD().armarTabla(WD().leerJornadas(dir), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  assert.deepStrictEqual(r.sinHoras, ['maquina-nb']);
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /maquina-nb[^<]*sube ejecuciones pero no horas/);
+  assert.match(html, /↑/, 'esta semana trabajó más que la anterior');
+});
+
+test('OH5 DiaADia_PorPersona — la tabla diaria plegada tiene una fila por persona y «no medido» donde no hubo horas', () => {
+  const maquinas = { 'maquina-a': { '2026-11-09': dia('2026-11-09'), '2026-11-08': dia('2026-11-08') }, 'maquina-b': { '2026-11-09': dia('2026-11-09') }, 'maquina-c': { '2026-11-07': dia('2026-11-07') } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  const html = WD().htmlDiaPorPersona(t, r, 'es');
+  const fila = (p) => (html.match(new RegExp(`<tr><th scope="row">${p.replace(/\./g, '\\.')}</th>(.*?)</tr>`)) || [])[1] || '';
+  const celdas = (f) => [...f.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((m) => m[1]);
+  assert.deepStrictEqual(celdas(fila('ana@acme.example')).slice(0, 3), ['2.0 h', '1.0 h', 'no medido'], 'ana: las dos máquinas suman el 9');
+  assert.deepStrictEqual(celdas(fila('beto@acme.example')).slice(0, 3), ['no medido', 'no medido', '1.0 h']);
 });

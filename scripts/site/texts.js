@@ -2773,7 +2773,14 @@ const TEXTOS = {
   'horas.maquinasDe': { es: 'Máquinas: {lista}', en: 'Machines: {lista}' },
   'horas.fuera1': { es: '1 máquina no sale: está oculta o nunca subió horas.', en: '1 machine is left out: it is hidden or never uploaded hours.' },
   'horas.fueraN': { es: '{n} máquinas no salen: están ocultas o nunca subieron horas.', en: '{n} machines are left out: they are hidden or never uploaded hours.' },
-  'horas.diaPorDia': { es: 'Ver día por día, por máquina', en: 'See day by day, by machine' },
+  'horas.diaPorDia': { es: 'Ver día por día', en: 'See day by day' },
+  'horas.diaPorMaquina': { es: 'Ver por máquina', en: 'See by machine' },
+  'horas.sinHoras': { es: '{maquina} sube ejecuciones pero no horas: actualizá el arnés en esa máquina.', en: '{maquina} uploads runs but no hours: update the harness on that machine.' },
+  'horas.evolucion': { es: 'Las últimas 6 semanas', en: 'The last 6 weeks' },
+  'horas.graficoHoras': { es: 'Horas con el arnés trabajando, por persona y por semana', en: 'Hours with the harness working, by person and by week' },
+  'horas.graficoTokens': { es: 'Tokens sin caché, por semana', en: 'Tokens without cache, by week' },
+  'horas.sinMedirCorto': { es: 'sin medir', en: 'not measured' },
+  'horas.otras': { es: 'con las demás', en: 'with the rest' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la
