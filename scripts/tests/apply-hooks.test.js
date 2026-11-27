@@ -1173,3 +1173,49 @@ test('T8292 ApplyHooks_SameScriptOneEventOnOneOff_RemovesOnlyTheOffEvent @story-
   assert.ok(!commandsOf(settings, 'PreToolUse').some((c) => c.includes('dos-eventos.js')), 'sin perfil: el PreToolUse apagado se va');
   assert.deepStrictEqual(sin.removed.map((x) => x.event), ['PreToolUse']);
 });
+
+// 🔴 Falla con: el aplicador deja un gancho «como está escrito si su archivo existe»; por un enlace viejo bajo la carpeta de
+//    Claude Code el archivo siempre existe, y el día que se retiran los enlaces todos esos ganchos dan error.
+test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los propios, con respaldo y aviso; lo dudoso se avisa', (t) => {
+  for (const platform of ['posix', 'windows']) {
+    const M = maquinaConVersiones(t);
+    const v = M.version('2026.11.27.01');
+    M.apuntar(v);
+    const claude = path.join(M.home, '.claude');
+    const estado = path.join(M.home, '.tycon', 'state');
+    fs.mkdirSync(estado, { recursive: true });
+    fs.writeFileSync(path.join(estado, 'mi-gancho.sh'), 'echo hola\n');
+    fs.symlinkSync(path.join(M.home, '.tycon', 'harness'), path.join(claude, 'tycon-harness'));
+    fs.symlinkSync(estado, path.join(claude, '.tycon-pipeline'));
+    // una carpeta vieja de verdad, no un enlace: no se sabe que sea la nueva
+    fs.mkdirSync(path.join(claude, 'agent-skills', 'skills'), { recursive: true });
+    fs.writeFileSync(path.join(claude, 'agent-skills', 'skills', 'propio.js'), '// de la persona\n');
+    const viejo = (rel) => path.join(claude, 'tycon-harness', rel).replace(/\\/g, '/');
+    fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: {
+      PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: `node "${viejo('scripts/hooks/wait-notice.js')}"` }] }],
+      SessionStart: [{ hooks: [
+        { type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh" --short' },
+        { type: 'command', command: `node "${viejo('scripts/no-existe.js')}"` },
+        { type: 'command', command: `node "${path.join(claude, 'agent-skills', 'skills', 'propio.js').replace(/\\/g, '/')}"` },
+      ] }],
+    } }, null, 2));
+    const r = M.aplicar(v, platform);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const c = M.comandos();
+    assert.ok(c.some((x) => x.includes('/.tycon/harness/scripts/hooks/wait-notice.js')), `${platform}, el del arnés: ${JSON.stringify(c)}`);
+    assert.ok(!c.some((x) => x.includes('/.claude/tycon-harness/scripts/hooks/')), `${platform}, ninguno del arnés queda por la vieja: ${JSON.stringify(c)}`);
+    assert.ok(c.includes('bash "$HOME/.tycon/state/mi-gancho.sh" --short'), `${platform}, el propio cambia sólo el tramo de la ruta: ${JSON.stringify(c)}`);
+    assert.ok(c.some((x) => x.includes('/.claude/tycon-harness/scripts/no-existe.js')), `${platform}, sin archivo nuevo queda como está`);
+    assert.ok(c.some((x) => x.includes('/.claude/agent-skills/skills/propio.js')), `${platform}, una carpeta vieja de verdad no se toca`);
+    assert.match(r.stdout, /BACKUP:/, 'hay respaldo');
+    assert.match(r.stdout, /RELOCATED:2/, `${platform}: ${r.stdout}`);
+    assert.match(r.stdout, /STUCK:2/, `${platform}: ${r.stdout}`);
+    const backup = /BACKUP:(\S+)/.exec(r.stdout)[1];
+    assert.ok(fs.readFileSync(backup, 'utf8').includes('$HOME/.claude/.tycon-pipeline/mi-gancho.sh'), 'el respaldo tiene lo de antes');
+    const antes = fs.readFileSync(M.settingsPath, 'utf8');
+    const r2 = M.aplicar(v, platform);
+    assert.strictEqual(r2.status, 0, r2.stderr);
+    assert.strictEqual(fs.readFileSync(M.settingsPath, 'utf8'), antes, `${platform}: aplicar otra vez no cambia nada`);
+    assert.doesNotMatch(r2.stdout, /RELOCATED:/, 'la segunda vez no hay nada que mover');
+  }
+});
