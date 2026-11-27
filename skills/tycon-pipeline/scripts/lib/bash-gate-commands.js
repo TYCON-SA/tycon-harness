@@ -1293,7 +1293,13 @@ function comandosPorOtroPrograma(cmd, cwd) {
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(previas[0]) || '';
-        const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
+        const escribe = /^(?:echo|printf|print)$/.test(escritor);
+        // lo que llega de un programa (`ls specs`, `find`, `git ls-files`) o de un archivo no se ve: además de sus
+        // palabras, se prueba con un comodín, que es cualquier archivo de la carpeta, y con cada palabra como carpeta
+        // (`git ls-files specs` da `specs/…`). Sin eso, un destino armado alrededor del marcador (`specs/{}`) o del
+        // argumento del cuerpo (`specs/$0`) no nombra la historia
+        const comoCarpeta = previas.slice(1).filter((w) => !w.startsWith('-') && !/[*?[]/.test(w)).map((w) => `${w.replace(/\/+$/, '')}/*`);
+        const entrada = escribe ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : [...previas, '*', ...comoCarpeta];
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }

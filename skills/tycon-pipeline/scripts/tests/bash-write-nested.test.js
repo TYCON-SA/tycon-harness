@@ -303,6 +303,29 @@ test('T13 Nested_RunnersThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// Lo que un `xargs` recibe de un programa (`ls specs`, `find`, `git ls-files`) no se ve: el freno lo prueba también con
+// un comodín y con cada palabra como carpeta. Sin eso, un destino armado alrededor del marcador (`specs/{}`) o del
+// argumento posicional del cuerpo (`specs/$0`) no nombra la historia y la escritura pasa.
+// 🔴 Falla con: tomar las palabras del comando de antes como lo único que llega por la entrada.
+test('T34 Nested_XargsUnknownInput_ShellBodyBuildsTheStory_Block @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'echo x >> specs/{}'",
+    "ls specs | xargs -I % sh -c 'echo x >> specs/%'",
+    "ls specs | xargs -I {} bash -c 'rm specs/{}'",
+    "ls specs | xargs -n1 sh -c 'echo x >> specs/$0'",
+    "git ls-files specs | xargs -I {} sh -c 'truncate -s 0 {}'",
+    "cd specs && ls | xargs -I {} sh -c 'echo x >> {}'",
+  ]) frena(c, cmd);
+  // lo que sólo lee, o escribe fuera de la carpeta de las historias, sigue pasando
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'cat specs/{}'",
+    "ls specs | xargs -I {} sh -c 'wc -l specs/{} >> /tmp/cuentas.txt'",
+    'git ls-files | xargs grep -l status',
+    'ls specs | xargs -n1 basename',
+  ]) pasa(c, cmd);
+});
+
 // Lo que confirmó el pase adversarial de la corrida: formas de `find`, `xargs` y heredocs que escriben la historia y
 // pasaban, y formas que sólo leen y se frenaban.
 // 🔴 Falla con: tomar todo `-name` como filtro positivo, buscar `xargs` sólo como primera palabra cruda, no leer el
