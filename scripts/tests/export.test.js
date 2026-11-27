@@ -64,17 +64,6 @@ function escribir(raiz, archivos) {
   }
 }
 
-function listar(dir, base = dir, out = []) {
-  if (!fs.existsSync(dir)) return out;
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === '.git') continue;
-    const abs = path.join(dir, e.name);
-    if (e.isDirectory()) listar(abs, base, out);
-    else out.push(path.relative(base, abs).split(path.sep).join('/'));
-  }
-  return base === dir ? out.sort() : out;
-}
-
 const clonar = (x) => JSON.parse(JSON.stringify(x));
 /**
  * Un .gitignore de la copia de un solo repo, partido donde empieza el bloque de las carpetas de las que no sale nada

@@ -12,7 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./story-gate.js');
+const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
 // ── variables del comando ─────────────────────────────────────
 // `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale frenado como «EDICIÓN INVISIBLE»: el destino se resuelve
 // tal cual, `<repo>/$SP/x.cs`, y queda adentro del repo de la corrida.

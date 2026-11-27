@@ -12,7 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./story-gate.js');
+const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
 const { resolveSessionId } = require('./session-id.js');
 // ── variables del comando ─────────────────────────────────────
 // `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale frenado como «EDICIÓN INVISIBLE»: el destino se resuelve
@@ -25,7 +25,7 @@ const { resolveSessionId } = require('./session-id.js');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { GUION_ESCRIBE, NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas, tok } = require('./bash-gate-words.js');
+const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
 const { ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { carpetasDeLosCd, carpetasDeLosCdDeConstancias, destinosArmados, extractWriteTargets, heredocs, quitarCuerposDeHeredoc, scriptsInline, tramos } = require('./bash-gate-targets.js');
 const { FOR_IN, anidadosHasta, carpetasDelComando, cdInicial, comandosAnidados, comandosPorOtroPrograma, cwdDelComando, destinosBorrados, destinosDeCopia, destinosDeGuionDeSed, editaEnSitio, guionesDeShellEscritos, guionesDeShellEnDisco, movidosFueraDeMd, palabrasDelEditor, sedsLiterales, sinCuerposDeTexto, todoCorreDespuesDelCd } = require('./bash-gate-commands.js');
@@ -104,7 +104,8 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       else if (ch === '[') { const j = g.indexOf(']', i + 2); if (j < 0) { out += '\\['; continue; } out += `[${g.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\')}]`; i = j; }
       else out += ch.replace(/[.+^${}()|\\]/g, '\\$&');
     }
-    try { return new RegExp(`^${out}$`, 'i'); } catch (_) { return /^/; }
+    // un comodín que no se puede convertir cuenta como que puede nombrar una constancia: el freno falla cerrado
+    try { return new RegExp(`^${out}$`, 'i'); } catch (_) { return { test: () => true }; }
   };
   const armada = (raw) => {
     const r = String(raw);
