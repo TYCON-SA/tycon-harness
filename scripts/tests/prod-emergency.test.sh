@@ -40,7 +40,7 @@ ok(){ echo "✅ prod-emergency: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ prod-emergency: $1"; fallos=$((fallos+1)); }
 
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-emergency: esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
+  echo "⏭ prod-emergency: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
   exit 0
 fi
 

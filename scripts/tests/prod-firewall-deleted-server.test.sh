@@ -25,7 +25,7 @@ no(){ echo "❌ prod-firewall-borrado: $1"; fallos=$((fallos+1)); }
 
 # el freno a la vista de bash o de node: el gancho usaría la puerta instalada, que habla con Azure de verdad
 if [ -d /opt/tycon ] || node -e 'process.exit(require("fs").existsSync("/opt/tycon") ? 0 : 1)' 2>/dev/null; then
-  echo "⏭ prod-firewall-borrado: esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
+  echo "⏭ prod-firewall-borrado: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar Azure ni el Llavero reales."
   exit 0
 fi
 
