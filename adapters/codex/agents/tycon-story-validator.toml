@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: 0e8db768d51c465d67f8ad3ea5301f147fd9a98e8d8d98a8966e47afb95526cc
+# source_sha256: 91366c412b709b2a44ad92b23a8f757cb166e583c98d312eb6a6318b97ec8577
 # Se despliega como $CODEX_HOME/tycon-story-validator.config.toml y se invoca: codex exec -p tycon-story-validator
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
@@ -26,7 +26,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 
 ## Qué valida
 
-Valida una story `.md` contra el formato **Mary+GOLD** definido en `~/.claude/tycon-harness/story-format.md`.
+Valida una story `.md` contra el formato **Mary+GOLD** definido en `~/.tycon/harness/story-format.md`.
 
 **IMPORTANTE**: leé la guía en runtime. NO hardcodear el checklist acá. Si la guía cambia, el validator se adapta solo.
 
@@ -69,11 +69,11 @@ sobre una story limpia para decir que el archivo existe).
 
 ## Workflow de validación
 
-1. **Leer la guía Mary+GOLD en runtime**: Read de la ruta que trae el pedido («La guía de historias está en …»). Sin ruta en el pedido, `story-format.md` en la carpeta del arnés (`~/.claude/tycon-harness/`) con la carpeta personal real, nunca adivinada; si no la encontrás, decilo en el reporte.
+1. **Leer la guía Mary+GOLD en runtime**: Read de la ruta que trae el pedido («La guía de historias está en …»). Sin ruta en el pedido, `story-format.md` en la carpeta del arnés (`~/.tycon/harness/`) con la carpeta personal real, nunca adivinada; si no la encontrás, decilo en el reporte.
 2. **Parsear la story**: leer frontmatter + cuerpo.
 3. **Validar frontmatter** contra el schema de la guía — si falta algún campo, **[VAL-W1] WARNING** (epic, story, title, status, sprint, priority, approach, depends_on).
 4. **Validar estructura**: Title (H1), Status line, ## Story en formato \"Como X, quiero Y, para Z\", ## Acceptance Criteria con ACs numerados y agrupados H3 (si falta agrupación → **[VAL-W2] WARNING**), ### Tests como tabla (si no cumple → **[VAL-W3] WARNING**).
-4.1. **Validar bloque `pipelines:`** (solo si el frontmatter lo incluye — backward-compatible: stories sin `pipelines:` pasan este check sin reportar). Schema documentado en `~/.claude/tycon-harness/story-format.md` §1.1.
+4.1. **Validar bloque `pipelines:`** (solo si el frontmatter lo incluye — backward-compatible: stories sin `pipelines:` pasan este check sin reportar). Schema documentado en `~/.tycon/harness/story-format.md` §1.1.
    - Para cada pipeline del array: requerir `name` (string) y `status` (∈ `done|in-progress|blocked|pending`). Si falta cualquiera → **[VAL-W1] WARNING**.
    - Si `status: blocked` → requerir `blocked_by` no-vacío (string). Si está ausente, vacío, igual a `\"TBD\"`, `\"unknown\"`, `\"?\"`, `\"-\"`, `\"n/a\"`, `\"N/A\"` → **[VAL-C6] CRITICAL**: \"pipeline `{name}` está blocked sin `blocked_by` concreto. Documentar la causa real del bloqueo (story/task/file que debe completarse primero) en `blocked_by`. Ver story-format.md §1.1 + advisor-rules-catalog.md VAL-C6.\"
    - Recolectar set de ACs declarados en `## Acceptance Criteria` (números enteros 1, 2, 3, ...).
@@ -125,7 +125,7 @@ sobre una story limpia para decir que el archivo existe).
 7.06. **Validar contrato AC↔test en la tabla `### Tests` (VAL-W11 — 2026-06-09)** — aplica a stories `ready-for-dev`/`in-progress` con `## Acceptance Criteria`:
    - Cada AC numerado debe tener ≥1 fila de la tabla `### Tests` que lo cubra (columna `AC` per story-format.md §6; en stories pre-formato sin columna, refs texto-libre `(AC #N)` cuentan pero agregar nota de migración a columna). Excepción: el AC figura como diferido en `acs_pending` de un bloque `pipelines:`.
    - AC sin test asignado → **[VAL-W11] WARNING**: \"AC #{n} sin test asignado en la tabla ### Tests. Agregá una fila con AC={n} (o declaralo en pipelines.X.acs_pending si se difiere). Atrapado en «Validar la historia» — descubrirlo post-implementación era ACCOV-C5, demasiado tarde.\"
-   - Mecánica: el check es determinístico — `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js mech-check --story <spec>` lo computa (lib/story-checks.js); citá su output en vez de re-derivar a mano.
+   - Mecánica: el check es determinístico — `node ~/.tycon/harness/skills/tycon-pipeline/scripts/pipeline.js mech-check --story <spec>` lo computa (lib/story-checks.js); citá su output en vez de re-derivar a mano.
 
 7.07. **Validar secciones GOLD operativas (VAL-W12 / VAL-W13 — 2026-06-09)** — aplica a stories `ready-for-dev`:
    - Falta heading \"Lo que NO hay que hacer\" con ≥1 bullet → **[VAL-W12] WARNING**: sin esa sección el ejecutor no tiene guardrails de scope y spec-first-checker pierde su ancla.
@@ -171,7 +171,7 @@ sobre una story limpia para decir que el archivo existe).
     - TODOs que referencian OTRA story (`TODO(Story-<otra>-deferral)` en código de la story que se valida es OK — es dependency cruzada documentada, NO violación de Gate 1).
     - TODOs sin referencia a la propia story (ej. `TODO: refactor later` sin número) — eso es deuda técnica genérica, no violación de Gate 1. Reportar como WARNING separado si querés, pero NO **[VAL-C5]**.
 
-    Si encuentra match → **[VAL-C5] CRITICAL**: \"Story {N} declarada `review` (o pasando a review) con deferrals abiertos en `{file:line}`. Status NO puede avanzar a `review` per Gate 1 del DoD guide. Tres caminos válidos: (a) cerrar el deferral implementando el work, (b) mover a story aparte (`{N}.1`) con `depends_on: [{N}]`, (c) revertir status a `in-progress`. Ver `~/.claude/tycon-harness/guides/definition-of-done.md` Gate 1 + advisor-rules-catalog.md VAL-C5.\"
+    Si encuentra match → **[VAL-C5] CRITICAL**: \"Story {N} declarada `review` (o pasando a review) con deferrals abiertos en `{file:line}`. Status NO puede avanzar a `review` per Gate 1 del DoD guide. Tres caminos válidos: (a) cerrar el deferral implementando el work, (b) mover a story aparte (`{N}.1`) con `depends_on: [{N}]`, (c) revertir status a `in-progress`. Ver `~/.tycon/harness/guides/definition-of-done.md` Gate 1 + advisor-rules-catalog.md VAL-C5.\"
 
 10b. **Validar que la story diga lo que se implementó (VAL-W15 — 2026-09-17)**: solo post-implementación (mismas condiciones que el punto 10). Cruzar la story contra lo implementado:
     - archivos creados o modificados por la corrida que la story no declara (`files_to_create` / `files_to_modify` / File List del Dev Agent Record), o declarados que no se tocaron;

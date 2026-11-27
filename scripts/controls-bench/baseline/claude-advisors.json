@@ -50,6 +50,16 @@
     "tycon-story-adversarial-reviewer::limpio-historia-completa": true,
     "tycon-spec-first-checker::spec-c1-endpoint-nuevo-sin-ac": true,
     "tycon-spec-first-checker::spec-c2-componente-nuevo-sin-mencion": true,
-    "tycon-spec-first-checker::limpio-endpoint-documentado-sin-c1": true
+    "tycon-spec-first-checker::limpio-endpoint-documentado-sin-c1": true,
+    "tycon-signed-scope-audit::val-c7-story-firmada-movida-sin-cr": true,
+    "tycon-signed-scope-audit::limpio-movida-con-cr-aprobado-sin-c7": true,
+    "tycon-signed-scope-audit::scope-c1-entregable-firmado-sin-story": true,
+    "tycon-signed-scope-audit::scope-c2-cr-citado-que-no-existe": true,
+    "tycon-signed-scope-audit::scope-c3-cr-aprobado-sin-evidencia": true,
+    "tycon-signed-scope-audit::scope-c4-story-nacida-en-otro-sprint": true,
+    "tycon-signed-scope-audit::scope-c5-propuesta-firmada-ilegible": true,
+    "tycon-signed-scope-audit::scope-c6-fuentes-del-plan-en-desacuerdo": true,
+    "tycon-signed-scope-audit::limpio-split-hija-en-otro-sprint-sin-c4": true,
+    "tycon-signed-scope-audit::limpio-txt-ya-extraido-sin-pdf-sin-c5": true
   }
 }

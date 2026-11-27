@@ -213,9 +213,9 @@ correctamente pero escribirlo como ``**`VAL-C7`**`` y poner entre corchetes las 
 
 ## Referencias
 
-- Guía sistema: `~/.claude/tycon-harness/guides/signed-scope-guardrails.md`
-- Rule IDs: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` — sección "Signed Scope Audit" (`SCOPE-*`) + `VAL-C7`, `VAL-W8`
-- Validator hermano: `~/.claude/agent-skills/agents/tycon-story-validator.md` (corre `VAL-C7` per-story; este audit lo hace global)
+- Guía sistema: `~/.tycon/harness/guides/signed-scope-guardrails.md`
+- Rule IDs: `~/.tycon/harness/guides/advisor-rules-catalog.md` — sección "Signed Scope Audit" (`SCOPE-*`) + `VAL-C7`, `VAL-W8`
+- Validator hermano: `~/.tycon/harness/agents/tycon-story-validator.md` (corre `VAL-C7` per-story; este audit lo hace global)
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
 

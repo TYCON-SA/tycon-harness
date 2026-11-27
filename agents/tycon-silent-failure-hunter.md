@@ -331,7 +331,7 @@ enumeraste TODOS los sitios de la clase — no solo el que disparó el hallazgo.
 
 ## Reglas
 
-Las reglas que disparás citan IDs estables del catálogo (`SILENT-C1`..`SILENT-C5`, `SILENT-W1`..`SILENT-W6`). Ver `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` sección "Silent Failure Hunter".
+Las reglas que disparás citan IDs estables del catálogo (`SILENT-C1`..`SILENT-C5`, `SILENT-W1`..`SILENT-W6`). Ver `~/.tycon/harness/guides/advisor-rules-catalog.md` sección "Silent Failure Hunter".
 
 Si encontrás un pattern silente que NO está en el catálogo: flageá como WARNING con prefix `SILENT-Wn (uncatalogued)` + descripción + sugerí agregar la regla al catálogo. NO inventes IDs nuevos.
 
