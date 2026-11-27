@@ -390,7 +390,7 @@ function isHarnessHook(cmd) {
   const P = require('../setup/harness/place.js');
   const names = `(?:${P.PLACE_NAME}|${P.LEGACY_PLACE_NAME})`;
   // la carpeta de Claude Code por su nombre, de tycon-home.js
-  const claude = path.basename(require('../setup/harness/tycon-home.js').claudeDir(os.homedir())).replace(/\./g, '\\.');
+  const claude = path.basename(require('../setup/harness/tycon-home.js').claudeDir(os.homedir())).replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
   if (new RegExp(`(?:^|[\\s"'/\\\\])${names}[/\\\\]scripts[/\\\\]hooks[/\\\\]|agent-skills/skills/|${claude}[/\\\\]${names}(?![\\w.-])`).test(cmd)) return true;
   const m = /([^\s"']*)\/scripts\/hooks\/[\w.-]+/.exec(cmd);
   return Boolean(m && isHarnessClone(m[1].replace(/^~(?=\/)/, os.homedir()).replace(/^\$HOME(?=\/)/, os.homedir())));

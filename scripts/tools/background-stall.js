@@ -95,7 +95,7 @@ function signature(pid, list) {
  * carpeta entera: puede tener miles, y esto corre en cada turno de la coordinadora.
  */
 // la carpeta de Claude Code de un repo se llama como la de la persona: el nombre lo dice tycon-home.js
-const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/\./g, '\\.');
+const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 function taskDirs(sid, root, cwd) {
   if (!cwd) return [];
   const slug = (p) => String(p).replace(/[^a-zA-Z0-9]/g, '-');

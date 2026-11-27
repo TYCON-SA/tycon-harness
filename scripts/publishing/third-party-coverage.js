@@ -229,7 +229,7 @@ function listVersioned(repo) {
 
 // ── el control ─────────────────────────────────────────────────────────────────────────────────────────────────
 // La carpeta de Claude Code de un repo se llama como la de la persona: el nombre lo dice tycon-home.js.
-const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/\./g, '\\.');
+const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 
 /** La unidad con que se nombra un hallazgo: la carpeta de la skill (skills/x, .agents/skills/x) o la ruta. */
 function unitOf(p) {

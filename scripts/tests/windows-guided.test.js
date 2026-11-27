@@ -848,7 +848,8 @@ test('ReleasePhoto_DownloadedVersion_HasNoGitFacts', () => {
     TL.makeHome(home);
     const tree = path.join(home, '.tycon', 'harness');
     // el árbol de una versión bajada: archivos, sin git. Lo que lee la foto del árbol se copia del de verdad
-    for (const rel of ['scripts/setup/hooks-list.json', 'scripts/setup/apply-hooks.js', 'scripts/setup/install-effects.json', 'scripts/setup/windows-support.json']) {
+    // (tycon-home.js: el aplicador le pide el nombre de la carpeta de Claude Code)
+    for (const rel of ['scripts/setup/hooks-list.json', 'scripts/setup/apply-hooks.js', 'scripts/setup/install-effects.json', 'scripts/setup/windows-support.json', 'scripts/setup/harness/tycon-home.js']) {
       if (!fs.existsSync(path.join(ROOT, rel))) continue;
       fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true });
       fs.copyFileSync(path.join(ROOT, rel), path.join(tree, rel));

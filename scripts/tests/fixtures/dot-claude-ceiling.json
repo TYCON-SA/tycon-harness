@@ -2,10 +2,10 @@
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
     "date": "2026-11-26",
-    "direction": "baja: 77 → 56 (25 → 19 archivos)",
-    "reason": "Story 8.24, tanda B1c: lo que corre fuera del arnés y no es producción. install-tycon-hooks.ps1 le pregunta la carpeta de Claude Code a tycon-home.js una vez; ensure-sqlite3.ps1 y nightly-dod-notice.sh le piden el estado a la definición; los dos on-story-create.js, a la de su lado."
+    "direction": "sube: 56 → 58 (19 → 20 archivos)",
+    "reason": "Story 8.24, arreglos de la CI del pedido único: los dos efectos que nombra la portada pública (el gancho de cada prompt y el lugar del arnés) vuelven a decir la ruta literal, como la portada y su prueba; se van con el retiro (tanda C). Quedan además la B2-4b (los .toml) y la B1d (el freno)."
   },
-  "total": 56,
+  "total": 58,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -25,6 +25,7 @@
     "scripts/production/install-guard.sh": 9,
     "scripts/production/managed-settings.tycon-production.json.template": 4,
     "scripts/production/node-shim.sh": 1,
-    "scripts/production/tycon-prod-sql": 1
+    "scripts/production/tycon-prod-sql": 1,
+    "scripts/setup/install-effects.json": 2
   }
 }
