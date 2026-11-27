@@ -351,7 +351,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     // sale de «en curso» al terminar por cualquier camino, también los que vuelven antes de bajar (del caché, «ocupado»):
     // esos terminan antes de anotarse, y quedaban anotados para siempre devolviendo la misma respuesta
     st.enCurso.set(id, { p, turno });
-    p.finally(() => { const e = st.enCurso.get(id); if (e && e.turno === turno) st.enCurso.delete(id); });
+    p.finally(() => { const e = st.enCurso.get(id); if (e && e.turno === turno) st.enCurso.delete(id); }).catch(() => { /* el rechazo lo recibe quien pidió */ });
     return p;
   }
 

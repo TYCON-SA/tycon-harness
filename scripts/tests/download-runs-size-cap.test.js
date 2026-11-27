@@ -251,8 +251,8 @@ test('T45b Bajada_JuegoSinVersion_ConUnRegistroEnorme_NoBajaUnaCoberturaQueLoDaP
   const dir = path.join(carpeta(t), 'buzon');
   const a = almacenMixto({ 'registros/gates.log.gz': GB5, 'registros/bypass.log.gz': Buffer.from('x'), 'registros/cobertura.json': cobertura(['gates', 'bypass']) });
   const { codigo, res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
-  assert.ok(!a.pedidos.includes('registros/cobertura.json'), `se pidió: ${a.pedidos.join(', ')}`);
   assert.ok(!fs.existsSync(path.join(dir, MAQ, 'registros', 'cobertura.json')), 'no se escribió');
+  assert.ok(fs.existsSync(path.join(dir, MAQ, 'registros', 'bypass.log.gz')), 'el registro chico sí baja');
   assert.strictEqual(codigo, 0, 'no queda «parcial» para siempre por un archivo que nunca va a bajar');
   assert.ok(res.grandes_nombres.some((n) => /cobertura/.test(n)), res.grandes_nombres.join(' | '));
 });
@@ -267,9 +267,50 @@ test('T45c Bajada_JuegoNuevoConUnRegistroEnorme_UsaElAnterior_SinPedirSuCobertur
   for (const pasada of [1, 2]) {
     a.pedidos.length = 0;
     const { res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
-    assert.ok(!a.pedidos.includes(`registros/${V2}/cobertura.json`), `pasada ${pasada}: se pidió la cobertura del juego que no se puede bajar`);
+    // la primera la lee para saber si declara el registro enorme; desde ahí queda anotado por su huella
+    if (pasada === 2) assert.ok(!a.pedidos.includes(`registros/${V2}/cobertura.json`), 'pasada 2: se volvió a pedir la cobertura del juego que no se puede bajar');
     assert.strictEqual(res.versiones_incompletas, 0, `pasada ${pasada}: no es «incompleto», es «pasa el tope»`);
     assert.ok(res.grandes_nombres.some((n) => n.includes(V2)), res.grandes_nombres.join(' | '));
   }
   assert.strictEqual(fs.readFileSync(path.join(dir, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'viejo');
+});
+
+test('T45d Bajada_UnRegistroEnormeQueLaCoberturaNoDeclara_NoSacaAlJuego', async (t) => {
+  // (Fable N1) un registro enorme con un nombre que la cobertura no declara no saca al juego entero: el espejo no vuelve
+  // al juego anterior ni se queda sin registros; baja todo menos ese archivo
+  const V2 = 'v20261121T000000000Z';
+  const conAnterior = almacenMixto({
+    'registros/gates.log.gz': Buffer.from('viejo'), 'registros/cobertura.json': cobertura(['gates']),
+    [`registros/${V2}/gates.log.gz`]: Buffer.from('nuevo'), [`registros/${V2}/cobertura.json`]: cobertura(['gates']),
+    [`registros/${V2}/bypass.log.gz`]: GB5,
+  });
+  const dir = path.join(carpeta(t), 'buzon');
+  const { res } = await B.bajar({ almacen: conAnterior, dir, budgetMs: 20000, log: () => {} });
+  assert.strictEqual(fs.readFileSync(path.join(dir, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'nuevo', 'se queda con el juego nuevo');
+  assert.ok(!conAnterior.pedidos.includes(`registros/${V2}/bypass.log.gz`), 'el enorme no se pide');
+  assert.strictEqual(res.grandes, 1);
+  // y el único juego, igual: baja su cobertura y el registro chico
+  const solo = almacenMixto({ [`registros/${V2}/gates.log.gz`]: Buffer.from('nuevo'), [`registros/${V2}/cobertura.json`]: cobertura(['gates']), [`registros/${V2}/bypass.log.gz`]: GB5 });
+  const dir2 = path.join(carpeta(t), 'buzon');
+  await B.bajar({ almacen: solo, dir: dir2, budgetMs: 20000, log: () => {} });
+  assert.ok(fs.existsSync(path.join(dir2, MAQ, 'registros', 'cobertura.json')), 'baja la cobertura');
+  assert.ok(fs.existsSync(path.join(dir2, MAQ, 'registros', 'gates.log.gz')), 'baja el registro chico');
+  // en el juego de nombres de siempre, la cobertura que no lo declara también baja
+  const viejo = almacenMixto({ 'registros/gates.log.gz': Buffer.from('x'), 'registros/cobertura.json': cobertura(['gates']), 'registros/bypass.log.gz': GB5 });
+  const dir3 = path.join(carpeta(t), 'buzon');
+  await B.bajar({ almacen: viejo, dir: dir3, budgetMs: 20000, log: () => {} });
+  assert.ok(fs.existsSync(path.join(dir3, MAQ, 'registros', 'cobertura.json')), 'la cobertura del juego de siempre baja');
+});
+
+test('T44c Bajada_TrasUnaFalla_LosQueEsperabanLugarNoSePiden', async (t) => {
+  // (Fable N2) los trabajadores que esperaban lugar cuando la pasada falló no piden su archivo después
+  const MB = 1024 * 1024;
+  const archivos = Array.from({ length: 6 }, (_, i) => [`${i + 1}.1-2026-11-20T10${10 + i}.hilo.jsonl.gz`, 100 * MB]);
+  const a = almacenQueMideLoQueVuela(archivos, 40);
+  const leer = a.leer;
+  a.leer = async (nombre) => { const r = await leer(nombre); return a.pedidos === 1 ? { error: Object.assign(new Error('sin red'), { code: 'ECONNRESET' }) } : r; };
+  const { codigo, res } = await B.bajar({ almacen: a, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
+  assert.strictEqual(codigo, 1);
+  assert.strictEqual(res.estado, 'sin_red');
+  assert.strictEqual(a.pedidos, 1, `después de la falla se pidieron ${a.pedidos - 1} más`);
 });

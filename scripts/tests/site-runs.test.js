@@ -2467,5 +2467,16 @@ test('T-A46 Cambios_ADemanda_LaFilaTieneTope_PorPersonaYEntera_YSeSueltaSiElPedi
     await ocupa;
     await new Promise((r) => setTimeout(r, 300));
     assert.strictEqual(bajadas.length, 1, `el que cortó no se bajó: ${bajadas.length} bajadas`);
+    // (Fable N12) dos esperan la misma ejecución y se va uno: el otro la recibe igual
+    bajadas.length = 0;
+    const se = new AbortController();
+    const queda = new AbortController();
+    const delante = vista.textos(ids[0], { quien: 'uno@x' });
+    const seVa = vista.textos(ids[1], { quien: 'dos@x', senal: se.signal });
+    const espera = vista.textos(ids[1], { quien: 'tres@x', senal: queda.signal });
+    se.abort();
+    const [, , recibe] = await Promise.all([delante, seVa, espera]);
+    assert.ok(recibe && !recibe.cancelado && !recibe.ocupado, `el que se quedó: ${JSON.stringify(recibe)}`);
+    assert.strictEqual(bajadas.length, 2, `se bajaron las dos: ${bajadas.length}`);
   });
 });

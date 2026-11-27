@@ -944,9 +944,12 @@ async function bajar(opts = {}) {
   const porClave = new Map();
   const juegos = new Map();
   const instintosOmitidos = new Set();
-  // los juegos de registros (`<maquina>\0<versión>`) con un registro que pasa su tope: no se pueden bajar enteros (A45)
-  const juegosConGrandes = new Set();
+  // los registros que pasan su tope, por juego (`<maquina>\0<versión>` → sus archivos): no se bajan (A45)
+  const juegosConGrandes = new Map();
   const nombrarGrande = (texto) => { if (res.grandes_nombres.length < 20) res.grandes_nombres.push(texto); };
+  // lo que se hace con un JUEGO por eso va primero y con su propio tope: con más de 20 archivos grandes no se callaría
+  const avisosDeJuego = [];
+  const avisarJuego = (texto) => { if (avisosDeJuego.length < 20) avisosDeJuego.push(texto); };
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     // un blob que el almacén marca `codificado` llega transformado y nunca casa con el listado: contarlo como no bajado
@@ -959,7 +962,11 @@ async function bajar(opts = {}) {
     if (b.largo > topeDeBajada(forma.archivo) && !(esHilo && topeHilo)) {
       res.grandes += 1;
       nombrarGrande(`${nombreMostrable(b.nombre)} (pesa ${mbDe(b.largo)} MB: pasa el tope de bajada de ${mbDe(topeDeBajada(forma.archivo))} MB)`);
-      if (forma.archivo.startsWith('registros/')) juegosConGrandes.add(`${forma.maquina}\0${forma.version || ''}`);
+      if (forma.archivo.startsWith('registros/')) {
+        const k = `${forma.maquina}\0${forma.version || ''}`;
+        if (!juegosConGrandes.has(k)) juegosConGrandes.set(k, new Set());
+        juegosConGrandes.get(k).add(forma.archivo);
+      }
       continue;
     }
     if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
@@ -1033,34 +1040,54 @@ async function bajar(opts = {}) {
       noLeidos.push(`${cob.b.nombre} (cobertura ilegible: no se puede saber si el juego está completo)`);
       return { completo: false, ilegible: true };
     }
+    const faltan = [];
     for (const [id, f] of Object.entries(c.fuentes)) {
       if (!f || f.estado !== 'medido') continue;
       const reg = REGISTROS.find((x) => x.replace(/\.[^.]+$/, '') === id);
-      if (reg && !juego.has(`registros/${reg}.gz`)) return { completo: false };   // una fuente que este arnés no conoce no se exige
+      if (reg && !juego.has(`registros/${reg}.gz`)) faltan.push(`registros/${reg}.gz`);   // una fuente que este arnés no conoce no se exige
     }
-    return { completo: true };
+    return { completo: faltan.length === 0, faltan };
+  };
+  // Un registro que pasa su tope saca a su juego sólo si la cobertura lo declara medido: si no lo declara, el juego está
+  // completo sin él y baja (el registro, no). El veredicto se anota por la huella de la cobertura, para no pedirla en cada
+  // pasada mientras no cambie. Con el juego de nombres de siempre, lo que se saca es su cobertura (A45).
+  if (!isObject(indice.coberturas_con_grande)) indice.coberturas_con_grande = {};   // vacía no se escribe: no cambia nada
+  for (const n of Object.keys(indice.coberturas_con_grande)) if (!listados.has(n)) { delete indice.coberturas_con_grande[n]; indiceSucio = true; }
+  const juegoConGrande = async (maquina, v, juego) => {
+    const grandes = juegosConGrandes.get(`${maquina}\0${v}`);
+    const cob = juego.get('registros/cobertura.json');
+    const anotado = Boolean(grandes && cob && cob.b.md5 && indice.coberturas_con_grande[cob.b.nombre] === cob.b.md5);
+    const r = anotado ? { completo: false, faltan: [...grandes] } : await juegoCompleto(maquina, juego);
+    const porTamano = Boolean(grandes && !r.estado && !r.completo && Array.isArray(r.faltan) && r.faltan.some((f) => grandes.has(f)));
+    if (porTamano && !anotado && cob && cob.b.md5) { indice.coberturas_con_grande[cob.b.nombre] = cob.b.md5; indiceSucio = true; }
+    return { ...r, porTamano };
   };
   for (const [maquina, vs] of juegos) {
     // los juegos versionados, del más nuevo al más viejo; el de nombres de siempre es el más viejo de todos
     const versiones = [...vs.keys()].filter(Boolean).sort().reverse();
     let elegido = null;
     for (const v of versiones) {
-      // un juego con un registro que pasa su tope nunca va a bajar entero: no se pide su cobertura (se pedía en cada
-      // pasada) ni cuenta como «incompleto», que es lo de una subida a medias; se nombra y se usa el anterior
-      if (juegosConGrandes.has(`${maquina}\0${v}`)) { nombrarGrande(`${nombreMostrable(`${maquina}/registros/${v}`)} (un registro pasa su tope: se usa el juego anterior)`); continue; }
-      const r = await juegoCompleto(maquina, vs.get(v));
+      const r = await juegoConGrande(maquina, v, vs.get(v));
       // cortó antes de bajar los volcados: no deja la unión de carpetas (la misma regla que la pasada sin tiempo)
       if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
       if (r.completo) { elegido = v; break; }
+      // un juego cuya cobertura declara medido un registro que pasa su tope nunca va a bajar entero: no es «incompleto»
+      // (eso es una subida a medias), se nombra y se usa el anterior
+      if (r.porTamano) { avisarJuego(`${nombreMostrable(`${maquina}/registros/${v}`)} (su cobertura declara un registro que pasa su tope: se usa el juego anterior)`); continue; }
       if (!r.ilegible) res.versiones_incompletas += 1;   // la ilegible ya quedó en no_leidos: no es «incompleta»
     }
     if (elegido === null && vs.has('')) elegido = '';
     if (elegido === null) continue;
     for (const v of vs.keys()) if (v !== elegido && (v === '' || v < elegido)) res.versiones_viejas += 1;
-    // el juego de nombres de siempre no se elige por su cobertura: si uno de sus registros pasa el tope, su cobertura
-    // nueva lo daría por medido sin estar en el espejo. Queda la anterior (o ninguna), y se dice
-    const sinCobertura = elegido === '' && juegosConGrandes.has(`${maquina}\0`);
-    if (sinCobertura) nombrarGrande(`${nombreMostrable(`${maquina}/registros/cobertura.json`)} (no se baja: un registro de su juego pasa su tope; queda la anterior)`);
+    // el juego de nombres de siempre no se elige por su cobertura: si ésta declara medido un registro que pasa su tope,
+    // bajarla lo daría por medido sin estar en el espejo. Queda la anterior (o ninguna), y se dice
+    let sinCobertura = false;
+    if (elegido === '' && juegosConGrandes.has(`${maquina}\0`)) {
+      const r = await juegoConGrande(maquina, '', vs.get(''));
+      if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
+      sinCobertura = r.porTamano;
+    }
+    if (sinCobertura) avisarJuego(`${nombreMostrable(`${maquina}/registros/cobertura.json`)} (no se baja: declara un registro que pasa su tope; queda la anterior)`);
     elegidos.push(...[...vs.get(elegido).values()].filter((e) => !(sinCobertura && e.forma.archivo === 'registros/cobertura.json')));
   }
   // con resúmenes: las dos partes de cada corrida (conversación y cambio) se deciden JUNTAS. Una corrida está resumida si
@@ -1158,7 +1185,8 @@ async function bajar(opts = {}) {
 
   // Lo que no se baja se NOMBRA: la llave de escritura está en el repo, así que cualquiera puede dejar un
   // nombre sin forma de corrida, y la vista nunca lo va a ver (no llega al disco).
-  if (res.grandes) log(`${res.grandes} archivo(s) del buzón pasan su tope de bajada y no se bajan: ${res.grandes_nombres.join(', ')}${res.grandes_nombres.length < res.grandes ? '…' : ''}`);
+  if (avisosDeJuego.length) res.grandes_nombres = [...avisosDeJuego, ...res.grandes_nombres].slice(0, 40);
+  if (res.grandes) log(`${res.grandes} archivo(s) del buzón pasan su tope de bajada y no se bajan: ${res.grandes_nombres.join(', ')}${res.grandes_nombres.length - avisosDeJuego.length < res.grandes ? '…' : ''}`);
   if (res.ignorados) log(`${res.ignorados} blob(s) del buzón no tienen forma <maquina>/<volcado, hilo o cambio> y no se bajaron: ${res.ignorados_nombres.join(', ')}${res.ignorados > res.ignorados_nombres.length ? '…' : ''}`);
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto
@@ -1272,6 +1300,13 @@ async function bajar(opts = {}) {
         const p = cola[k++]; tomados += 1;
         if (!entra(p)) { res.por_tope += 1; continue; }
         await tomarLugar(p.largo);
+        // la espera pudo ser larga: si mientras tanto la pasada falló o se acabó el tiempo, éste no se pide y queda
+        // como pendiente (sin esto, cada uno esperaba después su corte por inactividad)
+        if (fatal || corto || Date.now() - inicio > tope) {
+          soltarLugar(p.largo);
+          if (!fatal) { corto = true; tomados -= 1; }
+          return;
+        }
         try { await bajarUno(p); } finally { soltarLugar(p.largo); }
       }
     };
