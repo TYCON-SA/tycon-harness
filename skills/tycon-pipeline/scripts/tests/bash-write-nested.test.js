@@ -690,6 +690,11 @@ test('T35 Xargs_RutaEnUnaVariableDelComando_Frena', () => {
     `f=${H}; printf '%s\\n' "$f" | xargs rm`]) frena(c, cmd);
   pasa(c, `f=${H}; echo $f | xargs cat`);
   pasa(c, 'f=README.md; echo $f | xargs rm');
+  // A57: una asignación posterior al uso no tapa la anterior; y en un bucle cualquiera de las dos vale
+  frena(c, `f=${H}; echo $f | xargs rm; f=otro.txt`);
+  frena(c, `f=otro.txt; f=${H}; echo $f | xargs rm`);
+  frena(c, `for i in 1 2; do echo $f | xargs rm; f=${H}; done`);
+  pasa(c, 'f=README.md; echo $f | xargs rm; f=otro.txt');
 });
 
 // T36 FindName_ClasesPosixYEscapes_Frena

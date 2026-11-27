@@ -1319,12 +1319,21 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(fuente[0]) || '';
         const escribe = /^(?:echo|printf|print)$/.test(escritor);
-        // una variable asignada en el comando vale lo asignado (`f=h.md; echo $f | xargs rm` borra `h.md`)
+        // una variable asignada en el comando vale lo asignado (`f=h.md; echo $f | xargs rm` borra `h.md`). Con varias
+        // asignaciones, cada una: la última del texto puede ser posterior al uso (`f=h.md; echo $f | xargs rm; f=otro`),
+        // y un bucle puede usar cualquiera (A57). Hasta 16 combinaciones por palabra; con más, la palabra sin reemplazar
         const asignados = asignacionesDe(texto);
-        const conValor = (w) => String(w).replace(EXPANSION_DE_VARIABLE, (m, a, b) => {
-          const v = asignados.get(a || b) || [];
-          return v.length ? v[v.length - 1] : m;
-        });
+        const conValor = (w) => {
+          let variantes = [String(w)];
+          for (const m of String(w).matchAll(EXPANSION_DE_VARIABLE)) {
+            const v = asignados.get(m[1] || m[2]) || [];
+            if (!v.length) continue;
+            const siguientes = variantes.flatMap((x) => [...new Set(v)].map((valor) => x.replace(m[0], () => valor)));
+            if (siguientes.length > 16) return [String(w)];
+            variantes = siguientes;
+          }
+          return variantes;
+        };
         // Lo que llega de un programa (`ls specs`, `find`, `git ls-files`) o de un archivo no se ve. Se prueba con cada
         // carpeta de la fuente que existe en el disco (`git ls-files specs` da `specs/…`) y con sus comodines
         // (`ls -d specs/*`). El comodín suelto (cualquier archivo de donde corre) va cuando el marcador o el argumento del
@@ -1350,8 +1359,8 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // la lista no guarda qué separa los tramos: un `echo` de otro comando (`echo ok && rg -l x specs | xargs rm`) puede
         // quedar como fuente, y entonces las palabras de todos los tramos saltados también cuentan
         const saltadas = lista.slice(j + 1, k).flatMap((t) => palabras(t).filter((w) => w !== ''));
-        const base = escribe ? [...fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)), ...saltadas].map(conValor)
-          : [...previas.map(conValor), ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
+        const base = escribe ? [...fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)), ...saltadas].flatMap(conValor)
+          : [...previas.flatMap(conValor), ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
         // un `find` le suma a la entrada los archivos que alcanza (sus palabras siguen: si la lectura del `find` queda
         // corta, frenan como antes). No se recorre si lo que corre el `xargs` sólo lee: el recorrido cuesta y no cambia nada
         const programa = nombreDeComando(marcaDeXargs(crudas).orden[0] || '') || '';
