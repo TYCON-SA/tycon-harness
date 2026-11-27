@@ -27,6 +27,15 @@
 'use strict';
 
 const RELOJ_MS = 5000;                    // el registro lo envuelve en timeout: 10
+// La segunda lectura de los heredocs (S247e): cuando un `<<` puede ser texto (adentro de una comilla, de un comentario
+// o del cuerpo de otro heredoc), el freno juzga el comando dos veces, una con cada lectura, y frena si una frena. La
+// segunda la juzga este mismo archivo en un proceso aparte, con esta marca en sus argumentos (la configuración que lo
+// registra no la lleva, y el asistente no le agrega argumentos al gancho). Ese proceso no anota los «pasó»: los anota
+// la primera lectura, una sola vez.
+const SEGUNDA_LECTURA = process.argv.includes('--quote-reading');
+// lo que puede tardar la segunda lectura: con el reloj propio de la primera (que vuelve a empezar después) entra en
+// los 10 s del registro
+const TOPE_SEGUNDA_MS = 3000;
 
 // 🔴 Las costuras de prueba (TYCON_PROD_ROOT, TYCON_PROD_SESSION_SINCE) existen SÓLO
 // donde el freno NO está instalado. En una máquina con /opt/tycon, ninguna variable cambia nada: una
@@ -35,12 +44,17 @@ const RELOJ_MS = 5000;                    // el registro lo envuelve en timeout:
 // tenían la puerta y el aviso; acá faltaba.
 const INSTALADO = (() => { try { return require('fs').statSync('/opt/tycon').isDirectory(); } catch { return false; } })();
 const costura = (nombre) => (INSTALADO ? undefined : process.env[nombre]);
-const t0 = Date.now();
+let t0 = Date.now();
 const vencido = () => Date.now() - t0 > RELOJ_MS;
 
 let raw = '';
 process.stdin.on('data', (d) => { raw += d; });
-process.stdin.on('end', () => { try { decidir(raw); } catch (e) { emergencia(raw, e); } });
+process.stdin.on('end', () => {
+  try {
+    if (SEGUNDA_LECTURA) require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js')).conLectura('comillas', () => decidir(raw));
+    else decidir(raw);
+  } catch (e) { emergencia(raw, e); }
+});
 process.stdin.on('error', (e) => emergencia(raw, e));
 
 // Clientes de base y la bandera con la que cada uno nombra el servidor. `sqlpackage` estaba en la
@@ -73,7 +87,7 @@ const ES_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'eval']);
 // 🔴 Antes era un regex `\b(?:sh|bash|…)\b` sobre los 60 caracteres previos al `<<`, y `\bsh\b`
 // matcheaba la EXTENSIÓN `.sh` del archivo destino: `cat > scripts/tests/x.test.sh <<'FIN'` se leía
 // como «heredoc que alimenta a un shell», y el cuerpo —el CONTENIDO del archivo, con sus `mkdir`,
-// `chmod` y `rm` sobre `$CASA/.claude/.tycon-pipeline` de una prueba— se juzgaba como escrituras de
+// `chmod` y `rm` sobre la carpeta del estado de la casa de una prueba— se juzgaba como escrituras de
 // este comando. Dos falsos positivos en vivo el 2026-09-16 (y `docs/bash-tips.md` caía igual).
 const CONSUME_COMO_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'xargs', 'gxargs', 'ssh']);
 const CONSUME_COMO_SHELL_SI_ES_PROGRAMA = new Set(['source', '.', 'eval']);
@@ -175,16 +189,17 @@ function nombraBorradoAzure(texto) {
 const MAX_CMD = 32 * 1024;
 
 function emergencia(texto, e) {
+  let dir = 'la carpeta del estado';
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard FALLÓ: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* si ni eso se puede, queda el mensaje de abajo */ }
   if (CRUDO.test(String(texto || '')) || nombraBorradoAzure(texto)) {
     process.stderr.write(mensaje('el freno de producción no pudo decidir (falla propia) y este comando nombra una base o un borrado en Azure.',
-      ['El motivo quedó en ~/.claude/.tycon-pipeline/hook-errors.log.',
+      [`El motivo quedó en hook-errors.log, en ${dir}.`,
        'Un freno que no pudo mirar NO deja pasar: «no sé» no es «no hay producción acá».']));
     // 🔴 Éste es el OTRO camino de bloqueo, y era el único que no dejaba línea: el freno frenó,
     //    y para la cuenta no existió. `reglaDelMotivo` ya tenía el código para nombrarlo
@@ -222,7 +237,7 @@ function loadGuardRecord() {
   guardRecordLib = null;
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard no pudo cargar la biblioteca de constancias (${failures.join(' · ')}): `
@@ -232,6 +247,7 @@ function loadGuardRecord() {
 }
 // La línea canónica que lee la cuenta del tablero (story 2.6). Nunca rompe ni cambia la decisión de quien la llama.
 function recordDecision(entry) {
+  if (SEGUNDA_LECTURA && entry && entry.veredicto !== 'bloqueo') return;
   const lib = loadGuardRecord();
   if (!lib) return;
   try { lib.anotar(entry); } catch { /* ayuda, no evidencia */ }
@@ -300,7 +316,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
     try {
       const os = require('os'); const fs = require('fs'); const path = require('path');
-      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
       fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] prod-access-guard NO PUDO MIRAR (frenó): ${motivo}\n\n`, 'utf8');
     } catch { /* noop */ }
@@ -310,8 +326,9 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
 }
 
 function registrar(ctx, extra) {
+  if (SEGUNDA_LECTURA && !(extra && extra.bloqueo)) return;
   const os = require('os'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
-  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
   fs.mkdirSync(dir, { recursive: true });
   const linea = {
     ts: new Date().toISOString(),
@@ -612,8 +629,28 @@ function barrerFirewallVencido() {
   } catch (_) { /* el tope se vuelve a mirar en el próximo arranque o fin de sesión */ }
 }
 
+/**
+ * Juzga el comando con la otra lectura de los heredocs (`heredocsLeidos`), en un proceso aparte. Si frena, este freno
+ * frena con su motivo. Si no terminó, o se cayó, es «no pude mirar»: frena si el comando nombra bases o un borrado en
+ * Azure, y si no sigue con la primera lectura.
+ */
+function segundaLectura(entrada, cmd, nombraBases) {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync(process.execPath, [__filename, '--quote-reading'], { input: entrada, encoding: 'utf8', timeout: TOPE_SEGUNDA_MS, killSignal: 'SIGKILL', windowsHide: true, maxBuffer: 1 << 20 });
+  if (r.status === 2) {
+    process.stderr.write(r.stderr || mensaje('la otra lectura de los heredocs de este comando frena.'));
+    process.exit(2);
+  }
+  if (r.status !== 0 && (nombraBases || nombraBorradoAzure(cmd))) {
+    frenar('un `<<` de este comando puede ser texto o un heredoc, y la lectura que lo toma por texto no terminó; el comando nombra algo de bases.', [
+      'Escribí el comando sin un `<<` adentro de comillas o de un comentario, o partilo en dos.',
+    ], { cmd }, 'no-pude-mirar');
+  }
+  t0 = Date.now();                                   // el reloj propio vuelve a empezar para la primera lectura
+}
+
 function decidir(entrada) {
-  barrerFirewallVencido();
+  if (!SEGUNDA_LECTURA) barrerFirewallVencido();
   let payload = {};
   try { payload = JSON.parse(entrada || '{}'); } catch (e) {
     // AC 14: un payload que no se pudo leer no es «no hay base». Si el texto crudo nombra algo de
@@ -637,6 +674,10 @@ function decidir(entrada) {
       'Partilo en comandos más cortos, o pasá la consulta por la puerta.',
     ], { cmd: cmd.slice(0, 4096) });
     process.exit(0);
+  }
+
+  if (!SEGUNDA_LECTURA && !require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js')).lecturasCoinciden(cmd)) {
+    segundaLectura(entrada, cmd, nombraBases);
   }
 
   const { segmentos, tokens, PREFIJOS, expandir, variablesDelComando, parseSimpleCommand } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
@@ -2133,9 +2174,9 @@ function juzgarSecurity(t0) {
 // Lo que el freno protege de escrituras: el catálogo de cada repo, el índice y la memoria de producción,
 // y las carpetas que los contienen. Se reconoce POR COMPONENTE, no por el texto literal: con
 // `cd repo/.tycon && printf … > production.json`, un comodín `production-*` o `rm -rf
-// ~/.claude/.tycon-pipeline` el texto literal no aparecía y la escritura pasaba (revisores,
+// ~/.tycon/state` el texto literal no aparecía y la escritura pasaba (revisores,
 // 2026-09-15). OJO: NO se protege toda `.tycon-pipeline/` contra escrituras puntuales —el botón de
-// pánico del arnés es `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`—, sólo estos archivos y el
+// pánico del arnés es `touch ~/.tycon/state/STOP_AUTONOMY`—, sólo estos archivos y el
 // borrado o movido de la carpeta entera.
 // 🔴 LOS DOS NOMBRES de cada uno (story 8.9, tanda P): el renombre a inglés deja convivir, hasta que todas las máquinas
 // autorizadas reinstalen, el catálogo con su nombre viejo en los repos de producto y el índice y la memoria escritos con
@@ -2249,7 +2290,7 @@ function escrituraProtegida(cmd, payload) {
   const path = require('path'); const os = require('os'); const fs = require('fs');
   const sp = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
   const home = path.resolve(process.env.HOME || os.homedir());
-  const raizPipeline = path.join(home, '.claude', '.tycon-pipeline');
+  const raizPipeline = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).legacyStateDir(home);
   // el presupuesto es GLOBAL: todas las palabras de todos los textos del comando (AC 15)
   // `substitutionsOf`: el texto de las sustituciones de las que salió el valor de cada variable (`F=$(…)`): el AC 13c vale también
   // cuando la sustitución llega por una variable (pase adversarial de la 8.14 A, #5)
@@ -2702,7 +2743,7 @@ function escrituraProtegida(cmd, payload) {
       return ancestros.some((x) => re.test(x)) ? todo : { catalogo: false, estados: false };
     }
     const lit = sp.patternToLiteral(abs);
-    if (ancestros.includes(lit.toLowerCase())) return todo;                     // `~`, `~/.claude`, `/`: un ancestro
+    if (ancestros.includes(lit.toLowerCase())) return todo;                     // `~`, la carpeta de Claude Code, `/`: un ancestro
     if (existeCarpeta(path.join(lit, '.tycon'))) return { catalogo: true, estados: false };   // un repo
     // una carpeta de repos (un hijo con `.tycon/`). 🔴 Lo que NO se pudo mirar no es «fuera de alcance»: con más de
     // MAX_HIJOS_FIND hijos, o sin permiso para leerla, el catálogo de un hijo puede estar ahí — es indecidible y frena con

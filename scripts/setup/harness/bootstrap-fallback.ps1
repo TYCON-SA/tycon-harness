@@ -1,8 +1,8 @@
 ﻿# bootstrap-fallback.ps1 — el RESPALDO en PowerShell del arranque del arnés, gemelo de
-# bootstrap-fallback.sh. Vive en ~/.claude/.tycon-pipeline/harness/, fuera del árbol; la línea de arranque lo corre
+# bootstrap-fallback.sh. Vive en la carpeta harness\ del estado, fuera del árbol; la línea de arranque lo corre
 # cuando bootstrap.js no sale 0 (harness.js roto, enlace colgado, árbol ausente, node por debajo del piso, startup fallido).
 #
-# Hace lo de siempre: `git pull --ff-only --autostash --quiet` en el enlace del arnés y en ~/.claude/agent-skills (si
+# Hace lo de siempre: `git pull --ff-only --autostash --quiet` en el enlace del arnés y en las skills instaladas (si
 # existen) y después el aplicador (install-tycon-hooks.ps1). Si el enlace no resuelve, usa el árbol que dice el estado.
 # Silencioso; una línea en startup.log y, si hay node, el aviso en `notice` del estado. Sale 0 siempre, salvo con un
 # PowerShell más viejo que 7: ahí UNA línea y sale 1, antes de escribir nada.
@@ -45,25 +45,60 @@ $H = Get-TyconHome
 # del arnés (~/.tycon, o TYCON_HOME) y su estado es <casa>\state. La regla de tycon-home.js, escrita acá: si esa carpeta
 # existe, es ésa; si no, la de siempre.
 $Own = if ($env:TYCON_HOME) { $env:TYCON_HOME } else { Join-Path $H '.tycon' }
-$Pipe = Join-Path $H '.claude\.tycon-pipeline'
+# Las rutas de la carpeta de Claude Code (el estado de siempre, las skills instaladas, el lugar y su nombre viejo) las
+# escribe el instalador al lado de este archivo, en places.json, con lo que da tycon-home.js en esta máquina
+# (copyBootstrap de harness.js). Sin ese archivo —la primera sesión después de una actualización que copió esta copia con
+# el código de antes— se deducen de dónde vive este archivo: <estado>\harness\bootstrap-fallback.ps1. Gemelo del .sh.
+$Places = $null
+$PlacesFile = Join-Path $PSScriptRoot 'places.json'
+if (Test-Path $PlacesFile -PathType Leaf) { try { $Places = Get-Content -Raw -Path $PlacesFile | ConvertFrom-Json } catch { $Places = $null } }
+# un places.json de otra casa no manda: su estado tiene que ser la carpeta de arriba de este archivo
+if ($Places) {
+    try {
+        $placesState = (Resolve-Path -LiteralPath ([string]$Places.state_dir) -ErrorAction Stop).Path.TrimEnd('\', '/')
+        $hereState = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot) -ErrorAction Stop).Path.TrimEnd('\', '/')
+        if ($placesState -ne $hereState) { $Places = $null }
+    } catch { $Places = $null }
+}
+function Get-TyconPlace([string]$Key) {
+    if ($Places -and $Places.$Key -and [System.IO.Path]::IsPathRooted([string]$Places.$Key)) { return [string]$Places.$Key }
+    return ''
+}
+# sin el archivo: la carpeta de Claude Code es la de arriba del estado de siempre, si este archivo vive ahí
+# (<carpeta de Claude Code>\.tycon-pipeline\harness\)
+$CDir = Get-TyconPlace 'claude_dir'
+if (-not $CDir -and $PSScriptRoot -and ((Split-Path -Leaf $PSScriptRoot) -eq 'harness') -and ((Split-Path -Leaf (Split-Path -Parent $PSScriptRoot)) -eq '.tycon-pipeline')) {
+    $CDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+}
+$LegacyPipe = Get-TyconPlace 'legacy_state_dir'
+if (-not $LegacyPipe -and $CDir) { $LegacyPipe = Join-Path $CDir '.tycon-pipeline' }
+$Pipe = $LegacyPipe
 if (Test-Path (Join-Path $Own 'state') -PathType Container) { $Pipe = Join-Path $Own 'state' }
+if (-not $Pipe) { Write-Output "bootstrap-fallback.ps1: no se donde esta el estado (sin places.json al lado y fuera de <estado>\harness: $PSScriptRoot)"; exit 0 }
 $HDir = Join-Path $Pipe 'harness'
 $Log = Join-Path $HDir 'startup.log'
 $State = Join-Path $Pipe 'harness-state.json'
-# los dos nombres del lugar del arnés: primero el lugar, después el viejo; bajo HOME y bajo
-# USERPROFILE si difieren. Escritos acá: esta copia fija no carga nada del árbol (copia declarada en
-# scripts/tests/fixtures/harness-place-names.json)
-$Link = Join-Path $H '.claude\tycon-harness'
+# los dos nombres del lugar del arnés: primero el lugar, después el viejo; primero los del archivo y después bajo HOME y
+# bajo USERPROFILE si difieren, con el nombre de la carpeta de Claude Code. Escritos acá: esta copia fija no carga nada
+# del árbol (copia declarada en scripts/tests/fixtures/harness-place-names.json)
+$Link = Get-TyconPlace 'place'
+if (-not $Link -and $CDir) { $Link = Join-Path $CDir 'tycon-harness' }
 $LinkTree = ''
+foreach ($cand in @((Get-TyconPlace 'place'), (Get-TyconPlace 'legacy_place'))) {
+    if (-not $cand -or $LinkTree) { continue }
+    if (Test-Path (Join-Path $cand 'scripts\install-tycon-hooks.ps1')) { $LinkTree = $cand }
+}
+$CName = if ($CDir) { Split-Path -Leaf $CDir } else { '' }
 # las dos carpetas salen de Get-TyconHome: la de Linux/Mac es HOME y la de Windows, USERPROFILE
 foreach ($b in @($H, (Get-TyconHome 'Unix'), (Get-TyconHome 'Win32NT'))) {
-    if (-not $b -or $LinkTree) { continue }
+    if (-not $b -or -not $CName -or $LinkTree) { continue }
     foreach ($n in @('tycon-harness', 'tycon-claude-guides')) {
-        $cand = Join-Path (Join-Path $b '.claude') $n
+        $cand = Join-Path (Join-Path $b $CName) $n
         if (-not $LinkTree -and (Test-Path (Join-Path $cand 'scripts\install-tycon-hooks.ps1'))) { $LinkTree = $cand }
     }
 }
-$Skills = Join-Path $H '.claude\agent-skills'
+$Skills = Get-TyconPlace 'skills_dir'
+if (-not $Skills -and $CDir) { $Skills = Join-Path $CDir 'agent-skills' }
 New-Item -ItemType Directory -Force -Path $HDir | Out-Null
 if ((Test-Path $Log) -and ((Get-Item $Log).Length -gt 1048576)) { Move-Item -Force $Log "$Log.1" }
 
@@ -249,7 +284,7 @@ try { $NodeV = (& node --version 2>$null) } catch {}
 $Pulled = ''
 if ($Mode -eq 'developer') { $Pulled = ' ninguno (modo desarrollador: el git del clon es del dev)' }
 
-# La guarda, gemela de la del .sh: el clon del que salen las skills (~/.claude/agent-skills: el clon
+# La guarda, gemela de la del .sh: el clon del que salen las skills (las skills instaladas, $Skills: el clon
 # viejo, re-apuntado o no, o el único árbol) NUNCA avanza a una punta que no trae skills/tycon-pipeline (`main` devuelto a
 # un árbol anterior a la unión de los dos repos). Se mira ANTES del pull: se trae sin mover y se mira el árbol de lo
 # traído. Si no las trae no se mueve NINGUNO de los dos clones; el aplicador corre igual, con lo que hay.
@@ -269,7 +304,7 @@ function Get-SkillsAt([string]$Rev) {
 }
 $Guard = $false
 if ($Release) { $Pulled = ' ninguno (versión bajada: sin git)' }
-if (($Mode -ne 'developer') -and (-not $Release) -and (Test-Path $Skills)) {
+if (($Mode -ne 'developer') -and (-not $Release) -and $Skills -and (Test-Path $Skills)) {
     & git -C $Skills rev-parse --git-dir *> $null
     if ($LASTEXITCODE -eq 0) {
         $Here = Get-SkillsAt 'HEAD'

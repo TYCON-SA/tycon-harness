@@ -1913,6 +1913,17 @@ pedido al vencer el plazo del servicio (`--timeout`): con un plazo corto, la con
 que vence (con 60 s, cada minuto). Al crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
 abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
+Al desplegar una revisión nueva, Cloud Run deja las conexiones ya abiertas en la instancia vieja hasta ese plazo, y las
+fotos viven en la memoria de cada instancia: sin más, la pestaña Oficinas de la revisión nueva quedaría vacía hasta una
+hora. Por eso el sitio corta cada conexión de máquina a los 10 minutos y la máquina vuelve sola en unos segundos, ya a la
+revisión nueva; la oficina no parpadea. Vale desde el segundo despliegue con esta versión, porque el primero lo atiende
+todavía la instancia vieja. Quien despliega seguido lo baja con `SITE_OFFICE_RECONNECT_MINUTES` (de 1 a 60; `0` no corta).
+Para no esperar, reiniciá en cada máquina el servidor de la oficina: lo relanza la próxima sesión.
+
+**Al día en Cloud Run**: con `site.update: "auto"`, lo pone al día el nocturno de GitHub con la plataforma `cloudrun`, que
+trae el conector `gcs`: cambia sólo la imagen, por huella, espera la revisión nueva con todo el tráfico, la prueba y, si
+falla, vuelve a la anterior. Cómo darlo de alta: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»).
+
 ### Una red cerrada
 
 Sin salida a internet, el sitio no puede mirar la última publicada y lo dice. La actualización es a mano: en una máquina

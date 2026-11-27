@@ -232,7 +232,7 @@ if (-not $NoAuto) {
         Write-Warning "No encuentro scripts\hooks\codegraph-session-hook.ps1; omito el hook."
     }
     else {
-        $claudeDir = Join-Path $HOME ".claude"
+        $claudeDir = Split-Path -Parent $Settings   # la carpeta de settings.json
         if (-not (Test-Path -LiteralPath $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir | Out-Null }
         if (Test-Path -LiteralPath $Settings) { Copy-Item -LiteralPath $Settings -Destination "$Settings.bak-codegraph" -Force }
 

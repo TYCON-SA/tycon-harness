@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-silent-failure-hunter.md
-# source_sha256: 9ad1f2d6f988cc9d863ba7a3acc0786cbc227814a29eff91811f9a1421d5b320
+# source_sha256: ebf02d87004b5e9c38722b98ee72cb3eed92131cc7562fadfddc46f06cd93730
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-silent-failure-hunter.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-silent-failure-hunter").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -343,7 +343,7 @@ enumeraste TODOS los sitios de la clase — no solo el que disparó el hallazgo.
 
 ## Reglas
 
-Las reglas que disparás citan IDs estables del catálogo (`SILENT-C1`..`SILENT-C5`, `SILENT-W1`..`SILENT-W6`). Ver `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` sección \"Silent Failure Hunter\".
+Las reglas que disparás citan IDs estables del catálogo (`SILENT-C1`..`SILENT-C5`, `SILENT-W1`..`SILENT-W6`). Ver `~/.tycon/harness/guides/advisor-rules-catalog.md` sección \"Silent Failure Hunter\".
 
 Si encontrás un pattern silente que NO está en el catálogo: flageá como WARNING con prefix `SILENT-Wn (uncatalogued)` + descripción + sugerí agregar la regla al catálogo. NO inventes IDs nuevos.
 

@@ -406,8 +406,19 @@ function shellFn(rel) {
   assert.ok(i >= 0, `${rel}: no tiene harness_dir`);
   return text.slice(i, text.indexOf('\n}\n', i) + 2);
 }
-function runShell(fnText, env) {
-  return spawnSync('bash', ['-c', `${fnText}\nharness_dir`], { encoding: 'utf8', env: Object.assign({ PATH: process.env.PATH }, env) });
+/**
+ * La función corrida como la corre el gancho: desde un archivo en una carpeta de ganchos de juguete, con el places.sh
+ * que el instalador deja al lado (la carpeta de Claude Code de la casa de `env.HOME`). Con `places: false`, sin él.
+ */
+function runShell(fnText, env, { places = true } = {}) {
+  const hooks = dir('git-hooks', `h-${++seq}`);
+  const hook = path.join(hooks, 'pre-commit');
+  fs.writeFileSync(hook, `${fnText}\nharness_dir\n`);
+  if (places && env.HOME) {
+    const cdir = bashPath(path.join(env.HOME, '.claude'));
+    fs.writeFileSync(path.join(hooks, 'places.sh'), `TYCON_P_CLAUDE_DIR='${cdir}'\n`);
+  }
+  return spawnSync('bash', [bashPath(hook)], { encoding: 'utf8', env: Object.assign({ PATH: process.env.PATH }, env) });
 }
 test('T9 Readers_PlaceFirstThenLegacy_SilentFallback_LegacyNamedOnlyIfPresent_UserprofileTried', () => {
   const A = clone('A'); const B = clone('B');
@@ -452,18 +463,46 @@ test('T9 Readers_PlaceFirstThenLegacy_SilentFallback_LegacyNamedOnlyIfPresent_Us
   if (!bashPath(LAB)) { console.log('⏭ T9: NO MEDIDO — los lectores en shell (el bash no tiene cygpath para traducir la ruta de Windows)'); return; }
   assert.strictEqual(runShell(sh, { HOME: both }).stdout, bashPath(placeOf(both)), 'shell: con los dos, el lugar');
   assert.strictEqual(runShell(sh, { HOME: onlyLegacy }).stdout, bashPath(legacyOf(onlyLegacy)), 'shell: con sólo el viejo, el viejo');
-  assert.strictEqual(runShell(sh, { HOME: none }).stdout, bashPath(placeOf(none)), 'shell: con ninguno, el lugar (lo de hoy: el hook avisa y sigue)');
+  assert.strictEqual(runShell(sh, { HOME: none }).stdout, '', 'shell: con ninguno, vacío (quien llama mira la casa propia; el hook avisa y sigue)');
   assert.strictEqual(runShell(sh, { HOME: none, TYCON_GUIDES_DIR: A }).stdout, A, 'shell: TYCON_GUIDES_DIR sigue ganando');
   // HOME distinta de USERPROFILE (Windows con HOME en otra carpeta: supuesto P4, simulado): lo encuentra bajo USERPROFILE
   assert.strictEqual(runShell(sh, { HOME: none, USERPROFILE: onlyLegacy }).stdout, bashPath(legacyOf(onlyLegacy)), 'shell: bajo USERPROFILE');
+  // sin el places.sh del instalador no arma la ruta: vacío (quien llama mira la casa propia y, si no, dice que no está)
+  assert.strictEqual(runShell(sh, { HOME: both }, { places: false }).stdout, '', 'shell: sin places.sh no arma la carpeta de Claude Code a mano');
   // el respaldo en shell de la copia fija: el mismo orden (su bloque de búsqueda, corrido tal cual)
   const fb = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'bootstrap-fallback.sh'), 'utf8');
   const loop = fb.slice(fb.indexOf('LINK_TREE=""'), fb.indexOf('done\ndone') + 'done\ndone'.length);
-  const fbRun = (env) => spawnSync('bash', ['-c', `H="$HOME"\n${loop}\nprintf '%s' "$LINK_TREE"`], { encoding: 'utf8', env: Object.assign({ PATH: process.env.PATH }, env) }).stdout;
+  // el bloque toma la carpeta de Claude Code (CDIR) de lo que el respaldo resolvió antes: places.sh, state-dir.sh o dónde vive
+  const fbRun = (env) => spawnSync('bash', ['-c', `H="$HOME"\nCDIR="$HOME/.claude"\n${loop}\nprintf '%s' "$LINK_TREE"`], { encoding: 'utf8', env: Object.assign({ PATH: process.env.PATH }, env) }).stdout;
   assert.strictEqual(fbRun({ HOME: both }), bashPath(placeOf(both)));
   assert.strictEqual(fbRun({ HOME: onlyLegacy }), bashPath(legacyOf(onlyLegacy)));
   assert.strictEqual(fbRun({ HOME: none, USERPROFILE: onlyLegacy }), bashPath(legacyOf(onlyLegacy)), 'el respaldo: bajo USERPROFILE');
   assert.strictEqual(fbRun({ HOME: none }), '');
+});
+
+// El gancho global, al delegar en el .githooks/pre-commit del repo, le pasa el arnés que encontró por su places.sh: el
+// del repo no tiene ese archivo al lado y sin la variable no sabría dónde buscar. Una variable puesta por la persona manda.
+test('T9b GlobalHook_PassesFoundHarness_ToRepoHook @story-8.24 @ac-3', () => {
+  if (!HAS_BASH || !bashPath(LAB)) { console.log('⏭ T9b: NO MEDIDO — sin bash que lea la ruta'); return; }
+  const A = clone('A');
+  const h = home('deleg'); link(A, placeOf(h));
+  const hooks = dir('git-hooks', `d-${++seq}`);
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'git-pre-commit-global.sh'), path.join(hooks, 'pre-commit'));
+  const cdir = bashPath(path.join(h, '.claude'));
+  fs.writeFileSync(path.join(hooks, 'places.sh'), `TYCON_P_CLAUDE_DIR='${cdir}'\n`);
+  const repo = dir('repos', `r-${++seq}`);
+  spawnSync('git', ['init', '-q', repo]);
+  fs.mkdirSync(path.join(repo, '.githooks'));
+  const seen = path.join(repo, 'visto.txt');
+  fs.writeFileSync(path.join(repo, '.githooks', 'pre-commit'), `#!/usr/bin/env bash\nprintf '%s' "\${TYCON_GUIDES_DIR:-}" > "${bashPath(seen)}"\nexit 1\n`);
+  fs.chmodSync(path.join(repo, '.githooks', 'pre-commit'), 0o755);
+  const env = { PATH: process.env.PATH, HOME: h, USERPROFILE: h };
+  const run = (extra) => spawnSync('bash', [bashPath(path.join(hooks, 'pre-commit'))], { cwd: repo, encoding: 'utf8', env: Object.assign({}, env, extra) });
+  const r = run({});
+  assert.strictEqual(r.status, 1, `el gancho del repo frenó y el global también: ${r.stderr}`);
+  assert.strictEqual(fs.readFileSync(seen, 'utf8'), bashPath(placeOf(h)), 'el gancho del repo recibe el arnés que encontró el global');
+  run({ TYCON_GUIDES_DIR: '/otro/arnes' });
+  assert.strictEqual(fs.readFileSync(seen, 'utf8'), '/otro/arnes', 'la variable de la persona manda');
 });
 
 // ── uninstall no deja inalcanzable un lugar que la persona re-apuntó ─────────────────────────

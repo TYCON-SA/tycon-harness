@@ -215,7 +215,10 @@ function loadList(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
     const extra = validateList({ hooks });
     if (extra.length) throw new ApplyError(`${integrationsDir}: los hooks de las integraciones no pasan la validación de la lista — no escribo nada:\n  · ${extra.join('\n  · ')}`);
   }
-  return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy: list.legacy_fragments || [], warnings, unreadIntegrationScripts: unread };
+  // `{claude-dir}` en una forma vieja: el nombre de la carpeta de Claude Code, el de tycon-home.js
+  const claudeName = path.basename(require('./harness/tycon-home.js').claudeDir(os.homedir()));
+  const legacy = (list.legacy_fragments || []).map((f) => String(f).split('{claude-dir}').join(claudeName));
+  return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy, warnings, unreadIntegrationScripts: unread };
 }
 
 /**
@@ -472,6 +475,112 @@ function scriptOf(cmd) {
 }
 /** El piso de Node del mismo árbol que este aplicador: con él se registran los `.js` cuando el arnés no tiene Node propio. */
 const NODE_FLOOR = path.join(__dirname, '..', 'lib', 'node-floor.js');
+
+// ── Los lugares viejos ───────────────────────────────────────────────────────────────────────────────────────────
+// Los lugares del arnés bajo la carpeta de Claude Code que se retiran, cada uno con su lugar nuevo. Mientras el viejo es
+// un enlace al nuevo, un gancho escrito por el viejo anda; el día que se retira el enlace, da error. Por eso un gancho
+// (del arnés o de la persona) que pasa por un lugar viejo se reescribe al nuevo: sólo el tramo de la ruta, sólo para un
+// archivo adentro del lugar (el lugar pelado no: `rm -rf <enlace>` y `rm -rf <carpeta>` no son lo mismo), y sólo si el
+// viejo es un enlace al nuevo o, ya retirado, el archivo está en el nuevo. Lo demás se deja y se avisa.
+// La línea de arranque no se toca acá: la reconocen sus propios lectores (startup-line.js) por su forma de hoy.
+
+/**
+ * Los lugares viejos que se retiran y el nuevo de cada uno, leídos de tycon-home.js; ninguno si el lugar nuevo no existe.
+ * Sólo los dos que se retiran: el nombre viejo del arnés y el estado de siempre. El lugar del arnés y las skills
+ * instaladas bajo la carpeta de Claude Code siguen (son por donde Claude Code los descubre): no se mudan.
+ */
+function legacyMoves(home, env = {}) {
+  const H = require('./harness/tycon-home.js');
+  let own;
+  // una casa propia mal declarada (TYCON_HOME relativa) la dice quien la lee; acá no se muda nada
+  try { own = H.ownPathsOf({ home, env }); } catch (_) { return []; }
+  const state = path.join(own.root, path.basename(H.ownStateDir(home)));
+  return [
+    { old: H.legacyPlacePath(home), to: own.harness },
+    { old: H.legacyStateDir(home), to: state },
+  ].filter((m) => path.resolve(m.old) !== path.resolve(m.to) && fs.existsSync(m.to));
+}
+
+/** ¿El lugar viejo se puede leer como el nuevo? `{ ok, gone }`: sí si es un enlace que lleva al nuevo, o si ya no está. */
+function legacyIsTheNew(m) {
+  let st;
+  try { st = fs.lstatSync(m.old); } catch (_) { return { ok: true, gone: true }; }
+  if (!st.isSymbolicLink()) return { ok: false, why: 'el lugar viejo es una carpeta de verdad, no un enlace al nuevo' };
+  try {
+    if (fs.realpathSync(m.old) === fs.realpathSync(m.to)) return { ok: true, gone: false };
+  } catch (_) { return { ok: false, why: 'el enlace viejo o el lugar nuevo no se pueden leer' }; }
+  return { ok: false, why: 'el enlace viejo lleva a otro lado que el lugar nuevo' };
+}
+
+const escapeRx = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Reescribe por el lugar nuevo las rutas de los ganchos que pasan por un lugar viejo, en todos los eventos. Cada ruta se
+ * escribe como estaba (`$HOME/…`, `${HOME}/…`, `~/…` o absoluta) y sólo cambia su tramo de adelante. Lo que todavía
+ * nombra un lugar viejo después (una forma que no se reconoce) se avisa. Devuelve `{ moved: [{ event, from, to }],
+ * stuck: [{ event, path, why }] }`.
+ */
+function relocateLegacyHooks(settings, { home, windows, env = {}, moves = legacyMoves(home, env) }) {
+  const out = { moved: [], stuck: [] };
+  const hooks = settings && settings.hooks;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks) || !moves.length) return out;
+  const startup = require('./harness/startup-line.js');
+  const sep = windows ? '[\\\\/]' : '/';
+  const flags = windows ? 'gi' : 'g';
+  const homeAbs = path.resolve(home);
+  const written = (p) => (windows ? fwd(p) : p);
+  const spellings = [];
+  for (const m of moves) {
+    const relOld = path.relative(homeAbs, path.resolve(m.old));
+    const relNew = path.relative(homeAbs, path.resolve(m.to));
+    const parts = (p) => p.split(/[\\/]/).map(escapeRx).join(sep);
+    const forms = [{ rx: parts(path.resolve(m.old)), to: written(path.resolve(m.to)) }];
+    if (!relOld.startsWith('..') && !path.isAbsolute(relOld)) {
+      const underHome = !relNew.startsWith('..') && !path.isAbsolute(relNew);
+      for (const h of ['$HOME', '${HOME}', '~']) {
+        forms.push({ rx: `${escapeRx(h)}${sep}${parts(relOld)}`, to: underHome ? `${h}/${relNew.split(path.sep).join('/')}` : written(path.resolve(m.to)) });
+      }
+    }
+    for (const f of forms) spellings.push({ m, rx: new RegExp(`(^|[\\s"'=:(])${f.rx}(?=${sep}|$|[\\s"'\`;|&)<>])((?:${sep}[^\\s"'\`;|&)<>]*)?)`, flags), to: f.to });
+  }
+  // lo que nombra todavía un lugar viejo, en cualquier forma: después de reescribir, se avisa
+  const claudeName = path.basename(require('./harness/tycon-home.js').claudeDir(home));
+  const still = new RegExp(`(?:^|[\\\\/\\s"'=:(])${escapeRx(claudeName)}[\\\\/](?:${moves.map((m) => escapeRx(path.basename(m.old))).join('|')})(?![\\w.-])`, 'i');
+  const verdicts = new Map();
+  const verdictOf = (m) => { if (!verdicts.has(m)) verdicts.set(m, legacyIsTheNew(m)); return verdicts.get(m); };
+  for (const [event, bucket] of Object.entries(hooks)) {
+    if (!Array.isArray(bucket)) continue;
+    for (const entry of bucket) {
+      if (!entry || typeof entry !== 'object' || !Array.isArray(entry.hooks)) continue;
+      for (const hk of entry.hooks) {
+        if (!hk || typeof hk !== 'object' || typeof hk.command !== 'string') continue;
+        if (startup.isNew(hk.command) || startup.classify(hk.command) || startup.mentionsHarness(hk.command)) continue;
+        let cmd = hk.command;
+        const stuckBefore = out.stuck.length;
+        for (const s of spellings) {
+          cmd = cmd.replace(s.rx, (whole, before, rest) => {
+            const shown = whole.slice(before.length);
+            if (!rest.split(/[\\/]/).filter(Boolean).length) { out.stuck.push({ event, path: shown, why: 'nombra el lugar mismo, no un archivo adentro' }); return whole; }
+            const v = verdictOf(s.m);
+            if (!v.ok) { out.stuck.push({ event, path: shown, why: v.why }); return whole; }
+            // con el enlace al nuevo, la ruta es la misma exista o no el archivo (un registro que el gancho crea); ya
+            // retirado el enlace, se mueve sólo lo que está en el nuevo
+            if (v.gone && !fs.existsSync(path.join(s.m.to, ...rest.split(/[\\/]/).filter(Boolean)))) {
+              out.stuck.push({ event, path: shown, why: 'el archivo no está en el lugar nuevo' });
+              return whole;
+            }
+            const next = `${s.to}${windows ? rest.replace(/\\/g, '/') : rest}`;
+            out.moved.push({ event, from: shown, to: next });
+            return `${before}${next}`;
+          });
+        }
+        if (out.stuck.length === stuckBefore && still.test(cmd)) out.stuck.push({ event, path: cmd, why: 'nombra la carpeta vieja en una forma que no reconozco' });
+        hk.command = cmd;
+      }
+    }
+  }
+  return out;
+}
 
 // ── Aplicar ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -922,6 +1031,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const decision = decide(list, { env: envWithOrgSwitches(env, switches), integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
+  // antes de todo, lo que pasa por un lugar viejo pasa al nuevo: así el resto lo reconoce por su ruta de hoy
+  const relocated = relocateLegacyHooks(settings, { home, windows, env });
   const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp, floor: throughLink(NODE_FLOOR, home, env) });
   // sin el Node del arnés, se dice en rojo y con el arreglo: nunca «en el próximo arranque»
   if (!interp.own && interp.switch !== 'off') {
@@ -947,6 +1058,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   }
   const removed = r.removed.map((x) => [x.event, x.relpath, x.why]);
   const lines = [];
+  if (relocated.moved.length) { lines.push(`RELOCATED:${relocated.moved.length}`); for (const x of relocated.moved) lines.push(`  ~ ${x.event}: ${x.from} → ${x.to}`); }
+  if (relocated.stuck.length) { lines.push(`STUCK:${relocated.stuck.length}`); for (const x of relocated.stuck) lines.push(`  ! ${x.event}: ${x.path} [${x.why}: corregila a mano]`); }
   if (r.normalized.length) lines.push(`NORMALIZED:${r.normalized.length}`);
   if (r.reformed.length) { lines.push(`REFORMED:${r.reformed.length}`); for (const x of r.reformed) lines.push(`  ~ ${x.event} → ${x.relpath}  [${x.from} → ${x.to}]`); }
   if (added.length) { lines.push(`ADDED:${added.length}`); for (const [e, m, p, l] of added) lines.push(`  + ${e} (matcher='${m || '*'}') → ${p}  [${l}]`); }
@@ -991,6 +1104,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
       ...r.present.map((id) => `hook\t${where}\t${id}\t${fresh.has(id) ? 'add' : rewritten.has(id) ? 'update' : 'keep'}`),
       ...(r.planKeep || []).map((id) => `hook\t${where}\t${id}\tkeep`),
       ...r.removed.map((x) => `hook\t${where}\t${x.event}:${x.relpath}\tremove`),
+      // un gancho que pasa de la carpeta vieja a la nueva cambia: el plan lo dice
+      ...relocated.moved.map((x) => `hook\t${where}\t${x.event}:${x.from}\tupdate`),
       ...r.normalized.map((c) => `pull-line\t${where}\t${c.split(/\s+/).filter(Boolean).join(' ')}\tupdate`),
       ...(sharedDone ? [] : [
         ...Object.entries(TOP_CANONICAL).map(([k, v]) => (r.topAdded.includes(k) ? `setting\t${where}\t${k}\tadd` : settings[k] === v ? `setting\t${where}\t${k}\tkeep` : null)).filter(Boolean),
@@ -1001,15 +1116,19 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     if (!planOk) throw new ApplyError(`no pude anotar los hooks en el plan (${env.TYCON_PLAN_PIECES}): el plan quedaría incompleto y no se escribe`);
   }
 
-  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0;
+  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0 || relocated.moved.length > 0;
   let backup = null;
   if (!a.check && changed) {
+    // con la foto del mecanismo de actualización (harness.js), la copia es esa foto: una sola, y el aviso dice dónde quedó
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}T${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}`;
     if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {
-      const ts = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}T${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}`;
-      backup = `${settingsPath}.bak.${stamp}`;
-      fs.copyFileSync(settingsPath, backup);
+      // dos corridas en el mismo segundo no se pisan la copia
+      for (let n = 0; ; n++) {
+        const p = `${settingsPath}.bak.${stamp}${n ? `-${n}` : ''}`;
+        try { fs.copyFileSync(settingsPath, p, fs.constants.COPYFILE_EXCL); backup = p; break; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
       lines.push(`BACKUP:${backup}`);
     }
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -1026,12 +1145,21 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
       throw new ApplyError(`${settingsPath}: no pude escribir settings.json (${e.message})`);
     }
   }
+  // el aviso a la persona: qué gancho cambió de lugar, dónde quedó el respaldo y lo que no se pudo mover
+  if (!a.check && (relocated.moved.length || relocated.stuck.length)) {
+    const said = [];
+    if (relocated.moved.length) said.push(`⚠️ tycon: ${relocated.moved.length} ruta(s) de los ganchos de ${settingsPath} pasaban por la carpeta vieja del arnés y ahora van por la nueva (sólo cambió ese tramo de la ruta)${backup ? `; el archivo de antes quedó en ${backup}` : env.TYCON_HARNESS_SNAPSHOT_DIR ? `; el archivo de antes quedó en la foto de la actualización (${env.TYCON_HARNESS_SNAPSHOT_DIR})` : ''}:`, ...relocated.moved.map((x) => `  ~ ${x.event}: ${x.from} → ${x.to}`));
+    if (relocated.stuck.length) said.push(`⚠️ tycon: ${relocated.stuck.length} ruta(s) de los ganchos pasan por la carpeta vieja y no los pude mover solo; corregilos a mano antes del retiro de la carpeta vieja:`, ...relocated.stuck.map((x) => `  ! ${x.event}: ${x.path} (${x.why})`));
+    process.stdout.write(`${said.join('\n')}\n`);
+    for (const l of lines.filter((x) => /^(RELOCATED|STUCK|BACKUP):/.test(x))) process.stdout.write(`${l}\n`);
+  }
   if (a.reportOut) fs.writeFileSync(a.reportOut, lines.length ? `${lines.join('\n')}\n` : '');
   if (a.jsonOut) {
     fs.writeFileSync(a.jsonOut, `${JSON.stringify({
       platform, settings: settingsPath, check: a.check, changed, backup,
       added: r.added, existed: r.existed.length, removed: r.removed, missing: r.missing, notInstalled: r.notInstalled,
       deferred: r.deferred, normalized: r.normalized.length, reformed: r.reformed, topAdded: r.topAdded, envAdded: r.envAdded,
+      relocated: relocated.moved, relocatedStuck: relocated.stuck,
       profileLeave: [...decision.leave], profileOff: [...decision.profileOff],
     }, null, 2)}\n`);
   }
@@ -1050,6 +1178,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { OLD_JUDGE_PREFIXES, OLD_JUDGE_EVENTS, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { relocateLegacyHooks, legacyMoves, OLD_JUDGE_PREFIXES, OLD_JUDGE_EVENTS, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));

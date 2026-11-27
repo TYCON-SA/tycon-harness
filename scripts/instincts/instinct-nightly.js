@@ -293,6 +293,8 @@ function leerUniones(espejo) {
   return { a, resumen: { unidas, compartidas } };
 }
 
+// lo más que se abre un día de instintos de una máquina: el tope de los registros (changes.js, TOPE_JSON_DESCOMPRIMIDO)
+const TOPE_DIA = 64 * 1024 * 1024;
 /** Los días de instintos del espejo: las líneas de la ventana, lo que no contó y el último día de cada máquina. */
 function leerEspejo(espejo, hoy) {
   const uniones = leerUniones(espejo);
@@ -321,7 +323,8 @@ function leerEspejo(espejo, hoy) {
       r.maquinas.add(m);
       let texto;
       // un día entero que no se lee no es «no hubo nada ese día»: la lectura queda a medias
-      try { texto = zlib.gunzipSync(fs.readFileSync(path.join(espejo, c, 'instincts', f))).toString('utf8'); } catch (_) { r.dias_ilegibles++; continue; }
+      // con tope: un día de unos KB que abre a GB (subido con la llave de sólo crear) no se junta entero (A41)
+      try { texto = zlib.gunzipSync(fs.readFileSync(path.join(espejo, c, 'instincts', f)), { maxOutputLength: TOPE_DIA }).toString('utf8'); } catch (_) { r.dias_ilegibles++; continue; }
       for (const cruda of texto.split('\n')) {
         if (!cruda.trim()) continue;
         let l;

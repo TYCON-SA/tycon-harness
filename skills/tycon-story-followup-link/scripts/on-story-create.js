@@ -12,7 +12,7 @@
  * escritura efectiva (con confirmación del dev) la hace el agente al leer el
  * reminder.
  *
- * Convención: `~/.claude/tycon-harness/story-format.md` §1.2.
+ * Convención: `~/.tycon/harness/story-format.md` §1.2.
  *
  * Output: system-reminder en stdout o nada. Exit 0 siempre (no bloqueante).
  *
@@ -182,7 +182,9 @@ const content = ti.content || '';
 if (!filePath.endsWith('.md')) process.exit(0);
 
 const home = os.homedir();
-if (filePath.startsWith(path.join(home, '.claude'))) process.exit(0);
+// la carpeta de Claude Code, de la definición de las skills (state-dir.js de tycon-pipeline, en la misma carpeta de skills)
+const claudeDir = (() => { try { return require(path.join(__dirname, '..', '..', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).claudeDir(home); } catch (_) { return null; } })();
+if (claudeDir && filePath.startsWith(claudeDir)) process.exit(0);
 // el arnés por cualquiera de sus dos nombres, como segmento de ruta (escritos acá: las skills pueden
 // vivir en un clon aparte sin scripts/ al lado — copia declarada en scripts/tests/fixtures/harness-place-names.json)
 if (/(^|[\\/])(tycon-claude-guides|tycon-harness)([\\/]|$)/.test(filePath)) process.exit(0);

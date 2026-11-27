@@ -1952,6 +1952,19 @@ connection is cut each time it runs out (with 60 s, every minute). When creating
 a machine connected there is always an open request. On an existing one:
 `gcloud run services update <service> --region <region> --timeout=3600`.
 
+When a new revision is deployed, Cloud Run keeps the connections already open on the old instance until that timeout,
+and the snapshots live in each instance's memory: on its own, the new revision's Offices tab would stay empty for up to
+an hour. That is why the site cuts each machine connection after 10 minutes and the machine comes back by itself in a
+few seconds, now to the new revision; the office does not flicker. It holds from the second deployment with this
+version, because the first one is still served by the old instance. Whoever deploys often lowers it with
+`SITE_OFFICE_RECONNECT_MINUTES` (1 to 60; `0` does not cut). To skip the wait, restart the office server on each
+machine: the next session relaunches it.
+
+**Up to date on Cloud Run**: with `site.update: "auto"`, the GitHub nightly keeps it up to date with the `cloudrun`
+platform, which the `gcs` connector brings: it changes only the image, by digest, waits for the new revision with all
+the traffic, checks it and, if it fails, goes back to the previous one. How to set it up: `guides/integrations/gcs-mailbox.md`
+(«El sitio en Cloud Run, al día», in Spanish).
+
 ### A closed network
 
 Without internet access, the site cannot look at the last published version and says so. The update is by hand: on a

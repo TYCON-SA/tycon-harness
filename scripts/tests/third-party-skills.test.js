@@ -312,6 +312,9 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   const lab = tmp('third-party-harness-');
   fs.mkdirSync(path.join(lab, 'scripts', 'publishing'), { recursive: true });
   fs.copyFileSync(COVERAGE, path.join(lab, 'scripts', 'publishing', 'third-party-coverage.js'));
+  // el control le pide el nombre de la carpeta de Claude Code a tycon-home.js: va con él, como en el árbol
+  fs.mkdirSync(path.join(lab, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(lab, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const manifestPath = path.join(lab, 'scripts', 'publishing', 'third-party-skills.json');
   fs.writeFileSync(manifestPath, JSON.stringify(baseManifest({ own: [...baseManifest().own, { glob: 'notes/*', why: 'prueba' }] }), null, 2));
   const repo = toyRepo({ ...EMPTY_REPO_FILES, 'skills/acme-helper/SKILL.md': 'h\n', 'skills/acme-story/SKILL.md': 's\n' });

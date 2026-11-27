@@ -14,7 +14,7 @@ description: Verifica gates de DoD no code-level (smoke con curl real, CI verde,
 
 ## Qué hace
 
-Cierra el gap entre **"build verde + tests verde + advisors verde"** y **"production-ready"**. La guía `~/.claude/tycon-harness/guides/definition-of-done.md` declara que *"Build verde NO alcanza"* — pero ningún advisor existente enforce los gates runtime. Este advisor cubre ese gap.
+Cierra el gap entre **"build verde + tests verde + advisors verde"** y **"production-ready"**. La guía `~/.tycon/harness/guides/definition-of-done.md` declara que *"Build verde NO alcanza"* — pero ningún advisor existente enforce los gates runtime. Este advisor cubre ese gap.
 
 **Por qué**: una story puede pasar por todos los advisors de código en verde (dotnet-conventions + tests-coverage + security-basics + story-validator post-impl + ac-coverage-checker + spec-first-checker + feature-wiring-checker), con build verde, tests PASS y deferrals trackeados, llegar a status `review`, y tener gaps reales **que ningún advisor caza**:
 
@@ -86,7 +86,7 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 4. **Si branch NO está en triggers** → WAIVE + log: "DODRT-C2 waived: branch '<branch>' not in CI triggers '<trigger-branches>'. Re-run post-merge to '<target-branch>'."
 5. **Si branch SÍ está en triggers** + SHA pusheado:
    - Buscar evidencia de CI verde con la capa de plataforma, que sabe en qué plataforma vive el repo y cómo preguntarle:
-     `node ~/.claude/tycon-harness/scripts/lib/platform/platform.js ci read --repo <identidad> --args '{"commit":"<sha>","branch":"<rama>"}'`
+     `node ~/.tycon/harness/scripts/lib/platform/platform.js ci read --repo <identidad> --args '{"commit":"<sha>","branch":"<rama>"}'`
      La `<identidad>` es el JSON `{"platform","org","project","repo"}` del `origin` del repo (`project` sólo donde la plataforma lo usa).
    - La respuesta es `{"ok":true,"value":{"state":…}}` o `{"ok":false,"reason":…}`. El estado (`succeeded`, `running`, `failed`, `none`) se lee como `verde`, `corriendo`, `rojo` o `ninguna`; otro estado es «no medido»:
      - `verde` (la corrida de ese commit terminó bien) → OK.
@@ -308,7 +308,7 @@ parcial, como DODRT-C9.
 [DODRT-C10] AC 4: 4.2-smoke-ledger.jsonl 2026-10-15T14:02:11Z inserta en Remitos (Estado='Pendiente') y el humo siguiente lo busca; ningún POST de la app en el medio — resultado fabricado: la prueba encuentra lo que el propio flujo escribió. Fix: ejercer POST /pedidos/{id}/confirmar (sembrar sólo los artículos del pedido), o pasar el AC 4 a runtime_not_verifiable: con su motivo y la firma del dev.
 ```
 
-Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` §DoD Runtime Checker.
+Detalle completo de cada regla: `~/.tycon/harness/guides/advisor-rules-catalog.md` §DoD Runtime Checker.
 
 ### WARNING
 

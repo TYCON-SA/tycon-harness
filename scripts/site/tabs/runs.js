@@ -43,6 +43,8 @@ const RUNS = path.join(__dirname, '..', '..', 'nightly', 'dashboard', 'runs.js')
 const FRASE_FALLA = 'no se pudo armar la vista de ejecuciones';
 // el caché de los textos bajados a demanda (los cambios de una corrida resumida): al pasarlo, se borran los más viejos
 const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
+// cuántos textos a demanda se bajan y arman a la vez: uno (cada armado abre un hilo de unos 555 MB de pico; A40)
+const SIMULTANEOS_A_DEMANDA = 1;
 const FRASE_SIN_BUZON = 'sin depósito configurado: no medido';
 // la vista guardada en el disco del sitio, y el número de su forma: cambia cuando cambia lo que se guarda
 const ARCHIVO_VISTA = 'runs-view.json';
@@ -195,7 +197,7 @@ if (!isMainThread && workerData && workerData.__leerVista) {
  * armado para probar que el sitio contesta mientras tanto.
  */
 function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now,
-  topeCacheBytes = TOPE_CACHE_BYTES, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
+  topeCacheBytes = TOPE_CACHE_BYTES, simultaneos = SIMULTANEOS_A_DEMANDA, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
   huellaDe = (dir, extra) => require('../summaries.js').huellaEnWorker({ dir, extra }), leerVista = leerVistaEnWorker }) {
   // los textos (los parches de cada corrida) van al disco del contenedor, nunca a SITE_DATA_DIR: son una copia que se
   // rearma, y el disco montado es chico. Los de antes (en el disco montado) se borran al arrancar
@@ -207,7 +209,13 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   // los textos bajados a demanda, con su tope: al pasarlo se borran los que se abrieron hace más tiempo
   const dirCache = path.join(base, 'a-demanda');
   const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false, aDemanda: {}, enCurso: new Map(),
-    guardada: null, leyendo: null, escribiendo: null };
+    guardada: null, leyendo: null, escribiendo: null, armandoTextos: 0, esperanTextos: [] };
+  // el lugar para bajar y armar los textos de una corrida: cada armado abre su hilo (unos 555 MB de pico con una
+  // conversación grande), y dos a la vez pasaban el GiB del contenedor. Los demás esperan su turno (A40)
+  const tomarLugar = () => new Promise((listo) => {
+    if (st.armandoTextos < Math.max(1, simultaneos)) { st.armandoTextos += 1; listo(); } else st.esperanTextos.push(listo);
+  });
+  const soltarLugar = () => { const sig = st.esperanTextos.shift(); if (sig) sig(); else st.armandoTextos -= 1; };
   // la vista guardada vive en el disco del sitio: sin él, no se guarda ni se lee
   const archivoVista = cfg.dataDir ? path.join(cfg.dataDir, ARCHIVO_VISTA) : null;
 
@@ -282,8 +290,10 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
       if (typeof fuentes.bajarCorrida !== 'function') { log('ejecuciones: las fuentes no saben bajar una ejecución del buzón'); return null; }
       const maquina = path.basename(path.dirname(volcado));
       const nombre = path.basename(volcado).replace(/\.json$/, '');
-      const tmp = fs.mkdtempSync(path.join(base, 'bajando-'));
+      await tomarLugar();
+      let tmp;
       try {
+        tmp = fs.mkdtempSync(path.join(base, 'bajando-'));
         fs.mkdirSync(path.join(tmp, maquina), { recursive: true });
         const copia = path.join(tmp, maquina, `${nombre}.json`);
         fs.copyFileSync(volcado, copia);
@@ -302,7 +312,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
         log(`ejecuciones: los cambios de una ejecución no se pudieron armar (${codigoDe(e)})`);
         return null;
       } finally {
-        fs.rm(tmp, { recursive: true, force: true }, (e) => { if (e) log(`ejecuciones: no se pudo borrar lo bajado para un detalle (${codigoDe(e)})`); });
+        if (tmp) fs.rm(tmp, { recursive: true, force: true }, (e) => { if (e) log(`ejecuciones: no se pudo borrar lo bajado para un detalle (${codigoDe(e)})`); });
+        soltarLugar();
         st.enCurso.delete(id);
       }
     })();

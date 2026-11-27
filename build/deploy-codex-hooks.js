@@ -19,7 +19,7 @@
  *   se re-aprueba con /hooks en una sesión interactiva).
  *
  * Uso: node deploy-codex-hooks.js [--dry-run] [--selftest]
- *      env: CODEX_HOME (default ~/.codex) · TYCON_SKILLS_DIR (default ~/.claude/agent-skills)
+ *      env: CODEX_HOME (default ~/.codex) · TYCON_SKILLS_DIR (por defecto, las skills instaladas)
  */
 'use strict';
 const fs = require('fs');

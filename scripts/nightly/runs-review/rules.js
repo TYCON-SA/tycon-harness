@@ -29,9 +29,13 @@ const { PLACE_NAME, LEGACY_PLACE_NAME } = require('../../setup/harness/place.js'
 const RUTAS_DEL_ARNES = ['tycon-pipeline/scripts/', 'tycon-pipeline\\scripts\\', `${PLACE_NAME}/`, `${PLACE_NAME}\\`,
   `${LEGACY_PLACE_NAME}/`, `${LEGACY_PLACE_NAME}\\`, '.tycon/harness/', '.tycon\\harness\\'];
 // Dónde corre el arnés INSTALADO: su carpeta y las de donde Claude Code y Codex cargan las skills. Un guion del arnés
-// fuera de ellas (el clon, un worktree) es una prueba en obra, no una pieza instalada que no carga.
-const RUTAS_INSTALADAS = ['.tycon/harness/', '.tycon\\harness\\', '.claude/agent-skills/', '.claude\\agent-skills\\',
-  '.claude/skills/', '.claude\\skills\\', '.codex/skills/', '.codex\\skills\\'];
+// fuera de ellas (el clon, un worktree) es una prueba en obra, no una pieza instalada que no carga. Las de Claude Code
+// (las skills instaladas y sus skills) las dice tycon-home.js, bajo la carpeta de la persona y con las dos barras.
+const TH = require('../../setup/harness/tycon-home.js');
+const CASA = require('os').homedir();
+const conLasDosBarras = (p) => { const r = path.relative(CASA, p).split(path.sep); return [`${r.join('/')}/`, `${r.join('\\')}\\`]; };
+const RUTAS_INSTALADAS = ['.tycon/harness/', '.tycon\\harness\\', ...conLasDosBarras(TH.installedSkillsDir(CASA)),
+  ...conLasDosBarras(path.join(TH.claudeDir(CASA), 'skills')), '.codex/skills/', '.codex\\skills\\'];
 // Desde esta fecha (el merge a main del cambio que la agregó) marker.js deja la constancia del cierre: una ejecución
 // archivada antes no la podía tener. La prueba: T64 CierreSinConstancia.
 const CIERRE_DESDE = '2026-10-22T21:14:33Z';

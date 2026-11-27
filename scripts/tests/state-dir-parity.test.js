@@ -145,6 +145,25 @@ test('T1 Paridad_ShellYTyconHome @story-8.150 @ac-1 — state-dir.sh y tycon-hom
   }
 });
 
+test('T3 Paridad_CarpetaDeClaudeYSkills @story-8.24 — state-dir.sh y tycon-home.js dan la misma carpeta de Claude Code y las mismas skills instaladas', () => {
+  for (const conCasaPropia of [false, true]) {
+    const h = lab();
+    try {
+      if (conCasaPropia) fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true });
+      const r = spawnSync('bash', ['-c', '. "$STATE_DIR_SH" && tycon_claude_dir && printf "\\n" && tycon_skills_dir'],
+        { env: { ...cleanEnv(h), STATE_DIR_SH: SH }, cwd: h, encoding: 'utf8' });
+      assert.strictEqual(r.status, 0, `state-dir.sh salió ${r.status}: ${r.stderr}`);
+      const code = 'const TH = require(process.argv[1]); process.stdout.write(TH.claudeDir() + "\\n" + TH.installedSkillsDir());';
+      const n = spawnSync(process.execPath, ['-e', code, HOME_JS], { env: cleanEnv(h), cwd: h, encoding: 'utf8' });
+      assert.strictEqual(n.status, 0, `node salió ${n.status}: ${n.stderr}`);
+      assert.deepStrictEqual(r.stdout.split('\n'), n.stdout.split('\n'), `casa propia=${conCasaPropia}: shell ${JSON.stringify(r.stdout)} · JS ${JSON.stringify(n.stdout)}`);
+      assert.deepStrictEqual(r.stdout.split('\n'), [path.join(h, CLAUDE), path.join(h, CLAUDE, 'agent-skills')]);
+    } finally {
+      fs.rmSync(h, { recursive: true, force: true });
+    }
+  }
+});
+
 test('T2 PreCommit_OwnHome_TrimsLikeJs — la casa propia del pre-commit recorta TYCON_HOME como trim() de JS', () => {
   // stable-data: lee el texto del gancho para sacar una función; no crea ningún commit
   const hook = fs.readFileSync(path.join(ROOT, 'scripts', 'hooks', 'git-pre-commit-global.sh'), 'utf8');

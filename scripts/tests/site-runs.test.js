@@ -783,8 +783,9 @@ test('T22 Codigo_SinValoresDeUnaOrganizacion @story-2.27 @ac-22', () => {
   for (const nombre of ['function idEstable', 'function paraLista', 'function paraDetalle', 'function textosDe', 'function cabecera', 'function tabla', 'function pie']) {
     const i = r.indexOf(nombre);
     assert.ok(i >= 0, `runs.js tiene ${nombre}`);
-    // `.tycon-pipeline` es la carpeta de estado del arnés (el texto de la vista local), no un valor de una organización
-    const cuerpo = r.slice(i, r.indexOf('\n}\n', i)).replace(/\.tycon-pipeline/g, '');
+    // `.tycon-pipeline` y `.tycon/state` son la carpeta de estado del arnés, la vieja y la de hoy (el texto de la vista
+    // local), no un valor de una organización
+    const cuerpo = r.slice(i, r.indexOf('\n}\n', i)).replace(/\.tycon-pipeline|\.tycon\/state/g, '');
     for (const rx of marcas) assert.ok(!rx.test(cuerpo), `${nombre} no trae ${rx}`);
   }
 });
@@ -2347,4 +2348,54 @@ test('T11 2.78-Sitio_FirmasSoloDeLoTuyo @story-2.78 @ac-11', async () => {
     assert.strictEqual(TAB().FORMATO_VISTA, 2, 'la vista guardada cambió de forma con las firmas');
     assert.strictEqual(leerGuardada(datos).formato, 2);
   });
+});
+
+test('Cambios_ConsolaLargaEnTiempoLineal — un comando con «sed -i» repetido no traba el resumen (A39)', () => {
+  // 🔴 rojo: `destinosDeConsola` buscaba el archivo de cada `sed -i` hasta el fin del renglón: con el comando repetido,
+  //    el tiempo crecía al cuadrado (70 KB, 1,7 s; unos MB pasaban los 10 minutos del hilo del resumen)
+  const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  // ~280 KB de cada forma: sin el tope, `sed -i` repetido tardaba unos 16 s y `open(` repetido unos 7 s; con el tope,
+  // menos de medio segundo cada una, así que los 3 s dejan margen para una máquina lenta de la CI
+  for (const cmd of ['sed -i x '.repeat(32000), 'python - <<x\nopen( '.repeat(1) + 'open( '.repeat(45000)]) {
+    // stable-data: el reloj mide cuánto tarda la lectura; no compara fechas
+    const t = Date.now();
+    ch.destinosDeConsola(cmd);
+    const ms = Date.now() - t;
+    assert.ok(ms < 3000, `tardó ${ms} ms con ${cmd.slice(0, 12)}…`);
+  }
+  // una expresión de sed larga (más de 500 caracteres) sigue dando su archivo
+  assert.deepStrictEqual(ch.destinosDeConsola(`sed -i 's/${'a'.repeat(1500)}/b/' docs/largo.md`), ['docs/largo.md']);
+  // lo que ya leía, lo sigue leyendo
+  assert.deepStrictEqual(ch.destinosDeConsola("sed -i 's/a/b/' docs/guia.md && perl -pi -e 's/x/y/' lib/a.js"), ['docs/guia.md', 'lib/a.js']);
+  assert.deepStrictEqual(ch.destinosDeConsola('echo hola > salida.txt; cat a | tee -a log/b.log'), ['salida.txt', 'log/b.log']);
+});
+
+// rojo si: dos textos a demanda de ejecuciones distintas se bajan y arman a la vez (A40). Cada armado abre un hilo de
+// unos 555 MB de pico con una conversación grande; dos a la vez pasaban el GiB del contenedor.
+test('Cambios_ADemandaDeAUno — dos textos a demanda distintos esperan su turno (A40)', async () => {
+  const datos = tmp('site-runs-datos-');
+  const { espejo, servida } = await primerArranque(datos);
+  const a1 = servida.corridas.find((c) => c.story === '3.1').id;
+  const a2 = servida.corridas.find((c) => c.story === '3.2').id;
+  const g = leerGuardada(datos);
+  g.aDemanda = { [a1]: path.join(espejo, 'maq-a', 'a1.json'), [a2]: path.join(espejo, 'maq-a', 'a2.json') };
+  fs.writeFileSync(VISTA_GUARDADA(datos), JSON.stringify(g));
+  let ahora = 0; let maximo = 0; let pedidos = 0;
+  const fuentes = fuentesCon({ espejo, informados: null });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.bajarCorrida = async () => {
+    pedidos += 1; ahora += 1; maximo = Math.max(maximo, ahora);
+    await new Promise((r) => setTimeout(r, 150));
+    ahora -= 1;
+    return { codigo: 1, res: { estado: 'sin_partes' } };
+  };
+  await conPestana({ fuentes, datos, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    await hasta200(h, '/api/corridas', lead);
+    const [r1, r2] = await Promise.all([h.pedir(`/api/corridas/${a1}/textos`, { cookie: lead }), h.pedir(`/api/corridas/${a2}/textos`, { cookie: lead })]);
+    assert.strictEqual(r1.status, 200, r1.texto);
+    assert.strictEqual(r2.status, 200, r2.texto);
+  });
+  assert.strictEqual(pedidos, 2, 'se bajaron las dos');
+  assert.strictEqual(maximo, 1, 'de a una');
 });

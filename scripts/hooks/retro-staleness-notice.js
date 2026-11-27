@@ -9,7 +9,7 @@
 // Regla que implementa: "un control que hay que acordarse de invocar es un control que no corre".
 //
 // CÓMO MIDE: fecha de la última corrida = la más nueva entre los archivos del CAPTURER en
-// ~/.tycon/harness/.dashboard/ — sólo los `metrics-*.json`, que es lo que escribe, uno por
+// el .dashboard del arnés (en la casa propia, ~/.tycon/state/dashboard) — sólo los `metrics-*.json`, que es lo que escribe, uno por
 // corrida. La fecha se saca del NOMBRE del archivo (metrics-YYYY-MM-DD-*.json) — no del mtime,
 // porque un clone/pull fresco pisa los mtime y escondería el staleness justo cuando importa.
 // Fallback: mtime.

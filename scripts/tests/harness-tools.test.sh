@@ -282,13 +282,15 @@ if suite_part 1 && runs T47; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
   # (c) el pre-commit copiado encuentra el arnés en la casa propia, y donde siempre si está
   H="$(lab_home t47c own)"; mkdir -p "$H/.tycon/harness/scripts"
+  # el hook corre desde la carpeta de los hooks, con el places.sh que deja el instalador al lado (la carpeta de Claude Code)
+  mkdir -p "$H/.git-hooks"; printf "TYCON_P_CLAUDE_DIR=%s\n" "$H/.claude" > "$H/.git-hooks/places.sh"
   # el tramo del hook que resuelve el arnés: harness_dir, harness_own_home y la línea de _TCG_DIR (hasta su `fi`)
   # (el nombre del hook va con comodín: escrito entero, el control de datos estables lo lee como un commit de git)
   HD_FN="$(awk '/^harness_dir\(\) \{/,/^fi$/' "$ROOT"/scripts/hooks/git-pre-c*-global.sh)"
-  HD="$(env -i PATH="$PATH" HOME="$H" bash -c 'eval "$1"; printf "%s" "$_TCG_DIR"' _ "$HD_FN")"
+  HD="$(env -i PATH="$PATH" HOME="$H" bash -c 'eval "$1"; printf "%s" "$_TCG_DIR"' "$H/.git-hooks/el-gancho" "$HD_FN")"
   [ "$HD" = "$H/.tycon/harness" ] && ok "(c) sin ~/.claude, el pre-commit encuentra el arnés en ~/.tycon/harness" || bad "(c) el pre-commit buscó en «${HD}»"
   mkdir -p "$H/.claude/tycon-harness/scripts"
-  HD="$(env -i PATH="$PATH" HOME="$H" bash -c 'eval "$1"; printf "%s" "$_TCG_DIR"' _ "$HD_FN")"
+  HD="$(env -i PATH="$PATH" HOME="$H" bash -c 'eval "$1"; printf "%s" "$_TCG_DIR"' "$H/.git-hooks/el-gancho" "$HD_FN")"
   [ "$HD" = "$H/.claude/tycon-harness" ] && ok "(c) con ~/.claude/tycon-harness, lo sigue encontrando ahí" || bad "(c) con el lugar de siempre buscó en «${HD}»"
 fi
 

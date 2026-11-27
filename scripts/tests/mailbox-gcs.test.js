@@ -860,6 +860,84 @@ test('SiteMailbox_RealEmptyBucket_IsEmpty @story-8.336 — el listado de un buck
   }
 });
 
+test('SiteMailbox_ObjectBiggerThanListed_CutsAtListedSize @story-8.336 — un objeto que llega más grande que lo listado se corta ahí, sin juntarlo en memoria', async () => {
+  // Cloud Storage sirve descomprimido un objeto guardado con Content-Encoding gzip (transcodificación): quien tiene la
+  // llave de sólo crear puede subir pocos bytes que al bajar son muchos. El doble lista 200 y sirve 32 MB.
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    fake.poner('maq-a-11111111/s1.json', 'a'.repeat(200));
+    fake.modo.media = 'inflado';
+    const r = await leerDelSitio(fake, path.join(tmp('gcs-inflado-'), 'corridas-buzon'), fake.host);
+    assert.notStrictEqual(r.codigo, 0, JSON.stringify(r.res));
+    assert.strictEqual(r.res.completo, false);
+    assert.match(r.res.motivo, /s1\.json \(llegó distinto: 201 bytes\)/);
+    assert.ok(fake.servidos < 8 * 1024 * 1024, `la bajada siguió leyendo: el doble llegó a escribir ${fake.servidos} bytes de un objeto listado con 200`);
+  } finally { await fake.cerrar(); }
+});
+
+test('UploadGcs_KeyThatReadsByName_IsRejected @story-8.336 — una llave que no lista pero lee objetos por su nombre no es la del buzón', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    fake.modo.leerXml = 'ok';
+    const m = maquina(fake);
+    const r = await subir(m);
+    assert.strictEqual(r.codigo, 2, r.salida);
+    assert.strictEqual(r.res.estado, 'llave_con_lectura', r.res.motivo);
+    assert.match(r.res.motivo, /por su nombre/);
+    assert.strictEqual(puts(fake).length, 0, 'ningún PUT');
+    assert.ok(!r.salida.includes(SECRETO), 'el secreto no sale');
+    // la llave que sólo crea sigue subiendo; si después la cuenta gana la lectura, --check-create-only no la da por buena
+    fake.modo.leerXml = 'AccessDenied';
+    const otra = maquina(fake);
+    assert.strictEqual((await subir(otra)).codigo, 0);
+    fake.modo.leerXml = 'ok';
+    fake.pedidos.length = 0;
+    const c = await subir(otra, ['--check-create-only']);
+    assert.notStrictEqual(c.codigo, 0, `--check-create-only no da por buena una llave que lee: ${c.salida}`);
+    assert.strictEqual(c.res.estado, 'llave_con_lectura', c.res.motivo);
+    assert.strictEqual(puts(fake).length, 0, '--check-create-only: ningún PUT');
+  } finally { await fake.cerrar(); }
+});
+
+test('Mailbox_GcsSignals_SeeOtherSpellings @story-8.336 — las señales del conector ven Cloud Storage con mayúsculas, gcloud, gsutil, gs:// y la URL de subida', () => {
+  const { signalsOf } = require(path.join(ROOT, 'scripts', 'ci', 'check-core-neutrality.js'));
+  const senales = signalsOf(ROOT).filter((s) => s.connector === 'gcs').map((s) => s.re);
+  const lineas = [
+    "const cab = { 'X-Goog-If-Generation-Match': '0' };",
+    "const subir = 'https://www.googleapis.com/upload/storage/v1/b/acme-buzon-lab/o?uploadType=media';",
+    "const bajar = 'https://storage.cloud.google.com/acme-buzon-lab/x';",
+    "const token = () => spawnSync('gcloud', ['auth', 'print-access-token']);",
+    "const copiar = () => spawnSync('gsutil', ['cp', 'x', 'y']);",
+    "const destino = 'gs://acme-buzon-lab/x';",
+    "const algoritmo = 'goog4-hmac-sha256';",
+    "const base = 'HTTPS://STORAGE.GOOGLEAPIS.COM';",
+    "const meta = 'Metadata.Google.Internal';",
+  ];
+  const ciegas = lineas.filter((l) => !senales.some((re) => re.test(l)));
+  assert.deepStrictEqual(ciegas, [], 'el candado no ve estas líneas');
+  for (const l of ["const sin = 'un texto que habla de storage y de google en general';", "const g = 'gsutilidad';"]) assert.ok(!senales.some((re) => re.test(l)), `no se enciende con: ${l}`);
+});
+
+test('SiteGcs_EncodedObject_DoesNotFreezeSite @story-1.3 @ac-9 — un objeto con Content-Encoding (la subida del arnés nunca lo pone) se ignora y no deja cada pasada en «parcial»', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    fake.poner('maq-a-11111111/s1.json', volcado('s1', '2026-11-20T10:00:00Z'));
+    fake.poner('maq-a-11111111/s2.json', volcado('s2', '2026-11-21T10:00:00Z'));
+    // 4 KB guardados comprimidos: Cloud Storage los sirve descomprimidos y no casan con el tamaño ni el MD5 del listado
+    fake.ponerComprimido('maq-a-11111111/s9.json', volcado('s9', '2026-11-22T10:00:00Z') + ' '.repeat(4000));
+    const dir = path.join(tmp('gcs-codificado-'), 'corridas-buzon');
+    for (const pasada of [1, 2]) {
+      const r = await leerDelSitio(fake, dir, fake.host);
+      assert.strictEqual(r.codigo, 0, `pasada ${pasada}: ${JSON.stringify(r.res)}`);
+      assert.strictEqual(r.res.completo, true, `pasada ${pasada}: el sitio puede armar`);
+      assert.strictEqual(r.res.ignorados, 1, `pasada ${pasada}: el objeto codificado cuenta como ignorado`);
+      assert.ok(!fs.existsSync(path.join(dir, 'maq-a-11111111', 's9.json')), 'el objeto codificado no se escribe en el espejo');
+    }
+    assert.ok(fs.existsSync(path.join(dir, 'maq-a-11111111', 's1.json')) && fs.existsSync(path.join(dir, 'maq-a-11111111', 's2.json')), 'los sanos bajaron');
+    assert.ok(!fake.pedidos.some((p) => p.metodo === 'GET' && p.ruta.endsWith('/s9.json') && p.consulta.includes('alt=media')), 'el codificado ni se pide');
+  } finally { await fake.cerrar(); }
+});
+
 // ── el sitio entero: el repo de operaciones con site.mailbox gcs, crearFuentes y su refresco ───────────────────────
 
 const { arrancarRepoHttp, repoConArchivos, hayHttpBackend } = require('./lib/git-http-server.js');
