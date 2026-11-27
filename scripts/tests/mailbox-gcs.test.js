@@ -937,3 +937,33 @@ test('SiteGcs_EncodedObject_DoesNotFreezeSite @story-1.3 @ac-9 — un objeto con
     assert.ok(!fake.pedidos.some((p) => p.metodo === 'GET' && p.ruta.endsWith('/s9.json') && p.consulta.includes('alt=media')), 'el codificado ni se pide');
   } finally { await fake.cerrar(); }
 });
+
+test('UploadGcs_KeyThatReadsByObjectOrPrefix_IsRejected (A35) — la sonda ve también la lectura por objeto o por prefijo', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    // por prefijo: la cuenta lee sólo bajo la carpeta de las máquinas; un nombre en la raíz le da 403
+    fake.modo.leerXml = 'prefijo:maq-a';
+    const r = await subir(maquina(fake));
+    assert.strictEqual(r.codigo, 2, r.salida);
+    assert.strictEqual(r.res.estado, 'llave_con_lectura', r.res.motivo);
+    assert.strictEqual(puts(fake).length, 0, 'ningún PUT');
+    // por objeto (permisos finos: quien subió un objeto lo lee): a lo que no existe le da 403 en cualquier carpeta
+    fake.modo.leerXml = 'AccessDenied';
+    const m = maquina(fake);
+    assert.strictEqual((await subir(m)).codigo, 0, 'la primera tanda sube');
+    fs.writeFileSync(path.join(m.hist, 'otra-2026-11-21T1010.json'), JSON.stringify({ archivedAt: '2026-11-21T10:10:00Z', marker: { sessionId: 's2' } }));
+    fake.modo.leerXml = 'propios';
+    fake.pedidos.length = 0;
+    const s = await subir(m);
+    assert.strictEqual(s.codigo, 2, s.salida);
+    assert.strictEqual(s.res.estado, 'llave_con_lectura', s.res.motivo);
+    assert.strictEqual(puts(fake).length, 0, 'la segunda tanda no manda nada');
+    // y --check-create-only tampoco la da por buena
+    const c = await subir(m, ['--check-create-only']);
+    assert.strictEqual(c.res.estado, 'llave_con_lectura', c.res.motivo);
+    assert.strictEqual(puts(fake).length, 0, '--check-create-only: ningún PUT');
+    // la que sólo crea sigue subiendo
+    fake.modo.leerXml = 'AccessDenied';
+    assert.strictEqual((await subir(m)).codigo, 0);
+  } finally { await fake.cerrar(); }
+});

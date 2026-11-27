@@ -517,6 +517,15 @@ function negativaDeLaLlave(sas) {
 function negativaDeLaLlaveDe(cfg) {
   return esDeAzure(cfg) ? negativaDeLaLlave(cfg.sas) : null;
 }
+/** El último archivo que esta máquina subió a este destino (su nombre en el buzón), para la sonda de lectura, o null. */
+function subidoConocido(registro, maquina) {
+  let mejor = null;
+  for (const e of Object.values((registro && registro.archivos) || {})) {
+    if (!e || typeof e.blob !== 'string' || !maquina || !e.blob.startsWith(`${maquina}/`)) continue;
+    if (!mejor || String(e.subido || '') > String(mejor.subido || '')) mejor = e;
+  }
+  return mejor ? mejor.blob : null;
+}
 const esDeAzure = (cfg) => cfg.provider === undefined || cfg.provider === 'azure-blob';
 /** El buzón de una llave, como lo anotan los registros locales: `<cuenta>/<contenedor>`, o el `destino` de su conector. */
 const destinoDe = (cfg) => (esDeAzure(cfg) ? `${cfg.cuenta}/${cfg.contenedor}` : cfg.destino);
@@ -1500,7 +1509,7 @@ async function subir(opts = {}) {
   // 🔴 una llave de un conector se prueba antes de cada tanda, antes de subir nada: sólo sigue si NO puede listar
   const almacen = almacenDeLaLlave(cfg);
   if (typeof almacen.probarListado === 'function' && res.a_subir) {
-    const prueba = await almacen.probarListado();
+    const prueba = await almacen.probarListado({ maquina, conocido: subidoConocido(registro, maquina) });
     if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
   }
   if (cambioRegistro) { try { guardar(); } catch (_) { /* sólo ahorra hashes */ } }
@@ -1707,7 +1716,7 @@ async function chequearSoloCrear(opts = {}) {
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
     // una llave de un conector pasa antes por el listado de prueba: si puede listar, no se manda nada
     if (typeof almacen.probarListado === 'function') {
-      const prueba = await almacen.probarListado();
+      const prueba = await almacen.probarListado({ maquina, conocido: blob });
       if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
     }
     const r = await almacen.poner(blob, cuerpo, md5, 30000, { pisar: true });
