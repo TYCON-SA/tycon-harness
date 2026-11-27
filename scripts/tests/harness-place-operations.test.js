@@ -386,13 +386,19 @@ test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', ()
   fs.mkdirSync(path.dirname(own), { recursive: true }); link(K7, own); link(own, legacyOf(h7)); perm(h7);
   CP.ensurePlace({ clon: K7, home: h7, forzar: legacyOf(h7) });
   assert.ok(PLACE.samePath(direct(placeOf(h7)), own), `(6) el lugar no apunta a ~/.tycon/harness: ${direct(placeOf(h7))}`);
-  // (7) un retiro de permisos que falla no deja respaldos: el archivo queda como estaba y el viejo, también
+  // (7) un retiro de permisos que falla al escribir no deja respaldos: el archivo queda como estaba y el viejo, también.
+  // settings.json enlazado a una carpeta de sólo lectura: el respaldo se crea al lado del enlace y la escritura falla
   if (!IS_WIN && typeof process.getuid === 'function' && process.getuid() !== 0) {
-    const K8 = clone('falla'); const h8 = home('permisos-que-fallan'); link(K8, placeOf(h8)); link(placeOf(h8), legacyOf(h8)); perm(h8);
-    fs.chmodSync(path.join(h8, '.claude'), 0o555);
-    let r8; try { r8 = CP.ensurePlace({ clon: K8, home: h8 }); } finally { fs.chmodSync(path.join(h8, '.claude'), 0o755); }
+    const K8 = clone('falla'); const h8 = home('permisos-que-fallan'); link(K8, placeOf(h8)); link(placeOf(h8), legacyOf(h8));
+    const ro = dir('config-ro', `r-${++seq}`); const roSettings = path.join(ro, 'settings.json');
+    const text8 = JSON.stringify({ permissions: { allow: [`Read(~/.claude/${PLACE.LEGACY_PLACE_NAME}/**)`] } }, null, 2) + '\n';
+    fs.writeFileSync(roSettings, text8); link(roSettings, path.join(h8, '.claude', 'settings.json'));
+    fs.chmodSync(ro, 0o555);
+    let r8; try { r8 = CP.ensurePlace({ clon: K8, home: h8 }); } finally { fs.chmodSync(ro, 0o755); }
+    assert.match(r8.mensaje, /no pude sacar los permisos/, `(7) la escritura no falló donde se esperaba: ${r8.mensaje}`);
     assert.ok(isLink(legacyOf(h8)), `(7) con los permisos sin poder escribirse, el viejo se retiró (${r8.mensaje})`);
-    assert.deepStrictEqual(fs.readdirSync(path.join(h8, '.claude')).filter((n) => /bak-retire|tmp-retire/.test(n)), [], '(7) quedó un respaldo o un temporal');
+    assert.strictEqual(fs.readFileSync(roSettings, 'utf8'), text8, '(7) settings.json cambió');
+    assert.deepStrictEqual([...fs.readdirSync(path.join(h8, '.claude')), ...fs.readdirSync(ro)].filter((n) => /bak-retire|tmp-retire/.test(n)), [], '(7) quedó un respaldo o un temporal');
   } else console.log('⏭ T43 (7): NO MEDIDO — Windows o root: no hay permiso que negar así');
 });
 

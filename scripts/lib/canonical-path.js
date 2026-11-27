@@ -330,10 +330,11 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   const here = P.real;
   // un lugar que llega a su clon PASANDO por el viejo se re-apunta a lo que el viejo lleva: así el viejo se puede retirar
   // sin dejarlo colgado (el retiro se decide después de escribir el lugar)
-  if (P.kind === 'E' && V.kind === 'E' && throughName(P.ruta, V.ruta)) {
+  if (P.kind === 'E' && V.kind === 'E' && same(V.real, here) && throughName(P.ruta, V.ruta)) {
     plan.place = (V.direct && !underName(V.direct, V.ruta) && stableName(V.direct)) || V.real;
     plan.accion = 'repaired';
     plan.retireLegacy = true;
+    plan.unthread = true;
     return plan;
   }
   if (V.kind === 'E' && !legacyAtPlace && !same(V.real, here)) plan.conflict = true;
@@ -420,8 +421,10 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
     if (p.place && did(placeRuta)) {
       if (p.accion === 'repointed') L.push(`✓ tycon: lugar ${placeRuta} re-apuntado a ${p.place} (--link)${p.previous ? ` — antes apuntaba a ${p.previous}` : ''}`);
       else if (p.P.kind === 'F') L.push(`✓ tycon: lugar ${placeRuta} → ${p.place} (creado: los revisores y el pipeline nombran al arnés por ahí)`);
+      else if (p.unthread) L.push(`✓ tycon: el lugar ${placeRuta} pasaba por el nombre viejo ${p.V.ruta}; re-apuntado → ${p.place}`);
       else L.push(`✓ tycon: el lugar ${placeRuta} estaba ${p.P.kind === 'C' ? `colgado (→ ${p.P.direct})` : `apuntando a algo que no es un clon (${p.P.real})`}; reparado → ${p.place}`);
     }
+    if (written === null && p.unthread) L.push(`tycon: después retiraría el nombre viejo ${p.V.ruta}, si lo registrado con él son sólo permisos`);
     if (written === null && retiring(p)) L.push(`tycon: retiraría el nombre viejo ${p.V.ruta}: es un enlace al lugar${p.uses.permissions ? ` (y ${p.uses.permissions} permiso(s) de settings.json que lo nombran pasarían al lugar)` : ''}`);
     return L;
   }
