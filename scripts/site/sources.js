@@ -997,8 +997,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} ${r.res.sin_tiempo === 1 ? 'archivo pendiente' : 'archivos pendientes'}; la siguiente sigue enseguida`);
     // lo que pasa su tope de bajada no va a bajar nunca: la pasada sale entera igual, y la pestaña se lo dice a quien
     // mantiene (A45). Un error que cortó la pasada deja el número de la anterior
-    if (r.codigo === 0) st.buzon.grandes = Number.isInteger(r.res.grandes) && r.res.grandes > 0 ? r.res.grandes : 0;
-    if (r.res.grandes) log(`buzón: ${r.res.grandes === 1 ? '1 archivo pasa' : `${r.res.grandes} archivos pasan`} su tope de bajada y no se baja${r.res.grandes === 1 ? '' : 'n'}: ${(r.res.grandes_nombres || []).slice(0, 5).join(', ')}`);
+    // y también las coberturas que no se pueden leer (A59): tampoco van a bajar, y la pasada sale entera igual
+    const cuenta = (n) => (Number.isInteger(n) && n > 0 ? n : 0);
+    if (r.codigo === 0) st.buzon.grandes = cuenta(r.res.grandes) + cuenta(r.res.coberturas_ilegibles);
+    if (r.res.grandes || r.res.coberturas_ilegibles) log(`buzón: ${cuenta(r.res.grandes) + cuenta(r.res.coberturas_ilegibles)} archivo(s) no se bajan (pasan su tope de bajada o no se pueden leer): ${(r.res.grandes_nombres || []).slice(0, 5).join(', ')}`);
     if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes === 1 ? '1 conversación pasa' : `${r.res.hilos_grandes} conversaciones pasan`} el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
     // 🔴 A48: mientras la bajada se pone al día (una pasada cada pocos segundos que avanza), releer el espejo entero en
     //    cada una son decenas de miles de aperturas del disco montado, que un recurso de archivos de una nube puede

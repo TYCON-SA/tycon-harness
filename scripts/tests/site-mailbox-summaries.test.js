@@ -446,6 +446,9 @@ test('T-A45 Sitio_ArchivoQuePasaSuTopeDeBajada_LaPasadaSigueEntera_YQuienMantien
   // el registro del sitio lo nombra y la pestaña se lo dice a quien mantiene, no a quien sólo ve lo suyo
   const blobs = blobsDe(2);
   blobs['maq-a/registros/gates.log.gz'] = 'chico';
+  // (A59) y un juego nuevo con su cobertura rota: tampoco deja la pasada a medias, y cuenta en la banda
+  blobs['maq-a/registros/v20261121T000000000Z/gates.log.gz'] = 'nuevo';
+  blobs['maq-a/registros/v20261121T000000000Z/cobertura.json'] = 'no es json';
   const buzon = await H.arrancarBuzon({ blobs });
   buzon.st.largos['maq-a/registros/gates.log.gz'] = 5 * 1024 * 1024 * 1024;
   const raiz = tmp('mbx-tope-');
@@ -462,7 +465,7 @@ test('T-A45 Sitio_ArchivoQuePasaSuTopeDeBajada_LaPasadaSigueEntera_YQuienMantien
     await fuentes.refrescar();
     const e = fuentes.buzonEstado();
     assert.strictEqual(e.completo, true, `la pasada queda entera: ${registro.slice(-4).join(' | ')}`);
-    assert.strictEqual(e.grandes, 1, `y dice cuántos no baja: ${JSON.stringify(e)}`);
+    assert.strictEqual(e.grandes, 2, `y dice cuántos no baja (el enorme y la cobertura rota): ${JSON.stringify(e)}`);
     assert.ok(registro.some((l) => /gates\.log\.gz.*tope de bajada/.test(l) || /tope de bajada.*gates\.log\.gz/.test(l)), registro.join('\n'));
     assert.ok(!buzon.pedidos.some((p) => /registros\/gates\.log\.gz$/.test(p.ruta)), 'no se pidió');
   } finally { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); }

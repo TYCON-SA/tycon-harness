@@ -372,3 +372,28 @@ test('T60b Bajada_LosAvisosDeJuego_VanPrimero', async (t) => {
   const { res } = await B.bajar({ almacen: almacenMixto(archivos), dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
   assert.match(res.grandes_nombres[0], new RegExp(`${V2}.*juego anterior`), res.grandes_nombres.slice(0, 2).join(' | '));
 });
+
+test('T59a Bajada_CoberturaIlegible_NoCongelaLaPasada_NiConUnRegistroEnorme', async (t) => {
+  // (A59) una cobertura que no se puede leer no deja la pasada «parcial» para siempre: con la llave de sólo crear alcanzaba
+  // una carpeta nueva con una cobertura rota para que el sitio no rearmara nunca. Se nombra y se usa el juego anterior
+  const V1 = 'v20261120T000000000Z';
+  const V2 = 'v20261121T000000000Z';
+  const a = almacenMixto({
+    [`registros/${V1}/gates.log.gz`]: Buffer.from('viejo'), [`registros/${V1}/cobertura.json`]: cobertura(['gates']),
+    [`registros/${V2}/gates.log.gz`]: Buffer.from('nuevo'), [`registros/${V2}/cobertura.json`]: Buffer.from('no es json'),
+  });
+  const dir = path.join(carpeta(t), 'buzon');
+  const { codigo, res } = await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+  assert.strictEqual(codigo, 0, JSON.stringify(res.no_leidos || res.motivo));
+  assert.strictEqual(res.completo, true);
+  assert.strictEqual(res.coberturas_ilegibles, 1);
+  assert.ok(res.grandes_nombres.some((n) => n.includes(V2) && /no se puede leer/.test(n)), res.grandes_nombres.join(' | '));
+  assert.strictEqual(fs.readFileSync(path.join(dir, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'viejo');
+  // el juego de nombres de siempre con un registro enorme y su cobertura rota: tampoco queda parcial, y la rota no baja
+  const b = almacenMixto({ 'registros/gates.log.gz': Buffer.from('x'), 'registros/cobertura.json': Buffer.from('roto'), 'registros/bypass.log.gz': GB5 });
+  const dir2 = path.join(carpeta(t), 'buzon');
+  const r2 = await B.bajar({ almacen: b, dir: dir2, budgetMs: 20000, log: () => {} });
+  assert.strictEqual(r2.codigo, 0, JSON.stringify(r2.res.no_leidos || r2.res.motivo));
+  assert.ok(!fs.existsSync(path.join(dir2, MAQ, 'registros', 'cobertura.json')), 'la cobertura rota no se escribe');
+  assert.ok(fs.existsSync(path.join(dir2, MAQ, 'registros', 'gates.log.gz')), 'el registro chico sí');
+});
