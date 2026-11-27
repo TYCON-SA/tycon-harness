@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# bootstrap-fallback.sh — el RESPALDO en shell del arranque del arnés. Vive en
-# ~/.claude/.tycon-pipeline/harness/, fuera del árbol; la línea de arranque lo corre cuando bootstrap.js no sale 0
+# bootstrap-fallback.sh — el RESPALDO en shell del arranque del arnés. Vive en la
+# carpeta harness/ del estado, fuera del árbol; la línea de arranque lo corre cuando bootstrap.js no sale 0
 # (harness.js roto, enlace colgado, árbol ausente, node por debajo del piso, startup que falló).
 #
 # Hace lo mismo que la línea de arranque de un clon: `git pull --ff-only --autostash --quiet` en el lugar del arnés y en
-# ~/.claude/agent-skills (si existen), y después el aplicador (install-tycon-hooks.sh). Si el enlace no resuelve, usa el
+# las skills instaladas (si existen), y después el aplicador (install-tycon-hooks.sh). Si el enlace no resuelve, usa el
 # árbol que dice el estado. Todo silencioso: una sesión nunca se frena ni se ensucia por el arnés. Deja UNA línea en
 # startup.log y, si hay node, el aviso en `notice` del estado (un `node -e` mínimo que lee y escribe el JSON).
 #
@@ -18,20 +18,52 @@ H="${HOME:-$(cd ~ 2>/dev/null && pwd)}"
 # (~/.tycon, o TYCON_HOME) y su estado es <casa>/state. La regla de tycon-home.js, escrita acá: si esa carpeta existe,
 # es ésa; si no, la de siempre.
 OWN="${TYCON_HOME:-$H/.tycon}"
-PIPE="$H/.claude/.tycon-pipeline"
+# Las rutas de la carpeta de Claude Code (el estado de siempre, las skills instaladas, el lugar y su nombre viejo) las
+# escribe el instalador al lado de este archivo, en places.sh, con lo que da tycon-home.js en esta máquina (copyBootstrap
+# de harness.js). Sin ese archivo —la primera sesión después de una actualización que copió esta copia con el código de
+# antes— la carpeta de Claude Code sale de scripts/lib/state-dir.sh si este archivo corre desde el árbol, o de dónde vive
+# este archivo (<carpeta de Claude Code>/.tycon-pipeline/harness/). Nunca se arman a mano.
+_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+TYCON_P_STATE_DIR=""; TYCON_P_LEGACY_STATE_DIR=""; TYCON_P_CLAUDE_DIR=""; TYCON_P_SKILLS_DIR=""; TYCON_P_PLACE=""; TYCON_P_LEGACY_PLACE=""
+# shellcheck disable=SC1091
+[ -n "$_self" ] && [ -f "$_self/places.sh" ] && . "$_self/places.sh" 2>/dev/null
+# un places.sh de otra casa no manda: su estado tiene que ser la carpeta de arriba de este archivo
+if [ -n "$TYCON_P_STATE_DIR" ] && [ "$(cd "$TYCON_P_STATE_DIR" 2>/dev/null && pwd -P)" != "$(cd "$_self/.." 2>/dev/null && pwd -P)" ]; then
+  TYCON_P_STATE_DIR=""; TYCON_P_LEGACY_STATE_DIR=""; TYCON_P_CLAUDE_DIR=""; TYCON_P_SKILLS_DIR=""; TYCON_P_PLACE=""; TYCON_P_LEGACY_PLACE=""
+fi
+CDIR="$TYCON_P_CLAUDE_DIR"
+# desde el árbol (scripts/setup/harness/), la definición en shell de al lado; desde la copia fija, nunca un archivo de afuera
+case "$_self" in
+  */scripts/setup/harness)
+    # shellcheck disable=SC1091
+    if [ -z "$CDIR" ] && [ -f "$_self/../../lib/state-dir.sh" ] && . "$_self/../../lib/state-dir.sh" 2>/dev/null && type tycon_claude_dir >/dev/null 2>&1; then CDIR="$(tycon_claude_dir)"; fi ;;
+esac
+if [ -z "$CDIR" ] && [ -n "$_self" ] && [ "$(basename "$_self")" = "harness" ] && [ "$(basename "$(dirname "$_self")")" = ".tycon-pipeline" ]; then CDIR="$(dirname "$(dirname "$_self")")"; fi
+[ -z "$TYCON_P_LEGACY_STATE_DIR" ] && [ -n "$CDIR" ] && TYCON_P_LEGACY_STATE_DIR="$CDIR/.tycon-pipeline"
+PIPE="$TYCON_P_LEGACY_STATE_DIR"
 [ -d "$OWN/state" ] && PIPE="$OWN/state"
+if [ -z "$PIPE" ]; then printf 'bootstrap-fallback.sh: no sé dónde está el estado (sin places.sh al lado y fuera de <estado>/harness: %s)\n' "$_self" >&2; exit 0; fi
 HDIR="$PIPE/harness"; LOG="$HDIR/startup.log"; STATE="$PIPE/harness-state.json"
-SKILLS="$H/.claude/agent-skills"
-# los dos nombres del lugar del arnés: primero el lugar, después el viejo; bajo HOME y, en Windows con
-# HOME en otra carpeta, bajo USERPROFILE. Escritos acá: esta copia fija no carga nada del árbol (copia declarada en
-# scripts/tests/fixtures/harness-place-names.json)
-LINK="$H/.claude/tycon-harness"
+SKILLS="$TYCON_P_SKILLS_DIR"
+[ -z "$SKILLS" ] && [ -n "$CDIR" ] && SKILLS="$CDIR/agent-skills"
+# los dos nombres del lugar del arnés: primero el lugar, después el viejo; primero los del archivo y después bajo HOME y
+# —en Windows, con HOME en otra carpeta— bajo USERPROFILE, con el nombre de la carpeta de Claude Code. Escritos acá:
+# esta copia fija no carga nada del árbol (copia declarada en scripts/tests/fixtures/harness-place-names.json)
+LINK="$TYCON_P_PLACE"
+[ -z "$LINK" ] && [ -n "$CDIR" ] && LINK="$CDIR/tycon-harness"
 LINK_TREE=""
+for _cand in "$TYCON_P_PLACE" "$TYCON_P_LEGACY_PLACE"; do
+  [ -n "$_cand" ] || continue
+  if command -v cygpath >/dev/null 2>&1; then _cand="$(cygpath -u "$_cand" 2>/dev/null || printf '%s' "$_cand")"; fi
+  if [ -z "$LINK_TREE" ] && [ -d "$_cand/" ] && [ -f "$_cand/scripts/install-tycon-hooks.sh" ]; then LINK_TREE="$_cand"; fi
+done
+_cname=""
+[ -n "$CDIR" ] && _cname="$(basename "$CDIR")"
 for _base in "$H" "${USERPROFILE:-}"; do
-  [ -n "$_base" ] || continue
+  [ -n "$_base" ] && [ -n "$_cname" ] || continue
   if command -v cygpath >/dev/null 2>&1; then _base="$(cygpath -u "$_base" 2>/dev/null || printf '%s' "$_base")"; fi
   for _name in tycon-harness tycon-claude-guides; do
-    if [ -z "$LINK_TREE" ] && [ -d "$_base/.claude/$_name/" ] && [ -f "$_base/.claude/$_name/scripts/install-tycon-hooks.sh" ]; then LINK_TREE="$_base/.claude/$_name"; fi
+    if [ -z "$LINK_TREE" ] && [ -d "$_base/$_cname/$_name/" ] && [ -f "$_base/$_cname/$_name/scripts/install-tycon-hooks.sh" ]; then LINK_TREE="$_base/$_cname/$_name"; fi
   done
 done
 mkdir -p "$HDIR" 2>/dev/null
@@ -143,7 +175,7 @@ NODE_V="$(node --version 2>/dev/null)"
 pulled=""
 [ "$MODE" = "developer" ] && pulled=" ninguno (modo desarrollador: el git del clon es del dev)"
 
-# La guarda: el clon del que salen las skills —~/.claude/agent-skills: el clon viejo, re-apuntado o no
+# La guarda: el clon del que salen las skills —las skills instaladas ($SKILLS): el clon viejo, re-apuntado o no
 # al repo unificado, o el único árbol de una máquina nueva (ahí es un enlace al clon del arnés)— NUNCA avanza a una punta
 # que no trae skills/tycon-pipeline. Pasa si `main` vuelve a un árbol anterior a la unión de los dos repos: el pull
 # dejaría a la máquina sin skills. Se mira ANTES del pull: se trae sin mover (fetch) y se mira el árbol de lo traído. Si
@@ -163,7 +195,7 @@ skills_at() { # skills_at <commit> → yes | no | unknown
   if [ "$_sa" = "skills/tycon-pipeline" ]; then printf 'yes'; else printf 'no'; fi
 }
 guard=""
-if [ "$MODE" != "developer" ] && [ -z "$RELEASE" ] && [ -d "$SKILLS/" ] && git -C "$SKILLS" rev-parse --git-dir >/dev/null 2>&1; then
+if [ "$MODE" != "developer" ] && [ -z "$RELEASE" ] && [ -n "$SKILLS" ] && [ -d "$SKILLS/" ] && git -C "$SKILLS" rev-parse --git-dir >/dev/null 2>&1; then
   case "$(skills_at HEAD)" in
     yes)
       git -C "$SKILLS" fetch --quiet >/dev/null 2>&1

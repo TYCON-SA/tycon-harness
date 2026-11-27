@@ -407,6 +407,8 @@ old_path_of() {   # $1 = la ruta nueva
 # sin el reemplazo, el mapa del laboratorio (C-25) no pasa la validación. Sin mapa no hay reemplazo que copiar.
 copy_publishing() {   # $1=T, el resto: nombres dentro de scripts/publishing/
   local T="$1" f old; shift
+  # los guiones de publicación le piden el nombre de la carpeta de Claude Code a tycon-home.js: va con ellos, como en el árbol
+  mkdir -p "$T/repo/scripts/setup/harness"; cp "$RAIZ/scripts/setup/harness/tycon-home.js" "$T/repo/scripts/setup/harness/tycon-home.js"
   for f in "$@"; do
     cp "$RAIZ/scripts/publishing/$f" "$T/repo/scripts/publishing/$f"
     old="$(old_path_of "scripts/publishing/$f")"

@@ -62,7 +62,7 @@ function generateAdvisorDraft(inst, ruleId) {
 #   4. Verificar que el owner está bien (${ownerHint})
 #   5. Si te convence: copiar el block markdown abajo a guides/advisor-rules-catalog.md
 #      en la sección del owner correspondiente
-#   6. Actualizar el advisor (~/.claude/agent-skills/skills/${ownerHint}/SKILL.md)
+#   6. Actualizar el advisor (~/.tycon/harness/skills/${ownerHint}/SKILL.md)
 #      para que enforce la nueva regla
 #   7. Mergear a git
 
@@ -156,9 +156,10 @@ TODO: describir qué retorna la skill al user
  * absoluta con `/` y sin `$`: un `$` en un comando de settings.json no lo expande el shell que lo corre ahí.
  */
 function hookCommand(fname, { platform = process.platform, home = require('os').homedir() } = {}) {
-  const place = require('../setup/harness/place.js').PLACE_NAME;
-  if (platform === 'win32') return `${String(home).replace(/\\/g, '/')}/.claude/${place}/scripts/hooks/${fname}`;
-  return `$HOME/.claude/${place}/scripts/hooks/${fname}`;
+  // el lugar del arnés relativo a la HOME (de place.js), con `/`
+  const place = path.relative(String(home), require('../setup/harness/place.js').placePath(String(home))).split(/[\\/]/).join('/');
+  if (platform === 'win32') return `${String(home).replace(/\\/g, '/')}/${place}/scripts/hooks/${fname}`;
+  return `$HOME/${place}/scripts/hooks/${fname}`;
 }
 
 function generateHookDraft(inst, hookEvent) {
@@ -167,7 +168,7 @@ function generateHookDraft(inst, hookEvent) {
 # Generado por instinct-mining ${new Date().toISOString().slice(0, 10)} desde instinct hash:${inst.hash}
 # ACCIÓN HUMANA REQUERIDA:
 #   1. Revisar este skeleton
-#   2. Decidir si va en scripts/hooks/ (team-wide) o ~/.claude/scripts/ (personal)
+#   2. Decidir si va en scripts/hooks/ (team-wide) o en una carpeta tuya (personal)
 #   3. Implementar la lógica concreta
 #   4. Agregar entry a ~/.claude/settings.json bajo "hooks.${hookEvent}"
 #   5. Update install-tycon-hooks.sh si es team-wide

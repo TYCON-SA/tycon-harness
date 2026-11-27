@@ -23,7 +23,7 @@ const path = require('path');
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados, tok } = require('./bash-gate-words.js');
-const { conCarpetaDelComando, LECTORES_DE_XARGS, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, alcanzadasPorFind, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
+const { CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
 const { ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
 /**
@@ -396,7 +396,7 @@ function borradosProfundos(cmd) {
  * Los marcadores de la ejecución (`<estado>/active/`, `<estado>/active.json`) que el comando puede borrar o mover:
  * `[ruta o texto]`. La regla: un comando que borra o mueve algo y nombra un marcador frena. Nombrarlo es una palabra
  * que, expandida (variables, `~`, llaves), cae en uno o en su carpeta, o un texto que lo nombra por la carpeta del estado
- * (`'/.claude/.tycon-pipeline/active/x.json'` armado en un guion). Una carpeta de arriba (`rm -rf ~/.claude`) cuenta
+ * (`'<estado>/active/x.json'` armado en un guion). Una carpeta de arriba (`rm -rf <la carpeta de Claude Code>`) cuenta
  * sólo si es lo que el comando borra o recorre.
  */
 function marcadoresTocados(cmd, cwd, stateDir) {
@@ -581,7 +581,7 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     for (const x of expandirLlaves(w)) {
       const abs = resolver(x);
       if (toca(abs, false)) { out.push(abs); continue; }
-      // un comodín en una carpeta del medio (`~/.claude/.tycon-p*/active`): lo que nombra en el disco
+      // un comodín en una carpeta del medio (`<casa>/.tycon-p*/active`): lo que nombra en el disco
       if (/[*?[]/.test(path.dirname(abs))) for (const r of expandirComodin(abs, cwd)) if (toca(r, false)) out.push(r);
     }
   }
@@ -1254,20 +1254,31 @@ function entradaPorCadena(cadena, crudas, asignados) {
   return [...new Set([...(sep ? palabra.split(sep) : []), ...palabra.split(/\s+/)].map((x) => x.trim()).filter(Boolean))];
 }
 
-/** El programa que corre un `xargs` (sus opciones, las que llevan valor con él, no cuentan). */
-function programaDelXargs(crudas) {
-  let i = 1;
-  for (; i < crudas.length && crudas[i].startsWith('-'); i++) {
-    if (crudas[i] === '--') { i++; break; }
-    if (XARGS_CON_VALOR.has(crudas[i]) || crudas[i] === '-I' || crudas[i] === '-J') i++;
-  }
-  return nombreDeComando(crudas[i] || '') || '';
-}
-
 /**
  * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
  * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
  */
+// lo que entre la fuente y el `xargs` sólo filtra o reordena renglones
+const FILTROS_DE_LA_ENTRADA = /^(?:sort|uniq|head|tail|grep|egrep|fgrep|rg|sed|awk|cut|tr|cat|tac|shuf)$/;
+/**
+ * ¿La orden de un `xargs` arma una ruta alrededor de lo que llega? El marcador de verdad (`-I FILE` → `FILE`) o, sin
+ * marcador y con un shell en la orden, su argumento (`$0`, `$1`, `$@`), con algo pegado delante: `specs/{}`,
+ * `specs/"$0"` (las comillas no separan), o una asignación (`f=$0`). Una opción del `xargs`, un `%` o un `$1` de otro
+ * programa no cuentan.
+ */
+function marcadorPegado(orden, marca) {
+  const esShell = orden.some((w) => /^(?:ba|z|da|k)?sh$/.test(nombreDeComando(w) || ''));
+  // con un shell, su argumento cuenta aunque haya marcador (`xargs -J % sh -c '… specs/$0' %`)
+  const patrones = [...(marca ? [new RegExp(marca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')] : []), ...(esShell ? [/\$\{?[0-9@*]\}?/g] : [])];
+  return patrones.some((patron) => orden.some((w) => {
+    for (const m of String(w).matchAll(patron)) {
+      let p = m.index - 1;
+      while (p >= 0 && (w[p] === '"' || w[p] === "'")) p -= 1;
+      if (p >= 0 && !/[\s;&|(`]/.test(w[p])) return true;
+    }
+    return false;
+  }));
+}
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
   if (!/\bfind\b|\bxargs\b|\bparallel\b|<<|\|/.test(s)) return [];
@@ -1301,19 +1312,48 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
         // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
+        // Un filtro en el medio (`sort`, `head`, `grep`) no cambia qué archivos llegan: la fuente es el programa de antes
+        let j = k - 1;
+        while (j > 0 && FILTROS_DE_LA_ENTRADA.test(nombreDeComando(palabras(lista[j]).filter((w) => w !== '')[0]) || '')) j -= 1;
+        const fuente = k ? palabras(lista[j]).filter((w) => w !== '') : [];
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
-        const escritor = nombreDeComando(previas[0]) || '';
+        const escritor = nombreDeComando(fuente[0]) || '';
+        const escribe = /^(?:echo|printf|print)$/.test(escritor);
         // una variable asignada en el comando vale lo asignado (`f=h.md; echo $f | xargs rm` borra `h.md`)
         const asignados = asignacionesDe(texto);
         const conValor = (w) => String(w).replace(EXPANSION_DE_VARIABLE, (m, a, b) => {
           const v = asignados.get(a || b) || [];
           return v.length ? v[v.length - 1] : m;
         });
-        const palabrasDeAntes = (/^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas).map(conValor);
+        // Lo que llega de un programa (`ls specs`, `find`, `git ls-files`) o de un archivo no se ve. Se prueba con cada
+        // carpeta de la fuente que existe en el disco (`git ls-files specs` da `specs/…`) y con sus comodines
+        // (`ls -d specs/*`). El comodín suelto (cualquier archivo de donde corre) va cuando el marcador o el argumento del
+        // cuerpo va pegado a otra ruta (`specs/{}`, `specs/"$0"`, `f=$0`: la entrada es un nombre suelto, como el de
+        // `ls specs`) o cuando la fuente no nombra ninguna carpeta. Si no, `grep -rl x src | xargs sed -i` (el reemplazo
+        // en bloque de `src/`) y todo `xargs rm` de otra carpeta frenaban por el comodín suelto en la raíz
+        // acotan sólo las palabras de la fuente: una carpeta nombrada en un filtro (`grep -v build`) no dice de dónde
+        // salen los archivos
+        const fuentes = fuente.slice(1);
+        const esCarpeta = (w) => bases.some((b) => { try { return fs.statSync(resolver(w, b)).isDirectory(); } catch (_) { return false; } });
+        const carpetas = fuentes.filter((w) => !w.startsWith('-') && !/[*?[]/.test(w) && esCarpeta(w)).map((w) => w.replace(/\/+$/, ''));
+        const comodines = fuentes.filter((w) => !w.startsWith('-') && /[*?[]/.test(w));
+        const comoCarpeta = [...carpetas.map((w) => `${w}/*`), ...comodines];
+        const marca = lanzador === 'parallel' ? (marcaDeXargs(crudas).marca || '{}') : marcaDeXargs(crudas).marca;
+        const pegado = marcadorPegado(marcaDeXargs(crudas).orden, marca);
+        // un comodín de la fuente (`ls *.log`) acota como una carpeta. Lo que git lista como cambiado (`git diff
+        // --name-only`, `git ls-files -m`) no: puede traer una historia, y `… | xargs sed -i s/draft/done/` la escribe
+        const acotada = carpetas.length || comodines.length;
+        // con un `cd` a una carpeta que el freno no recorre (`node_modules`, `.git`…), lo que lista un `ls` suelto es de
+        // ahí: el comodín suelto no va, como no va en un `cd` así seguido de un editor
+        const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
+        const cdNunca = bases.length > 1 && path.relative(cwd, bases[bases.length - 1]).split(/[\\/]+/).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
+        const base = escribe ? fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)).map(conValor)
+          : [...previas.map(conValor), ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
         // un `find` le suma a la entrada los archivos que alcanza (sus palabras siguen: si la lectura del `find` queda
         // corta, frenan como antes). No se recorre si lo que corre el `xargs` sólo lee: el recorrido cuesta y no cambia nada
-        const entrada = escritor === 'find' && !LECTORES_DE_XARGS.has(programaDelXargs(crudas))
-          ? [...new Set([...palabrasDeAntes, ...alcanzadasPorFind(previas, absoluta)])] : palabrasDeAntes;
+        const programa = nombreDeComando(marcaDeXargs(crudas).orden[0] || '') || '';
+        const entrada = escritor === 'find' && !LECTORES_DE_XARGS.has(programa)
+          ? [...new Set([...base, ...alcanzadasPorFind(fuente, absoluta)])] : base;
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }

@@ -303,6 +303,70 @@ test('T13 Nested_RunnersThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// Lo que un `xargs` recibe de un programa (`ls specs`, `find`, `git ls-files`) no se ve: el freno lo prueba también con
+// un comodín y con cada palabra como carpeta. Sin eso, un destino armado alrededor del marcador (`specs/{}`) o del
+// argumento posicional del cuerpo (`specs/$0`) no nombra la historia y la escritura pasa.
+// 🔴 Falla con: tomar las palabras del comando de antes como lo único que llega por la entrada.
+test('T34 Nested_XargsUnknownInput_ShellBodyBuildsTheStory_Block @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'echo x >> specs/{}'",
+    "ls specs | xargs -I % sh -c 'echo x >> specs/%'",
+    "ls specs | xargs -I {} bash -c 'rm specs/{}'",
+    "ls specs | xargs -n1 sh -c 'echo x >> specs/$0'",
+    "git ls-files specs | xargs -I {} sh -c 'truncate -s 0 {}'",
+    "cd specs && ls | xargs -I {} sh -c 'echo x >> {}'",
+  ]) frena(c, cmd);
+  // lo que sólo lee, o escribe fuera de la carpeta de las historias, sigue pasando
+  for (const cmd of [
+    "ls specs | xargs -I {} sh -c 'cat specs/{}'",
+    "ls specs | xargs -I {} sh -c 'wc -l specs/{} >> /tmp/cuentas.txt'",
+    'git ls-files | xargs grep -l status',
+    'ls specs | xargs -n1 basename',
+  ]) pasa(c, cmd);
+});
+
+// De la revisión de Fable del T34: el comodín suelto en la raíz frenaba los reemplazos y borrados en bloque de otra
+// carpeta, y un filtro en el medio o una historia un nivel más abajo dejaban pasar la escritura.
+// 🔴 Falla con: sumar el comodín de la raíz aunque la fuente nombre su carpeta, o mirar sólo el tramo de antes.
+test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () => {
+  const c = corral();
+  for (const d of ['src', 'build', path.join('specs', 'epic-2')]) fs.mkdirSync(path.join(c.dir, d), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'src', 'a.js'), 'foo\n');
+  fs.writeFileSync(path.join(c.dir, 'build', 'a.log'), 'x\n');
+  fs.writeFileSync(path.join(c.dir, 'specs', 'epic-2', 'story-2.1.md'), '---\nstory: "2.1"\nepic: "2"\ntitle: "z"\nstatus: draft\n---\n\n# z\n');
+  for (const cmd of [
+    "git ls-files specs | sort | xargs -I {} sh -c 'truncate -s 0 {}'",
+    'git ls-files specs | sort | xargs -I {} tee -a {}',
+    "find specs -type f | head -5 | xargs -I {} sh -c 'echo x >> {}'",
+    "ls -d specs/* | grep story | xargs -I {} sh -c 'echo x >> {}'",
+    "find specs -name '*.md' | sort | xargs -I {} sh -c 'echo x >> {}'",
+    // el marcador con otro nombre, entre comillas o por una asignación (segunda vuelta de Fable)
+    "ls specs | xargs -I FILE sh -c 'echo x >> specs/FILE'",
+    'ls specs | xargs -I X rm specs/X',
+    `ls specs | xargs -I {} sh -c 'echo x >> specs/"{}"'`,
+    `ls specs | xargs -n1 sh -c 'echo x >> specs/"$0"'`,
+    // una palabra de la fuente que no es una carpeta (un subcomando) no acota: va el comodín suelto
+    'git ls-files | xargs rm -f',
+    // una carpeta nombrada en un filtro no acota: sólo la fuente (tercera vuelta de Fable)
+    "git diff --name-only | grep -v build | xargs sed -i '' s/draft/done/",
+  ]) frena(c, cmd);
+  for (const cmd of [
+    "grep -rl foo src | xargs sed -i '' s/foo/bar/",
+    'grep -rl foo src | xargs perl -pi -e s/foo/bar/',
+    "git ls-files src | xargs -I {} sh -c 'sed -i \"\" s/a/b/ {}'",
+    'ls build | xargs rm -rf',
+    'find build -type f | xargs rm -f',
+    "find build -name '*.log' -print0 | xargs -0 rm -f",
+    // una opción pegada del xargs, un `%` o un `$1` de otro programa no son el marcador pegado a una ruta
+    "find build -name '*.log' | xargs -I{} rm {}",
+    'find build -type f | xargs -I% rm %',
+    "grep -rl foo src | xargs sed -i '' 's%foo%bar%'",
+    "grep -rl foo src | xargs perl -pi -e 's/foo(\\d)/bar$1/'",
+    `git ls-files src | xargs -n1 sh -c 'sed -i "" s/a/b/ $0 && echo $0:ok'`,
+  ]) pasa(c, cmd);
+});
+
 // Lo que confirmó el pase adversarial de la corrida: formas de `find`, `xargs` y heredocs que escriben la historia y
 // pasaban, y formas que sólo leen y se frenaban.
 // 🔴 Falla con: tomar todo `-name` como filtro positivo, buscar `xargs` sólo como primera palabra cruda, no leer el

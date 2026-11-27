@@ -11,7 +11,7 @@
  *   - must-stay-quiet → variante de must-not-block para hooks de aviso (stdout vacío/limpio)
  *
  * Cada caso corre en un sandbox: HOME temporal + fixture dir como cwd. Los scripts reales no
- * se tocan; el estado real de ~/.claude NO se contamina.
+ * se tocan; la carpeta real de Claude Code NO se contamina.
  *
  * En Windows el sandbox fija además USERPROFILE —es lo que mira
  * `os.homedir()` ahí; HOME sola deja a cada hook escribiendo en la carpeta real—, y la
@@ -44,8 +44,10 @@ const BENCH_DIR = __dirname;
 const TCG = path.resolve(BENCH_DIR, '..', '..');            // el arnés
 const PLACE_NAME = (() => { try { return require(path.join(TCG, 'scripts', 'setup', 'harness', 'place.js')).PLACE_NAME; } catch (_) { return null; } })();
 const REAL_HOME = os.homedir();
+// las carpetas de la casa (la de Claude Code, las skills instaladas) las dice tycon-home.js
+const TH = require(path.join(TCG, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 // agent-skills se ubica por el único lector (scripts/lib/skills-dir.js): TYCON_SKILLS_DIR —raíz del clon o su
-// carpeta skills/— o, sin ella, ~/.claude/agent-skills. Así el banco puede juzgar un clon de agent-skills
+// carpeta skills/— o, sin ella, las skills instaladas. Así el banco puede juzgar un clon de agent-skills
 // (un cambio en curso) sin tocar el checkout compartido. Sin la lib (clon viejo): el default.
 // 🔴 Sólo «skills-dir.js no está» cae a la ruta instalada. Una biblioteca que está y no carga, o que tira porque su vecina
 // no carga (SKILLS_DIR_NEIGHBOR_BROKEN), NO es «clon viejo»: un `catch` genérico se tragaría las dos y el banco
@@ -54,7 +56,7 @@ const REAL_HOME = os.homedir();
 // de un `require` de ADENTRO de skills-dir.js también lleva su ruta en el mensaje.
 const SKILLS = (() => {
   const lib = path.join(__dirname, '..', 'lib', 'skills-dir.js');
-  if (!fs.existsSync(lib)) return path.join(REAL_HOME, '.claude', 'agent-skills');
+  if (!fs.existsSync(lib)) return TH.installedSkillsDir(REAL_HOME);
   return require(lib).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).repo;
 })();
 // La carpeta de casos se puede apuntar a otro lado SOLO para probar al propio corredor
@@ -520,7 +522,7 @@ function runCase(tool, hookDef, caseDef, ctx) {
   const sandbox = fs.mkdtempSync(path.join(sandboxRoot(ctx), 'tycon-bench-'));
   const SANDBOX_HOME = path.join(sandbox, 'home');
   const FIXTURE = path.join(sandbox, 'fixture');
-  fs.mkdirSync(path.join(SANDBOX_HOME, '.claude'), { recursive: true });
+  fs.mkdirSync(TH.claudeDir(SANDBOX_HOME), { recursive: true });
   fs.mkdirSync(FIXTURE, { recursive: true });
   // 🔴 El git del SANDBOX no hereda el de la máquina. Un caso puede estar rojo en el nocturno de Azure y verde en la
   // Mac del dev por una diferencia que no tiene nada que ver con el control: `git init --bare` toma el nombre de la

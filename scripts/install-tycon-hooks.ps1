@@ -30,7 +30,7 @@
 #   pwsh ./install-tycon-hooks.ps1                       # corre el install
 #   $env:TYCON_NO_AUTOINSTALL='1'; pwsh ./install-tycon-hooks.ps1  # skip
 #   pwsh ./install-tycon-hooks.ps1 -Check                # solo reporta qué falta
-#   pwsh ./install-tycon-hooks.ps1 -Link <ruta>          # re-apunta el lugar del arnés (~/.claude/tycon-harness) a otro clon
+#   pwsh ./install-tycon-hooks.ps1 -Link <ruta>          # re-apunta el lugar del arnés (tycon-harness, en la carpeta de Claude Code) a otro clon
 #   pwsh ./install-tycon-hooks.ps1 -ReportJson <archivo> # además, la lista de piezas que deja;
 #                                                        # con `pwsh -File` también anda la forma del .sh: --report-json
 #
@@ -167,6 +167,26 @@ function Get-HarnessNode {
 }
 $script:HarnessNode = Get-HarnessNode
 if ($script:HarnessNode) { function node { & $script:HarnessNode @args } }
+
+# La carpeta de Claude Code la dice scripts/setup/harness/tycon-home.js (la regla de todo el arnés; acá no se arma a
+# mano). Se pregunta una vez: en la tanda de lectura si la hay (sin otro proceso de Node), si no suelta. Sin respuesta no
+# hay dónde escribir nada: una línea y salida 1, antes de tocar nada en la carpeta de Claude Code.
+function Resolve-TyconClaudeDir($Batch) {
+    $d = $null
+    if ($Batch -and $Batch['claudedir'] -and $Batch['claudedir'].Rc -eq 0) { $d = (Get-ChunkText $Batch['claudedir'].Chunks 'o').Trim() }
+    if (-not $d) {
+        try {
+            $thLib = Join-Path (Join-Path (Join-Path $PSScriptRoot 'setup') 'harness') 'tycon-home.js'
+            $thOut = (& node -e 'process.stdout.write(require(process.argv[1]).claudeDir())' $thLib 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0) { $d = $thOut }
+        } catch { }
+    }
+    if (-not $d -or -not [System.IO.Path]::IsPathRooted($d)) {
+        [Console]::Error.WriteLine('✗ tycon: no pude preguntarle a scripts/setup/harness/tycon-home.js dónde está la carpeta de Claude Code — el instalador no escribió nada')
+        exit 1
+    }
+    return $d
+}
 # `Start-Process` busca el programa en el PATH y no ve la función: lo que se lanza de fondo nombra el binario
 $script:NodeProgram = if ($script:HarnessNode) { $script:HarnessNode } else { 'node' }
 
@@ -174,7 +194,7 @@ $script:NodeProgram = if ($script:HarnessNode) { $script:HarnessNode } else { 'n
 # El candado — el MISMO que toma harness.js
 # ============================================================
 # Corrido suelto (sin TYCON_HARNESS_LOCK_HELD=1), este instalador toma el candado del mecanismo de instalación
-# (scripts/setup/harness/lock.js: ~/.claude/.tycon-pipeline/harness/harness.lock). Sin candado, dos
+# (scripts/setup/harness/lock.js: harness/harness.lock del estado). Sin candado, dos
 # corridas a la vez (dos sesiones que arrancan juntas, o una a mano mientras harness.js actualiza) leerían y escribirían
 # settings.json al mismo tiempo, y la última pisaría a la primera. El segundo que llega se va diciendo «otra sesión está
 # instalando», sin escribir nada (salida 0, como el .sh: el que corre hace el mismo trabajo). Lanzado por harness.js no
@@ -420,7 +440,7 @@ function Record-BlocksPlan {
         $tree = Split-Path -Parent $PSScriptRoot
         $blocksDir = Join-Path $tree 'claude-md-blocks'
         $target = $env:CLAUDE_MD_PATH
-        if (-not $target) { $target = Join-Path (Get-TyconHome) '.claude\CLAUDE.md' }
+        if (-not $target) { $target = Join-Path $script:TyconClaudeDir 'CLAUDE.md' }
         if (-not (Test-Path $blocksDir)) { return }
         # con \r\n pasados a \n, como los lee el sync: si no, un bloque con \r\n saldría «update» siempre
         $content = if (Test-Path $target) { [IO.File]::ReadAllText($target).Replace("`r`n", "`n") } else { '' }
@@ -551,7 +571,7 @@ function Write-PieceReport {
 # Cada corrida llega a sync-claude-md-blocks.ps1, que es quien anota los bloques (no hay salida temprana que los salte).
 # La prueba es T18 F10 de harness-uninstall.test.sh, por ejecución.
 
-# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo (espejo del .sh) ──
+# ── El lugar del arnés: tycon-harness en la carpeta de Claude Code, y el nombre viejo (espejo del .sh) ──
 # Los revisores, pasos y skills nombran al arnés por este lugar. La regla de nacimiento vive en canonical-path.js (el
 # lugar nace hacia donde apunta el nombre viejo o el estado, no hacia el clon que corre; el viejo se re-apunta al lugar). En Windows se crea un JUNCTION
 # (fs.symlinkSync(..., 'junction') dentro de canonical-path.js): un symlink de directorio pide modo
@@ -574,6 +594,7 @@ $RepoLinksHere = (Test-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptR
 $ReadBatch = $null
 if (-not $Link) {
     $readSteps = @()
+    $readSteps += @{ id = 'claudedir'; script = 'tycon-home'; args = @('--claude-dir') }
     if (-not $ClaudeOff -and (Test-Path $rutaCanonica)) {
         $readSteps += @{ id = 'place'; script = 'canonical-path'; args = @(@('--ensure-link', '--clone', (Split-Path -Parent $PSScriptRoot)) + @(if ($Check) { '--check' })) }
         if ($RepoLinksHere) { $readSteps += @{ id = 'links'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'agent-skills') + @(if ($Check) { '--check' })) } }
@@ -594,6 +615,7 @@ if (-not $Link) {
     }
     $ReadBatch = Invoke-NodeBatch $readSteps
 }
+$script:TyconClaudeDir = Resolve-TyconClaudeDir $ReadBatch
 
 if (-not $ClaudeOff -and (Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $clon = Split-Path -Parent $PSScriptRoot
@@ -622,7 +644,7 @@ if (-not $ClaudeOff -and (Test-Path $rutaCanonica) -and (Get-Command node -Error
 
 # ── Los enlaces del repo único (espejo del .sh) ─────────────────────
 # Cuando ESTE clon trae skills/ y agents/ en su raíz (el repo público: el arnés y agent-skills juntos):
-# ~/.claude/agent-skills → el clon, ~/.claude/agents → <clon>/agents y ~/.claude/skills → <clon>/skills, con las reglas
+# las skills instaladas (agent-skills) → el clon, y agents y skills de la carpeta de Claude Code → los del clon, con las reglas
 # del enlace de arriba; si agents/ o skills/ ya son carpetas reales, un enlace por entrada. Dos llamadas: ACÁ sólo
 # agent-skills (la verificación de más abajo y el paso de terceros lo necesitan); agents y skills DESPUÉS del paso de
 # terceros. En el clon del equipo no imprime ni toca nada. Respeta -Check; las piezas `link` las anota el propio guion
@@ -630,7 +652,7 @@ if (-not $ClaudeOff -and (Test-Path $rutaCanonica) -and (Get-Command node -Error
 # revisor es un `.md`) prueba primero el enlace de archivo (pide el modo desarrollador), después un enlace duro, y si
 # tampoco puede canonical-path.js lo dice en una línea y no escribe.
 # El clon del equipo TAMBIÉN trae skills/ y agents/, y la máquina puede tener además su clon viejo de agent-skills en
-# ~/.claude/agent-skills (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
+# las skills instaladas (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
 # (`separateSkillsClone`), igual para este archivo y para el .sh. Una carpeta real en ese lugar que NO es un clon de
 # agent-skills sigue avisando.
 function Invoke-RepoLinks([string]$Only) {
@@ -676,7 +698,7 @@ if (-not $ClaudeOff -and (Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'script
 # ============================================================
 # Paths
 # ============================================================
-$ClaudeDir   = Join-Path (Get-TyconHome) '.claude'   # la carpeta de os.homedir(): la misma que usan los guiones de Node
+$ClaudeDir   = $script:TyconClaudeDir   # la de tycon-home.js: la misma que usan los guiones de Node
 $Settings    = Join-Path $ClaudeDir 'settings.json'
 # Donde van el estado y los registros de este archivo. Con Claude Code, la de siempre. Sin él, la que da la regla
 # (scripts/setup/harness/tycon-home.js: la casa propia); si no contesta, $null, y lo que escribiría ahí no corre: nunca
@@ -757,7 +779,7 @@ if ($script:PiecesTmp -and (Test-Path $rutaCanonica) -and (Get-Command node -Err
 }
 
 # Skeleton si no existe. Con -Check no se escribe: más abajo un settings.json que falta se lee como vacío.
-# Un fallo (carpeta sin permiso, ~/.claude que es un archivo) se DICE en una línea y sale por Exit-Installer, que suelta el
+# Un fallo (carpeta sin permiso, la carpeta de Claude Code que es un archivo) se DICE en una línea y sale por Exit-Installer, que suelta el
 # candado (con 'Stop' global tiraría y el candado quedaría tomado hasta 10 min).
 if (-not (Test-Path $Settings) -and -not $Check) {
     try {
@@ -784,7 +806,7 @@ $CheckInClone = $null
 if ($AgentSkills -and -not (Test-Path (Join-Path $AgentSkills 'tycon-pipeline'))) {
     $SkillsWhy = "$AgentSkills no trae tycon-pipeline"; $AgentSkills = $null
 } elseif ($AgentSkills -and $SkillsFrom -ne 'installed' -and -not $Check) {
-    $SkillsWhy = "~/.claude/agent-skills no está (el enlace al clon no se pudo crear) y sin él no registro hooks hacia $AgentSkills"; $AgentSkills = $null
+    $SkillsWhy = "las skills instaladas (agent-skills) no están (el enlace al clon no se pudo crear) y sin él no registro hooks hacia $AgentSkills"; $AgentSkills = $null
 }
 if (-not $AgentSkills) {
     [Console]::Error.WriteLine("✗ tycon: agent-skills no encontrado — $SkillsWhy — ver el README.md del arnés, 'Instalación'")   # una línea limpia
@@ -793,13 +815,13 @@ if (-not $AgentSkills) {
 $AgentSkillsRepo = Split-Path -Parent $AgentSkills   # la raíz que trae skills/ y agents/ (el contrato: skills = <raíz>/skills)
 if ($SkillsFrom -ne 'installed') {
     $CheckInClone = $AgentSkillsRepo   # el paso de terceros de más abajo también mira ahí
-    Write-Host "(--check) tycon: ~/.claude/agent-skills todavía no está: esta revisión mira las skills en $AgentSkills (el instalador crea el enlace)"
+    Write-Host "(--check) tycon: las skills instaladas (agent-skills) todavía no están: esta revisión mira las skills en $AgentSkills (el instalador crea el enlace)"
 }
 }
 # ▲ CLAUDE_OFF
 
 # ── El mecanismo de instalación ─────────────────────────────────────
-# En una máquina que todavía no tiene estado (`~/.claude/.tycon-pipeline/harness-state.json`), este aplicador crea el
+# En una máquina que todavía no tiene estado (`harness-state.json` en la carpeta del estado), este aplicador crea el
 # estado sobre el clon, el enlace y el agent-skills que ya están, copia el arranque fijo y migra la línea de arranque UNA
 # sola vez (`harness.js install --from-existing`: sin candado propio ni aplicador anidado — TYCON_HARNESS_LOCK_HELD=1).
 # Corre DESPUÉS de escribir settings.json cuando hubo cambios, y TAMBIÉN en el camino del `exit 0` temprano cuando no los
@@ -885,7 +907,7 @@ if ((Test-Path $ThirdPartyJs) -and (Get-Command node -ErrorAction SilentlyContin
 # ~/.claude/agents y ~/.claude/skills del repo único: después del paso de terceros, ver arriba
 Invoke-RepoLinks 'entries'
 # el plan (espejo del .sh): cada skill de terceros que el paso restituiría, con la ruta del reporte
-# (~\.claude\agent-skills\…, aunque el enlace todavía no exista): completa y en su lugar → keep; si no → add
+# (agent-skills\… en la carpeta de Claude Code, aunque el enlace todavía no exista): completa y en su lugar → keep; si no → add
 if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
     try {
         $tpManifest = Join-Path (Join-Path $PSScriptRoot 'publishing') 'third-party-skills.json'
@@ -924,7 +946,7 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 
 # ============================================================
 # Integraciones — espejo del bloque bash. Cada integración tiene su llave en la configuración
-# del arnés (lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA); apagada, este
+# del arnés (lib/tycon-config.js: variable › la configuración del arnés › perfil del equipo › APAGADA); apagada, este
 # instalador no registra sus hooks (la herramienta de horas: los de su manifiesto en integrations/; engram: engram-drift-notice y los
 # chequeos de versión/sqlite3; nightly: tablero, dependencias y retro-staleness) ni llama a su servicio (ado: el
 # refresco de proyectos con az; codex: el despliegue). Configuración ROTA o sin lector: se dice y las integraciones
@@ -1006,7 +1028,7 @@ if ($ProfileIsMinimal -and $ProfileMinimalIds.Count -eq 0) {
     $ProfileState = 'rota'; $ProfileIsMinimal = $false
     Write-Host "! tycon: no pude leer que trae el perfil minimal (scripts/setup/install-effects.json): lo del perfil de instalacion queda como estaba"
 }
-if ($ProfileIsMinimal) { Write-Host "tycon: perfil de instalacion: minimal - con el freno de comandos destructivos y el de editar codigo sin historia ni ajuste puntual, sin los demas frenos, sin los bloques que cambian como contesta el asistente, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" }
+if ($ProfileIsMinimal) { Write-Host "tycon: perfil de instalacion: minimal - con el freno de comandos destructivos y el de editar codigo sin historia ni ajuste puntual, sin los demas frenos, sin los bloques que cambian como contesta el asistente, sin hooks de git ni tareas de fondo (full: install.profile en la configuracion del arnes)" }
 elseif ($ProfileState -eq 'rota') { Write-Host "! tycon: la configuracion del arnes esta ROTA - lo del perfil de instalacion queda como estaba (ni se registra ni se saca; los dos frenos de comandos se registran igual) hasta arreglarla: node scripts/lib/tycon-config.js validate" }
 elseif ($ProfileState -ne 'ok') { Write-Host "! tycon: sin scripts/lib/tycon-config.js (o sin node): no se que perfil de instalacion tiene esta maquina - lo del perfil queda como estaba (los dos frenos de comandos se registran igual)" }
 $ProfileFull = ($ProfileState -eq 'ok') -and -not $ProfileIsMinimal
@@ -1237,7 +1259,7 @@ if ((Integ-Prendida 'engram') -and (Test-Path $sqliteEnsure) -and -not $Check) {
 # TYCON_CODEX=0 explícito → no; sin la variable → lo que diga el disco.
 # ============================================================
 $codexOn = $false
-# La llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil › apagada): $true sí,
+# La llave es `integrations.codex` (TYCON_CODEX › la configuración del arnés › perfil › apagada): $true sí,
 # $false no, 'detect' lo que diga el disco. Configuración rota: nada de Codex. Sin lector: la variable.
 $codexLlave = 'detect'
 if ($IntegEstado -eq 'ok') { $codexLlave = $Integ['codex'] }
@@ -1350,7 +1372,7 @@ dos copias que mantener. (Convencion: INSTALL.md del arnés, seccion Lado Codex.
             foreach ($l in $cfgRota) { Write-Host "   $l" }
             $srcRoot = ''; $orgNombre = ''
         }
-        elseif (-not $srcRoot) { Write-Host "i tycon/codex: sin raiz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no deposito punteros AGENTS.md" }
+        elseif (-not $srcRoot) { Write-Host "i tycon/codex: sin raiz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en la configuracion del arnes): no deposito punteros AGENTS.md" }
         elseif (-not $orgNombre) { Write-Host "i tycon/codex: sin organizacion de Azure DevOps configurada (ado.org): no se cuales repos son del equipo, no deposito punteros AGENTS.md" }
         $candidatos = @()
         if ($srcRoot -and $orgNombre -and (Test-Path $srcRoot)) {
@@ -1561,6 +1583,17 @@ function Compare-GlobalHooksDir([string]$Configured, [string]$Installed, [string
 $GitHooksDir = if ($env:TYCON_GIT_HOOKS_DIR) { $env:TYCON_GIT_HOOKS_DIR } else { Join-Path (Split-Path -Parent $ClaudeDir) '.git-hooks' }
 if ($env:TYCON_NO_GIT_HOOKS -ne '1' -and $ProfileFull) {
     Install-GitHook 'git-pre-commit-global.sh' 'pre-commit' 'git-pre-commit-global.sh' 'ahora delega en el .githooks/ de cada repo'
+    # al lado del gancho, el lugar del arnés que él no puede preguntarle a nadie (espejo del bloque del .sh): places.sh,
+    # con barras derechas (lo lee el bash de Git) y cada valor entre comillas simples con la comilla escapada
+    $ghPre = Join-Path $GitHooksDir 'pre-commit'
+    if (-not $Check -and (Test-Path $ghPre -PathType Leaf)) {
+        $ghQ = { param([string]$v) "'" + (($v -replace '\\', '/') -replace "'", "'\''") + "'" }
+        $ghText = @(
+            '# places.sh — lo escribe install-tycon-hooks.sh al instalar los ganchos globales de git; lo carga su harness_dir().',
+            "TYCON_P_CLAUDE_DIR=$(& $ghQ $ClaudeDir)"
+        ) -join "`n"
+        try { [System.IO.File]::WriteAllText((Join-Path $GitHooksDir 'places.sh'), "$ghText`n", (New-Object System.Text.UTF8Encoding $false)) } catch { }
+    }
     Install-GitHook 'git-post-commit-global.sh' 'post-commit' 'git-post-commit-global.sh' 'avisa en una línea lo que quedó afuera de cada commit'
     # el freno antes de publicar, en cualquier clon del arnés (espejo del bloque del .sh)
     Install-GitHook 'git-pre-push-global.sh' 'pre-push' 'git-pre-push-global.sh' 'el freno antes de publicar corre en cualquier clon del arnés'

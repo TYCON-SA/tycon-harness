@@ -27,7 +27,7 @@
 // SALIDA: todo aviso por stdout (la línea de arranque descarta stderr) y siempre exit 0: un paso de arranque no frena
 // la sesión. Al día no dice nada. Apagado (TYCON_THIRD_PARTY=0) lo dice en una línea.
 //
-// ESTADO: ~/.claude/.tycon-pipeline/third-party-state.json — qué árbol quedó en cada destino, el hash de cada archivo
+// ESTADO: ~/.tycon/state/third-party-state.json — qué árbol quedó en cada destino, el hash de cada archivo
 // y si lo escribió el paso; con el tamaño y la fecha de cada archivo no vuelve a leer lo que no cambió (así el arranque
 // al día tarda milisegundos). Avisos una vez por día.
 //
@@ -344,7 +344,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
     say(`⚠ ${TAG}: ${repo} no es un clon de agent-skills que pueda leer — no restituyo nada`);
     return;
   }
-  // El cerrojo es del CLON, no de la ruta con que lo nombran: `~/.claude/agent-skills` puede ser un enlace al clon
+  // El cerrojo es del CLON, no de la ruta con que lo nombran: las skills instaladas pueden ser un enlace al clon
   // unido, y por el enlace y por su ruta real es el mismo árbol. Con la ruta tal cual serían dos cerrojos, y dos pasos
   // a la vez escribirían los dos.
   let lockOf = path.resolve(repo);

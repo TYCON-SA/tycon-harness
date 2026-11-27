@@ -86,20 +86,6 @@ if ! git_dir_hook pre-commit "$@"; then
   exit 1
 fi
 
-# ── 1. Delegación al pre-commit del repo ─────────────────────────────────────────────────────
-# Si el repo trae el suyo, corre y su veredicto MANDA. Es lo que hace que
-# `.githooks/pre-commit` deje de ser decorativo.
-if [ -x "$REPO_ROOT/.githooks/pre-commit" ]; then
-  if ! "$REPO_ROOT/.githooks/pre-commit"; then
-    echo "⛔ pre-commit del repo rechazó el commit (.githooks/pre-commit)" >&2
-    exit 1
-  fi
-elif [ -f "$REPO_ROOT/.githooks/pre-commit" ]; then
-  # Existe pero sin permiso de ejecución: es un hook que el dev cree que corre y no corre —
-  # exactamente el modo de falla que este archivo vino a cerrar. Se avisa, no se bloquea.
-  echo "⚠ $REPO_ROOT/.githooks/pre-commit existe pero NO es ejecutable — no se corrió. Arreglalo con: chmod +x .githooks/pre-commit" >&2
-fi
-
 # ── 1b. Migraciones SQL: compilarlas sin ejecutar, y AVISAR ─────────────────────
 # Una migración con un error de sintaxis puede llegar al commit sin haberse ejecutado nunca y frenar un
 # despliegue entero. Nunca rechaza el commit: el script sale 0 siempre, y
@@ -109,21 +95,30 @@ fi
 # Las variables renombradas a inglés: el nombre viejo sigue apagando hasta el retiro. Este archivo corre
 # COPIADO en ~/.git-hooks, así que la biblioteca se busca en el arnés; sin ella (o si no carga), sólo el nombre nuevo —
 # nunca rompe un commit. Cuesta ~100 ms por commit.
-# El lugar del arnés: la variable; si no, el lugar ~/.claude/tycon-harness y después el nombre viejo
-# ~/.claude/tycon-claude-guides, bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Una sola función
-# para todas las lecturas. Los dos nombres van escritos: este archivo corre copiado fuera del repo (copia declarada en
+# El lugar del arnés: la variable; si no, el lugar y su nombre viejo que el instalador escribió al lado de este gancho
+# (places.sh, con lo que da tycon-home.js / state-dir.sh) y, con el nombre de la carpeta de Claude Code de ese archivo,
+# bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Sin nada de eso, vacío: quien llama mira la casa
+# propia y, si tampoco está, dice que no encontró el arnés. Una sola función para todas las lecturas. Los dos nombres
+# van escritos: este archivo corre copiado fuera del repo (copia declarada en
 # scripts/tests/fixtures/harness-place-names.json; una prueba frena si se desfasa). Sin `-L` ni `readlink`: preguntar si
 # algo es un enlace no anda igual en el bash de Git para Windows; alcanza con que la carpeta exista.
 harness_dir() {
   if [ -n "${TYCON_GUIDES_DIR:-}" ]; then printf '%s' "$TYCON_GUIDES_DIR"; return 0; fi
+  TYCON_P_PLACE=""; TYCON_P_LEGACY_PLACE=""; TYCON_P_CLAUDE_DIR=""
+  # shellcheck disable=SC1091
+  if [ -f "$(dirname "$0")/places.sh" ]; then . "$(dirname "$0")/places.sh" 2>/dev/null; fi
+  for _hd_cand in "$TYCON_P_PLACE" "$TYCON_P_LEGACY_PLACE"; do
+    if [ -n "$_hd_cand" ] && [ -d "$_hd_cand/scripts" ]; then printf '%s' "$_hd_cand"; return 0; fi
+  done
+  _hd_cname="${TYCON_P_CLAUDE_DIR##*/}"
   for _hd_base in "${HOME:-}" "${USERPROFILE:-}"; do
-    [ -n "$_hd_base" ] || continue
+    [ -n "$_hd_base" ] && [ -n "$_hd_cname" ] || continue
     if command -v cygpath >/dev/null 2>&1; then _hd_base="$(cygpath -u "$_hd_base" 2>/dev/null || printf '%s' "$_hd_base")"; fi
     for _hd_name in tycon-harness tycon-claude-guides; do
-      if [ -d "$_hd_base/.claude/$_hd_name/scripts" ]; then printf '%s' "$_hd_base/.claude/$_hd_name"; return 0; fi
+      if [ -d "$_hd_base/$_hd_cname/$_hd_name/scripts" ]; then printf '%s' "$_hd_base/$_hd_cname/$_hd_name"; return 0; fi
     done
   done
-  printf '%s' "${HOME:-}/.claude/tycon-harness"
+  printf '%s' "$TYCON_P_PLACE"
 }
 # Una máquina sin Claude Code tiene el arnés en su casa propia: <TYCON_HOME>/harness (la variable, si es una ruta
 # absoluta) o ~/.tycon/harness. Se mira DESPUÉS de los dos nombres de siempre, a propósito: donde están, siguen mandando.
@@ -144,6 +139,24 @@ _TCG_DIR="$(harness_dir)"
 if [ -z "${TYCON_GUIDES_DIR:-}" ] && [ ! -d "$_TCG_DIR/scripts" ]; then
   _ho_dir="$(harness_own_home)"
   [ -n "$_ho_dir" ] && _TCG_DIR="$_ho_dir"
+fi
+
+# ── 1. Delegación al pre-commit del repo ─────────────────────────────────────────────────────
+# Si el repo trae el suyo, corre y su veredicto MANDA. Es lo que hace que
+# `.githooks/pre-commit` deje de ser decorativo. Le llega el arnés que encontró este gancho (TYCON_GUIDES_DIR): el del
+# repo no tiene places.sh al lado y así busca en el mismo lugar; una variable que la persona ya puso, manda.
+_deleg_env=()
+if [ -z "${TYCON_GUIDES_DIR:-}" ] && [ -d "$_TCG_DIR/scripts" ]; then _deleg_env=(env "TYCON_GUIDES_DIR=$_TCG_DIR"); fi
+if [ -x "$REPO_ROOT/.githooks/pre-commit" ]; then
+  # ${a[@]+…}: con el bash 3.2 de la Mac y `set -u`, un arreglo vacío sin esa forma corta el guion
+  if ! ${_deleg_env[@]+"${_deleg_env[@]}"} "$REPO_ROOT/.githooks/pre-commit"; then
+    echo "⛔ pre-commit del repo rechazó el commit (.githooks/pre-commit)" >&2
+    exit 1
+  fi
+elif [ -f "$REPO_ROOT/.githooks/pre-commit" ]; then
+  # Existe pero sin permiso de ejecución: es un hook que el dev cree que corre y no corre —
+  # exactamente el modo de falla que este archivo vino a cerrar. Se avisa, no se bloquea.
+  echo "⚠ $REPO_ROOT/.githooks/pre-commit existe pero NO es ejecutable — no se corrió. Arreglalo con: chmod +x .githooks/pre-commit" >&2
 fi
 # el Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
 # nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
@@ -253,7 +266,7 @@ if [ -f "$_CFG_JS" ] && command -v "$HNODE" >/dev/null 2>&1; then
   # esté apagada; =0 ya salió arriba)
   _ESTADO="$("$HNODE" "$_CFG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>"$_AV")" || _ESTADO="prendida"
   case "$_ESTADO" in
-    apagada) rm -f "$_AV"; echo "engram apagado en esta máquina: este repo pide sincronizar su memoria (.engram-project) y no se hace (prender: integrations.engram=true en ~/.claude/tycon.json o TYCON_ENGRAM=1)"; exit 0 ;;
+    apagada) rm -f "$_AV"; echo "engram apagado en esta máquina: este repo pide sincronizar su memoria (.engram-project) y no se hace (prender: integrations.engram=true en ~/.tycon/config.json o TYCON_ENGRAM=1)"; exit 0 ;;
     rota) cat "$_AV" >&2; rm -f "$_AV"; exit 0 ;;
   esac
   rm -f "$_AV"
