@@ -127,8 +127,8 @@ suyas. `TYCON_NO_DENY_RULES=1` no las suma.
 
 ## Cuando un freno no alcanza a decidir
 
-La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los once frenos de consola; los otros
-nueve no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
+La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los doce frenos de consola; los otros
+diez no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
 corre. El freno de producción va aparte, en la configuración administrada: tiene su reloj, y si su gancho falla el
 comando no corre ([producción con permiso](production-with-permission.md)).
 
@@ -145,6 +145,7 @@ comando no corre ([producción con permiso](production-with-permission.md)).
 | `engram-pre-commit.sh` | No | Pasa a los 600 s |
 | `session-collision-guard.js` | No | Pasa a los 600 s |
 | `background-question-guard.js` | No | Pasa a los 600 s |
+| `on-bash-write-after.js` | No | Pasa a los 600 s, sin foto: en el modo que anota queda anotado; con el deshacer prendido, frena la sesión |
 
 Cada freno tiene una clase propuesta: **exigencia** (protege algo que no se deshace o que no es del agente: producción y
 datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias; no se apaga para
@@ -382,24 +383,35 @@ El freno de antes decide leyendo el texto del comando, y un intérprete que el s
 (`${N:-node} x.js`, `"${CMD[@]}"`) queda fuera de su vista. La segunda capa (`on-bash-write-after.js`) no lee el
 comando: mira lo que quedó escrito.
 
+- **Cómo viene prendida.** En el modo **que anota**: compara y deja el renglón en `gates.log`, sin deshacer, sin frenar
+  y sin avisarle al agente. Así se mide una semana cuánto deshacería y en qué formas de comando, antes de dejarlo
+  deshacer. El deshacer se prende con `TYCON_WRITE_AFTER_MODE=undo`; lo de abajo dice qué hace cada modo.
 - **Qué mira.** Antes de cada comando de la terminal (Bash, PowerShell, Monitor) saca una foto de lo protegido: las
   historias que no están en borrador, el estado de los borradores, las constancias y los marcadores. Después del
-  comando, también si falla, compara por contenido.
-- **Qué deshace.** Lo que cambió y no correspondía vuelve a lo que tenía la foto, o se borra si no existía. Queda un
-  renglón `escritura-vista-despues` en `gates.log` (sesión, ruta, programa; nunca el contenido) y el aviso al agente.
+  comando, también si falla, compara por contenido. Un comando que sólo lee (`cat`, `grep`, `ls`, `git rev-parse`…)
+  no saca foto: no puede haber escrito.
+- **Qué anota.** Lo que cambió y no correspondía queda como `escritura-vista-despues` en `gates.log` (sesión, ruta,
+  programa y la forma del comando: git solo, git con otro programa, un guion del arnés con otro programa u otra cosa;
+  nunca el contenido). En el modo que anota, con `status: would-undo`; con el deshacer, `undone`.
+- **Qué deshace, con el deshacer prendido.** Lo que cambió y no correspondía vuelve a lo que tenía la foto, o se borra
+  si no existía, y el aviso le llega al agente.
 - **Qué no deshace.** Lo que escribió `marker.js` o un guion del arnés instalado, solos en el comando; lo que trajo un
   comando que es sólo git y quedó igual a lo commiteado. Un cambio que pudo hacer otra sesión viva en la misma copia,
-  o una edición de la misma sesión sobre ese archivo a la vez, no se deshace: queda `escritura-dudosa`, anotado y
-  avisado.
-- **Cuando no puede mirar.** Si la foto falta, no se puede leer o no coincide con su huella, o si no pudo deshacer, la
-  sesión queda frenada: corre sólo lecturas (`cat`, `grep`, `ls`, `git rev-parse`…) hasta que la libere otra sesión
-  con `marker.js release-write-after --for-session <S> --reason "<qué miró>"`. La firma es de excepción: la da la
+  o una edición de la misma sesión sobre ese archivo a la vez, no se deshace: queda `escritura-dudosa`, anotado (y,
+  con el deshacer, avisado).
+- **Cuando no puede mirar.** Si la foto falta, no se puede leer o no coincide con su huella: en el modo que anota queda
+  `mirada-fallida` en `gates.log` y el comando sigue. Con el deshacer prendido, o si no pudo deshacer, la sesión queda
+  frenada: corre sólo lecturas hasta que la libere otra sesión con
+  `marker.js release-write-after --for-session <S> --reason "<qué miró>"`. La firma es de excepción: la da la
   persona, o la coordinadora designada si el perfil la delega; nunca la sesión frenada ni la firma de trámite. Una
   carpeta del estado donde no se puede escribir frena igual, y se arregla la carpeta.
-- **Lo que no ve.** Un proceso que el comando deja vivo (`&`, `nohup`, el comando de Monitor, que corre de fondo) y
-  escribe cuando el comando ya terminó; un comando cortado por tiempo que no llega al evento de después; un guion que
-  escribe en otro repo sin nombrarlo con `cd`. Para eso queda la red del commit.
-- **Cómo se apaga.** Con el mismo interruptor del freno de antes: `TYCON_STORY_GATE=off`.
+- **Lo que no ve.** Un proceso que el comando deja vivo (`&`, `nohup`, el comando de Monitor y el de Bash con
+  `run_in_background`, que corren de fondo) y escribe cuando el comando ya terminó; un comando cortado por tiempo que no
+  llega al evento de después; un comando que la persona cancela con Esc (no llega ningún evento); un guion que escribe
+  en otro repo sin nombrarlo con `cd`. En Codex no está registrada (la asimetría está declarada en
+  `adapters/codex/hooks.json`): ahí queda el freno de antes. Para todo eso queda la red del commit.
+- **Cómo se apaga.** Con el mismo interruptor del freno de antes: `TYCON_STORY_GATE=off`. Ese interruptor apaga también
+  el freno de antes y el portón de edición: no hay uno que apague sólo esta pieza.
 
 ### La ejecución perdida
 

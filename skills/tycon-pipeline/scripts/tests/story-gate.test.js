@@ -1032,6 +1032,21 @@ test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+test('T38 Freno_Monitor_LeeSuComando @story-8.320 @ac-9: el comando de Monitor pasa por el mismo freno que el de Bash, y la lista lo registra', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Monitor', session_id: 's1', cwd: repo, tool_input: { command } });
+  const traer = ['git', 'checkout', '--', 'package.json'].join(' ');
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of ['rm package-lock.json', traer, 'sleep 1; rm src/a.ts']) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+  });
+  const lista = JSON.parse(fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  const filas = (lista.hooks || lista).filter((h) => h.spec === 'tycon-pipeline/scripts/on-bash-write-gate.js');
+  assert.ok(filas.length && filas.every((h) => h.matcher.split('|').includes('Monitor')), 'el freno de antes se registra también para Monitor');
+});
+
 test('T33 Freno_PowerShell_FormasNuevas', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });

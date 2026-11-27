@@ -36,7 +36,8 @@ function lab() {
   fs.writeFileSync(path.join(repo, 'specs', 'story-1.2-borrador.md'), historia('1.2', 'draft'));
   fs.writeFileSync(path.join(repo, 'src', 'x.js'), 'module.exports = 1;\n');
   fs.writeFileSync(path.join(repo, '.tycon', 'control-changes', 'c1.json'), '{"ok":true}\n');
-  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home };
+  // las pruebas de siempre miran el deshacer, que se prende con su interruptor; las del modo «sólo anota» lo sacan
+  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_WRITE_AFTER_MODE: 'undo' };
   const estado = require(path.resolve(__dirname, '..', 'lib', 'state-dir.js')).stateDir(home);
   // la conversación de la sesión: lo que la herramienta dice que corrió
   const transcript = path.join(base, 'conversacion.jsonl');
@@ -655,7 +656,8 @@ test('WriteAfter_Cleanup_KeepsPhotosUnderAWeek @story-8.320 @ac-8', () => {
   fs.utimesSync(vieja, dias(8), dias(8));
   fs.utimesSync(registroViejo, dias(8), dias(8));
   fs.utimesSync(deAyer, dias(1), dias(1));
-  correr(l, 'ls');
+  // la limpieza va con la foto, y un comando que sólo lee no la saca
+  correr(l, 'node -e 1');
   assert.ok(!fs.existsSync(vieja), 'la foto de 8 días se borra');
   assert.ok(!fs.existsSync(registroViejo), 'su registro también');
   assert.ok(fs.existsSync(deAyer), 'la de ayer queda: puede ser de un comando que espera su permiso');
@@ -854,4 +856,65 @@ test('T12 · SafetyGuide_DescribesWriteAfter @story-8.320 @ac-10', () => {
   assert.ok(seccion.length > 200, 'la sección existe');
   for (const parte of ['Qué mira', 'Qué deshace', 'Qué no deshace', 'Cuando no puede mirar', 'Lo que no ve', 'TYCON_STORY_GATE=off', 'release-write-after', '`nohup`'])
     assert.ok(seccion.includes(parte), parte);
+});
+
+/** El mismo laboratorio sin el interruptor del deshacer: el modo de la instalación. */
+const enModoAnota = (l) => { delete l.env.TYCON_WRITE_AFTER_MODE; return l; };
+const renglones = (g) => g.split('\n').filter(Boolean).map((x) => JSON.parse(x));
+
+test('T13 · WriteAfter_LogModeIsTheDefault_RecordsWithoutUndoing @story-8.320 @ac-2', () => {
+  const l = enModoAnota(lab());
+  const x = guion(l, 'x.js', `const fs=require('fs');const f=${JSON.stringify(l.f('specs/story-1.1-hecha.md'))};fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('in-progress','done'));`);
+  const { ctx, gates } = correr(l, `N=node; $N ${x}`);
+  assert.match(fs.readFileSync(l.f('specs/story-1.1-hecha.md'), 'utf8'), /status: done/, 'sólo anota: no deshace');
+  assert.strictEqual(ctx, '', 'sólo anota: no le avisa al agente');
+  const r = renglones(gates).find((x) => x.name === 'escritura-vista-despues');
+  assert.ok(r, gates);
+  assert.strictEqual(r.status, 'would-undo');
+  assert.strictEqual(r.modo, 'anota');
+  assert.strictEqual(r.forma, 'otro');
+});
+
+test('T14 · WriteAfter_LogMode_NeverStopsTheSession @story-8.320 @ac-7', () => {
+  const l = enModoAnota(lab());
+  const foto = require('../lib/protected-photo.js');
+  // un evento de después sin el de antes (la pieza instalada a mitad de un comando)
+  const ev = (hook_event_name, command, id) => JSON.stringify({ session_id: 's1', tool_use_id: id, transcript_path: l.transcript, cwd: l.repo, hook_event_name, tool_name: 'Bash', tool_input: { command } });
+  const post = spawnSync(process.execPath, [HOOK], { input: ev('PostToolUse', 'npm test', 'toolu_x1'), env: l.env, encoding: 'utf8' });
+  assert.strictEqual(post.status, 0);
+  assert.strictEqual(post.stdout.trim(), '', 'sin aviso al agente');
+  assert.ok(!foto.readBrake(l.estado, 's1'), 'sin freno');
+  assert.ok(renglones(fs.readFileSync(path.join(l.estado, 'gates.log'), 'utf8')).some((r) => r.name === 'mirada-fallida' && r.status === 'logged'));
+  // un freno que dejó el modo del deshacer no frena en éste
+  foto.setBrake(l.estado, 's1', 'de antes');
+  const pre = spawnSync(process.execPath, [HOOK], { input: ev('PreToolUse', 'npm test', 'toolu_x2'), env: l.env, encoding: 'utf8' });
+  assert.strictEqual(pre.status, 0, pre.stderr);
+});
+
+test('T15 · WriteAfter_ReadOnlyCommand_TakesNoPhoto @story-8.320 @ac-9', () => {
+  const l = enModoAnota(lab());
+  const foto = require('../lib/protected-photo.js');
+  correr(l, 'ls specs | head -3');
+  const fotos = fs.existsSync(foto.photosDir(l.estado)) ? fs.readdirSync(foto.photosDir(l.estado)).filter((n) => n.endsWith('.json')) : [];
+  assert.deepStrictEqual(fotos, [], 'lo que sólo lee no saca foto');
+});
+
+test('T16 · WriteAfter_StartRecords_AreCleaned @story-8.320 @ac-9', () => {
+  const l = enModoAnota(lab());
+  const foto = require('../lib/protected-photo.js');
+  const enCurso = path.join(foto.photosDir(l.estado), 'in-progress');
+  fs.mkdirSync(enCurso, { recursive: true });
+  const viejo = path.join(enCurso, 'otra-toolu_viejo.json');
+  fs.writeFileSync(viejo, JSON.stringify({ sesion: 'otra', id: 'toolu_viejo', tool: 'Bash', inicio: Date.now() - 11 * 60 * 1000, fin: null })); // stable-data: un registro de hace 11 minutos
+  correr(l, 'node -e 1');
+  assert.ok(!fs.existsSync(viejo), 'el registro de hace más de 10 minutos se borra desde el evento de antes');
+});
+
+test('T17 · WriteAfter_CodexDivergenceDeclared @story-8.320 @ac-10', () => {
+  const raiz = path.resolve(__dirname, '..', '..', '..', '..');
+  const codex = JSON.parse(fs.readFileSync(path.join(raiz, 'adapters', 'codex', 'hooks.json'), 'utf8'));
+  assert.ok(codex.divergences.some((d) => (d.scripts || []).includes('on-bash-write-after.js')), 'la asimetría con Codex está declarada');
+  assert.ok(!JSON.stringify(codex.hooks || {}).includes('on-bash-write-after.js'), 'en Codex no se registra');
+  const deuda = JSON.parse(fs.readFileSync(path.join(raiz, 'scripts', 'controls-bench', 'hook-debt.json'), 'utf8')).debt.find((d) => d.script === 'on-bash-write-after.js');
+  assert.ok(deuda && !/todavía no está registrada/.test(deuda.reason), 'la deuda dice lo de hoy');
 });
