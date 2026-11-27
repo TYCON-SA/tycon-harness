@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-signed-scope-audit.md
-# source_sha256: 930ff8f287176d8812e468b7e3ac878db79f6ed790965e035db560a4392e5983
+# source_sha256: 0b720ea05519f879b34d0a257f24401db258675d4f79319c477fa032274d6a2d
 # Se despliega como $CODEX_HOME/tycon-signed-scope-audit.config.toml y se invoca: codex exec -p tycon-signed-scope-audit
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -223,9 +223,9 @@ correctamente pero escribirlo como ``**`VAL-C7`**`` y poner entre corchetes las 
 
 ## Referencias
 
-- Guía sistema: `~/.claude/tycon-harness/guides/signed-scope-guardrails.md`
-- Rule IDs: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` — sección \"Signed Scope Audit\" (`SCOPE-*`) + `VAL-C7`, `VAL-W8`
-- Validator hermano: `~/.claude/agent-skills/agents/tycon-story-validator.md` (corre `VAL-C7` per-story; este audit lo hace global)
+- Guía sistema: `~/.tycon/harness/guides/signed-scope-guardrails.md`
+- Rule IDs: `~/.tycon/harness/guides/advisor-rules-catalog.md` — sección \"Signed Scope Audit\" (`SCOPE-*`) + `VAL-C7`, `VAL-W8`
+- Validator hermano: `~/.tycon/harness/agents/tycon-story-validator.md` (corre `VAL-C7` per-story; este audit lo hace global)
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
 

@@ -92,6 +92,9 @@ const escapesDeLaNoche = () => leer().entradas.filter((e) => e.noche).map((e) =>
 const NOMBRE = 'TYCON_[A-Z0-9_]+|DOD_BYPASS|STOP_AUTONOMY';
 // en .js: process.env.X, process.env['X'], env.X, env['X'] (el `env` inyectado) y readEnv('X' (legacy-names.js)
 const EN_JS = new RegExp(`\\benv(?:\\.(${NOMBRE})\\b|\\[\\s*['"](${NOMBRE})['"]\\s*\\])|readEnv\\(\\s*['"](${NOMBRE})['"]`, 'g');
+// en .js, por una constante del archivo: `const X = 'TYCON_…'` (o "…") y después `env[X]`
+const CONSTANTE_JS = new RegExp(`\\bconst\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:'(${NOMBRE})'|"(${NOMBRE})")\\s*[;,\\n]`, 'g');
+const EN_JS_POR_CONSTANTE = /\benv\[\s*([A-Za-z_$][\w$]*)\s*\]/g;
 // en .sh: $X y ${X, y también las formas de .js (el node que un guion lleva adentro lee `process.env.X`)
 const EN_SH = new RegExp(`\\$\\{?(${NOMBRE})\\b|\\benv\\.(${NOMBRE})\\b`, 'g');
 // en la lista de ganchos del instalador: `optin:X`, la variable con que el instalador decide si registra el gancho
@@ -127,11 +130,17 @@ function lecturas(raiz) {
       // un atajo de nombre viejo generado no es un lector: lee lo que su plantilla, declarada en legacy-names.js
       if (!ganchos && esAtajo(texto)) continue;
       const re = new RegExp(ganchos ? EN_GANCHOS : h.name.endsWith('.sh') ? EN_SH : EN_JS);
-      let m;
-      while ((m = re.exec(texto))) {
-        const nombre = m[1] || m[2] || m[3] || m[4];
+      const anotar = (nombre) => {
         if (!out.has(nombre)) out.set(nombre, new Set());
         out.get(nombre).add(path.relative(raiz, p).split(path.sep).join('/'));
+      };
+      let m;
+      while ((m = re.exec(texto))) anotar(m[1] || m[2] || m[3] || m[4]);
+      // la variable nombrada por una constante del mismo archivo (`const X = 'TYCON_…'`) y leída con `env[X]`
+      if (!ganchos && !h.name.endsWith('.sh')) {
+        const constantes = new Map();
+        for (const c of texto.matchAll(new RegExp(CONSTANTE_JS))) constantes.set(c[1], c[2] || c[3]);
+        for (const l of texto.matchAll(new RegExp(EN_JS_POR_CONSTANTE))) if (constantes.has(l[1])) anotar(constantes.get(l[1]));
       }
     }
   };

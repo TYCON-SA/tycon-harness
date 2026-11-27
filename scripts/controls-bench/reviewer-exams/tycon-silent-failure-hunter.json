@@ -1,7 +1,7 @@
 {
   "agent": "tycon-silent-failure-hunter",
   "file": "agents/tycon-silent-failure-hunter.md",
-  "hash": "4e7e7a6ed212e46d4d8fd62ae26cb8a01d67973d",
+  "hash": "2cd1d2e2680db6dfea2f39d30217ea78bfa0f80f",
   "passed": 5,
   "total": 5,
   "score": 1,

@@ -1145,3 +1145,35 @@ test('T14 Sources_HuellaAPedido_TiempoConRelojSimulado @story-8.328 @ac-11', { s
     assert.ok(m.fuentes.huellas().carpetas['maquina-a'].huellas.includes(h.k.fingerprint), 'leída en ≤ 60 s, no a los 15 minutos');
   } finally { await m.cerrar(); }
 });
+
+test('T48d Buzon_MientrasSePoneAlDia_NoReleeElEspejoEnCadaPasada', async () => {
+  // A48 · 🔴 rojo: con la bajada poniéndose al día (pasadas cada pocos segundos que avanzan), el sitio releía el espejo
+  //    entero en cada una: decenas de miles de aperturas del disco montado, que Azure Files cobra como escrituras. Ahora
+  //    la vista parcial se relee como mucho cada 5 minutos, y una pasada entera la relee siempre
+  let completo = false;
+  const nube = { PROVEEDORES_DE_BUZON: ['azure-blob'], bajarBuzon: async () => ({ codigo: 0, res: completo
+    ? { estado: 'bajado', completo: true, sin_tiempo: 0, bajados: 1, registros_enteros: true, volcados_enteros: true }
+    : { estado: 'bajado', completo: false, sin_tiempo: 40, bajados: 5, registros_enteros: true, volcados_enteros: true } }) };
+  let lecturas = 0;
+  const leerEspejo = async () => { lecturas += 1; return { corridas: { estado: 'medido', corridas: [] }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {} } } }; };
+  let ahora = T0;
+  const dataDir = tmp('site-a48-');
+  const v = validarConfiguracion(H.envBase({ SITE_MAILBOX_SAS: H.sas() }));
+  const raiz = tmp('site-a48-repo-');
+  try {
+    repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } } }), path.join(raiz, 'trabajo'));
+    const f = crearFuentes({ cfg: { ...v.cfg, operationsRepo: path.join(raiz, 'ops.git') }, dataDir, log: () => {}, nubes: [nube], leerEspejo, ahora: () => ahora });
+    await f.refrescar();
+    assert.strictEqual(lecturas, 1, 'la primera pasada parcial lee el espejo');
+    for (let i = 0; i < 5; i += 1) { ahora += 10000; await f.refrescar(); }
+    assert.strictEqual(lecturas, 1, 'las pasadas que siguen enseguida no lo releen');
+    ahora += 6 * 60000;
+    await f.refrescar();
+    assert.strictEqual(lecturas, 2, 'pasados 5 minutos, la parcial se relee');
+    completo = true;
+    ahora += 10000;
+    await f.refrescar();
+    assert.strictEqual(lecturas, 3, 'la entera se relee siempre');
+    assert.strictEqual(f.modelo().corridas.estado, 'medido');
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
