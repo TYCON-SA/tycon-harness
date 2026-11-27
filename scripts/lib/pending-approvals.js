@@ -24,7 +24,9 @@
  *     esta cuenta: un código que ya tenía aprobación no sirve para abrir otro pendiente. La corre el pre-commit, junto
  *     con `revisar` sobre lo que se va a commitear. Una línea se reconoce por lo que es, no por cómo está escrita: la
  *     firmada por su huella y la de base por su código (`claveDeLinea`). La misma aprobación con otro espaciado no es
- *     nueva, y cambiarle a una ya commiteada un campo que su huella no cubre se nombra.
+ *     nueva, y cambiarle a una ya commiteada un campo que su huella no cubre se nombra. Una aprobación firmada no se
+ *     borra: sin ella en el último commit, volver a ponerla la haría pasar por nueva. Si el borrado llegó a main sin los
+ *     controles, volver a ponerla no se ve.
  *   · `aprobacionVigente`: lo que mira `approve-pending` antes de pedir la firma, contra el último commit y contra el
  *     ancestro común con la rama principal, que es lo que compara la validación del pedido.
  * La revisión de la noche no ve el registro del arnés ni la historia: una línea fabricada, o un pendiente reabierto con
@@ -259,6 +261,14 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
     if (abiertosAntes.has(p.clave) || firmadasNuevas.has(p.clave)) continue;
     // sin código ya lo nombra `revisar`; acá, el código que se abre con una aprobación vieja
     if (p.codigo) malas.push({ id: p.codigo, motivo: `se abre en este commit (renglón ${p.numero}) y no trae su aprobación firmada en este commit: una aprobación vieja de ese código no abre otro pendiente` });
+  }
+  // una aprobación firmada del último commit no se borra: el registro de firmas guarda su renglón, y sin ella en el
+  // último commit, volver a ponerla en otro commit la haría pasar por nueva. La base sí se achica, y una línea que no
+  // vale se puede sacar
+  const quedan = new Set(leerRegistro(despues).lineas.map(claveDeLinea));
+  for (const x of leerRegistro(antes).lineas) {
+    if (motivoDe(x.valor) || x.valor.via === 'base' || quedan.has(claveDeLinea(x))) continue;
+    malas.push({ id: x.valor.id, motivo: 'borra una aprobación firmada ya commiteada: una aprobación no se borra (volverla a poner la haría valer de nuevo)' });
   }
   return malas;
 }

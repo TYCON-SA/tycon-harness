@@ -549,3 +549,28 @@ test('T32 sin rama principal conocida, approve-pending mira sólo el último com
   assert.deepStrictEqual(PA.leerEnLote(d, ['HEAD:no-esta.txt', `HEAD:${PA.TODO}`, `HEAD:${PA.RECORD}`]), [null, LISTA, BASE]);
   assert.throws(() => PA.leerEnLote(path.join(vacio, 'no-existe'), [`HEAD:${PA.TODO}`]));
 });
+
+test('T33 una aprobación firmada ya commiteada no se borra: borrarla y volverla a poner la haría valer de nuevo', (t) => {
+  const l = firmada('DEF-hecho');
+  const antes = `${BASE}${JSON.stringify(l)}\n`;
+  // el commit que la borra frena, aunque no abra nada
+  const borra = PA.revisarNuevas({ antes, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA });
+  assert.deepStrictEqual(borra.map((x) => x.id), ['DEF-hecho']);
+  assert.match(borra[0].motivo, /no se borra/);
+  // también en la validación del pedido
+  assert.strictEqual(PA.revisarNuevas({ antes, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA, sinFirmaLocal: true }).length, 1);
+  // la base sí se achica, y una línea rota se puede sacar
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: `${BASE}no es json\n`, despues: base('DEF-viejo') + '\n', renglones: [], todoAntes: LISTA, todoDespues: LISTA.replace('- [ ] [DEF-viejo]', '- [x] [DEF-viejo]').replace(`- [ ] ${SIN_CODIGO}`, `- [x] ${SIN_CODIGO}`) }), []);
+  // en git: borrar el archivo de la aprobación frena en el commit
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  fs.rmSync(path.join(d, PA.archivoDe(l)));
+  git('add', '-A');
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /no se borra/);
+});
