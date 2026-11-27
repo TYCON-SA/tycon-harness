@@ -902,6 +902,13 @@ test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece
   const grande = medir(32000);
   assert.ok(grande < chico * 40, `8 veces más texto tardó ${grande.toFixed(1)} ms contra ${chico.toFixed(1)} ms`);
   // con miles de bucles sin cerrar (o bien cerrados), el tope de bucles leídos lo deja en menos de un segundo
+  // lo que sigue al `done` armado para enredar la expresión de las redirecciones (CodeQL, js/redos): lineal
+  {
+    const t = process.hrtime.bigint();
+    ordenesDeBucles(`find x | while read f; do y; done >${'!>'.repeat(3000)}`, op);
+    const ms = Number(process.hrtime.bigint() - t) / 1e6;
+    assert.ok(ms < 1000, `las redirecciones tardaron ${ms.toFixed(0)} ms`);
+  }
   for (const trozo of ['for f in a; do x; ', 'find x | while read f; do y; done; ']) {
     const t = process.hrtime.bigint();
     ordenesDeBucles(`${trozo.repeat(8000)} echo done`, op);

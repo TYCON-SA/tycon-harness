@@ -232,7 +232,8 @@ function ordenesDeBucles(cmd, { palabras, alcanzadas, citar, ruta = (x) => x }) 
     const productores = /\|&?\s*[({]?\s*$/.test(antes) ? [primerPrograma(tuberia)] : [];
     // lo que entra después del `done`, con otras redirecciones antes (`done 2>/dev/null < <(find …)`, `done 3< <(…)`)
     const despues = s.slice(c.fin, c.fin + 4000);
-    const entrada = /^(?:\s*\d*>&?\S+)*\s*(?:\d*<\s*<\(|<<<\s*"?\$\()/.exec(despues);
+    // (el destino de cada redirección no lleva `<` ni `>`: así cada una empieza en su `>` y la expresión no se enreda)
+    const entrada = /^(?:\s*\d*>&?[^\s<>]+)*\s*(?:\d*<\s*<\(|<<<\s*"?\$\()/.exec(despues);
     if (entrada) {
       const x = sustitucion(c.fin + entrada[0].length - 2);
       if (x) productores.push(x.texto);
