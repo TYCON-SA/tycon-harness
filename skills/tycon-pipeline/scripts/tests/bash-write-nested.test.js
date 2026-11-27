@@ -341,6 +341,13 @@ test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () =
     "find specs -type f | head -5 | xargs -I {} sh -c 'echo x >> {}'",
     "ls -d specs/* | grep story | xargs -I {} sh -c 'echo x >> {}'",
     "find specs -name '*.md' | sort | xargs -I {} sh -c 'echo x >> {}'",
+    // el marcador con otro nombre, entre comillas o por una asignación (segunda vuelta de Fable)
+    "ls specs | xargs -I FILE sh -c 'echo x >> specs/FILE'",
+    'ls specs | xargs -I X rm specs/X',
+    `ls specs | xargs -I {} sh -c 'echo x >> specs/"{}"'`,
+    `ls specs | xargs -n1 sh -c 'echo x >> specs/"$0"'`,
+    // una palabra de la fuente que no es una carpeta (un subcomando) no acota: va el comodín suelto
+    'git ls-files | xargs rm -f',
   ]) frena(c, cmd);
   for (const cmd of [
     "grep -rl foo src | xargs sed -i '' s/foo/bar/",
@@ -349,6 +356,12 @@ test('T34b Nested_XargsUnknownInput_FolderOfTheSource @story-8.308 @ac-12', () =
     'ls build | xargs rm -rf',
     'find build -type f | xargs rm -f',
     "find build -name '*.log' -print0 | xargs -0 rm -f",
+    // una opción pegada del xargs, un `%` o un `$1` de otro programa no son el marcador pegado a una ruta
+    "find build -name '*.log' | xargs -I{} rm {}",
+    'find build -type f | xargs -I% rm %',
+    "grep -rl foo src | xargs sed -i '' 's%foo%bar%'",
+    "grep -rl foo src | xargs perl -pi -e 's/foo(\\d)/bar$1/'",
+    `git ls-files src | xargs -n1 sh -c 'sed -i "" s/a/b/ $0 && echo $0:ok'`,
   ]) pasa(c, cmd);
 });
 
