@@ -642,6 +642,24 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   return `${renglones.join('\n')}\n`;
 }
 
+/**
+ * La foto de la vuelta que se lanza (`marker.js snapshot-iter N --at-launch`): la vuelta siguiente calcula su delta desde
+ * ella aunque esta ronda no se complete. Nunca frena el lanzamiento; si no se pudo, lo dice. Una vuelta servida para otra
+ * sesión (`--for-session`) no toca su marcador: la firma autoriza la vuelta, no escribir la corrida ajena.
+ */
+function fotoAlLanzar(iter, horaDelSello) {
+  if (estadoPipeline.paraOtra) return;
+  const n = parseInt(iter, 10) || 1;
+  try {
+    require('child_process').execFileSync(process.execPath, [path.join(__dirname, '..', 'marker.js'), 'snapshot-iter', String(n), '--at-launch', '--at', horaDelSello], {
+      windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000,
+    });
+  } catch (e) {
+    process.stderr.write(`⚠️  no pude guardar la foto de la vuelta ${n} al lanzarla (${String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]}): ` +
+      'si la ronda no se completa, la vuelta siguiente re-corre el set completo.\n');
+  }
+}
+
 // El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
 // contra la rama principal (ni commits propios ni cambios sin commitear), los revisores leerían la principal y dirían
 // «no está el código». Pasa cuando algo aparta los cambios mientras corre la vuelta (un `git stash` de fondo). Null si
@@ -877,4 +895,4 @@ function rethinkGate(args, { vueltaChica = false, sinCodigo = false } = {}) {
   return null;
 }
 
-module.exports = { topeDeVueltas, revisoresDelCatalogo, aplicarModelosDeRevisores, tierDe, buildStoryDigest, buildAdvisorContext, validateFilesExist, reloopHintsFor, emptyWorkGate, salidaDelFreno, rethinkGate, PRECHEQUEO, congelarVuelta, contextoConLaCopia, resumenReglas, reglasRevisores, conLanzadorCodex, logStep5Start };
+module.exports = { fotoAlLanzar, topeDeVueltas, revisoresDelCatalogo, aplicarModelosDeRevisores, tierDe, buildStoryDigest, buildAdvisorContext, validateFilesExist, reloopHintsFor, emptyWorkGate, salidaDelFreno, rethinkGate, PRECHEQUEO, congelarVuelta, contextoConLaCopia, resumenReglas, reglasRevisores, conLanzadorCodex, logStep5Start };

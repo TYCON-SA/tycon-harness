@@ -524,9 +524,8 @@ function comprobarLoRevisado(marker, quien) {
   const sinSepararMain = [];
   const huellas = [];
   const movidos = [];
-  // lo que no es código para el re-loop (lib/reloop-code.js: una prueba del proyecto, un texto que no se ejecuta): con el
-  // mismo lector que la vuelta, no pide otra. La historia sigue su regla de papeleo, y una carpeta oculta, la
-  // configuración de una herramienta, lo sensible, un ejecutable, un enlace o un submódulo siguen contando
+  // lo que no se ejecuta y el re-loop no revisa (una prueba del proyecto, una imagen suelta, la guía o el informe de la
+  // historia en su carpeta qa): no pide otra vuelta (`sinCodigoParaLaVuelta`). Lo demás sigue sus reglas de papeleo
   const sinCodigo = [];
   const noPideVuelta = sinCodigoParaLaVuelta(marker, storyAbs);
   // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
@@ -546,7 +545,9 @@ function comprobarLoRevisado(marker, quien) {
     const anidados = ft.anidadosConCambios(r.repo, ahora.tree);
     if (anidados.error) frenar(`no pude comparar lo que se guarda con lo revisado en ${path.basename(r.repo)}: ${anidados.error}.`);
     for (const f of anidados.files) { distintos.push({ repo: r.repo, f }); adentro.push(f); }
-    const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
+    // la historia en otra copia del mismo repo (un worktree): su ruta dentro de su copia, si es la del sello (la misma carpeta
+    // git común), así sigue su regla de papeleo y no cuenta entera como cambio
+    const rel = storyAbs ? rutaDeLaHistoriaEn(r.repo, storyAbs, realDe) : null;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
     const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
@@ -560,7 +561,7 @@ function comprobarLoRevisado(marker, quien) {
     // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
     for (const f of c.files) {
       if (isControlApproval(f)) papeleo.push(f);
-      else if (noPideVuelta(r.repo, ahora.tree, f)) sinCodigo.push(f);
+      else if (noPideVuelta(r.repo, ahora.tree, f, rel)) sinCodigo.push(f);
       else distintos.push({ repo: r.repo, f });
     }
     for (const f of c.papeleo) papeleo.push(f);
@@ -609,31 +610,68 @@ function comprobarLoRevisado(marker, quien) {
   }
   appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
     ...(movidos.length ? { comentarios_movidos: movidos.length } : {}), ...(sinCodigo.length ? { sin_codigo: sinCodigo.length } : {}) });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinCodigo.length ? `; lo que no es código para la vuelta (pruebas, textos que no se ejecutan), que no pide otra: ${sinCodigo.slice(0, 5).join(', ')}${sinCodigo.length > 5 ? '…' : ''}` : ''}.`);
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinCodigo.length ? `; lo que no se ejecuta (pruebas, imágenes, la guía de la historia), que no pide otra vuelta: ${sinCodigo.slice(0, 5).join(', ')}${sinCodigo.length > 5 ? '…' : ''}` : ''}.`);
 }
 
-// `(repo, tree, rel) => bool`: ¿el archivo, cambiado después de la vuelta, no pide otra vuelta para el re-loop? El mismo
+// `(repo, tree, rel, storyRel) => bool`: ¿el archivo, cambiado después de la vuelta, no pide otra vuelta para el re-loop? El mismo
 // lector que smart-reloop (lib/reloop-code.js), con lo que siempre cuenta en lo revisado: la historia (tiene su regla de
-// papeleo), una carpeta oculta, la configuración de una herramienta, lo sensible del catálogo y un modo que no es el de
-// un archivo común (ejecutable, enlace, submódulo). Ante un error, cuenta.
+// papeleo), una carpeta oculta, la configuración de una herramienta, lo que cuenta siempre (reloop-code.js `cuentaSiempre`:
+// las instrucciones para un agente, las imágenes de una prueba visual, lo sensible) y un modo que no es el de un archivo
+// común (ejecutable, enlace, submódulo). De lo que queda, perdona sólo lo que no se ejecuta, por lista (adentro). Ante
+// un error, cuenta.
 function sinCodigoParaLaVuelta(marker, storyAbs) {
   const { spawnSync } = require('child_process');
   const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
-  return (repo, tree, rel) => {
+  return (repo, tree, rel, storyRel) => {
     try {
       const abs = path.join(repo, rel);
+      // la historia, también en otra copia del repo (`storyRel`, su ruta en este repo)
       if (storyAbs && real(abs) === real(storyAbs)) return false;
+      if (storyRel && rel === String(storyRel).split(path.sep).join('/')) return false;
       if (rel.split('/').some((p) => p.startsWith('.')) || CONFIGURACION.test(path.posix.basename(rel))) return false;
-      if (require('./save-ok.js').esSensible(rel)) return false;
+      if (require('./reloop-code.js').cuentaSiempre(abs)) return false;
       const ls = spawnSync('git', ['-C', repo, 'ls-tree', tree, '--', rel], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
       if (ls.error || ls.status !== 0) return false;
       const modo = String(ls.stdout || '').split(' ')[0];
       // borrado (sin entrada) o un archivo común: lo demás cuenta
       if (modo && modo !== '100644') return false;
-      return !require('./reloop-code.js').pideOtraVuelta(abs, { storyPath: storyAbs || marker.storyPath, repoPath: marker.repoPath });
+      if (require('./reloop-code.js').pideOtraVuelta(abs, { storyPath: storyAbs || marker.storyPath, repoPath: marker.repoPath })) return false;
+      // de lo que el re-loop no revisa, el portón perdona sólo lo que no se ejecuta, por lista: una prueba del proyecto,
+      // una imagen suelta, y la guía, el informe o una imagen de ESTA historia en su carpeta qa. Una carpeta que la app
+      // sirve o compila no: lo que hay ahí puede publicarse. Lo demás (un .md o un .yaml suelto, el estado del sprint)
+      // sigue sus reglas de papeleo
+      const raiz = require('./reloop-code.js').raizDelRepo(abs);
+      const desdeLaRaiz = (raiz ? path.relative(raiz, abs) : rel).split(path.sep).join('/');
+      if (DE_LA_APP.test(desdeLaRaiz)) return false;
+      if (require('./atdd-order.js').isTestPath(desdeLaRaiz)) return true;
+      const ext = path.posix.extname(rel).toLowerCase();
+      if (IMAGENES_SUELTAS.has(ext)) return true;
+      const qa = storyAbs ? real(require('./qa-dir.js').qaDirFor(storyAbs)) : null;
+      const historia = storyAbs ? path.basename(storyAbs, '.md').toLowerCase() : null;
+      const nombre = path.basename(abs).toLowerCase();
+      return !!qa && real(path.dirname(abs)) === qa && nombre.startsWith(`${historia}-`) && DE_LA_GUIA.has(ext);
     } catch (_e) { return false; }
   };
+}
+
+const IMAGENES_SUELTAS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const DE_LA_GUIA = new Set(['.html', '.htm', '.md', '.pdf', ...IMAGENES_SUELTAS]);
+// una carpeta que la app sirve o compila
+const DE_LA_APP = /(^|\/)(public|static|www|wwwroot|dist|build|out|assets|src|app|pages|lib)\//;
+
+// La ruta de la historia relativa a `repo`: la de siempre si vive adentro, o su ruta dentro de su propia copia si vive en
+// otra copia del mismo repo (la misma carpeta git común, `dondeViveLaHistoria`). null si es de otro repo o no se sabe.
+function rutaDeLaHistoriaEn(repo, storyAbs, realDe) {
+  const directa = path.relative(realDe(repo), realDe(storyAbs));
+  if (directa && !directa.startsWith('..') && !path.isAbsolute(directa)) return directa;
+  const donde = dondeViveLaHistoria(storyAbs);
+  if (!donde.storyRel || !donde.repoCommon) return null;
+  try {
+    const comun = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--git-common-dir'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim();
+    return realDe(path.resolve(repo, comun)) === realDe(donde.repoCommon) ? donde.storyRel : null;
+  } catch (_e) { return null; }
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */

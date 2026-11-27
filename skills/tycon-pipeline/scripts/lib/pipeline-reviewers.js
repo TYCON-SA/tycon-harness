@@ -7,7 +7,7 @@
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
 const { estadoPipeline, MODELOS, PROPIA, STORY_GOLD, esCodex, fs, os, ownerWindow, packsLib, path, readSessionMarker, readText, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
-const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, tierDe, validateFilesExist } = require('./pipeline-advisor-context.js');
+const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, tierDe, validateFilesExist, fotoAlLanzar } = require('./pipeline-advisor-context.js');
 const { MECH_NUNCA_SACA, aplicarDecisionValidador, computeAdvisorSet, computeBase, computeCompletitud, computeConditional, computeMechDiscount, detectStack, lanzadorCodex, paquetesActivos, paquetesInstalados, resumenPaquetes, revisoresPorConfirmar, salidaGrande, sumarPorConfirmar, unique } = require('./pipeline-advisor-set.js');
 const { conModelosDeLaCorrida, decirModelos, orgModels, pedidosDeModelos } = require('./pipeline-models.js');
 const { computeRiskClass, computeRunSize, parseFrontmatterList, runSizeDelMarcador } = require('./pipeline-risk.js');
@@ -405,6 +405,7 @@ function cmdAdvisors(cmd, args) {
   // digest de story + file list + hunks. Los advisors lo reciben como input
   // primario en vez de re-leer story completa + re-correr git diff cada uno.
   // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+  const horaDelSello = new Date().toISOString();
   const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
   if (congelada.error) {
     process.stderr.write(`🛑 pipeline.js advisors: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
@@ -413,6 +414,7 @@ function cmdAdvisors(cmd, args) {
   }
   if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js advisors: ${congelada.aviso}.\n`);
   set.frozen = congelada.repos;
+  fotoAlLanzar(args.iter, horaDelSello);
   const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
   contextoConLaCopia(ctx, congelada.repos);
   // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
