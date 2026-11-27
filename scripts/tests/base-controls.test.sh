@@ -1772,12 +1772,13 @@ done
 # `optional`). Todo lo que cargan las dos, con lo que cargan ellas, son ~250 archivos; firmar cada uno no se sostiene,
 # así que la lista es la de los que deciden el click (revisión de la fila 283, S1 y S2, y la de Fable del 27/11).
 # 🔴 mutación: sin la marca, un cambio en state-dir.js que muda dónde se anotan los clicks entra sin constancia
-DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/setup/harness/tycon-home.js scripts/lib/approver.js scripts/lib/machine-id.js scripts/lib/file-zones.js scripts/lib/claude-versions.js scripts/lib/harness-sign.js skills/tycon-pipeline/scripts/lib/critical-waivers.js skills/tycon-pipeline/scripts/lib/marker-command.js scripts/lib/git-bash.js skills/tycon-pipeline/scripts/lib/autonomy-decision.js scripts/lib/hook-ask.js scripts/lib/renames.json"
+DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/setup/harness/tycon-home.js scripts/lib/approver.js scripts/lib/machine-id.js scripts/lib/file-zones.js scripts/lib/claude-versions.js scripts/lib/harness-sign.js skills/tycon-pipeline/scripts/lib/critical-waivers.js skills/tycon-pipeline/scripts/lib/marker-command.js scripts/lib/git-bash.js skills/tycon-pipeline/scripts/lib/autonomy-decision.js scripts/lib/hook-ask.js scripts/lib/renames.json scripts/lib/delegation-routing.js scripts/lib/ci-bypass.js scripts/lib/external-pr.js"
 # Cada carga directa de las dos bibliotecas tiene que estar marcada o en esta lista: una carga nueva da rojo hasta que
-# alguien decide si firma. SIN_MARCA_A_DECIDIR: deciden algo del click y quedan sin marca por su costo en firmas (unos 76
-# cambios por mes entre las seis), decisión del dueño pendiente (revisión de Fable del 27/11, H2). SIN_MARCA: lo demás
-# (avisos, la oficina, la lista de ejecuciones, el portón de la historia, cómo se muestra una exención).
-SIN_MARCA_A_DECIDIR="scripts/lib/delegation-routing.js scripts/lib/ci-bypass.js scripts/lib/external-pr.js scripts/lib/signature-list.js scripts/hooks/background-question-guard.js"
+# alguien decide si firma. SIN_MARCA_DECIDIDO: deciden algo del click y quedan sin marca por su costo en firmas: son las
+# dos que más cambian (unos 40 cambios por mes entre las dos). Decisión del dueño del 27/11: se marcan las tres que menos
+# cambian (delegation-routing.js, ci-bypass.js y external-pr.js, arriba) y estas dos no. SIN_MARCA: lo demás (avisos, la
+# oficina, la lista de ejecuciones, el portón de la historia, cómo se muestra una exención).
+SIN_MARCA_DECIDIDO="scripts/lib/signature-list.js scripts/hooks/background-question-guard.js"
 SIN_MARCA="scripts/lib/notify.js scripts/lib/office-event.js scripts/lib/signature-log.js scripts/lib/signature-sources.js skills/tycon-pipeline/scripts/lib/adhoc-list.js skills/tycon-pipeline/scripts/lib/open-runs.js skills/tycon-pipeline/scripts/lib/run-close.js skills/tycon-pipeline/scripts/lib/story-gate-io.js skills/tycon-pipeline/scripts/lib/story-gate.js skills/tycon-pipeline/scripts/lib/waiver-display.js"
 CARGAS="$(node -e '
 const fs=require("fs"),path=require("path");const raiz=process.argv[1];const out=new Set();
@@ -1794,7 +1795,7 @@ CUANTAS_C="$(printf '%s\n' ${CARGAS} | grep -c .)"
 SIN_DECIDIR=0
 for p in ${CARGAS}; do
   MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.controls.some(c=>(c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true))?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
-  if [ "${MARKED}" = si ] || printf '%s\n' ${SIN_MARCA_A_DECIDIR} ${SIN_MARCA} | grep -xF "${p}" >/dev/null; then :
+  if [ "${MARKED}" = si ] || printf '%s\n' ${SIN_MARCA_DECIDIDO} ${SIN_MARCA} | grep -xF "${p}" >/dev/null; then :
   else SIN_DECIDIR=$((SIN_DECIDIR + 1)); no "T115c ${p} lo carga una biblioteca del click y nadie decidió si firma: marcalo con «sign_on_change» o sumalo a SIN_MARCA con su motivo"; fi
 done
 [ "${SIN_DECIDIR}" = 0 ] && ok "T115c cada carga de las dos bibliotecas está marcada o declarada sin marca"
