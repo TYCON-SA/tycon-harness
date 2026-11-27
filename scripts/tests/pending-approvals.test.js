@@ -545,4 +545,7 @@ test('T32 sin rama principal conocida, approve-pending mira sólo el último com
   t.after(() => fs.rmSync(vacio, { recursive: true, force: true }));
   spawnSync('git', ['-C', vacio, 'init', '-q']);
   assert.deepStrictEqual(PA.puntosDeComparacion(vacio), []);
+  // la lectura en lote: el que no está da null, en su lugar; un repo que no se lee lanza, no es «no está»
+  assert.deepStrictEqual(PA.leerEnLote(d, ['HEAD:no-esta.txt', `HEAD:${PA.TODO}`, `HEAD:${PA.RECORD}`]), [null, LISTA, BASE]);
+  assert.throws(() => PA.leerEnLote(path.join(vacio, 'no-existe'), [`HEAD:${PA.TODO}`]));
 });

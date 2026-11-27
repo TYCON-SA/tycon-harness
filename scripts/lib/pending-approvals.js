@@ -297,15 +297,48 @@ function puntosDeComparacion(repo) {
   let principal = intento('symbolic-ref', '-q', 'refs/remotes/origin/HEAD');
   if (!principal) principal = ['refs/remotes/origin/main', 'refs/remotes/origin/master'].find((r) => intento('rev-parse', '--verify', '-q', `${r}^{commit}`)) || null;
   const ancestro = principal ? intento('merge-base', head, principal) : null;
-  const leer = (commit) => {
-    const en = (rel) => { try { return git('show', `${commit}:${rel}`); } catch (_) { return null; } };
+  const commits = ancestro && ancestro !== head ? [head, ancestro] : [head];
+  // los archivos de los dos commits en un solo proceso de git (`cat-file --batch`): con cientos de aprobaciones, uno por
+  // archivo pasa el plazo del chequeo previo de la firma
+  const pedidos = [];
+  const porCommit = commits.map((commit) => {
     const nombres = git('ls-tree', '-r', '-z', '--name-only', commit, '--', `${RECORD_DIR}/`).split('\0').filter(esArchivoDeLaCarpeta).sort();
-    const abiertos = new Set(pendientesAbiertos(en(TODO) || '').map((x) => x.codigo).filter(Boolean));
-    return { donde: commit, abierto: (id) => abiertos.has(id), registro: unirRegistro(en(RECORD), nombres.map(en)) };
-  };
-  const puntos = [leer(head)];
-  if (ancestro && ancestro !== head) puntos.push(leer(ancestro));
-  return puntos;
+    const rutas = [TODO, RECORD, ...nombres];
+    for (const r of rutas) pedidos.push(`${commit}:${r}`);
+    return rutas;
+  });
+  const textos = leerEnLote(repo, pedidos);
+  let k = 0;
+  return commits.map((commit, i) => {
+    const [todo, viejo, ...archivos] = porCommit[i].map(() => textos[k++]);
+    const abiertos = new Set(pendientesAbiertos(todo || '').map((x) => x.codigo).filter(Boolean));
+    return { donde: commit, abierto: (id) => abiertos.has(id), registro: unirRegistro(viejo, archivos) };
+  });
+}
+
+/**
+ * El texto de cada `<commit>:<ruta>` de `pedidos`, en orden, con un solo `git cat-file --batch`; null el que no está.
+ * Lanza si git falla o su salida no se entiende: no leer no es «no está».
+ */
+function leerEnLote(repo, pedidos) {
+  if (!pedidos.length) return [];
+  const { execFileSync } = require('child_process');
+  const out = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], { windowsHide: true, input: `${pedidos.join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 });
+  const textos = [];
+  let pos = 0;
+  for (const p of pedidos) {
+    const fin = out.indexOf(10, pos);
+    if (fin < 0) throw new Error(`git cat-file cortó la salida en ${p}`);
+    const cabeza = out.slice(pos, fin).toString('utf8');
+    pos = fin + 1;
+    if (/ missing$/.test(cabeza)) { textos.push(null); continue; }
+    const m = /^[0-9a-f]{40,64} (\w+) (\d+)$/.exec(cabeza);
+    if (!m) throw new Error(`git cat-file no se entiende en ${p}: ${cabeza.slice(0, 80)}`);
+    const tam = Number(m[2]);
+    textos.push(m[1] === 'blob' ? out.slice(pos, pos + tam).toString('utf8') : null);
+    pos += tam + 1;
+  }
+  return textos;
 }
 
 /**
@@ -328,5 +361,5 @@ function comandos(id, repo) {
 
 module.exports = {
   TODO, RECORD, RECORD_DIR, FIRMA, FIRMADA, VIAS, viaDeLaFirma, archivoDe, esArchivoDeLaCarpeta, unirRegistro, registroDelDisco, claveSinCodigo, pendientesAbiertos, leerRegistro, huella, lineaNueva, motivoDe,
-  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos, claveDeLinea, puntosDeComparacion, aprobacionVigente,
+  revisar, revisarNuevas, renglonesDeFirma, firmadaEnElRegistro, registroDelNacimiento, comandos, claveDeLinea, puntosDeComparacion, leerEnLote, aprobacionVigente,
 };

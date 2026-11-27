@@ -743,10 +743,12 @@ function cmdApprovePending(argv) {
   // una aprobación que ya está vale para el commit que se arma si, en el último commit y en el ancestro común con la rama
   // principal (lo que mira la validación del pedido), el pendiente ya estaba abierto o esa aprobación no estaba: un
   // pendiente cerrado que se reabre, aunque la rama ya lo haya commiteado abierto, pide una aprobación nueva, y la vieja
-  // no la reemplaza. Sin poder leer git, como antes: cualquier aprobación del código
-  let puntos = [];
-  try { puntos = PA.puntosDeComparacion(repo); } catch (_) { puntos = []; }
-  const vigente = PA.aprobacionVigente({ id, registro, puntos });
+  // no la reemplaza. Si git no se puede leer, ninguna aprobación del registro se da por buena: se pide la firma, que a
+  // lo sumo escribe una aprobación de más
+  let vigente = false;
+  try { vigente = PA.aprobacionVigente({ id, registro, puntos: PA.puntosDeComparacion(repo) }); } catch (e) {
+    console.error(`marker.js approve-pending: no pude leer los commits contra los que se va a revisar (${(e && e.message) || e}): pido la firma igual.`);
+  }
   if (vigente) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
   try { maquina = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
