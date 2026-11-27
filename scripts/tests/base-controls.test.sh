@@ -1764,26 +1764,53 @@ for p in ${INSTALADOS}; do
 done
 
 # T115c · lo que cargan las dos bibliotecas del click del dueño (owner-approvals.js y owner-window.js) para decidirlo
-# —dónde se anotan los clicks, quién cuenta como dueño, de qué máquina, qué zona es un archivo, qué versión de Claude
-# Code, cómo se firma, qué exenciones son críticas, cómo se lee el comando y el bash de Windows— pide la constancia en
-# cada cambio, como las dos bibliotecas. Ninguna pasada de la revisión prueba el click: un pedido que amplía quién es
-# dueño pasa las dos en verde. También el mapa de nombres viejos que la copia instalada del freno consulta (sólo el repo
-# del equipo lo trae: `optional`). Todo lo que cargan las dos son ~250 archivos; firmar cada uno no se sostiene, así que
-# la lista es la de los que deciden el click (revisión de la fila 283, S1 y S2).
-# 🔴 mutación: sin la marca, un cambio en approver.js que amplía quién es dueño entra sin constancia
-DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/lib/approver.js scripts/lib/machine-id.js scripts/lib/file-zones.js scripts/lib/claude-versions.js scripts/lib/harness-sign.js skills/tycon-pipeline/scripts/lib/critical-waivers.js skills/tycon-pipeline/scripts/lib/marker-command.js scripts/lib/git-bash.js scripts/lib/renames.json"
+# —dónde se anotan los clicks y dónde vive el estado, el rótulo de quien firma, de qué máquina, qué zona es un archivo,
+# qué versión de Claude Code, cómo se firma, qué exenciones son críticas, cómo se lee el comando, el bash de Windows, si
+# el permiso de autonomía vale y cómo se arma la pregunta de la ventana— pide la constancia en cada cambio, como las dos
+# bibliotecas. Ninguna pasada de la revisión prueba el click: un pedido que afloja cómo se anota un click pasa las dos en
+# verde. También el mapa de nombres viejos que la copia instalada del freno consulta (sólo el repo del equipo lo trae:
+# `optional`). Todo lo que cargan las dos, con lo que cargan ellas, son ~250 archivos; firmar cada uno no se sostiene,
+# así que la lista es la de los que deciden el click (revisión de la fila 283, S1 y S2, y la de Fable del 27/11).
+# 🔴 mutación: sin la marca, un cambio en state-dir.js que muda dónde se anotan los clicks entra sin constancia
+DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/setup/harness/tycon-home.js scripts/lib/approver.js scripts/lib/machine-id.js scripts/lib/file-zones.js scripts/lib/claude-versions.js scripts/lib/harness-sign.js skills/tycon-pipeline/scripts/lib/critical-waivers.js skills/tycon-pipeline/scripts/lib/marker-command.js scripts/lib/git-bash.js skills/tycon-pipeline/scripts/lib/autonomy-decision.js scripts/lib/hook-ask.js scripts/lib/renames.json"
+# Cada carga directa de las dos bibliotecas tiene que estar marcada o en esta lista: una carga nueva da rojo hasta que
+# alguien decide si firma. SIN_MARCA_A_DECIDIR: deciden algo del click y quedan sin marca por su costo en firmas (unos 76
+# cambios por mes entre las seis), decisión del dueño pendiente (revisión de Fable del 27/11, H2). SIN_MARCA: lo demás
+# (avisos, la oficina, la lista de ejecuciones, el portón de la historia, cómo se muestra una exención).
+SIN_MARCA_A_DECIDIR="scripts/lib/delegation-routing.js scripts/lib/ci-bypass.js scripts/lib/external-pr.js scripts/lib/signature-list.js scripts/hooks/background-question-guard.js"
+SIN_MARCA="scripts/lib/notify.js scripts/lib/office-event.js scripts/lib/signature-log.js scripts/lib/signature-sources.js skills/tycon-pipeline/scripts/lib/adhoc-list.js skills/tycon-pipeline/scripts/lib/open-runs.js skills/tycon-pipeline/scripts/lib/run-close.js skills/tycon-pipeline/scripts/lib/story-gate-io.js skills/tycon-pipeline/scripts/lib/story-gate.js skills/tycon-pipeline/scripts/lib/waiver-display.js"
+CARGAS="$(node -e '
+const fs=require("fs"),path=require("path");const raiz=process.argv[1];const out=new Set();
+for(const lib of ["scripts/lib/owner-approvals.js","scripts/lib/owner-window.js"]){
+  const t=fs.readFileSync(path.join(raiz,lib),"utf8").split("\n").filter((l)=>!/^\s*(\/\/|\*)/.test(l)).join("\n");
+  for(const m of t.matchAll(/require\(\s*[\x27"](\.{1,2}\/[^\x27"]+)[\x27"]\s*\)/g))out.add(path.posix.normalize(path.posix.join(path.posix.dirname(lib),m[1])));
+  for(const m of t.matchAll(/require\(path\.join\((LIB|__dirname)\s*,\s*((?:\x27[^\x27]+\x27\s*,?\s*)+)\)/g)){
+    const partes=[...m[2].matchAll(/\x27([^\x27]+)\x27/g)].map((x)=>x[1]);
+    out.add(path.posix.normalize(path.posix.join(m[1]==="LIB"?"skills/tycon-pipeline/scripts/lib":path.posix.dirname(lib),...partes)));}}
+console.log([...out].sort().join("\n"))' "${ROOT}")"
+CUANTAS_C="$(printf '%s\n' ${CARGAS} | grep -c .)"
+[ "${CUANTAS_C}" -ge 30 ] && ok "T115c se leyeron las cargas de las dos bibliotecas (${CUANTAS_C})" \
+  || no "T115c leí ${CUANTAS_C} cargas de las dos bibliotecas: ¿cambió la forma de sus require?"
+SIN_DECIDIR=0
+for p in ${CARGAS}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.controls.some(c=>(c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true))?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  if [ "${MARKED}" = si ] || printf '%s\n' ${SIN_MARCA_A_DECIDIR} ${SIN_MARCA} | grep -xF "${p}" >/dev/null; then :
+  else SIN_DECIDIR=$((SIN_DECIDIR + 1)); no "T115c ${p} lo carga una biblioteca del click y nadie decidió si firma: marcalo con «sign_on_change» o sumalo a SIN_MARCA con su motivo"; fi
+done
+[ "${SIN_DECIDIR}" = 0 ] && ok "T115c cada carga de las dos bibliotecas está marcada o declarada sin marca"
 for p in ${DECIDEN_CLICK}; do
   MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.controls.some(c=>(c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true))?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
   is "T115c el inventario real marca ${p} (decide el click del dueño) con «sign_on_change»" "si" "${MARKED}"
   case "${p}" in *.json) ;; *) [ -f "${ROOT}/${p}" ] && ok "T115c …y ${p} existe" || no "T115c ${p} no existe: la marca no protege nada" ;; esac
 done
-# la lista no se queda vieja sin que se note: cada biblioteca la carga todavía alguna de las dos
+# la lista no se queda vieja sin que se note: cada biblioteca la carga todavía alguna de las dos (dónde vive el estado,
+# a través de state-dir.js)
 for p in ${DECIDEN_CLICK}; do
   case "${p}" in *.json) continue ;; esac
-  b="$(basename "${p}")"
-  if grep -qE "require\(.*'(\./)?${b}'" "${ROOT}/scripts/lib/owner-approvals.js" "${ROOT}/scripts/lib/owner-window.js"; then
-    ok "T115c ${b} lo carga una biblioteca del click"
-  else no "T115c ${b} ya no lo carga owner-approvals.js ni owner-window.js: sacalo de la lista o mirá quién decide ahora"; fi
+  if printf '%s\n' ${CARGAS} | grep -xF "${p}" >/dev/null \
+     || { [ "${p}" = scripts/setup/harness/tycon-home.js ] && grep -q "'setup', 'harness', 'tycon-home.js'" "${ROOT}/skills/tycon-pipeline/scripts/lib/state-dir.js"; }; then
+    ok "T115c ${p} lo carga una biblioteca del click"
+  else no "T115c ${p} ya no lo carga owner-approvals.js ni owner-window.js: sacalo de la lista o mirá quién decide ahora"; fi
 done
 
 # T116 · las claves que vale sólo el perfil del equipo viven en un archivo chico que firma siempre, y la configuración
