@@ -464,11 +464,24 @@ they have no permission.
 
 **At the top, the week.** The 7 newest days, against the 7 before. Four cards: the hours per day with the harness
 working, team average per measured day; the week's tokens without cache; the days not measured (machine × day); and the
-estimated cost, which says "no model data" while each day's file does not carry the model. Below, one row per person:
-it groups each person's machines through `people.machines`, and a machine without a person shows its own name. It
-gives the hours per measured day, the week total, how many of the 7 days were measured and the tokens without cache. A
-person with no measured day says "not measured", not zero. Hidden machines and those that never uploaded hours (old
-names, CI machines) are left out: the page says how many.
+estimated cost of the week. Below, one row per person: it groups each person's machines through `people.machines`, and
+a machine without a person shows its own name. It gives the hours per measured day, the week total, how many of the 7
+days were measured, the tokens without cache and the estimated cost. A person with no measured day says "not
+measured", not zero. Hidden machines and those that never uploaded hours (old names, CI machines) are left out: the page
+says how many.
+
+**The cost is an estimate.** It multiplies each model's tokens by its price, in dollars per million: read (input
+without cache), write (output) and cache read. The prices live in `operations.json`, under `site.prices`, with the page
+each one came from and the day it was taken; they change through a pull request to the operations repo. Nothing counts
+as zero without knowing it:
+
+- A day uploaded by an older harness does not carry tokens per model: it says "no model data".
+- A model missing from `site.prices` says "no price for <model>".
+- If part of the week has a cost and part does not, the page shows the cost of what could be counted and, below it,
+  what was not counted.
+
+The read tokens of a Claude model include cache writes, which cost more than input: the cost comes out somewhat below
+the real one.
 
 **The last 6 weeks.** Two bar charts, one per measure: the hours with the harness working per person, stacked by week,
 and the tokens without cache per week. A week not measured stays empty and says "not measured", never zero. Hovering

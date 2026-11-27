@@ -119,11 +119,11 @@ test('T13 Dia_Cerrado_ArmaElArchivo @story-8.209 @ac-7', () => {
   const d = dayFile(w, '2026-11-09');
   assert.ok(d, 'el día de ayer');
   assert.deepStrictEqual(Object.keys(d).sort(), AC7_KEYS);
-  assert.strictEqual(d.v, 1);
+  assert.strictEqual(d.v, 2);
   assert.strictEqual(d.dia, '2026-11-09');
   assert.strictEqual(d.tz, '-03:00');
   assert.deepStrictEqual(d.horas, { arnes_segundos: 3600, sesion_segundos: 3600, sesiones: 1, medido: true });
-  assert.deepStrictEqual(d.tokens, { lectura: 100, escritura: 20, cache: 1000, medido: true });
+  assert.deepStrictEqual(d.tokens, { lectura: 100, escritura: 20, cache: 1000, medido: true, por_modelo: { 'claude-opus-5-5': { lectura: 100, escritura: 20, cache: 1000 } } });
 });
 
 test('T14 Dia_Subida_AlBuzon @story-8.209 @ac-7', async () => {
@@ -218,7 +218,7 @@ test('T20 Tokens_SoloArchivosDelDia @story-8.209 @ac-10', () => {
   claudeConv(w, 'c20', [['2026-11-09 10:00', 10, 1, 1]], { mtime: at('2026-11-07 10:00') });
   prepare(w, at('2026-11-10 09:00'));
   const d = dayFile(w, '2026-11-09');
-  assert.deepStrictEqual(d.tokens, { lectura: 0, escritura: 0, cache: 0, medido: true }, 'la conversación sin tocar desde antes del día no se abrió');
+  assert.deepStrictEqual(d.tokens, { lectura: 0, escritura: 0, cache: 0, medido: true, por_modelo: {} }, 'la conversación sin tocar desde antes del día no se abrió');
 });
 
 test('T21 Dia_ParteIlegible_NoMedidoConMotivo @story-8.209 @ac-11', () => {
@@ -282,7 +282,7 @@ test('T22 Dia_SinTrabajo_CeroMedido @story-8.209 @ac-11', () => {
   prepare(w, at('2026-11-10 09:00'));
   const d = dayFile(w, '2026-11-09');
   assert.deepStrictEqual(d.horas, { arnes_segundos: 0, sesion_segundos: 0, sesiones: 0, medido: true });
-  assert.deepStrictEqual(d.tokens, { lectura: 0, escritura: 0, cache: 0, medido: true });
+  assert.deepStrictEqual(d.tokens, { lectura: 0, escritura: 0, cache: 0, medido: true, por_modelo: {} });
 });
 
 test('T23 Dia_Apagado_NoSube @story-8.209 @ac-12', async () => {
@@ -311,7 +311,8 @@ test('T24 Dia_SoloLosCampos_SinIdsNiRutas @story-8.209 @ac-13 @ac-14', () => {
   const d = JSON.parse(text);
   assert.deepStrictEqual(Object.keys(d).sort(), AC7_KEYS);
   assert.deepStrictEqual(Object.keys(d.horas).sort(), ['arnes_segundos', 'medido', 'sesion_segundos', 'sesiones']);
-  assert.deepStrictEqual(Object.keys(d.tokens).sort(), ['cache', 'escritura', 'lectura', 'medido']);
+  assert.deepStrictEqual(Object.keys(d.tokens).sort(), ['cache', 'escritura', 'lectura', 'medido', 'por_modelo']);
+  assert.deepStrictEqual(Object.keys(d.tokens.por_modelo), ['claude-opus-5-5'], 'el reparto sólo trae el nombre del modelo');
   for (const bad of ['sesion-secreta', 'conv-secreta', 'proyecto-de-juguete', w.home]) assert.ok(!text.includes(bad), bad);
   assert.ok(!fs.existsSync(path.join(workedDir(w), `${old}.jsonl`)), 'los de hace más de 60 días se borran');
   assert.ok(!fs.existsSync(path.join(workedDir(w), `${old}.abierto`)));
@@ -386,7 +387,7 @@ test('T45 Tokens_AgentesDeWorkflow_Cuentan @story-8.209 @ac-9', () => {
   claudeConv(w, 'c45', [['2026-11-09 09:10', 1000, 100, 0]], { mtime: at('2026-11-09 09:10'), agent: 'agent-suelto' });
   claudeConv(w, 'c45', [['2026-11-09 09:20', 50000, 5000, 0]], { mtime: at('2026-11-09 09:20'), agent: 'workflows/wf_1/agent-w' });
   prepare(w, at('2026-11-10 09:00'));
-  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens, { lectura: 51100, escritura: 5110, cache: 0, medido: true });
+  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens, { lectura: 51100, escritura: 5110, cache: 0, medido: true, por_modelo: { 'claude-opus-5-5': { lectura: 51100, escritura: 5110, cache: 0 } } });
 });
 
 test('T46 Armado_RenglonDelGanchoMientrasLee_SeRearma @story-8.209 @ac-12', () => {
@@ -417,4 +418,123 @@ test('T47 Tokens_RenglonRotoAntesDeLaHora_SeCuenta @story-8.209 @ac-11', () => {
   fs.utimesSync(f, new Date(at('2026-11-09 10:00')), new Date(at('2026-11-09 10:00')));
   prepare(w, at('2026-11-10 09:00'));
   assert.strictEqual(dayFile(w, '2026-11-09').tokens.ilegibles, 1);
+});
+
+// ── O-horas, parte 3: los tokens por modelo (el día pasa a la versión 2) ─────────────────────────────────────────────
+
+// una conversación de Claude con el modelo de cada respuesta
+function claudeConvModelos(w, sid, msgs, { mtime, agent = null } = {}) {
+  const dir = path.join(w.home, '.claude', 'projects', '-proyecto-de-juguete');
+  const file = agent ? path.join(dir, sid, 'subagents', `${agent}.jsonl`) : path.join(dir, `${sid}.jsonl`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const lines = msgs.map(([local, model, input, output, cacheRead, cacheWrite], i) => JSON.stringify({
+    type: 'assistant', timestamp: iso(local), uuid: `${sid}-${agent || 'm'}-${i}`, ...(agent ? { isSidechain: true } : {}),
+    message: { id: `msg-${sid}-${agent || 'm'}-${i}`, ...(model ? { model } : {}), usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheWrite || 0 } },
+  }));
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  if (mtime) fs.utimesSync(file, new Date(mtime), new Date(mtime));
+}
+// una conversación de Codex con el modelo de cada turno: renglones ['turno', hora, modelo] y ['conteo', hora, entrada, caché, salida]
+function codexConvModelos(w, sid, rows, { mtime, startDay = '2026/11/08' } = {}) {
+  const dir = path.join(w.home, '.codex', 'sessions', ...startDay.split('/'));
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `rollout-2026-11-08T08-00-00-${sid}.jsonl`);
+  const lines = rows.map((r) => (r[0] === 'turno'
+    ? JSON.stringify({ timestamp: iso(r[1]), type: 'turn_context', payload: { turn_id: 't', model: r[2], cwd: '/x' } })
+    : JSON.stringify({ timestamp: iso(r[1]), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: r[2], cached_input_tokens: r[3], output_tokens: r[4] } } } })));
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  if (mtime) fs.utimesSync(file, new Date(mtime), new Date(mtime));
+}
+const sumaModelos = (pm) => Object.values(pm).reduce((a, m) => ({ lectura: a.lectura + m.lectura, escritura: a.escritura + m.escritura, cache: a.cache + m.cache }), { lectura: 0, escritura: 0, cache: 0 });
+
+test('OH6 Tokens_PorModelo_Claude — cada respuesta suma a su modelo, los agentes también, y el reparto da los totales', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  claudeConvModelos(w, 'c6', [
+    ['2026-11-09 09:00', 'claude-opus-5-5', 100, 10, 1000, 50],
+    ['2026-11-09 09:30', 'claude-sonnet-5-5', 20, 5, 200, 0],
+    ['2026-11-09 10:00', 'claude-opus-5-5', 1, 1, 1, 0],
+    // sin modelo: va aparte, nunca a un modelo inventado
+    ['2026-11-09 10:30', null, 7, 7, 7, 0],
+  ], { mtime: at('2026-11-09 11:00') });
+  claudeConvModelos(w, 'c6', [['2026-11-09 10:15', 'claude-haiku-5-5', 3, 2, 30, 0]], { mtime: at('2026-11-09 11:00'), agent: 'agent-h' });
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  assert.strictEqual(d.v, 2);
+  assert.deepStrictEqual(d.tokens.por_modelo, {
+    'claude-opus-5-5': { lectura: 151, escritura: 11, cache: 1001 },
+    'claude-sonnet-5-5': { lectura: 20, escritura: 5, cache: 200 },
+    'claude-haiku-5-5': { lectura: 3, escritura: 2, cache: 30 },
+    sin_modelo: { lectura: 7, escritura: 7, cache: 7 },
+  });
+  const { lectura, escritura, cache } = d.tokens;
+  assert.deepStrictEqual(sumaModelos(d.tokens.por_modelo), { lectura, escritura, cache }, 'el reparto suma lo mismo que los totales');
+});
+
+test('OH7 Tokens_PorModelo_Codex_SigueLaResta — el modelo sale del turno, y el reparto sigue la resta contra el total guardado', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const key = 'rollout-2026-11-08T08-00-00-x7.jsonl';
+  fs.writeFileSync(path.join(workedDir(w), 'codex-totals.json'), JSON.stringify({ '2026-11-08': { [key]: { input_tokens: 100, cached_input_tokens: 50, output_tokens: 10 } } }));
+  codexConvModelos(w, 'x7', [
+    ['turno', '2026-11-08 19:00', 'gpt-5.6-terra'],
+    ['conteo', '2026-11-08 20:00', 100, 50, 10],
+    // el 9: primero sigue terra (lo que pasó entre el total guardado y el primer conteo es de terra), después cambia a sol
+    ['conteo', '2026-11-09 10:00', 300, 150, 40],
+    ['turno', '2026-11-09 11:00', 'gpt-6.1-sol'],
+    ['conteo', '2026-11-09 12:00', 400, 200, 60],
+  ], { mtime: at('2026-11-09 12:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  assert.deepStrictEqual([d.tokens.lectura, d.tokens.cache, d.tokens.escritura], [150, 150, 50], 'los totales de siempre');
+  assert.deepStrictEqual(d.tokens.por_modelo, {
+    'gpt-5.6-terra': { lectura: 100, escritura: 30, cache: 100 },
+    'gpt-6.1-sol': { lectura: 50, escritura: 20, cache: 50 },
+  });
+});
+
+test('OH8 Rearmado_DiaArmadoAntes_SinReparto — un día armado sin reparto se rearma en la versión 2 sin inventarlo', async () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  span(w, '2026-11-09', 's1', '2026-11-09 09:00', '2026-11-09 10:00');
+  const viejo = { lectura: 100, escritura: 20, cache: 1000, medido: true };
+  const contenido = `${JSON.stringify({ v: 1, dia: '2026-11-09', tz: '-03:00', horas: { arnes_segundos: 3600, sesion_segundos: 3600, sesiones: 1, medido: true }, tokens: viejo })}\n`;
+  // armado después de los tramos de ese día, como lo dejó la pasada de antes de la versión 2
+  fs.writeFileSync(path.join(workedDir(w), 'armados.json'), JSON.stringify({ '2026-11-09': { armadoAt: Date.now() + 5, tokens: viejo, contenido } }));
+  await new Promise((r) => setTimeout(r, 10));
+  // sin renglón tardío: el día se reusa como estaba, en la versión 1
+  prepare(w, at('2026-11-10 09:00'));
+  assert.strictEqual(dayFile(w, '2026-11-09').v, 1, 'sin cambios no se rearma');
+  // un renglón tardío: se rearma con los mismos tokens, en la versión 2 y sin reparto
+  await new Promise((r) => setTimeout(r, 30));
+  span(w, '2026-11-09', 's2', '2026-11-09 11:00', '2026-11-09 11:30');
+  prepare(w, at('2026-11-10 09:05'));
+  const d = dayFile(w, '2026-11-09');
+  assert.strictEqual(d.v, 2);
+  assert.deepStrictEqual(d.tokens, viejo, 'sin por_modelo: el sitio dice «sin dato de modelo»');
+});
+
+test('OH12 Tokens_PorModelo_CodexTotalQueBaja — si un total baja, el reparto que no cierra va a sin_modelo y suma lo mismo que el total', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const key = 'rollout-2026-11-08T08-00-00-x12.jsonl';
+  fs.writeFileSync(path.join(workedDir(w), 'codex-totals.json'), JSON.stringify({ '2026-11-08': { [key]: { input_tokens: 1000, cached_input_tokens: 500, output_tokens: 100 } } }));
+  codexConvModelos(w, 'x12', [['turno', '2026-11-09 09:00', 'gpt-5.6-terra'], ['conteo', '2026-11-09 10:00', 100, 50, 10], ['conteo', '2026-11-09 12:00', 400, 200, 40]], { mtime: at('2026-11-09 12:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  const { lectura, escritura, cache } = d.tokens;
+  assert.deepStrictEqual(sumaModelos(d.tokens.por_modelo), { lectura, escritura, cache }, 'el reparto nunca dice más que el total');
+});
+
+test('OH13 Tokens_NombreDeModeloRaro_VaASinModelo — un nombre con espacio, «/» o demasiado largo no sube: va a sin_modelo', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  claudeConvModelos(w, 'c13', [
+    ['2026-11-09 09:00', 'modelo con espacio', 1, 1, 1, 0],
+    ['2026-11-09 09:10', 'Users/ana/modelos/local.gguf', 2, 2, 2, 0],
+    ['2026-11-09 09:20', `m${'x'.repeat(120)}`, 3, 3, 3, 0],
+    ['2026-11-09 09:30', 'kimi-k2.7-code:cloud', 4, 4, 4, 0],
+  ], { mtime: at('2026-11-09 10:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens.por_modelo, { sin_modelo: { lectura: 6, escritura: 6, cache: 6 }, 'kimi-k2.7-code:cloud': { lectura: 4, escritura: 4, cache: 4 } });
 });

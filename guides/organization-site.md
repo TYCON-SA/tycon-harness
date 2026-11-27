@@ -464,11 +464,23 @@ contesta que no tiene permiso.
 
 **Arriba, la semana.** Los 7 días más nuevos, contra los 7 de antes. Cuatro fichas: las horas por día con el arnés
 trabajando, promedio del equipo por día medido; los tokens de la semana sin caché; los días sin medir (máquina × día); y
-el costo estimado, que dice «sin dato de modelo» mientras el archivo de cada día no traiga el modelo. Debajo, una fila
-por persona: junta las máquinas de cada una según `people.machines`, y una máquina sin persona sale con su nombre. Dice
-las horas por día medido, el total de la semana, cuántos días de los 7 se midieron y los tokens sin caché. Una persona
-sin ningún día medido dice «no medido», no cero. No salen las máquinas ocultas ni las que nunca subieron horas (nombres
-viejos, máquinas de CI): la página dice cuántas quedaron afuera.
+el costo estimado de la semana. Debajo, una fila por persona: junta las máquinas de cada una según `people.machines`, y
+una máquina sin persona sale con su nombre. Dice las horas por día medido, el total de la semana, cuántos días de los 7
+se midieron, los tokens sin caché y el costo estimado. Una persona sin ningún día medido dice «no medido», no cero. No
+salen las máquinas ocultas ni las que nunca subieron horas (nombres viejos, máquinas de CI): la página dice cuántas
+quedaron afuera.
+
+**El costo es una estimación.** Multiplica los tokens de cada modelo por su precio, en dólares por millón: la lectura
+(la entrada sin caché), la escritura (la salida) y la lectura de caché. Los precios van en `operations.json`, en
+`site.prices`, con la página de donde salió cada uno y el día en que se tomó; se cambian con un pedido al repo de
+operaciones. Nada se cuenta como cero sin saberlo:
+
+- Un día subido por un arnés anterior no trae los tokens por modelo: dice «sin dato de modelo».
+- Un modelo que no está en `site.prices` dice «sin precio para <modelo>».
+- Si parte de la semana tiene costo y parte no, sale el costo de lo que se pudo contar y, debajo, lo que no se contó.
+
+La lectura de un modelo de Claude incluye la escritura de caché, que cuesta más que la entrada: el costo queda algo por
+debajo del real.
 
 **Las últimas 6 semanas.** Dos gráficos de barras, uno por medida: las horas con el arnés trabajando por persona,
 apiladas por semana, y los tokens sin caché por semana. Una semana sin medir queda vacía y dice «sin medir», nunca cero.
