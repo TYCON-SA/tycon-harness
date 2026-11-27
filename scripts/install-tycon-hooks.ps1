@@ -573,7 +573,7 @@ function Write-PieceReport {
 
 # ── El lugar del arnés: tycon-harness en la carpeta de Claude Code, y el nombre viejo (espejo del .sh) ──
 # Los revisores, pasos y skills nombran al arnés por este lugar. La regla de nacimiento vive en canonical-path.js (el
-# lugar nace hacia donde apunta el nombre viejo o el estado, no hacia el clon que corre; el viejo se re-apunta al lugar). En Windows se crea un JUNCTION
+# lugar nace hacia donde apunta el nombre viejo o el estado, no hacia el clon que corre; el viejo se retira si es un enlace al lugar). En Windows se crea un JUNCTION
 # (fs.symlinkSync(..., 'junction') dentro de canonical-path.js): un symlink de directorio pide modo
 # desarrollador o admin, el junction no. Lo crea si falta, lo repara si está colgado, NO mueve uno que
 # apunte a otro clon válido (sólo -Link <ruta> lo re-apunta) y no pisa una carpeta real. Respeta -Check.

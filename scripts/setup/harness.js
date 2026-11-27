@@ -3763,30 +3763,49 @@ function placeFacts(ctx, tree, { count = true } = {}) {
       } catch (e) { registered = { problem: e && e.message ? e.message : String(e) }; }
     }
   }
-  return { place, legacy, registered };
+  // el retiro del nombre viejo lo anota canonical-path.js en la carpeta del estado (legacy-place-retired.json)
+  let retired = null;
+  if (!lk) {
+    try {
+      const r = JSON.parse(fs.readFileSync(path.join(mod('tycon-home').stateDir(ctx.home), 'legacy-place-retired.json'), 'utf8'));
+      if (r && typeof r.at === 'string') retired = { at: r.at, permissions: Number(r.permissions) || 0 };
+    } catch (_) { retired = null; }
+  }
+  return { place, legacy, registered, retired };
 }
 /** Las líneas de doctor sobre el lugar. El conflicto y «ningún nombre resuelve» (rojo) los dice el bloque del enlace. */
 function placeItems(ctx, f, add) {
   if (f.place.path && f.place.target) {
     add('ok', `arnés en ${tildePath(ctx, f.place.path)}${f.place.kind === 'folder' ? ' (carpeta: tu clon)' : ''} → ${f.place.target}${f.place.name === PLACE.LEGACY_PLACE_NAME ? ' (por el nombre viejo: el lugar todavía no existe; harness.js install lo crea)' : ''}`);
   }
+  legacyItems(ctx, f, add);
+}
+/**
+ * Las líneas del nombre viejo y lo registrado por él. El viejo ya no se repara: la regla
+ * del lugar retira un enlace que lleva al lugar si lo registrado con él son sólo permisos; lo demás queda y se dice acá.
+ */
+function legacyItems(ctx, f, add) {
   const L = f.legacy;
+  const R = f.registered;
+  const onlyPermissions = Boolean(R && !R.problem && !(R.notes || []).length && R.files.every((x) => x.count === x.permissions));
   if (L) {
     const name = tildePath(ctx, L.path);
-    if (L.kind === 'dangling') add('warn', `el nombre viejo ${name} está colgado: harness.js install lo repara (o borralo si nada lo usa)`);
+    if (L.kind === 'dangling') add('warn', `el nombre viejo ${name} está colgado: ya no se repara (se retira); borralo si nada lo usa`);
     else if (L.kind === 'file') add('ok', `el nombre viejo ${name} es un archivo: no lo toco; los lectores usan el lugar`);
     else if (!L.clone) add('ok', `el nombre viejo ${name} es ${L.kind === 'link' ? `un enlace a ${L.target}` : 'una carpeta'}, que no es un clon del arnés: no lo toco; los lectores usan el lugar`);
-    else if (L.to_place) add('ok', `el nombre viejo ${name} sigue andando y apunta al lugar`);
+    else if (L.to_place) add('ok', `el nombre viejo ${name} sigue andando y apunta al lugar${onlyPermissions ? ' — se retira solo la próxima vez que se instale o llegue una versión' : ' — queda mientras algo registrado lo use'}`);
     else if (L.kind === 'folder') add('ok', `el nombre viejo ${name} es una carpeta real (tu clon): no la toco`);
     else add('ok', `el nombre viejo ${name} sigue andando (apunta directo a ${L.target})`);
+  } else if (f.retired) {
+    add('ok', `el nombre viejo ${tildePath(ctx, PLACE.legacyPlacePath(ctx.home))} se retiró (${f.retired.at.slice(0, 10)}${f.retired.permissions ? `; ${f.retired.permissions} permiso(s) quedaron con el lugar` : ''})`);
   }
-  const R = f.registered;
   if (!R) return;
   if (R.problem) { add('warn', `lo registrado por el nombre viejo: no pude contarlo (${R.problem})`); return; }
   for (const n of R.notes || []) add('warn', `lo registrado por el nombre viejo: ${n}`);
   if (!R.total) return;
   const list = R.files.map((x) => `${x.file} ${x.count}${x.permissions ? ` (${x.permissions === x.count ? 'permisos' : `${x.permissions} en permisos`})` : ''}`).join(' · ');
-  if (R.files.every((x) => x.count === x.permissions)) add('ok', `registrado por el nombre viejo, sólo permisos: ${list} — quedan con las dos formas a propósito; los saca el retiro del nombre viejo`);
+  if (R.files.every((x) => x.count === x.permissions) && !L) add('ok', `registrado por el nombre viejo, sólo permisos: ${list} — el nombre ya no está: no valen para nada; podés sacarlos de settings.json`);
+  else if (R.files.every((x) => x.count === x.permissions)) add('ok', `registrado por el nombre viejo, sólo permisos: ${list} — quedan con las dos formas a propósito; los saca el retiro del nombre viejo`);
   else if (L && L.kind === 'folder' && L.clone) add('ok', `registrado por el nombre viejo, que es tu clon: ${list} — es lo registrado por tu clon; no hay nada que mudar`);
   else if (!L || L.kind === 'dangling') add('warn', `registrado por un nombre que ya no resuelve (${tildePath(ctx, PLACE.legacyPlacePath(ctx.home))}): ${list} — eso está roto; harness.js relocate lo muda al lugar (--check dice qué cambiaría)`);
   else add('ok', `registrado por el nombre viejo: ${list} — sigue andando (el viejo resuelve); se muda a mano con harness.js relocate (--check dice qué cambiaría)`);
@@ -4072,6 +4091,8 @@ function cmdDoctor(ctx) {
       else add(level, `última actualización fallida: ${f.commit || '—'} (${f.reason || 'salud'}, ${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — no se reintenta sola hasta que cambie la punta; reintentar ya: ${applyHint}`);
     }
     add('ok', `versión ${state.version.number} (bajada) · instalada ${state.version && state.version.installed_at ? state.version.installed_at : '—'}`);
+    // el nombre viejo del lugar también en una máquina mudada: si quedó (y por qué) o si se retiró
+    if (withClaude) legacyItems(ctx, placeFacts(ctx, tree), add);
     // sin Claude Code no hay enlace en su carpeta: el lugar del arnés es su árbol
     facts = { place: { path: withClaude ? linkPath(ctx.home) : tree, dir: tree, kind: 'release' } };
     return out('managed (versión bajada)', items.some((i) => i.level === 'fail') ? 1 : 0);

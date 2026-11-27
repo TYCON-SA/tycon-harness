@@ -1287,6 +1287,60 @@ function rerootPermissions(data, rule) {
   }
   return added;
 }
+/**
+ * El retiro del nombre viejo: en `permissions` de los settings de Claude Code, cada cadena que
+ * nombra `<de>` deja de nombrarlo. Si su forma con `<a>` ya está en la misma lista, la vieja se va; si no, la vieja pasa
+ * a ser la nueva (el permiso sigue valiendo). Sólo `permissions`: lo demás (hooks, Codex, git, LaunchAgents) es un uso y
+ * quien llama no retira si lo hay (`countRegistered`). Respalda cada archivo antes de escribirlo
+ * (`<archivo>.bak-retire-<sello>`) y lo escribe de una vez. Un archivo que no se lee, no parsea o no se respalda no se
+ * toca y va a `notes`: quien llama no retira el nombre si hay notas.
+ * Devuelve { removed, replaced, files: [{ label, removed, replaced }], notes }.
+ */
+function retirePermissions(opts = {}) {
+  const home = opts.home || os.homedir();
+  const env = opts.env || process.env;
+  const platform = opts.platform || process.platform;
+  const rule = rerootRule({ from: expandTilde(opts.from, home), to: expandTilde(opts.to, home), home, platform });
+  const res = { removed: 0, replaced: 0, files: [], notes: [] };
+  if (!rule.re) return res;
+  const why = (e) => (e && e.code) || (e && e.message) || e;
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '');
+  for (const entry of rerootFiles({ home, env, tree: opts.tree || null }).filter((x) => x.type === 'claude')) {
+    let text;
+    try { text = fs.readFileSync(entry.file, 'utf8'); } catch (e) {
+      if (!NO_EXISTE.has(e && e.code)) res.notes.push(`${entry.label}: no se pudo leer (${why(e)})`);
+      continue;
+    }
+    let data;
+    try { data = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { res.notes.push(`${entry.label}: no parsea (${e.message})`); continue; }
+    const perms = data && data.permissions;
+    if (!perms || typeof perms !== 'object' || Array.isArray(perms)) continue;
+    let removed = 0; let replaced = 0;
+    for (const k of Object.keys(perms)) {
+      if (!Array.isArray(perms[k])) continue;
+      const out = [];
+      const seen = new Set();
+      // las que no nombran `<de>` primero: una vieja cuya forma nueva ya está, se va
+      for (const p of perms[k]) if (typeof p === 'string' && rerootText(p, rule).n === 0) seen.add(p);
+      for (const p of perms[k]) {
+        if (typeof p !== 'string') { out.push(p); continue; }
+        const r = rerootText(p, rule);
+        if (!r.n) { out.push(p); continue; }
+        if (seen.has(r.text)) { removed++; continue; }
+        seen.add(r.text); out.push(r.text); replaced++;
+      }
+      perms[k] = out;
+    }
+    if (!removed && !replaced) continue;
+    if (!opts.check) {
+      try { fs.copyFileSync(entry.file, `${entry.file}.bak-retire-${stamp}`); } catch (e) { res.notes.push(`${entry.label}: no pude respaldarlo (${why(e)}): no lo toqué`); continue; }
+      try { writeAtomic(entry.file, `${JSON.stringify(data, null, 2)}\n`); } catch (e) { res.notes.push(`${entry.label}: no pude reescribirlo (${why(e)})`); continue; }
+    }
+    res.files.push({ label: entry.label, removed, replaced });
+    res.removed += removed; res.replaced += replaced;
+  }
+  return res;
+}
 /** Reescribe todas las cadenas de un objeto salvo `skip` (claves de primer nivel). */
 function rerootStrings(v, rule, skip = []) {
   let n = 0;
@@ -1752,7 +1806,7 @@ module.exports = {
   LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, chainEnd, chainProblem, expand, needsShim,
   supportsShim, pathProblem, within, readEnv, envNames, aliasOptions, aliasArgv, resolveFile, prepareStateWrite, oldPathOf, readKeys, readKeysDeep, recordUse,
   isShim, shimTarget, resolveShimsInCommand, writeShims, migrateMachine, machineRewrites, relativePermissionRewrites, shellLines, oldStillReal, isMoved, gitAt,
-  repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli, productReport,
+  repoForms, placeForms, rerootText, rerootMachine, countRegistered, retirePermissions, rerootFiles, cli, productReport,
 };
 
 /**

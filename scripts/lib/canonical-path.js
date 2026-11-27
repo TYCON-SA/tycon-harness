@@ -34,15 +34,17 @@
  *
  * ── EL LUGAR Y EL NOMBRE VIEJO ──────────────────────────────────────────────────────────────────────────────
  * El LUGAR del arnés es `placePath` de tycon-home.js (con el nombre del repo público; la constante vive en
- * scripts/setup/harness/place.js) y el nombre viejo (el del repo interno, `LEGACY_PLACE_NAME`)
- * sigue resolviendo en las máquinas ya instaladas. `--ensure-link` aplica la REGLA DE NACIMIENTO (`ensurePlace`), bajo
- * un candado propio (`place.lock` de la carpeta del estado) y siempre en el mismo orden, primero el lugar y después el
- * viejo:
+ * scripts/setup/harness/place.js) y el nombre viejo (el del repo interno, `LEGACY_PLACE_NAME`) se retira.
+ * `--ensure-link` aplica la REGLA DE NACIMIENTO (`ensurePlace`), bajo un candado propio (`place.lock` de la
+ * carpeta del estado) y siempre en el mismo orden, primero el lugar y después el retiro del viejo:
  *   · una carpeta real que es un clon, en cualquiera de los dos nombres, nunca se re-apunta ni se borra;
  *   · el destino de nacimiento es, en orden: a donde resuelve el nombre viejo (si es un clon); el `tree` del estado del
  *     mecanismo (o `--prefer <dir>`); recién entonces el clon que corre. Un clon descartable que corre primero no se
  *     queda con el nombre mientras el viejo o el estado digan otra cosa;
- *   · el nombre viejo, si es un enlace, apunta AL LUGAR (no al clon): re-apuntar el lugar no lo deja atrás.
+ *   · el nombre viejo ya no se crea, no se repara ni se re-apunta. Si es un ENLACE que lleva al lugar (o al mismo clon) y
+ *     lo registrado con él en la máquina son sólo permisos de settings.json, se retira: los permisos pasan al lugar (con
+ *     respaldo) y el enlace se saca con un `unlink`, nunca un borrado recursivo; queda anotado en
+ *     legacy-place-retired.json de la carpeta del estado (lo dice doctor). Cualquier otro viejo queda y lo dice doctor.
  * La matriz entera (siete estados por nombre) está en `ensurePlace`. `--link <ruta>`
  * re-apunta el lugar creando antes el enlace nuevo con un nombre temporal y cambiándolo recién después.
  *
@@ -172,7 +174,8 @@ function asegurarEnlaceInterno({ clon, home, enlace, check = false, forzar = nul
 // que no es un clon · R carpeta real que es un clon · X carpeta real que no es un clon · A archivo. La matriz (filas: el
 // lugar; columnas: el viejo); cada rama de abajo cita su celda.
 // Los textos nombran el lugar, no el viejo, así que una máquina nueva queda con un solo nombre (las celdas V→L* son «—»).
-// El viejo que ya nació así (legacy-place-born.json) no se borra acá: borrar el nombre viejo es el retiro.
+// El viejo no se mantiene en ninguna máquina: nunca se crea, se repara ni se re-apunta.
+// Un viejo que es un ENLACE que lleva al lugar se retira (`retireLegacy`, abajo); cualquier otro queda y lo dice doctor.
 const LEGACY_FOR_NEW_MACHINES = false;
 const PLACE_LOCK_STALE_MS = 2 * 60 * 1000;
 const PLACE_LOCK_WAIT_MS = 5000;
@@ -262,7 +265,8 @@ const KIND_WORD = { X: 'una carpeta real que no es un clon del arnés', A: 'un a
 
 /**
  * Decide qué hace la regla de nacimiento (sin escribir). Devuelve el plan: `place` (destino nuevo del lugar o null),
- * `legacy` (true: el viejo pasa a apuntar al lugar), los mensajes y la acción para quien llama.
+ * `retireLegacy` (true: el viejo es un enlace que lleva al lugar y se retira si lo registrado con él lo permite), los
+ * mensajes y la acción para quien llama.
  */
 function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonDelArnes } = {}) {
   const c = real(clon || RAIZ) || path.resolve(clon || RAIZ);
@@ -270,13 +274,16 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   const V = nameState(PLACE().legacyPlacePath(home), isValid);
   const same = (a, b) => PLACE().samePath(a, b);
   const legacyAtPlace = V.direct && same(V.direct, P.ruta);
-  const plan = { P, V, c, place: null, previous: P.kind === 'E' || P.kind === 'N' ? P.real : null, legacy: false, accion: 'unchanged', lines: [], conflict: false };
+  const plan = { P, V, c, place: null, previous: P.kind === 'E' || P.kind === 'N' ? P.real : null, retireLegacy: false, accion: 'unchanged', lines: [], conflict: false };
   const say = (l) => plan.lines.push(l);
-  // el viejo: V→L (enlace a reparar o re-apuntar), V→L* (falta; hoy no ocurre), dato (carpeta ajena o archivo)
+  // el viejo ya no se mantiene: un enlace que lleva al lugar (o al mismo clon que el lugar) se retira; uno colgado, a
+  // algo que no es un clon o a otro clon queda como está (lo dice doctor); una carpeta ajena o un archivo, un dato
   const legacyFollows = () => {
-    if (V.kind === 'F') { if (LEGACY_FOR_NEW_MACHINES) plan.legacy = true; return; }
-    if (V.kind === 'C' || V.kind === 'N') { plan.legacy = true; return; }
-    if (V.kind === 'E' && !legacyAtPlace) { plan.legacy = true; return; }
+    if (V.kind === 'E') {
+      const target = plan.place ? (real(plan.place) || plan.place) : P.real;
+      plan.retireLegacy = Boolean(legacyAtPlace || (target && same(V.real, target)));
+      return;
+    }
     if (V.kind === 'X' || V.kind === 'A') say(`ℹ tycon: en ${V.ruta} (el nombre viejo) hay ${KIND_WORD[V.kind]}: no lo toco`);
   };
 
@@ -349,19 +356,26 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
   const pref = check ? '(--check) ' : '';
   const placeRuta = PLACE().placePath(home);
   let current = null;   // el plan con el que se contesta: de él sale lo que le pasa al nombre viejo (el plan del instalador)
+  let retired = false;
+  let retireProblem = null;   // por qué el viejo quedó, si se intentó retirar y no se pudo
   const legacyOf = () => {
     if (!current || !current.V) return null;
     const V = current.V;
-    const action = current.legacy ? (V.kind === 'F' ? 'add' : 'update') : (['E', 'C', 'N'].includes(V.kind) ? 'keep' : null);
+    const action = retired || retiring(current) ? 'remove' : (['E', 'C', 'N'].includes(V.kind) ? 'keep' : null);
     return { ruta: V.ruta, action };
   };
   const out = (accion, lines, destino, writes = []) => ({ accion, mensaje: lines.map((l) => `${pref}${l}`).join('\n'), ruta: placeRuta, destino, escribio: writes.length > 0, writes, legacy: legacyOf() });
-  const planOf = () => placePlan({ clon, home, forzar, prefer, isValid });
+  // el plan, con lo que la máquina tiene registrado con el viejo si es un enlace al lugar (sólo lee)
+  const planOf = () => {
+    const p = placePlan({ clon, home, forzar, prefer, isValid });
+    if (p.retireLegacy) p.uses = legacyUses({ home, from: p.V.ruta, tree: p.place ? (real(p.place) || p.place) : p.P.real });
+    return p;
+  };
   let plan;
   try { plan = current = planOf(); }
   catch (e) { return out('error', [`⚠️ tycon: no pude mirar el lugar ${placeRuta} (${e && e.message}); el nombre viejo sigue como estaba`], null); }
   // lo que no escribe (nada que hacer, conflicto, --check) se contesta sin el candado
-  const quiet = (p) => p.accion === 'invalid' || p.accion === 'refused' || p.accion === 'conflict' || p.accion === 'real-folder' || (!p.place && !p.legacy);
+  const quiet = (p) => p.accion === 'invalid' || p.accion === 'refused' || p.accion === 'conflict' || p.accion === 'real-folder' || (!p.place && !retiring(p));
   if (!quiet(plan) && !check) {
     // El plan se vuelve a calcular CON el candado tomado: mientras éste esperaba, otro instalador
     // pudo crear el lugar; con el plan de antes, un clon descartable que esperaba el turno se quedaría con el nombre.
@@ -385,7 +399,7 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
       else if (p.P.kind === 'F') L.push(`✓ tycon: lugar ${placeRuta} → ${p.place} (creado: los revisores y el pipeline nombran al arnés por ahí)`);
       else L.push(`✓ tycon: el lugar ${placeRuta} estaba ${p.P.kind === 'C' ? `colgado (→ ${p.P.direct})` : `apuntando a algo que no es un clon (${p.P.real})`}; reparado → ${p.place}`);
     }
-    if (p.legacy && did(p.V.ruta)) L.push(`✓ tycon: el nombre viejo ${p.V.ruta} → ${placeRuta} (${p.V.kind === 'F' ? 'creado' : 're-apuntado al lugar'}: sigue andando para lo que todavía lo nombra)`);
+    if (written === null && retiring(p)) L.push(`retiraría el nombre viejo ${p.V.ruta}: es un enlace al lugar${p.uses.permissions ? ` (y ${p.uses.permissions} permiso(s) de settings.json que lo nombran pasarían al lugar)` : ''}`);
     return L;
   }
   /** La respuesta sin escribir: lo que no se toca, lo que ya está, o lo que haría (--check). */
@@ -393,13 +407,13 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
     const lines = [...p.lines];
     const target = p.place || (p.P.real || null);
     if (p.accion === 'invalid' || p.accion === 'refused' || p.accion === 'conflict' || p.accion === 'real-folder') return out(p.accion, lines, p.P.real);
-    if (!p.place && !p.legacy) {
+    if (!p.place && !retiring(p)) {
       if (!lines.length) lines.push(`✓ tycon: lugar ${placeRuta} → ${target}`);
       return out(p.accion, lines, target);
     }
     return out(p.accion, [...describe(p, null), ...lines], target);
   }
-  /** Escribe el plan (con el candado tomado): primero el lugar, después el viejo. */
+  /** Escribe el plan (con el candado tomado): primero el lugar, después el retiro del viejo. */
   function write(p) {
     const lines = [...p.lines];
     const target = p.place || (p.P.real || null);
@@ -408,27 +422,85 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
       try { pointName(p.place, placeRuta, p.previous); writes.push(placeRuta); }
       catch (e) { return out('error', [`⚠️ tycon: no pude crear/reparar el lugar ${placeRuta} (${e && e.message}). El nombre viejo quedó como estaba; los revisores nombran al arnés por el lugar: arreglalo a mano o volvé a correr el instalador`], p.previous, writes); }
     }
-    if (p.legacy) {
-      try {
-        pointName(placeRuta, p.V.ruta, p.V.direct); writes.push(p.V.ruta);
-        if (p.V.kind === 'F') noteLegacyBorn(home, p.V.ruta);
-      } catch (e) { lines.push(`⚠️ tycon: no pude apuntar el nombre viejo ${p.V.ruta} al lugar (${e && e.message})`); }
-    }
+    const done = retireLegacy(p);
+    if (done) { writes.push(done.ruta); lines.push(done.line); } else if (retireProblem) lines.push(retireProblem);
     return out(p.accion, [...describe(p, writes), ...lines], p.place || target, writes);
+  }
+  /**
+   * El retiro del nombre viejo, con el lugar ya escrito: se vuelve a mirar el disco (un viejo
+   * colgado que el lugar recién escrito hizo resolver también cuenta) y sólo si es un ENLACE que lleva al lugar y lo
+   * registrado con él son sólo permisos: primero los permisos (con su respaldo), después un `unlink` del enlace —nunca un
+   * borrado recursivo—. Lo que no se puede, queda como estaba: lo dice `doctor`.
+   */
+  function retireLegacy(p) {
+    const V = nameState(PLACE().legacyPlacePath(home), isValid);
+    const P = nameState(placeRuta, isValid);
+    if (V.kind !== 'E' || !P.real) return null;
+    if (!((V.direct && PLACE().samePath(V.direct, P.ruta)) || PLACE().samePath(V.real, P.real))) return null;
+    const uses = p.retireLegacy && p.uses ? p.uses : legacyUses({ home, from: V.ruta, tree: P.real });
+    if (!uses.ok) return null;
+    let moved = 0;
+    if (uses.permissions) {
+      let r;
+      try { r = require('./legacy-names.js').retirePermissions({ from: V.ruta, to: placeRuta, home, tree: P.real }); }
+      catch (e) { r = { notes: [e && e.message ? e.message : String(e)] }; }
+      if (r.notes.length) { retireProblem = `⚠️ tycon: el nombre viejo ${V.ruta} queda: no pude sacar los permisos que lo nombran (${r.notes.join('; ')})`; return null; }
+      moved = r.removed + r.replaced;
+    }
+    try {
+      if (!fs.lstatSync(V.ruta).isSymbolicLink()) return null;
+      removeName(V.ruta);
+    } catch (e) { retireProblem = `⚠️ tycon: no pude retirar el nombre viejo ${V.ruta} (${e && (e.code || e.message)}): queda como estaba`; return null; }
+    retired = true;
+    noteLegacyRetired(home, V.ruta, moved);
+    return { ruta: V.ruta, line: `✓ tycon: retiré el nombre viejo ${V.ruta}: era un enlace al lugar${moved ? `; ${moved} permiso(s) de settings.json que lo nombraban quedaron con el lugar` : ''}` };
   }
 }
 
+/** ¿El plan retira el viejo? Es un enlace que lleva al lugar y lo registrado con él son sólo permisos. */
+function retiring(p) { return Boolean(p && p.retireLegacy && p.uses && p.uses.ok); }
+
+// las rutas que legacy-names.js toma de variables: una que apunta fuera de la casa que se mira no deja retirar
+const RETIRE_PATH_VARS = ['TYCON_SETTINGS_PATH', 'CLAUDE_MD_PATH', 'CODEX_HOME', 'TYCON_GIT_HOOKS_DIR', 'TYCON_LAUNCHAGENTS_DIR'];
+function insideHome(home, p) {
+  const forms = (x) => [path.resolve(x), real(x) || path.resolve(x)];
+  return forms(home).some((h) => forms(p).some((q) => q === h || q.startsWith(h.endsWith(path.sep) ? h : h + path.sep)));
+}
 /**
- * El nombre viejo que nació en ESTA máquina por la regla de máquina nueva (V→L*): queda anotado en
- * legacy-place-born.json de la carpeta del estado para que el retiro lo quite ahí, y sólo ahí; con
- * LEGACY_FOR_NEW_MACHINES en false ya no nace. El viejo de una máquina
- * que ya lo tenía no se anota: sigue siendo de lo que la persona tiene escrito. Anotar nunca frena.
+ * Lo que esta máquina tiene registrado con el nombre viejo (un permiso no es un uso; lo demás sí): lo que cuenta `doctor`
+ * (`countRegistered` de legacy-names.js) más las líneas `@…` de CLAUDE.md que lo nombran. `ok` sólo si todo son permisos
+ * de settings.json; un archivo que no se pudo leer, o una variable de ruta que apunta fuera de esta casa, no dejan
+ * retirar: lo que no se mira no cuenta como limpio. Sólo lee.
+ * @returns {{ok:boolean, permissions?:number, reason?:string}}
  */
-function noteLegacyBorn(home, legacyRuta) {
+function legacyUses({ home, from, tree }) {
+  const h = home || os.homedir();
+  const env = process.env;
+  for (const k of RETIRE_PATH_VARS) {
+    const v = env[k];
+    if (v && String(v).trim() && !insideHome(h, String(v))) return { ok: false, reason: `${k} apunta fuera de ${h}` };
+  }
+  let c;
+  try { c = require('./legacy-names.js').countRegistered({ from, home: h, env, tree: tree || null }); }
+  catch (e) { return { ok: false, reason: `no pude contar lo registrado con él (${e && e.message})` }; }
+  if (c.notes && c.notes.length) return { ok: false, reason: c.notes.join('; ') };
+  let md = '';
+  try { md = fs.readFileSync(env.CLAUDE_MD_PATH || path.join(tyconHome().claudeDir(h), 'CLAUDE.md'), 'utf8'); }
+  catch (e) { if (!['ENOENT', 'ENOTDIR'].includes(e && e.code)) return { ok: false, reason: `CLAUDE.md no se pudo leer (${e && e.code})` }; }
+  const name = path.basename(from).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const imports = md.split('\n').filter((l) => /^\s*@/.test(l) && new RegExp(`[\\\\/]${name}[\\\\/]`).test(l)).length;
+  const others = (c.files || []).filter((f) => f.count !== f.permissions).map((f) => `${f.file} ${f.count - f.permissions}`);
+  if (imports) others.push(`CLAUDE.md ${imports}`);
+  if (others.length) return { ok: false, reason: `lo usa ${others.join(' · ')}` };
+  return { ok: true, permissions: c.total || 0 };
+}
+
+/** Anota en la carpeta del estado que el viejo se retiró (lo dice `doctor`, en una línea). Anotar nunca frena. */
+function noteLegacyRetired(home, legacyRuta, permissions) {
   try {
-    const dir = path.join(stateDirOf(home || os.homedir()));
+    const dir = stateDirOf(home || os.homedir());
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'legacy-place-born.json'), JSON.stringify({ path: legacyRuta, rule: 'new-machine', at: new Date().toISOString() }, null, 2) + '\n');
+    fs.writeFileSync(path.join(dir, 'legacy-place-retired.json'), JSON.stringify({ path: legacyRuta, at: new Date().toISOString(), permissions }, null, 2) + '\n');
   } catch (_) { /* la anotación nunca frena el arranque */ }
 }
 
