@@ -792,3 +792,25 @@ test('T15 Bench_FrenoComandosAnidados', () => {
   assert.strictEqual(r.status, 0, `${r.stdout.slice(-2000)}\n${r.stderr.slice(-2000)}`);
   assert.match(r.stdout, new RegExp(`✅ ${ids.length} corridos · 0 rojos · .*0 NO MEDIDOS`), r.stdout.slice(-1500));
 });
+
+// T40 CarpetaDelComando_Nombrada_Frena @A50
+// 🔴 Falla con: `$PWD`, `$(pwd)`, `~+`, la raíz de git o `$OLDPWD` resueltos sólo en la carpeta de un find, o un
+// `find … -delete` que el freno de historias no mira: borraban la historia sin que el freno la viera.
+test('T40 CarpetaDelComando_Nombrada_Frena @A50 — la carpeta del comando nombrada de otra forma, y find -delete', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), '# a\n');
+  for (const cmd of [
+    `rm $PWD/${H}`, `rm "$PWD/${H}"`, `rm "$(pwd)/${H}"`, `rm ~+/${H}`, 'cd $PWD/specs && rm story-1.1.md',
+    `f=$PWD/${H}; rm "$f"`, `ROOT=$(git rev-parse --show-toplevel); rm "$ROOT/${H}"`, `echo $PWD/${H} | xargs rm`,
+    `xargs rm <<< $PWD/${H}`, "find ~+ -name 'story-*.md' -exec rm {} \;", "find \"$(pwd -P)\" -name 'story-*.md' -exec rm {} \;",
+    "find ${PWD:-.} -name 'story-*.md' -exec rm {} \;", "d=$PWD; find $d -name 'story-*.md' -exec rm {} \;",
+    "cd specs && find $OLDPWD -name 'story-*.md' -exec rm {} \;", "rm $(find $PWD -name 'story-*.md')",
+    "find . -name 'story-1.1.md' -delete", 'find specs -type f -delete', "find $PWD -name 'story-1.1.md' -delete",
+  ]) frena(c, cmd);
+  // lo que no toca historias sigue pasando, también con la carpeta nombrada y comillas pegadas
+  pasa(c, "find \"$PWD\"/docs -name '*.md' -exec rm {} \;");
+  pasa(c, `rm $PWD/docs/a.md`);
+  pasa(c, 'find docs -name a.md -delete');
+  pasa(c, 'ls $PWD/specs');
+});
