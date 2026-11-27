@@ -3723,6 +3723,12 @@
       "requiere": []
     },
     {
+      "__nota": "el click del dueño vuelve a valer si el comando que lo gastó no llegó a ejecutarse (sale 126 o 127 con el pedido de la ventana sin consumir), una sola vez; si corrió, salió con otro código o es de otro comando, queda gastado. Y el detalle del cuadro dice el comando con su intérprete y su ruta entera (F27). En proceso, con una casa temporal; milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-window-give-back.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los carteles que piden una firma sobre un archivo: las dos formas (ventana y terminal) de una sola fuente, ningún comando de firma escrito a mano, cada forma destraba su freno en el laboratorio, los subcomandos nombrados existen, y el banco clasifica cómo frena cada cartel. Corre los guiones con la HOME aislada; unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/notice-commands.test.js",
