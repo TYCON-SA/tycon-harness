@@ -905,7 +905,7 @@ test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece
   // lo que sigue al `done` armado para enredar la expresión de las redirecciones (CodeQL, js/redos): lineal
   {
     const t = process.hrtime.bigint();
-    ordenesDeBucles(`find x | while read f; do y; done >${'!>'.repeat(3000)}`, op);
+    for (const trozo of ['!>', '!0>', '0>!']) ordenesDeBucles(`find x | while read f; do y; done >${trozo.repeat(3000)}`, op);
     const ms = Number(process.hrtime.bigint() - t) / 1e6;
     assert.ok(ms < 1000, `las redirecciones tardaron ${ms.toFixed(0)} ms`);
   }
