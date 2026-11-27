@@ -476,30 +476,32 @@ const NODE_FLOOR = path.join(__dirname, '..', 'lib', 'node-floor.js');
 // ── Los lugares viejos ───────────────────────────────────────────────────────────────────────────────────────────
 // Los lugares del arnés bajo la carpeta de Claude Code que se retiran, cada uno con su lugar nuevo. Mientras el viejo es
 // un enlace al nuevo, un gancho escrito por el viejo anda; el día que se retira el enlace, da error. Por eso un gancho
-// (del arnés o de la persona) que pasa por un lugar viejo se reescribe al nuevo: sólo el tramo de la ruta, sólo si el
-// archivo existe en el nuevo y sólo si el viejo es un enlace al nuevo o ya no está. Lo demás se deja y se avisa.
+// (del arnés o de la persona) que pasa por un lugar viejo se reescribe al nuevo: sólo el tramo de la ruta, sólo para un
+// archivo adentro del lugar (el lugar pelado no: `rm -rf <enlace>` y `rm -rf <carpeta>` no son lo mismo), y sólo si el
+// viejo es un enlace al nuevo o, ya retirado, el archivo está en el nuevo. Lo demás se deja y se avisa.
+// La línea de arranque no se toca acá: la reconocen sus propios lectores (startup-line.js) por su forma de hoy.
 
-/** Los lugares viejos y el nuevo de cada uno, leídos de tycon-home.js. */
-function legacyMoves(home) {
+/** Los lugares viejos y el nuevo de cada uno, leídos de tycon-home.js; ninguno si el lugar nuevo no existe. */
+function legacyMoves(home, env = {}) {
   const H = require('./harness/tycon-home.js');
   const claude = H.claudeDir(home);
-  const harness = H.ownPathsOf({ home, env: {} }).harness;
-  const moves = [
-    { old: path.join(claude, H.PLACE_NAME), to: harness },
-    { old: path.join(claude, H.LEGACY_PLACE_NAME), to: harness },
-    { old: H.installedSkillsDir(home), to: harness },
-    { old: H.legacyStateDir(home), to: H.ownStateDir(home) },
-  ];
-  return moves.filter((m) => path.resolve(m.old) !== path.resolve(m.to));
+  const own = H.ownPathsOf({ home, env });
+  const state = path.join(own.root, path.basename(H.ownStateDir(home)));
+  return [
+    { old: path.join(claude, H.PLACE_NAME), to: own.harness },
+    { old: path.join(claude, H.LEGACY_PLACE_NAME), to: own.harness },
+    { old: H.installedSkillsDir(home), to: own.harness },
+    { old: H.legacyStateDir(home), to: state },
+  ].filter((m) => path.resolve(m.old) !== path.resolve(m.to) && fs.existsSync(m.to));
 }
 
-/** ¿Se puede leer el lugar viejo como el nuevo? Sí si es un enlace que lleva al nuevo, o si ya no está. */
+/** ¿El lugar viejo se puede leer como el nuevo? `{ ok, gone }`: sí si es un enlace que lleva al nuevo, o si ya no está. */
 function legacyIsTheNew(m) {
   let st;
-  try { st = fs.lstatSync(m.old); } catch (_) { return { ok: true }; }
+  try { st = fs.lstatSync(m.old); } catch (_) { return { ok: true, gone: true }; }
   if (!st.isSymbolicLink()) return { ok: false, why: 'el lugar viejo es una carpeta de verdad, no un enlace al nuevo' };
   try {
-    if (fs.realpathSync(m.old) === fs.realpathSync(m.to)) return { ok: true };
+    if (fs.realpathSync(m.old) === fs.realpathSync(m.to)) return { ok: true, gone: false };
   } catch (_) { return { ok: false, why: 'el enlace viejo o el lugar nuevo no se pueden leer' }; }
   return { ok: false, why: 'el enlace viejo lleva a otro lado que el lugar nuevo' };
 }
@@ -508,28 +510,36 @@ const escapeRx = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Reescribe por el lugar nuevo las rutas de los ganchos que pasan por un lugar viejo, en todos los eventos. Cada ruta se
- * escribe como estaba (`$HOME/…`, `${HOME}/…`, `~/…` o absoluta) y sólo cambia su tramo de adelante. Devuelve
- * `{ moved: [{ event, from, to }], stuck: [{ event, path, why }] }`.
+ * escribe como estaba (`$HOME/…`, `${HOME}/…`, `~/…` o absoluta) y sólo cambia su tramo de adelante. Lo que todavía
+ * nombra un lugar viejo después (una forma que no se reconoce) se avisa. Devuelve `{ moved: [{ event, from, to }],
+ * stuck: [{ event, path, why }] }`.
  */
-function relocateLegacyHooks(settings, { home, windows, moves = legacyMoves(home) }) {
+function relocateLegacyHooks(settings, { home, windows, env = {}, moves = legacyMoves(home, env) }) {
   const out = { moved: [], stuck: [] };
   const hooks = settings && settings.hooks;
   if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks) || !moves.length) return out;
+  const startup = require('./harness/startup-line.js');
   const sep = windows ? '[\\\\/]' : '/';
   const flags = windows ? 'gi' : 'g';
   const homeAbs = path.resolve(home);
-  // cada lugar en sus formas: la absoluta (en Windows, con cualquiera de las dos barras) y las que nombran la casa
+  const written = (p) => (windows ? fwd(p) : p);
   const spellings = [];
   for (const m of moves) {
     const relOld = path.relative(homeAbs, path.resolve(m.old));
     const relNew = path.relative(homeAbs, path.resolve(m.to));
     const parts = (p) => p.split(/[\\/]/).map(escapeRx).join(sep);
-    const forms = [{ rx: parts(path.resolve(m.old)), to: path.resolve(m.to) }];
-    if (!relOld.startsWith('..') && !relNew.startsWith('..')) {
-      for (const h of ['$HOME', '${HOME}', '~']) forms.push({ rx: `${escapeRx(h)}${sep}${parts(relOld)}`, to: `${h}/${relNew.split(path.sep).join('/')}` });
+    const forms = [{ rx: parts(path.resolve(m.old)), to: written(path.resolve(m.to)) }];
+    if (!relOld.startsWith('..') && !path.isAbsolute(relOld)) {
+      const underHome = !relNew.startsWith('..') && !path.isAbsolute(relNew);
+      for (const h of ['$HOME', '${HOME}', '~']) {
+        forms.push({ rx: `${escapeRx(h)}${sep}${parts(relOld)}`, to: underHome ? `${h}/${relNew.split(path.sep).join('/')}` : written(path.resolve(m.to)) });
+      }
     }
-    for (const f of forms) spellings.push({ m, rx: new RegExp(`(^|[\\s"'=:(])${f.rx}(?=${sep}|$|[\\s"'\`;|&)])((?:${sep}[^\\s"'\`;|&)]*)?)`, flags), to: f.to });
+    for (const f of forms) spellings.push({ m, rx: new RegExp(`(^|[\\s"'=:(])${f.rx}(?=${sep}|$|[\\s"'\`;|&)<>])((?:${sep}[^\\s"'\`;|&)<>]*)?)`, flags), to: f.to });
   }
+  // lo que nombra todavía un lugar viejo, en cualquier forma: después de reescribir, se avisa
+  const claudeName = path.basename(require('./harness/tycon-home.js').claudeDir(home));
+  const still = new RegExp(`(?:^|[\\\\/\\s"'=:(])${escapeRx(claudeName)}[\\\\/](?:${moves.map((m) => escapeRx(path.basename(m.old))).join('|')})(?![\\w.-])`, 'i');
   const verdicts = new Map();
   const verdictOf = (m) => { if (!verdicts.has(m)) verdicts.set(m, legacyIsTheNew(m)); return verdicts.get(m); };
   for (const [event, bucket] of Object.entries(hooks)) {
@@ -538,19 +548,27 @@ function relocateLegacyHooks(settings, { home, windows, moves = legacyMoves(home
       if (!entry || typeof entry !== 'object' || !Array.isArray(entry.hooks)) continue;
       for (const hk of entry.hooks) {
         if (!hk || typeof hk !== 'object' || typeof hk.command !== 'string') continue;
+        if (startup.isNew(hk.command) || startup.classify(hk.command) || startup.mentionsHarness(hk.command)) continue;
         let cmd = hk.command;
+        const stuckBefore = out.stuck.length;
         for (const s of spellings) {
           cmd = cmd.replace(s.rx, (whole, before, rest) => {
-            const v = verdictOf(s.m);
             const shown = whole.slice(before.length);
+            if (!rest.split(/[\\/]/).filter(Boolean).length) { out.stuck.push({ event, path: shown, why: 'nombra el lugar mismo, no un archivo adentro' }); return whole; }
+            const v = verdictOf(s.m);
             if (!v.ok) { out.stuck.push({ event, path: shown, why: v.why }); return whole; }
-            const next = path.join(s.m.to, ...rest.split(/[\\/]/).filter(Boolean));
-            if (!fs.existsSync(next)) { out.stuck.push({ event, path: shown, why: 'el archivo no está en el lugar nuevo' }); return whole; }
-            const written = `${s.to}${rest}`;
-            out.moved.push({ event, from: shown, to: written });
-            return `${before}${written}`;
+            // con el enlace al nuevo, la ruta es la misma exista o no el archivo (un registro que el gancho crea); ya
+            // retirado el enlace, se mueve sólo lo que está en el nuevo
+            if (v.gone && !fs.existsSync(path.join(s.m.to, ...rest.split(/[\\/]/).filter(Boolean)))) {
+              out.stuck.push({ event, path: shown, why: 'el archivo no está en el lugar nuevo' });
+              return whole;
+            }
+            const next = `${s.to}${windows ? rest.replace(/\\/g, '/') : rest}`;
+            out.moved.push({ event, from: shown, to: next });
+            return `${before}${next}`;
           });
         }
+        if (out.stuck.length === stuckBefore && still.test(cmd)) out.stuck.push({ event, path: cmd, why: 'nombra la carpeta vieja en una forma que no reconozco' });
         hk.command = cmd;
       }
     }
@@ -1008,7 +1026,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
   // antes de todo, lo que pasa por un lugar viejo pasa al nuevo: así el resto lo reconoce por su ruta de hoy
-  const relocated = relocateLegacyHooks(settings, { home, windows });
+  const relocated = relocateLegacyHooks(settings, { home, windows, env });
   const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp, floor: throughLink(NODE_FLOOR, home, env) });
   // sin el Node del arnés, se dice en rojo y con el arreglo: nunca «en el próximo arranque»
   if (!interp.own && interp.switch !== 'off') {
@@ -1080,6 +1098,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
       ...r.present.map((id) => `hook\t${where}\t${id}\t${fresh.has(id) ? 'add' : rewritten.has(id) ? 'update' : 'keep'}`),
       ...(r.planKeep || []).map((id) => `hook\t${where}\t${id}\tkeep`),
       ...r.removed.map((x) => `hook\t${where}\t${x.event}:${x.relpath}\tremove`),
+      // un gancho que pasa de la carpeta vieja a la nueva cambia: el plan lo dice
+      ...relocated.moved.map((x) => `hook\t${where}\t${x.event}:${x.from}\tupdate`),
       ...r.normalized.map((c) => `pull-line\t${where}\t${c.split(/\s+/).filter(Boolean).join(' ')}\tupdate`),
       ...(sharedDone ? [] : [
         ...Object.entries(TOP_CANONICAL).map(([k, v]) => (r.topAdded.includes(k) ? `setting\t${where}\t${k}\tadd` : settings[k] === v ? `setting\t${where}\t${k}\tkeep` : null)).filter(Boolean),
@@ -1093,12 +1113,17 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0 || relocated.moved.length > 0;
   let backup = null;
   if (!a.check && changed) {
-    if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {
+    // con ganchos de la persona reescritos, la copia va siempre, también con la foto del mecanismo de actualización: es lo
+    // que la persona tiene para volver, y el aviso le dice dónde está
+    if (existed && (!env.TYCON_HARNESS_SNAPSHOT_DIR || relocated.moved.length)) {
       const ts = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}T${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}`;
-      backup = `${settingsPath}.bak.${stamp}`;
-      fs.copyFileSync(settingsPath, backup);
+      // dos corridas en el mismo segundo no se pisan la copia
+      for (let n = 0; ; n++) {
+        const p = `${settingsPath}.bak.${stamp}${n ? `-${n}` : ''}`;
+        try { fs.copyFileSync(settingsPath, p, fs.constants.COPYFILE_EXCL); backup = p; break; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
       lines.push(`BACKUP:${backup}`);
     }
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -1118,8 +1143,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   // el aviso a la persona: qué gancho cambió de lugar, dónde quedó el respaldo y lo que no se pudo mover
   if (!a.check && (relocated.moved.length || relocated.stuck.length)) {
     const said = [];
-    if (relocated.moved.length) said.push(`tycon: ${relocated.moved.length} gancho(s) de ${settingsPath} pasaban por la carpeta vieja del arnés y ahora van por la nueva (sólo cambió ese tramo de la ruta)${backup ? `; el archivo de antes quedó en ${backup}` : ''}:`, ...relocated.moved.map((x) => `  ~ ${x.event}: ${x.from} → ${x.to}`));
-    if (relocated.stuck.length) said.push(`tycon: ${relocated.stuck.length} gancho(s) pasan por la carpeta vieja y no los pude mover solo; corregilos a mano antes del retiro de la carpeta vieja:`, ...relocated.stuck.map((x) => `  ! ${x.event}: ${x.path} (${x.why})`));
+    if (relocated.moved.length) said.push(`⚠️ tycon: ${relocated.moved.length} ruta(s) de los ganchos de ${settingsPath} pasaban por la carpeta vieja del arnés y ahora van por la nueva (sólo cambió ese tramo de la ruta)${backup ? `; el archivo de antes quedó en ${backup}` : ''}:`, ...relocated.moved.map((x) => `  ~ ${x.event}: ${x.from} → ${x.to}`));
+    if (relocated.stuck.length) said.push(`⚠️ tycon: ${relocated.stuck.length} ruta(s) de los ganchos pasan por la carpeta vieja y no los pude mover solo; corregilos a mano antes del retiro de la carpeta vieja:`, ...relocated.stuck.map((x) => `  ! ${x.event}: ${x.path} (${x.why})`));
     process.stdout.write(`${said.join('\n')}\n`);
     for (const l of lines.filter((x) => /^(RELOCATED|STUCK|BACKUP):/.test(x))) process.stdout.write(`${l}\n`);
   }
@@ -1148,6 +1173,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { OLD_JUDGE_PREFIXES, OLD_JUDGE_EVENTS, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { relocateLegacyHooks, legacyMoves, OLD_JUDGE_PREFIXES, OLD_JUDGE_EVENTS, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, envWithOrgSwitches, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));

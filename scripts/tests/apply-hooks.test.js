@@ -1191,25 +1191,31 @@ test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los
     fs.mkdirSync(path.join(claude, 'agent-skills', 'skills'), { recursive: true });
     fs.writeFileSync(path.join(claude, 'agent-skills', 'skills', 'propio.js'), '// de la persona\n');
     const viejo = (rel) => path.join(claude, 'tycon-harness', rel).replace(/\\/g, '/');
+    const arranque = 'node "$HOME/.claude/.tycon-pipeline/harness/bootstrap.js" || bash "$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh"';
     fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: {
       PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: `node "${viejo('scripts/hooks/wait-notice.js')}"` }] }],
       SessionStart: [{ hooks: [
-        { type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh" --short' },
-        { type: 'command', command: `node "${viejo('scripts/no-existe.js')}"` },
+        { type: 'command', command: arranque },
+        { type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh" --short >> "$HOME/.claude/.tycon-pipeline/mi.log"' },
         { type: 'command', command: `node "${path.join(claude, 'agent-skills', 'skills', 'propio.js').replace(/\\/g, '/')}"` },
+        { type: 'command', command: 'test -L "$HOME/.claude/tycon-harness" || echo falta' },
+        { type: 'command', command: 'bash "$HOME"/.claude/tycon-harness/scripts/hooks/wait-notice.js' },
       ] }],
     } }, null, 2));
     const r = M.aplicar(v, platform);
     assert.strictEqual(r.status, 0, r.stderr);
     const c = M.comandos();
     assert.ok(c.some((x) => x.includes('/.tycon/harness/scripts/hooks/wait-notice.js')), `${platform}, el del arnés: ${JSON.stringify(c)}`);
-    assert.ok(!c.some((x) => x.includes('/.claude/tycon-harness/scripts/hooks/')), `${platform}, ninguno del arnés queda por la vieja: ${JSON.stringify(c)}`);
-    assert.ok(c.includes('bash "$HOME/.tycon/state/mi-gancho.sh" --short'), `${platform}, el propio cambia sólo el tramo de la ruta: ${JSON.stringify(c)}`);
-    assert.ok(c.some((x) => x.includes('/.claude/tycon-harness/scripts/no-existe.js')), `${platform}, sin archivo nuevo queda como está`);
+    assert.ok(c.includes(arranque), `${platform}, la línea de arranque no se toca: ${JSON.stringify(c)}`);
+    assert.ok(c.includes('bash "$HOME/.tycon/state/mi-gancho.sh" --short >> "$HOME/.tycon/state/mi.log"'), `${platform}, el propio cambia sólo el tramo de la ruta, también lo que el gancho crea: ${JSON.stringify(c)}`);
     assert.ok(c.some((x) => x.includes('/.claude/agent-skills/skills/propio.js')), `${platform}, una carpeta vieja de verdad no se toca`);
+    assert.ok(c.includes('test -L "$HOME/.claude/tycon-harness" || echo falta'), `${platform}, el lugar pelado no se toca`);
+    assert.ok(c.includes('bash "$HOME"/.claude/tycon-harness/scripts/hooks/wait-notice.js'), `${platform}, una forma que no se reconoce queda como está`);
     assert.match(r.stdout, /BACKUP:/, 'hay respaldo');
-    assert.match(r.stdout, /RELOCATED:2/, `${platform}: ${r.stdout}`);
-    assert.match(r.stdout, /STUCK:2/, `${platform}: ${r.stdout}`);
+    assert.match(r.stdout, /^⚠️ tycon: 3 ruta\(s\) .* el archivo de antes quedó en /mu, `${platform}: ${r.stdout}`);
+    assert.match(r.stdout, /RELOCATED:3/, `${platform}: ${r.stdout}`);
+    assert.match(r.stdout, /STUCK:3/, `${platform}: ${r.stdout}`);
+    for (const por of ['carpeta de verdad', 'el lugar mismo', 'forma que no reconozco']) assert.ok(r.stdout.includes(por), `${platform}, avisa: ${por}\n${r.stdout}`);
     const backup = /BACKUP:(\S+)/.exec(r.stdout)[1];
     assert.ok(fs.readFileSync(backup, 'utf8').includes('$HOME/.claude/.tycon-pipeline/mi-gancho.sh'), 'el respaldo tiene lo de antes');
     const antes = fs.readFileSync(M.settingsPath, 'utf8');
@@ -1218,4 +1224,43 @@ test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los
     assert.strictEqual(fs.readFileSync(M.settingsPath, 'utf8'), antes, `${platform}: aplicar otra vez no cambia nada`);
     assert.doesNotMatch(r2.stdout, /RELOCATED:/, 'la segunda vez no hay nada que mover');
   }
+});
+
+// 🔴 Falla con: proponer mover a un lugar nuevo que no existe: en una máquina sin la casa propia, el lugar «viejo» es el
+//    vigente y cada actualización avisaría que hay que corregir a mano los ganchos que escribe el arnés.
+test('ApplyHooks_SinCasaPropia_NoMueveNiAvisa', (t) => {
+  const M = maquinaConVersiones(t);
+  const v = M.version('2026.11.27.02');
+  M.apuntar(v);
+  const claude = path.join(M.home, '.claude');
+  // el arnés vive en la carpeta vieja de verdad, y no hay casa propia
+  fs.mkdirSync(path.join(claude, 'tycon-harness', 'scripts', 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(claude, 'tycon-harness', 'scripts', 'hooks', 'propio.sh'), 'echo\n');
+  fs.rmSync(path.join(M.home, '.tycon'), { recursive: true, force: true });
+  const cmd = `bash "${path.join(claude, 'tycon-harness', 'scripts', 'hooks', 'propio.sh')}"`;
+  fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: cmd }] }] } }, null, 2));
+  const mod2 = require(APPLY);
+  const s = JSON.parse(fs.readFileSync(M.settingsPath, 'utf8'));
+  const out = mod2.relocateLegacyHooks(s, { home: M.home, windows: false });
+  assert.deepStrictEqual(out, { moved: [], stuck: [] });
+  assert.strictEqual(s.hooks.SessionStart[0].hooks[0].command, cmd);
+});
+
+// 🔴 Falla con: la copia de respaldo salteada cuando la actualización la lanza con su propia foto
+//    (TYCON_HARNESS_SNAPSHOT_DIR): la persona no tendría dónde volver a sus ganchos de antes.
+test('ApplyHooks_CarpetaViejaConFotoDelMecanismo_IgualDejaRespaldo', (t) => {
+  const M = maquinaConVersiones(t);
+  const v = M.version('2026.11.27.03');
+  M.apuntar(v);
+  const claude = path.join(M.home, '.claude');
+  const estado = path.join(M.home, '.tycon', 'state');
+  fs.mkdirSync(estado, { recursive: true });
+  fs.writeFileSync(path.join(estado, 'mi-gancho.sh'), 'echo\n');
+  fs.symlinkSync(estado, path.join(claude, '.tycon-pipeline'));
+  fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh"' }] }] } }, null, 2));
+  const r = spawnSync(process.execPath, [APPLY, '--settings', M.settingsPath, '--hooks-dir', path.join(v, 'scripts', 'hooks'), '--skills', M.skills,
+    '--list', M.listPath, '--effects', EFFECTS], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: M.home, USERPROFILE: M.home, TYCON_PROFILE: '0', TYCON_NO_NIGHTLY_EXAM: '1', TYCON_HARNESS_SHARED_DONE: '1', TYCON_HARNESS_SNAPSHOT_DIR: path.join(M.home, 'foto') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const backup = /BACKUP:(\S+)/.exec(r.stdout);
+  assert.ok(backup && fs.existsSync(backup[1]), r.stdout);
 });
