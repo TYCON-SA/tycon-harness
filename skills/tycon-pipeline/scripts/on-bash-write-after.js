@@ -102,7 +102,9 @@ function logHookError(stateDir, e) {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
     fs.appendFileSync(path.join(stateDir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-after FAILED OPEN: ${(e && e.stack) || e}\n\n`, 'utf8');
+      // en el modo que anota no hay nada que reparar: la marca FAILED OPEN la cuenta el aviso de fallas del arranque, que
+      // le llega al agente
+      `[${new Date().toISOString()}] on-bash-write-after ${modo() === 'anota' ? 'anotó (modo que anota, no frena)' : 'FAILED OPEN'}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch (_) { /* nada */ }
 }
 
@@ -184,11 +186,13 @@ function programas(comando, cwd, { powershell = false } = {}) {
   let reconocidos = 0;
   let otros = 0;
   let gits = 0;
+  const nombres = [];
   for (const seg of segmentos(String(comando || ''), { powershell })) {
     let i = 0;
     while (seg[i] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto)) i++;
     const p = seg[i];
     if (!p) continue;
+    if (nombres.length < 12) nombres.push(path.basename(p.texto).slice(0, 40));
     if (!p.esBandera) { otros++; continue; }
     if (SIN_ESCRIBIR.has(p.texto) && i === 0) continue;
     if (p.texto === 'git' && i === 0) { gits++; continue; }
@@ -207,6 +211,8 @@ function programas(comando, cwd, { powershell = false } = {}) {
     todosReconocidos: limpio && reconocidos > 0 && otros === 0 && gits === 0,
     algunoReconocido: reconocidos > 0,
     soloGit: limpio && gits > 0 && otros === 0 && reconocidos === 0,
+    hayGit: gits > 0,
+    nombres,
   };
 }
 
@@ -292,8 +298,8 @@ function borrarFotosMiradas(stateDir, input, ahora = Date.now()) { // stable-dat
     // de esta sesión por el registro, no por el nombre (dos ids pueden empezar igual), y terminado hace más de un minuto:
     // un evento de después repetido llega enseguida y todavía la encuentra
     if (r && r.sesion === sesion && typeof r.fin === 'number' && ahora - r.fin > ESPERA_DEL_REPETIDO_MS) {
+      // el registro queda: aLaVez lo lee para ver un marker.js que corrió a la vez; lo borra el barrido
       try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ }
-      try { fs.rmSync(path.join(dirEnCurso(stateDir), n), { force: true }); } catch (_) { /* otra lo borró */ }
     }
   }
 }
@@ -315,7 +321,11 @@ function barrerRegistrosViejos(stateDir, ahora = Date.now()) { // stable-data: l
     let r = null;
     try { r = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { r = null; }
     const t = r && (r.fin || r.inicio);
-    if (!r || typeof t !== 'number' || ahora - t > VIDA_DEL_REGISTRO_MS) { try { fs.rmSync(f, { force: true }); } catch (_) { /* otra lo borró */ } }
+    if (r && typeof t === 'number' && ahora - t <= VIDA_DEL_REGISTRO_MS) continue;
+    try { fs.rmSync(f, { force: true }); } catch (_) { /* otra lo borró */ }
+    // la foto de un comando terminado se va con su registro; la de uno sin terminar (espera su permiso) queda para la
+    // limpieza de los 7 días
+    if (r && typeof r.fin === 'number') { try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ } }
   }
   try { photo.writeWhole(sello, String(ahora)); } catch (_) { /* el próximo vuelve a barrer */ }
 }
@@ -574,9 +584,13 @@ function despues(input, stateDir) {
   const programa = comando.replace(/\s+/g, ' ').slice(0, 160);
   // la forma del comando, para medir en el modo que anota qué deshacería y por qué: git solo, git con otro programa, un
   // guion del arnés con otro programa, u otra cosa
-  const forma = prog.soloGit ? 'solo-git' : /(?:^|[\s;&|(])git\s/.test(comando) ? 'git-mezclado' : prog.algunoReconocido ? 'arnes-mezclado' : 'otro';
+  const forma = prog.soloGit ? 'solo-git' : prog.hayGit ? 'git-mezclado' : prog.algunoReconocido ? 'arnes-mezclado' : 'otro';
+  // con git en el comando, si lo que quedó es lo commiteado: es lo que separa lo que trajo git de lo que escribió otro
+  const igualesAHead = prog.hayGit ? new Set(photo.gitBrought(foto, [...deshacer, ...dudosas]).map((d) => d.abs)) : null;
   const m = modo();
-  const renglon = (name, status, d) => ({ ts, name, status, modo: m, forma, sesion: input.session_id || null, archivo: d.abs, que: d.que, programa, ...(d.porque ? { porque: d.porque } : {}) });
+  const renglon = (name, status, d) => ({ ts, name, status, modo: m, forma, id: input.tool_use_id || null, sesion: input.session_id || null,
+    archivo: d.abs, kind: d.kind, que: d.que, deshacer: d.deshacer, programas: prog.nombres, programa,
+    ...(igualesAHead ? { igualAHead: igualesAHead.has(d.abs) } : {}), ...(d.porque ? { porque: d.porque } : {}) });
   if (m === 'anota') {
     // compara y anota: no deshace, no frena y no le dice nada al agente
     for (const d of deshacer) anotarEnGates(stateDir, renglon('escritura-vista-despues', 'would-undo', d));

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tycon-pipeline PreToolUse hook (matcher: Bash|PowerShell) — la segunda puerta del portón de CARRIL.
+ * tycon-pipeline PreToolUse hook (matcher: Bash|PowerShell|Monitor) — la segunda puerta del portón de CARRIL.
  *
  * El portón de carril vive en PreToolUse Edit|Write (`on-story-gate.js`). Pero un archivo también se
  * escribe por Bash: `cat > src/Foo.cs <<'EOF'`, `sed -i`, `tee`, `perl -pi`, `cp`, un `python3 -c

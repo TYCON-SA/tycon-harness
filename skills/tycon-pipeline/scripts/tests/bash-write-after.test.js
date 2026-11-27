@@ -918,3 +918,105 @@ test('T17 · WriteAfter_CodexDivergenceDeclared @story-8.320 @ac-10', () => {
   const deuda = JSON.parse(fs.readFileSync(path.join(raiz, 'scripts', 'controls-bench', 'hook-debt.json'), 'utf8')).debt.find((d) => d.script === 'on-bash-write-after.js');
   assert.ok(deuda && !/todavía no está registrada/.test(deuda.reason), 'la deuda dice lo de hoy');
 });
+
+const erroresDe = (l) => (fs.existsSync(path.join(l.estado, 'hook-errors.log')) ? fs.readFileSync(path.join(l.estado, 'hook-errors.log'), 'utf8') : '');
+
+// 🔴 Falla con: la mirada fallida del modo que anota deja «FAILED OPEN», que el aviso del arranque le lee al agente.
+test('T18 · WriteAfter_LogMode_FailedLookNotInTheStartupNotice @story-8.320 @ac-7', () => {
+  const l = enModoAnota(lab());
+  const ev = JSON.stringify({ session_id: 's1', tool_use_id: 'toolu_y1', transcript_path: l.transcript, cwd: l.repo, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } });
+  assert.strictEqual(spawnSync(process.execPath, [HOOK], { input: ev, env: l.env, encoding: 'utf8' }).status, 0);
+  assert.doesNotMatch(erroresDe(l), /FAILED OPEN/);
+});
+
+// 🔴 Falla con: sin poder guardar la foto, el modo que anota frena el comando.
+test('T19 · WriteAfter_LogMode_PhotoCannotBeSaved_CommandRuns @story-8.320 @ac-7', { skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'NO MEDIDO: los permisos de carpeta no aplican' : false }, () => {
+  const l = enModoAnota(lab());
+  const foto = require('../lib/protected-photo.js');
+  const dir = foto.photosDir(l.estado);
+  fs.mkdirSync(path.join(dir, 'in-progress'), { recursive: true });
+  fs.chmodSync(path.join(dir, 'in-progress'), 0o500);
+  fs.chmodSync(dir, 0o500);
+  try {
+    const ev = JSON.stringify({ session_id: 's1', tool_use_id: 'toolu_y2', transcript_path: l.transcript, cwd: l.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } });
+    const pre = spawnSync(process.execPath, [HOOK], { input: ev, env: l.env, encoding: 'utf8' });
+    assert.strictEqual(pre.status, 0, pre.stderr);
+    assert.strictEqual(pre.stderr, '');
+  } finally { fs.chmodSync(dir, 0o700); fs.chmodSync(path.join(dir, 'in-progress'), 0o700); }
+  assert.ok(renglones(fs.readFileSync(path.join(l.estado, 'gates.log'), 'utf8')).some((r) => r.name === 'mirada-fallida'));
+});
+
+// 🔴 Falla con: el renglón no trae el id, la clase, los programas ni si lo de git es lo commiteado; la forma se equivoca
+// con la palabra «git».
+test('T20 · WriteAfter_LogMode_LineCarriesWhatTheWeekNeeds @story-8.320 @ac-2', () => {
+  const l = enModoAnota(lab());
+  const fecha = '2026-01-01T00:00:00Z';
+  const git = (...a) => execFileSync('git', ['-C', l.repo, '-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a],
+    { stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha } });
+  git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-qb', 'otra');
+  fs.writeFileSync(l.f('specs/story-1.1-hecha.md'), historia('1.1', 'done'));
+  git('add', '-A'); git('commit', '-qm', 'otra'); git('checkout', '-q', '-');
+  const { gates } = correr(l, 'git checkout -q otra 2>&1 | tail -2');
+  const r = renglones(gates).find((x) => x.name === 'escritura-vista-despues');
+  assert.ok(r, gates);
+  assert.strictEqual(r.forma, 'git-mezclado');
+  assert.strictEqual(r.igualAHead, true);
+  assert.match(String(r.id), /^toolu_/);
+  assert.strictEqual(r.kind, 'story');
+  assert.ok(r.deshacer);
+  assert.deepStrictEqual(r.programas, ['git', 'tail']);
+  // la palabra «git» en un argumento no es git
+  fs.writeFileSync(path.join(l.base, 'notas.txt'), 'git\n');
+  const x = guion(l, 'y.js', `require('fs').writeFileSync(${JSON.stringify(l.f('specs/story-1.1-hecha.md'))}, ${JSON.stringify(historia('1.1', 'review'))});`);
+  const otro = renglones(correr(l, `grep -c git ${path.join(l.base, 'notas.txt')}; N=node; $N ${x}`).gates).filter((y) => y.name === 'escritura-vista-despues').pop();
+  assert.strictEqual(otro.forma, 'otro');
+  assert.ok(!('igualAHead' in otro), 'sin git no se pregunta');
+});
+
+// 🔴 Falla con: cualquier valor del interruptor prende el deshacer.
+test('T21 · WriteAfter_OnlyUndoTurnsUndoOn @story-8.320 @ac-2', () => {
+  for (const valor of ['on', '1', 'true', 'UNDO']) {
+    const l = lab();
+    l.env.TYCON_WRITE_AFTER_MODE = valor;
+    const x = guion(l, 'x.js', `const fs=require('fs');const f=${JSON.stringify(l.f('specs/story-1.1-hecha.md'))};fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('in-progress','done'));`);
+    correr(l, `N=node; $N ${x}`);
+    const deshizo = /status: in-progress/.test(fs.readFileSync(l.f('specs/story-1.1-hecha.md'), 'utf8'));
+    assert.strictEqual(deshizo, valor === 'UNDO', valor);
+  }
+});
+
+// 🔴 Falla con: el barrido borra el registro y deja su foto; borrar la foto de un comando terminado borra también su
+// registro, que aLaVez necesita para ver un marker.js a la vez; el barrido corre en cada comando.
+test('T22 · WriteAfter_Sweep_PhotoGoesWithItsRecord_AndRecordOutlivesItsPhoto @story-8.320 @ac-9', () => {
+  const l = enModoAnota(lab());
+  const foto = require('../lib/protected-photo.js');
+  const dir = foto.photosDir(l.estado);
+  const enCurso = path.join(dir, 'in-progress');
+  fs.mkdirSync(enCurso, { recursive: true });
+  const ahora = Date.now(); // stable-data: las edades se cuentan desde ahora
+  const poner = (nombre, r) => { fs.writeFileSync(path.join(enCurso, nombre), JSON.stringify(r)); fs.writeFileSync(path.join(dir, nombre), '{}'); };
+  poner('otra-toolu_v1.json', { sesion: 'otra', id: 'toolu_v1', tool: 'Bash', inicio: ahora - 12 * 60000, fin: ahora - 11 * 60000 });
+  poner('s1-toolu_v2.json', { sesion: 's1', id: 'toolu_v2', tool: 'Bash', inicio: ahora - 3 * 60000, fin: ahora - 2 * 60000 });
+  poner('otra-toolu_v3.json', { sesion: 'otra', id: 'toolu_v3', tool: 'Bash', inicio: ahora - 11 * 60000, fin: null });
+  correr(l, 'node -e 1');
+  assert.ok(!fs.existsSync(path.join(dir, 'otra-toolu_v1.json')), 'la foto de un registro barrido y terminado se va con él');
+  assert.ok(!fs.existsSync(path.join(enCurso, 'otra-toolu_v1.json')));
+  assert.ok(!fs.existsSync(path.join(dir, 's1-toolu_v2.json')), 'la foto de un comando de la sesión ya mirado se borra');
+  assert.ok(fs.existsSync(path.join(enCurso, 's1-toolu_v2.json')), 'su registro queda: aLaVez lo necesita');
+  assert.ok(fs.existsSync(path.join(dir, 'otra-toolu_v3.json')), 'la foto de un comando sin terminar queda');
+  // dentro de los 10 minutos no se vuelve a barrer
+  poner('otra-toolu_v4.json', { sesion: 'otra', id: 'toolu_v4', tool: 'Bash', inicio: ahora - 12 * 60000, fin: ahora - 11 * 60000 });
+  correr(l, 'node -e 1');
+  assert.ok(fs.existsSync(path.join(enCurso, 'otra-toolu_v4.json')), 'el barrido corre a lo sumo cada 10 minutos');
+});
+
+test('T23 · WriteAfter_Registration_SaysWhatEachEventDoes @story-8.320 @ac-10', () => {
+  const lista = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  const filas = lista.hooks.filter((h) => h.spec === 'tycon-pipeline/scripts/on-bash-write-after.js');
+  assert.strictEqual(filas.length, 3);
+  // el de antes puede salir 2 con el deshacer prendido: se declara freno, y su etiqueta dice que al anotar no frena
+  const antes = filas.find((h) => h.event === 'PreToolUse');
+  assert.strictEqual(antes.effect, 'blocks');
+  assert.match(antes.label, /modo que anota: nunca frena/);
+  for (const h of filas.filter((x) => x !== antes)) assert.strictEqual(h.effect, 'records', h.event);
+});

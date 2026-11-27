@@ -385,14 +385,19 @@ comando: mira lo que quedó escrito.
 
 - **Cómo viene prendida.** En el modo **que anota**: compara y deja el renglón en `gates.log`, sin deshacer, sin frenar
   y sin avisarle al agente. Así se mide una semana cuánto deshacería y en qué formas de comando, antes de dejarlo
-  deshacer. El deshacer se prende con `TYCON_WRITE_AFTER_MODE=undo`; lo de abajo dice qué hace cada modo.
+  deshacer. El deshacer se prende con `TYCON_WRITE_AFTER_MODE=undo`, y sólo con `undo` (en mayúsculas o minúsculas):
+  `on`, `1` o `true` siguen anotando. Lo de abajo dice qué hace cada modo. Se registra como freno, porque con el deshacer puede frenar:
+  por eso, en una máquina sin el Node del arnés, el piso de Node lo frena como a los otros frenos de antes. Un freno que dejó una prueba anterior con el deshacer sigue en
+  disco y vuelve a frenar al prenderlo.
 - **Qué mira.** Antes de cada comando de la terminal (Bash, PowerShell, Monitor) saca una foto de lo protegido: las
   historias que no están en borrador, el estado de los borradores, las constancias y los marcadores. Después del
   comando, también si falla, compara por contenido. Un comando que sólo lee (`cat`, `grep`, `ls`, `git rev-parse`…)
   no saca foto: no puede haber escrito.
-- **Qué anota.** Lo que cambió y no correspondía queda como `escritura-vista-despues` en `gates.log` (sesión, ruta,
-  programa y la forma del comando: git solo, git con otro programa, un guion del arnés con otro programa u otra cosa;
-  nunca el contenido). En el modo que anota, con `status: would-undo`; con el deshacer, `undone`.
+- **Qué anota.** Lo que cambió y no correspondía queda como `escritura-vista-despues` en `gates.log`: la sesión, el id de la
+  llamada, la ruta y su clase, qué haría el deshacer, los programas del comando y sus primeros 160 caracteres, y la
+  forma del comando (git solo, git con otro programa, un guion del arnés con otro programa u otra cosa). Con git en el
+  comando, también si lo que quedó es igual a lo commiteado. Nunca el contenido del archivo. En el modo que anota, con
+  `status: would-undo`; con el deshacer, `undone`.
 - **Qué deshace, con el deshacer prendido.** Lo que cambió y no correspondía vuelve a lo que tenía la foto, o se borra
   si no existía, y el aviso le llega al agente.
 - **Qué no deshace.** Lo que escribió `marker.js` o un guion del arnés instalado, solos en el comando; lo que trajo un
