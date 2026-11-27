@@ -378,7 +378,7 @@ Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no e
   4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
      /opt/tycon/bin/tycon-prod-sql <host> 'alter database [<base>] modify (maxsize = 250 GB)'
   5. Contale a la persona qué cambió. La regla del firewall se cierra sola.
-  Detalle: guides/produccion-con-permiso.md § «Emergencia: producción caída».
+  Detalle: guides/production-with-permission.md § «Emergencia: producción caída».
 AYUDA
 }
 
