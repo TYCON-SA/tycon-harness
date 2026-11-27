@@ -4957,8 +4957,9 @@ function cmdRollback(ctx) {
 }
 
 /**
- * El nombre viejo del lugar, de vuelta después de una vuelta atrás: si no hay nada con ese nombre, el lugar resuelve a
- * un clon y lo restaurado lo usa fuera de los permisos (los hooks, la línea de CLAUDE.md: lo que cuenta doctor), se
+ * El nombre viejo del lugar, de vuelta después de una vuelta atrás: si lo retiró el arnés (su nota,
+ * legacy-place-retired.json de la carpeta del estado: uno que la persona borró a mano no vuelve), no hay nada con ese
+ * nombre, el lugar resuelve a un clon y lo restaurado lo usa fuera de los permisos (los hooks, la línea de CLAUDE.md: lo que cuenta doctor), se
  * crea el enlace viejo hacia el lugar, como lo dejaban las versiones de antes del retiro. Lo demás (una carpeta, un
  * archivo, un enlace que ya está, sólo permisos) no se toca. La regla del lugar no lo vuelve a retirar mientras eso lo
  * use; `relocate` lo muda y entonces sí. Devuelve la línea para la persona, o null.
@@ -4966,13 +4967,15 @@ function cmdRollback(ctx) {
 function restoreLegacyIfUsed(ctx, tree) {
   const lp = PLACE.legacyPlacePath(ctx.home);
   if (kindOf(lp)) return null;
+  const note = path.join(mod('tycon-home').stateDir(ctx.home), 'legacy-place-retired.json');
+  if (!fs.existsSync(note)) return null;
   const place = linkPath(ctx.home);
   const target = real(place);
   if (!target || !isHarnessClone(target)) return null;
   const R = placeFacts(ctx, tree).registered;
   if (!R || R.problem || !R.total || R.files.every((x) => x.count === x.permissions)) return null;
   fs.symlinkSync(place, lp, isWin(ctx) ? 'junction' : 'dir');
-  try { fs.unlinkSync(path.join(mod('tycon-home').stateDir(ctx.home), 'legacy-place-retired.json')); } catch (_) { /* no estaba */ }
+  try { fs.unlinkSync(note); } catch (_) { /* no estaba */ }
   const list = R.files.filter((x) => x.count > x.permissions).map((x) => x.file).join(', ');
   return `repuse el nombre viejo ${tildePath(ctx, lp)} → ${tildePath(ctx, place)}: lo restaurado lo usa (${list}); harness.js relocate lo muda al lugar, y después el nombre se retira solo`;
 }

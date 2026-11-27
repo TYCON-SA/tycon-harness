@@ -246,7 +246,8 @@ test('T25 Relocate_Preconditions_KilledThenPersonEdits_RollbackOlderStillRuns', 
 // ── T25r ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Una vuelta atrás a una copia de ANTES de que el nombre viejo se retirara: lo que la copia devuelve (la línea de
 // CLAUDE.md, y los hooks si settings.json no cambió después) vuelve a nombrar el viejo, y la vuelta atrás repone el
-// enlace viejo hacia el lugar para que eso siga andando. Una carpeta real con ese nombre no se pisa.
+// enlace viejo hacia el lugar para que eso siga andando, sólo si lo retiró el arnés (su nota). Uno borrado a mano no
+// vuelve, y una carpeta real con ese nombre no se pisa.
 test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => {
   const retire = (k) => spawnSync(process.execPath, [path.join(k.C, 'scripts', 'lib', 'canonical-path.js'), '--ensure-link', '--clone', k.C, '--home', k.h], { encoding: 'utf8', env: machineEnv(k.h), timeout: 60000 });
   const exists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
@@ -270,7 +271,15 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   let j = null;
   try { j = JSON.parse(doc.out); } catch (_) { j = null; }
   assert.ok(j && j.registered_by_legacy && j.registered_by_legacy.total > 0 && !(j.fail || []).length, `doctor: ${doc.out.slice(0, 400)}`);
-  // (2) una carpeta real con el nombre viejo no se pisa
+  // (2) uno que la persona borró a mano (sin la nota del retiro) no vuelve, aunque lo restaurado lo nombre
+  const y = installed('vuelta-borrado-a-mano');
+  assert.strictEqual(harness(y.h, y.C, ['relocate']).rc, 0);
+  fs.unlinkSync(legacyOf(y.h));
+  const by = snapshots(y.h).find((n) => manifest(y.h, n).reason === 'relocate');
+  const rby = harness(y.h, y.C, ['rollback', '--to', by]);
+  assert.ok(fs.readFileSync(y.m.files.claudeMd, 'utf8').includes(OLD_IMPORT), `(2) CLAUDE.md no volvió (la prueba no reproduce el caso): ${rby.all}`);
+  assert.ok(!exists(legacyOf(y.h)), `(2) la vuelta atrás repuso un viejo que la persona borró: ${rby.all}`);
+  // (3) una carpeta real con el nombre viejo no se pisa
   const x = installed('vuelta-carpeta');
   assert.strictEqual(harness(x.h, x.C, ['relocate']).rc, 0);
   retire(x);
