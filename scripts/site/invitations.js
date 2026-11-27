@@ -103,7 +103,7 @@ function crearInvitaciones({ cfg, env = process.env, dataDir = null, llave, ahor
   }
   function guardar(d) {
     if (!archivo) return;
-    const tmp = `${archivo}.${process.pid}.tmp`;
+    const tmp = `${archivo}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
     const { llaveNueva: _l, ...limpio } = d;
     fs.writeFileSync(tmp, JSON.stringify({ ...limpio, control: CONTROL }));
     fs.renameSync(tmp, archivo);

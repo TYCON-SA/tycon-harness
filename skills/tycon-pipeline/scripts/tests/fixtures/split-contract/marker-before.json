@@ -381,6 +381,13 @@
       "stderr": "marker.js compare-waiver: faltan --command <candidato> y --reason \"<por qué>\" (y --story <historia>).\n",
       "archivos": {}
     },
+    "release-write-after-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js release-write-after: faltan --for-session <la sesión frenada> y --reason \"<qué miraste>\".\n",
+      "archivos": {}
+    },
     "sign-adversarial-skip-sin-args": {
       "status": 2,
       "signal": null,

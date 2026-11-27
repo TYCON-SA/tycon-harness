@@ -167,7 +167,7 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
   function guardar() {
     for (const k of Object.keys(memoria)) if (!enHistoria(memoria[k])) delete memoria[k];
     if (!archivo) return;
-    const tmp = `${archivo}.${process.pid}.tmp`;
+    const tmp = `${archivo}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
     try { fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`); fs.renameSync(tmp, archivo); } catch (e) {
       log(`mantenimiento: la lista de lo ya decidido no se pudo guardar (${(e && e.code) || 'error'}): vale hasta el próximo reinicio`);
     }
