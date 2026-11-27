@@ -163,6 +163,15 @@ frena "T4ad · dns-alias con --original-server de producción" "az sql server dn
 frena "T4ae · --name= pegado en az sql server show" "az sql server show --name=acme-sql -g ACME"
 frena "T4af · -n pegado en az sql server delete" "az sql server delete -nacme-sql -g ACME --yes"
 pasa  "T4ag · outbound-firewall-rule sobre no-producción" "az sql server outbound-firewall-rule create -n destino.example.com --server acme-sql-staging -g ACME"
+# Segunda vuelta de Fable: un --server de no-producción no sirve de señuelo. Todos frenan.
+SER_AZ="--se""r"
+frena "T4ah · señuelo y la abreviatura más corta con producción" "az sql server firewall-rule create --server acme-sql-staging $SER_AZ acme-sql -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4ai · señuelo y un segundo az en el mismo tramo" "eval az sql server firewall-rule list --server acme-sql-staging -g ACME \\; az sql server delete -n acme-sql -g ACME --yes"
+frena "T4aj · el señuelo como destino de una redirección" "az sql server firewall-rule create -n acme-sql -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4 2> --server=acme-sql-staging"
+frena "T4ak · una redirección que la ruta no reconoce" "az sql server >| firewall-rule delete -n acme-sql -g ACME --yes 2> --server=acme-sql-staging"
+frena "T4al · un valor que az lee de un archivo" "az sql server firewall-rule create --server @/tmp/srv.txt -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+pasa  "T4am · la regla sobre no-producción con la salida a un archivo" "az sql server firewall-rule create --server acme-sql-staging -n abrir -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4 > /tmp/regla.json 2>&1"
+pasa  "T4an · el -n de otro programa delante de az no es el servidor" "watch -n 5 az sql server list -g ACME"
 # 6.3 · T11 y T12: el borrado de un servidor o de una base de producción ya frenaba; se fija. La sentencia de borrado se
 # arma por partes: escrita entera, el freno general corta el comando que corre esta suite.
 frena "6.3 T11 · borrar el servidor de producción por -n" "az sql server delete -n acme-sql --yes"

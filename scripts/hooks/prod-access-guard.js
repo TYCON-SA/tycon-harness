@@ -3559,7 +3559,7 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     out.push({ host: h, crudo: texto, via });
   };
 
-  for (const { texto } of partes) {
+  for (const [iParte, { texto, sep }] of partes.entries()) {
     const sinPrefijo = texto.replace(PREFIJOS, '');
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     if (!t.length) continue;
@@ -3619,39 +3619,104 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
         if (!t[k] || /[$*?{}()`[\]]/.test(t[k])) rutaDudosa = true;
         rutaLimpia.push(t[k]);
       }
-      // el servidor también en las formas que az acepta y el freno no leía: el valor pegado (`-sX`, `-s=X`), la bandera
-      // abreviada (serv y serve, abreviaturas de server) y el servidor de origen de un alias de DNS (`--original-server`)
-      // (las banderas son de az: su lector de argumentos acepta las abreviaturas de server, serv y serve)
-      const BANDERA_SERVIDOR = /^--(?:serv|serve|server|original-server)$/;
-      const PEGADO_SERVIDOR = /^--(?:serv|serve|server|original-server)[=:](.+)$|^-s=?(.+)$/;
-      let servidorLeido = false;     // un servidor nombrado con una forma que el freno lee entera
-      let servidorRaro = false;      // una forma de servidor que az acepta y que no es `--server X` / `-s X` / `--server=X`
-      for (let i = 1; i < t.length; i++) {
-        const esS = t[i] === '-s' && t.includes('sql') && !sinFlagS;
-        if ((t[i] === '--server' || esS) && t[i + 1] !== undefined && !t[i + 1].startsWith('-')) servidorLeido = true;
-        else if (/^--server[=:].+$/.test(t[i])) servidorLeido = true;
-        else if (BANDERA_SERVIDOR.test(t[i]) || (PEGADO_SERVIDOR.test(t[i]) && t.includes('sql') && !(t[i].startsWith('-s') && sinFlagS))) servidorRaro = true;
-      }
+      // El servidor también en las formas que az acepta y el freno no leía: el valor pegado (`-sX`, `-s=X`), las banderas
+      // abreviadas (el lector de argumentos de az acepta un prefijo que no sea ambiguo: de server, desde «se»; de
+      // original-server, desde «original-se») y el servidor de origen de un alias de DNS (`--original-server`)
+      const enSql = t.includes('sql');
+      const esBanderaServidor = (w) => {
+        const b = String(w);
+        if (b === '--server') return true;
+        if (!enSql) return false;
+        return (b.length >= 4 && '--server'.startsWith(b)) || (b.length >= 13 && '--original-server'.startsWith(b));
+      };
+      const pegadoServidor = (w) => {
+        const m = /^(--[A-Za-z-]+)[=:](.+)$/.exec(String(w));
+        if (m && esBanderaServidor(m[1])) return m[2];
+        const c = /^-s=?(.+)$/.exec(String(w));
+        return c && enSql && !sinFlagS ? c[1] : null;
+      };
       // `-n` es el nombre de la regla o del alias, no el servidor, SÓLO en estos subgrupos (donde az usa `--server` para
-      // el servidor) y SÓLO si el comando lo nombra en una forma que el freno lee entera. En cualquier otro caso `-n` se
+      // el servidor) y SÓLO si el freno lee el comando ENTERO (A53, dos vueltas de Fable). En cualquier otro caso `-n` se
       // lee como servidor, como siempre: en `audit-policy`, `ad-only-auth` o `advanced-threat-protection-setting` el
-      // servidor ES `-n`, y sin `--server` az puede tomarlo de sus valores por defecto. Leerlo de más frenaba al dueño
-      // una regla de firewall sobre un servidor que no es de producción (A53)
+      // servidor ES `-n`; sin `--server` az puede tomarlo de sus valores por defecto; y un `--server` de prueba puede
+      // ser un señuelo si producción entra por una forma que el freno no ve (una abreviatura, otro `az` en el mismo
+      // tramo, una redirección). Leerlo de más frenaba al dueño una regla de firewall sobre un servidor de prueba
       const SUBGRUPOS_CON_NOMBRE_PROPIO = new Set(['firewall-rule', 'ipv6-firewall-rule', 'outbound-firewall-rule', 'vnet-rule', 'dns-alias']);
+      // las banderas de az de esos subgrupos y las globales de salida, escritas enteras: otra (una abreviatura, `--ids`)
+      // no se lee y el comando cuenta como no legible. Son nombres de az, no del arnés: van sin sus dos guiones
+      const BANDERAS_DE_REGLA = new Set([...['server', 'name', 'resource-group', 'start-ip-address', 'end-ip-address',
+        'start-ipv6-address', 'end-ipv6-address', 'subnet', 'vnet-name', 'ignore-missing-endpoint', 'original-server', 'output',
+        'query', 'only-show-errors', 'yes', 'subscription', 'no-wait'].map((b) => `--${b}`), '-s', '-n', '-g', '-i', '-o', '-y']);
+      const REDIRECCION_COMUN = /^(?:[0-9]?>>?|&>)$/;
+      const REDIRECCION_PEGADA = /^(?:[0-9]?>>?|&>)[^-&|!<>][^&|<>]*$/;
+      const legible = (() => {
+        // un solo `az`, y es la primera palabra del tramo (sin `eval`, `find`, `ssh` ni `watch` delante)
+        if (!esAz(t[0]) || t.filter(esAz).length !== 1) return false;
+        // el tramo entero: lo separan del resto separadores llanos, no una sustitución (`$(…)`, comillas invertidas)
+        // que el lector corta en otro tramo
+        const SEP_LLANO = new Set(['', ';', '&&', '||', '|', '|&', '&', '\n']);
+        if (!SEP_LLANO.has(sep) || (iParte > 0 && !SEP_LLANO.has(partes[iParte - 1].sep))) return false;
+        // lo que el shell cambia (sustituciones, variables, barras, llaves) o az lee de un archivo, mirado en el texto
+        // crudo del tramo: las palabras ya vienen sin las sustituciones
+        if (/[\\$`{}]/.test(texto) || /(?:^|[\s=])@/.test(texto)) return false;
+        let servidores = 0;
+        let sueltas = 0;            // las palabras que no son bandera ni su valor: sql, server, el subgrupo y el verbo
+        let esperaValor = false;
+        const SIN_VALOR = new Set(['--yes', '-y', '--only-show-errors', '--no-wait']);
+        let ultimaBandera = -1;
+        let primeraRedireccion = Infinity;
+        for (let i = 1; i < t.length; i++) {
+          const w = String(t[i]);
+          // lo que el shell cambia o az lee de un archivo no se puede leer acá
+          if (/[\\$`{}]/.test(w) || /(?:^|=)@/.test(w)) return false;
+          if (/[<>]/.test(w)) {
+            if (w === '2>&1') { primeraRedireccion = Math.min(primeraRedireccion, i); continue; }
+            if (REDIRECCION_COMUN.test(w)) {
+              const destino = t[i + 1];
+              if (destino === undefined || /^-|[&|<>]/.test(String(destino))) return false;
+              primeraRedireccion = Math.min(primeraRedireccion, i);
+              i++;
+              continue;
+            }
+            if (REDIRECCION_PEGADA.test(w)) { primeraRedireccion = Math.min(primeraRedireccion, i); continue; }
+            return false;
+          }
+          if (/[&|;]/.test(w)) return false;
+          if (!w.startsWith('-')) {
+            if (esperaValor) esperaValor = false;
+            else sueltas++;
+            continue;
+          }
+          const bandera = w.includes('=') ? w.slice(0, w.indexOf('=')) : w;
+          esperaValor = !w.includes('=') && !SIN_VALOR.has(bandera);
+          if (!BANDERAS_DE_REGLA.has(bandera)) return false;
+          if (bandera === '--server' || bandera === '-s') {
+            servidores++;
+            // el servidor, un nombre simple: lo que tiene barras o extensión el freno lo toma por archivo
+            const valor = w.includes('=') ? w.slice(w.indexOf('=') + 1) : t[i + 1];
+            if (!/^[A-Za-z0-9][A-Za-z0-9-]*(?:\.database\.windows\.net)?$/.test(String(valor || ''))) return false;
+          }
+          ultimaBandera = i;
+        }
+        // un servidor, una vez; y las redirecciones después de la última bandera
+        return servidores === 1 && sueltas === 4 && primeraRedireccion > ultimaBandera;
+      })();
       const nombreEsObjeto = !rutaDudosa && rutaLimpia.length === 3 && rutaLimpia[0] === 'server'
-        && SUBGRUPOS_CON_NOMBRE_PROPIO.has(rutaLimpia[1]) && servidorLeido && !servidorRaro;
+        && SUBGRUPOS_CON_NOMBRE_PROPIO.has(rutaLimpia[1]) && legible;
+      // el `-n` de otro programa delante de az (`watch -n5 az …`) no es de az
+      const iDelAz = t.findIndex(esAz);
       for (let i = 1; i < t.length; i++) {
         // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
-        const esSqlServer = t.includes('sql') && t.includes('server') && !nombreEsObjeto;
-        const esFlagServidor = (t[i] === '--server' || BANDERA_SERVIDOR.test(t[i]) || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
+        const esSqlServer = t.includes('sql') && t.includes('server') && !nombreEsObjeto && i > iDelAz;
+        const esFlagServidor = (esBanderaServidor(t[i]) || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
                                 (esSqlServer && (t[i] === '-n' || t[i] === '--name' || t[i] === '--nam' || t[i] === '--na')));
         if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
         const igual = /^--server[=:](.+)$/.exec(t[i]);
         if (igual) agregar(crudoDe(texto, igual[1]), 'az');
         // las formas pegadas: `-sX`, `-s=X`, la abreviada con `=`, `--original-server=X`; y, donde `-n` es el servidor, `-nX`,
         // `-n=X`, `--name=X`
-        const pegado = t.includes('sql') ? PEGADO_SERVIDOR.exec(t[i]) : null;
-        if (pegado && !(t[i].startsWith('-s') && sinFlagS)) agregar(crudoDe(texto, pegado[1] || pegado[2]), 'az');
+        const pegado = pegadoServidor(t[i]);
+        if (pegado) agregar(crudoDe(texto, pegado), 'az');
         const nombrePegado = esSqlServer ? /^(?:-n=?|--name[=:]|--nam[=:]|--na[=:])(.+)$/.exec(t[i]) : null;
         if (nombrePegado) agregar(crudoDe(texto, nombrePegado[1]), 'az');
         const rec = RECURSO_SQL.exec(t[i]);
