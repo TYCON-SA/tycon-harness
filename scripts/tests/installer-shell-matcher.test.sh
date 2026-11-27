@@ -72,8 +72,8 @@ const ours = (cmd, rel) => /^(node|bash) "/.test(cmd) && cmd.endsWith('/' + rel 
 for (const [event, rels] of Object.entries(WANT)) {
   for (const rel of rels) {
     const all = rows.filter((r) => r.event === event && ours(r.cmd, rel) && r.matcher !== 'Edit|Write');
-    // el freno de mano mira también la herramienta Monitor: su comando corre en la misma consola
-    const want = rel === 'safety-guard-pre.sh' ? 'Bash|Monitor|PowerShell' : 'Bash|PowerShell';
+    // el freno de mano y el de escrituras miran también la herramienta Monitor: su comando corre en la misma consola
+    const want = rel === 'safety-guard-pre.sh' || rel === 'tycon-pipeline/scripts/on-bash-write-gate.js' ? 'Bash|Monitor|PowerShell' : 'Bash|PowerShell';
     const good = all.filter((r) => r.matcher === want);
     if (good.length !== 1 || all.length !== 1) out.push(`${event} ${rel}: ${good.length} con «${want}», ${all.length} en total (${all.map((r) => r.matcher || '*').join(', ')})`);
   }
