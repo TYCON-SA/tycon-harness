@@ -2949,6 +2949,12 @@
       "requiere": []
     },
     {
+      "__nota": "HARNESS-C1 frena también dejar fijo en el arranque del shell un control bajado a aviso (TYCON_INTERNAL_HISTORY=warn), en Unix y en Windows; subirlo (block) pasa. Casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-c1-warn.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
