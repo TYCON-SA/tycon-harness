@@ -2013,3 +2013,19 @@ test('F219-T1 RrApago_FirmadoEnLaVentana_NoEsFicha @fila-219', () => {
   const sinMedir = volcado({ sid: 's' }); sinMedir.firmas = { estado: 'no_medido', motivo: 'x' };
   assert.strictEqual(regla(revisar(apagado, { volcado: sinMedir, registros: conFrenos([]) }), 'RR-APAGO').length, 1, 'sin firmas medidas, sigue la ficha');
 });
+
+// T41b ConversacionConTope (A41)
+// 🔴 Falla con: abrir la conversación de una ejecución sin tope. Una de unos KB que abre a GB, subida con la llave de
+//    sólo crear, se juntaba entera; ahora se abre con el tope de afuera del sitio (changes.js) y la que lo pasa es ilegible.
+test('T41b ConversacionConTope', async (t) => {
+  const CH = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'changes.js'));
+  const mb = buzon({ 'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: volcado({ sid: SID(1) }), hilo: cmd(`${PIPE} next`) }] } });
+  const original = zlib.gunzipSync;
+  const topes = [];
+  zlib.gunzipSync = (buf, o) => { topes.push(o && o.maxOutputLength); return original(buf, o); };
+  t.after(() => { zlib.gunzipSync = original; });
+  await correr(mb, ops());
+  zlib.gunzipSync = original;
+  assert.ok(topes.length > 0, 'la conversación se abrió');
+  assert.ok(topes.every((x) => Number.isFinite(x) && x <= CH.TOPE_HILO_DESCOMPRIMIDO), `topes: ${topes.join(', ')}`);
+});
