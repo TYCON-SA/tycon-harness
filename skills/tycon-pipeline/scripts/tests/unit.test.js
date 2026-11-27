@@ -2859,6 +2859,12 @@ test('Waiver_LegacyLinearLog_OnlyNewSignatures_NothingToCompare @A71 — un regi
   appendWaiverSeguro({ story: '9.1', acs: [1], matrixHash: 'm', approvedBy: 'lab', nowIso: '2026-11-27T10:00:00Z', logPath, ok: 'aprobado', tty: false });
   assert.strictEqual(verificadorDeAntes(fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean)).length, 0, 'el verificador viejo no la lee');
   assert.strictEqual(loDeAntesSeLeeIgual(logPath), 0);
+  assert.strictEqual(waiverLib.verifyChain(logPath).entries.length, 1, 'el verificador de ahora sí la lee');
+  // mezclado: firmas viejas y después una con el ok del chat. Lo viejo se compara por prefijo, y lo nuevo va después
+  const { logPath: mezclado } = registroDePrueba(lineal([firma('6.1', [1]), firma('6.2', [2])]));
+  appendWaiverSeguro({ story: '9.2', acs: [1], matrixHash: 'm', approvedBy: 'lab', nowIso: '2026-11-27T11:00:00Z', logPath: mezclado, ok: 'aprobado', tty: false });
+  assert.strictEqual(loDeAntesSeLeeIgual(mezclado), 2);
+  assert.deepStrictEqual(waiverLib.verifyChain(mezclado).entries.map((e) => e.story), ['6.1', '6.2', '9.2']);
 });
 
 test('Waiver_RevertAndCherryPick_Survive — con firmas nuevas, ni el revert ni el cherry-pick rompen (T8)', () => {

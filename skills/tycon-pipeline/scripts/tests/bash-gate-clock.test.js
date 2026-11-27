@@ -185,22 +185,26 @@ test('T2b BashGateClock_RealGate_SameVerdicts @story-8.308 @ac-2 — el freno de
   sinCorte(r, f.registro(), 'también con una entrada de 1 MB');
 });
 
-/** El veredicto salió del análisis: frenó por la historia, sin el corte del reloj ni el de una falla. */
+/**
+ * El veredicto salió del análisis: frenó por la historia, sin el corte del reloj ni una falla. Del registro sólo se
+ * descuentan los renglones de «lento» (dependen de la máquina): cualquier otro, también una falla atrapada, es rojo.
+ */
 function sinCorte(r, registro, que) {
   assert.strictEqual(r.status, 2, que);
   assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/, que);
   assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, que);
-  assert.doesNotMatch(registro, /FRENÓ POR FALLA|FAILED/, que);
+  assert.strictEqual(registro.split('\n').filter((l) => l && !/ on-bash-write-gate LENTO: /.test(l)).join('\n'), '', que);
 }
 
 // 🔴 Falla con: la prueba del freno de verdad pide que no quede el renglón de «lento», que depende de la velocidad de la
 // máquina (issue #1855: bajo el medidor de cobertura, en una máquina de 4 núcleos, T2b daba rojo en main).
 test('T2c BashGateClock_RealGate_SlowMachine_SameVerdict @A71 — en una máquina lenta, el veredicto es el mismo y lo lento es un aviso', (t) => {
   const c = corral(t);
-  // la máquina lenta, de juguete: el reloj de la pared avanza 40 s entre el arranque y el final (el corte usa el
+  // la máquina lenta, de juguete: cada lectura del reloj de la pared avanza 40 s más que la anterior, así entre el
+  // arranque y el final pasan 40 s o más sin importar cuántas lecturas haga el freno antes (el corte usa el
   // temporizador, que no se toca)
   const previa = path.join(c.dir, 'reloj-lento.js');
-  fs.writeFileSync(previa, 'const r = Date.now; let n = 0; Date.now = () => r() + (++n > 1 ? 40000 : 0);\n');
+  fs.writeFileSync(previa, 'const r = Date.now; let n = 0; Date.now = () => r() + (n++) * 40000;\n');
   const f = freno(t, ['-r', previa]);
   const r = f.correr('rm specs/story-1.1.md', { TYCON_BASH_GATE_TIMEOUT_S: '50' });
   sinCorte(r, f.registro(), 'en una máquina lenta');

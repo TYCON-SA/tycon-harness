@@ -212,8 +212,14 @@ function updateState(paths, mainRepo, session, fn) {
 // y una que depende del tiempo puede pasar sin él y fallar con él (issue #1855). Se compara con lo de la misma condición.
 const SUFIJO_COBERTURA = ' (con cobertura)';
 const claveDe = (ruta, coverage) => (coverage ? `${ruta}${SUFIJO_COBERTURA}` : ruta);
-/** ¿La suite pasó en `at` (los resultados de una punta), con o sin el medidor? */
-const verdeEn = (at, ruta) => [ruta, `${ruta}${SUFIJO_COBERTURA}`].some((k) => at[k] && at[k].estado === 'verde');
+/**
+ * ¿La suite del registro `rec` pasó en `at` (los resultados de una punta)? En la condición con que falló (`rec.cobertura`,
+ * que anota `join`); un registro de antes, sin esa anotación, acepta el verde de cualquiera de las dos.
+ */
+const verdeEn = (at, ruta, rec) => {
+  const claves = rec && rec.cobertura ? [claveDe(ruta, rec.cobertura[ruta] === true)] : [ruta, `${ruta}${SUFIJO_COBERTURA}`];
+  return claves.some((k) => at[k] && at[k].estado === 'verde');
+};
 
 /** Guarda los resultados de main de `sha` (`{ [ruta]: { estado, casos, casos_completos } }`) y poda los sha viejos. */
 function saveResults(state, sha, measured, session) {
@@ -241,7 +247,7 @@ function closeIfGreen(state, sha, { esMasNueva } = {}) {
   if (!rec || !sha || rec.sha === sha) return null;
   if (esMasNueva && rec.sha && !esMasNueva(rec.sha, sha)) return null;
   const at = state.results[sha] || {};
-  if (!(rec.suites || []).every((ruta) => verdeEn(at, ruta))) return null;
+  if (!(rec.suites || []).every((ruta) => verdeEn(at, ruta, rec))) return null;
   rec.closed = new Date().toISOString();
   rec.closedSha = sha;
   return rec;
@@ -430,7 +436,7 @@ function judge({ tree, fallas = [], ausentes = [], assembled = false, max = DEFA
   const cierraConLoGuardado = () => {
     const st = readState(paths, mainRepo);
     const rec = openRecord(st);
-    return Boolean(rec && rec.sha !== sha && (rec.suites || []).length && rec.suites.every((r) => verdeEn(st.results[sha] || {}, r)));
+    return Boolean(rec && rec.sha !== sha && (rec.suites || []).length && rec.suites.every((r) => verdeEn(st.results[sha] || {}, r, rec)));
   };
   if (Object.keys(measured).length || cierraConLoGuardado()) {
     try {
@@ -531,7 +537,7 @@ function join({ tree, sha, suites, session, story, home }) {
     const now = new Date().toISOString();
     let rec = openRecord(state);
     if (!rec) {
-      rec = { id: `main-${state.next_id}`, sha, suites: [], casos: {}, since: now, waiting: [], fix: null, closed: null, closedSha: null };
+      rec = { id: `main-${state.next_id}`, sha, suites: [], casos: {}, cobertura: {}, since: now, waiting: [], fix: null, closed: null, closedSha: null };
       state.next_id += 1;
       state.broken.push(rec);
     }
@@ -541,6 +547,11 @@ function join({ tree, sha, suites, session, story, home }) {
       if (Array.isArray(s.casos) && s.casos.length) rec.casos[s.ruta] = s.casos.map(String);
       // la raíz de la suite en la lista: la espera de fondo vuelve a medirla sin una corrida del portón al lado
       if (s.raiz) rec.raiz = { ...(rec.raiz || {}), [s.ruta]: s.raiz };
+      // la condición con que falló (con el medidor de cobertura o sin él): la espera la mide igual y el cierre pide el
+      // verde de esa misma condición. Con el medidor una vez, queda con el medidor
+      rec.cobertura = rec.cobertura || {};
+      if (s.coverage === true) rec.cobertura[s.ruta] = true;
+      else if (!(s.ruta in rec.cobertura)) rec.cobertura[s.ruta] = false;
     }
     if (sha && sha !== rec.sha) rec.sha = sha;
     if (!rec.waiting.some((w) => w && w.session === sid)) rec.waiting.push({ session: sid, since: now, ...(story ? { story } : {}) });
@@ -643,7 +654,15 @@ function wait({ repo, id, interval, max, home, session, readMemory, now = Date.n
         const lista = suitesOf(repo).entries || [];
         const raizDe = (ruta) => (rec.raiz && rec.raiz[ruta]) || ((lista.find((s) => s && s.ruta === ruta) || {}).raiz) || null;
         const fallas = (rec.suites || []).map((ruta) => ({ ruta, entrada: { raiz: raizDe(ruta), ruta }, casos: (rec.casos && rec.casos[ruta]) || [] }));
-        const j = judge({ tree: repo, fallas, max: fallas.length, atajo: false, session, home });
+        // cada suite en la condición con que falló: un registro de antes, sin la anotación, se mide sin el medidor
+        const conMedidor = (f) => Boolean(rec.cobertura && rec.cobertura[f.ruta] === true);
+        const j = { lines: [], suites: [] };
+        for (const grupo of [fallas.filter((f) => !conMedidor(f)), fallas.filter(conMedidor)]) {
+          if (!grupo.length) continue;
+          const r = judge({ tree: repo, fallas: grupo, max: grupo.length, atajo: false, session, home, coverage: conMedidor(grupo[0]) });
+          j.lines.push(...r.lines);
+          j.suites.push(...r.suites);
+        }
         for (const l of j.lines) log(l);
         // una suite que no se pudo medir (la copia ocupada, un tope) no da la punta por medida: la vuelta siguiente la
         // vuelve a medir, y se dice por qué no

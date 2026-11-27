@@ -406,7 +406,7 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
     }
     summary.main_fails = deMain.map((s) => s.ruta);
     esperaMain = deMain.length > 0 && m.suites.every((s) => s.verdict === 'main-falla') && deMain.length === fallas.length && !ausentes.length;
-    if (esperaMain) summary.waiting_on_main = { sha: m.sha, suites: deMain.map((s) => ({ ruta: s.ruta, raiz: s.raiz, casos: s.casos })) };
+    if (esperaMain) summary.waiting_on_main = { sha: m.sha, suites: deMain.map((s) => ({ ruta: s.ruta, raiz: s.raiz, casos: s.casos, ...(coverage ? { coverage: true } : {}) })) };
   }
   if (heredadas.length || baseCheck || mainCheck) {
     summary.fallas = fallas;
