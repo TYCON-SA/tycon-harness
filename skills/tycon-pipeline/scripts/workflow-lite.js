@@ -135,7 +135,18 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs, { stdin = false, env = {} }
     // El prompt viaja siempre por env (el comando propio y el falso de las pruebas lo leen de ahí); además, por la
     // entrada estándar o en la línea de comando, según lo que declara el corredor.
     // Las corridas de un corredor no ven los ganchos del arnés: TYCON_EVAL_SANDBOX los calla.
-    const ch = spawn(bin, pre, { windowsHide: true, cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
+    let ch;
+    try {
+      ch = spawn(bin, pre, { windowsHide: true, cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
+    } catch (e) {
+      // Node tira al lanzar (no como evento) cuando la línea de comando no entra: ENAMETOOLONG en Windows, cuyo tope es de
+      // unos 32 KB, y E2BIG en Mac y Linux. Pasa con un corredor que recibe el pedido como argumento
+      const largo = (e && (e.code === 'ENAMETOOLONG' || e.code === 'E2BIG'))
+        ? `el pedido no entra en la línea de comando (${pre.reduce((n, a) => n + String(a).length, 0)} caracteres; en Windows el tope es de unos 32.000): este corredor lo recibe como argumento; usá uno que lo lea por la entrada estándar`
+        : null;
+      resolve({ code: -1, out: '', err: largo || (e && e.message) || 'no se pudo lanzar' });
+      return;
+    }
     let out = '', err = '';
     const killer = setTimeout(() => ch.kill('SIGKILL'), timeoutMs);
     ch.stdout.on('data', (d) => (out += d));
@@ -598,7 +609,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe, runWorkflow };
+module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe, runWorkflow, spawnAgent };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });
