@@ -283,7 +283,7 @@ function readAll(stateDir) {
       unreadable += r.unreadable;
     } catch (e) { return { lines: [], unreadable, error: `no pude leer ${path.join(dir, f)} (${e.code || e.message})` }; }
   }
-  lines.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  lines.sort((a, b) => String(a && a.ts).localeCompare(String(b && b.ts)));
   return { lines, unreadable };
 }
 

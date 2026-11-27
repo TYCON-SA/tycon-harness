@@ -198,3 +198,125 @@ test('T4b Notices_GiveRealPath_UninstallUnlinksOnly @story-8.335 @ac-3 — el av
   assert.ok(!lexists(at), 'el enlace se fue');
   assert.ok(fs.existsSync(path.join(state, 'active', 'otra.json')), 'la carpeta del estado, intacta');
 });
+
+// ── T5 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: el estado de horas sin un comando que lo escriba (el freno de la carpeta del estado para Write y la
+// consola, y la entrada abierta queda sin anotar), el aviso de trabajo que pide escribirlo a mano, el freno que no dice
+// cómo, o una sesión que anota el archivo de otra.
+test('T5 StateCommand_WritesOwnEntry @A68 — state.js anota y saca la entrada de la sesión; el aviso y el freno lo nombran', () => {
+  const home = toyHome('t5');
+  const repo = path.join(home, 'repo');
+  fs.mkdirSync(repo);
+  const STATE = path.join(CLOCKI, 'state.js');
+  const correr = (args, sid = 'sess-a', extra = {}) => spawnSync(process.execPath, [STATE, ...args], {
+    env: envFor(home, { CLAUDE_CODE_SESSION_ID: sid, ...extra }), encoding: 'utf8', cwd: repo,
+  });
+  const archivo = path.join(home, '.tycon', 'state', 'clocki', 'active', 'sess-a.json');
+  const r1 = correr(['open', '--entry', 'E-77', '--workspace', 'ws1', '--project', 'p1', '--description', 'Story 9.9 — algo', '--cwd', repo]);
+  assert.strictEqual(r1.status, 0, r1.stderr);
+  const anotado = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  const clave = Object.keys(anotado)[0];
+  assert.strictEqual(anotado[clave].entryId, 'E-77');
+  assert.match(anotado[clave].startedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/, 'hora local, sin zona');
+  // el aviso de trabajo la ve: «ya hay una entrada abierta»
+  const ow = spawnSync(process.execPath, [path.join(CLOCKI, 'on-work.js')], { env: envFor(home), encoding: 'utf8',
+    input: JSON.stringify({ event: 'start', repo, sessionId: 'sess-a', storyId: '9.9' }) });
+  assert.match(JSON.parse(ow.stdout).action, /ya hay una entrada abierta de esta sesión en Clockify \(E-77/);
+  // otra entrada encima de la abierta, no; el archivo de otra sesión, no
+  assert.strictEqual(correr(['open', '--entry', 'E-78', '--cwd', repo]).status, 2);
+  assert.strictEqual(correr(['open', '--entry', 'E-79', '--cwd', repo, '--session', 'sess-b']).status, 2);
+  assert.strictEqual(correr(['open', '--entry', 'E-79', '--cwd', repo], '').status, 2, 'sin sesión no anota');
+  assert.strictEqual(correr(['open', '--entry', '../x', '--cwd', repo]).status, 2, 'un id con barras no');
+  // el proyecto de la carpeta
+  assert.strictEqual(correr(['cache', '--workspace', 'ws1', '--project', 'p1', '--name', 'Repo', '--cwd', repo]).status, 0);
+  assert.strictEqual(Object.values(JSON.parse(fs.readFileSync(path.join(home, '.tycon', 'state', 'clocki', 'project-cache.json'), 'utf8')))[0].projectId, 'p1');
+  // sacarla: el archivo vacío se borra; sacarla otra vez sale 1
+  assert.strictEqual(correr(['close', '--cwd', repo]).status, 0);
+  assert.ok(!fs.existsSync(archivo));
+  assert.strictEqual(correr(['close', '--cwd', repo]).status, 1);
+
+  // sin entrada anotada, el aviso de trabajo pide anotarla con el comando, no a mano
+  const ow2 = spawnSync(process.execPath, [path.join(CLOCKI, 'on-work.js')], { env: envFor(home), encoding: 'utf8',
+    input: JSON.stringify({ event: 'start', repo, sessionId: 'sess-a', storyId: '9.9' }) });
+  const accion = JSON.parse(ow2.stdout).action;
+  assert.match(accion, /state\.js" open --entry/);
+  assert.doesNotMatch(accion, /guardala en/);
+
+  // el freno de la carpeta del estado, frente a ese archivo, nombra el comando de la integración
+  const GATE = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate.js');
+  const msg = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(GATE)}).blockMessage({ kind: 'state-dir' }, { filePath: ${JSON.stringify(archivo)}, via: 'Write' }))`],
+    { env: envFor(home), encoding: 'utf8' });
+  assert.strictEqual(msg.status, 0, msg.stderr);
+  assert.match(msg.stdout, /el estado de la integración Clockify no se escribe a mano/);
+  assert.match(msg.stdout, /clockify[\\/]scripts[\\/]state\.js/);
+  // y el freno de consola deja correr el comando (no nombra la carpeta del estado)
+  const { estadoPorOtroPrograma } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'bash-gate-scripts.js'));
+  const estado = path.join(home, '.tycon', 'state');
+  const enElEstado = (abs) => abs === estado || abs.startsWith(estado + path.sep);
+  assert.ok(!estadoPorOtroPrograma(`node "${STATE}" open --entry E-80 --cwd "${repo}"`, repo, repo, enElEstado), 'el comando pasa');
+});
+
+// ── T6 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: el cierre que no encuentra la entrada anotada en una carpeta madre, la de una sesión muerta sin salida,
+// un archivo roto que se escribe roto, un texto que empieza con `--` que se pierde, o la entrada sin su proyecto.
+test('T6 StateCommand_ReviewCases @A68 — carpeta madre, sesión muerta, archivo roto, texto con guiones y proyecto guardado', () => {
+  const home = toyHome('t6');
+  const repo = path.join(home, 'repo');
+  const sub = path.join(repo, 'sub');
+  fs.mkdirSync(sub, { recursive: true });
+  const STATE = path.join(CLOCKI, 'state.js');
+  const dir = path.join(home, '.tycon', 'state', 'clocki');
+  const correr = (args, sid = 'sess-a') => spawnSync(process.execPath, [STATE, ...args], {
+    env: envFor(home, { CLAUDE_CODE_SESSION_ID: sid }), encoding: 'utf8', cwd: repo,
+  });
+  const leer = (sid) => JSON.parse(fs.readFileSync(path.join(dir, 'active', `${sid}.json`), 'utf8'));
+
+  // el proyecto guardado completa la entrada; --story arma la descripción; un texto con guiones se toma entero
+  assert.strictEqual(correr(['cache', '--workspace', 'ws9', '--project', 'p9', '--cwd', repo]).status, 0);
+  assert.strictEqual(correr(['open', '--entry', 'E-1', '--story', '9.9', '--cwd', repo]).status, 0);
+  const e = Object.values(leer('sess-a'))[0];
+  assert.strictEqual(e.workspaceId, 'ws9');
+  assert.strictEqual(e.projectId, 'p9');
+  assert.strictEqual(e.description, 'Story 9.9');
+  assert.strictEqual(correr(['close', '--cwd', repo]).status, 0);
+  assert.strictEqual(correr(['open', '--entry', 'E-2', '--description', '--fix del login', '--cwd', repo]).status, 0);
+  assert.strictEqual(Object.values(leer('sess-a'))[0].description, '--fix del login');
+
+  // el cierre desde una carpeta de adentro saca la entrada de la madre; el aviso de trabajo da la madre
+  const ow = spawnSync(process.execPath, [path.join(CLOCKI, 'on-work.js')], { env: envFor(home), encoding: 'utf8',
+    input: JSON.stringify({ event: 'stop', repo: sub, sessionId: 'sess-a', storyId: '9.9' }) });
+  assert.match(JSON.parse(ow.stdout).action, new RegExp(`close --cwd "${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.strictEqual(correr(['close', '--cwd', sub]).status, 0);
+  assert.ok(!fs.existsSync(path.join(dir, 'active', 'sess-a.json')));
+
+  // un archivo roto (`[]`) se lee vacío: no se escribe roto
+  fs.writeFileSync(path.join(dir, 'active', 'sess-a.json'), '[]');
+  assert.strictEqual(correr(['open', '--entry', 'E-3', '--cwd', repo]).status, 0);
+  assert.ok(!Array.isArray(leer('sess-a')));
+
+  // la de otra sesión: viva, no; muerta (sin latido), sí
+  fs.writeFileSync(path.join(dir, 'active', 'sess-z.json'), JSON.stringify({ [repo]: { entryId: 'E-Z' } }));
+  fs.mkdirSync(path.join(dir, 'heartbeat'), { recursive: true });
+  // stable-data: un latido de ahora, para que la sesión cuente como viva; la prueba sólo mira viva o muerta
+  const ahora = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  fs.writeFileSync(path.join(dir, 'heartbeat', 'sess-z'), `${ahora.getFullYear()}-${p(ahora.getMonth() + 1)}-${p(ahora.getDate())}T${p(ahora.getHours())}:${p(ahora.getMinutes())}:${p(ahora.getSeconds())}`);
+  assert.strictEqual(correr(['close', '--orphan', 'sess-z', '--cwd', repo]).status, 2, 'viva: no');
+  fs.rmSync(path.join(dir, 'heartbeat', 'sess-z'));
+  assert.strictEqual(correr(['close', '--orphan', 'sess-z', '--cwd', repo]).status, 0, 'muerta: sí');
+  assert.ok(!fs.existsSync(path.join(dir, 'active', 'sess-z.json')));
+  assert.strictEqual(correr(['close', '--orphan', 'sess-a', '--cwd', repo]).status, 2, 'la propia no va por --orphan');
+});
+
+// ── T7 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: el freno que, frente a la ruta vieja del estado de horas (el enlace en la carpeta de Claude Code), no dice
+// que lo escribe el comando de la integración.
+test('T7 Gate_OldPath_NamesCommand @A68 — por el lugar viejo, el freno también nombra el comando', () => {
+  const home = toyHome('t7');
+  const GATE = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate.js');
+  const viejo = path.join(home, CLAUDE, 'clocki', 'active', 's1.json');
+  const msg = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(GATE)}).blockMessage({ kind: 'state-dir' }, { filePath: ${JSON.stringify(viejo)}, via: 'Write' }))`],
+    { env: envFor(home), encoding: 'utf8' });
+  assert.strictEqual(msg.status, 0, msg.stderr);
+  assert.match(msg.stdout, /state\.js/);
+});

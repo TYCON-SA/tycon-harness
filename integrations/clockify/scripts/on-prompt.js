@@ -27,6 +27,8 @@ const {
   stateMissing,
   CACHE_PATH,
 } = require('./lib');
+// el estado lo escribe el comando de la integración: a mano, el freno de la carpeta del estado lo para
+const STATE_JS = require('path').join(__dirname, 'state.js');
 
 // Keywords de intent/stop: FUENTE ÚNICA en lib.js (DEFAULT_SETTINGS, narrow/precision-first).
 // readSettings() las provee siempre — si el disco trae `[]` o nada, cae al narrow default.
@@ -121,8 +123,8 @@ ${lines.join('\n')}
 
 Es el timer de ESTA sesión (session_id "${sessionKey}"). Cerralo:
 ${mcpTool('update-clockify-time-entry')} con end=lastActivity (trim al último activity),
-luego borrá la entry del state: ${sessionFile} — eliminá la key
-[cwd] (si queda {}, borralo).
+luego sacala del estado con node "${STATE_JS}" close --cwd "<cwd>" (a mano no: el freno de la
+carpeta del estado lo para).
 
 🔴 NUNCA cierres timers de OTRAS sesiones, aunque luzcan idle/muertos. El usuario los
 gestiona con /clocki.`);
@@ -132,8 +134,8 @@ gestiona con /clocki.`);
   if (/(^|\s)\/clocki(\s|$)/i.test(prompt)) {
     emitReminder(`clocki: comando manual detectado. session_id de esta sesión: "${sessionKey}".
 El timer de esta sesión vive en ${sessionFile} — un archivo propio con forma { "<cwd>": <entry> }.
-Leé/escribí SOLO ese archivo. Cada sesión tiene el suyo, así que no hay riesgo de pisar
-timers de otras sesiones (fix race 2026-05-17). NO toques active/*.json de otras sesiones.`);
+Se escribe SÓLO con node "${STATE_JS}" (open | close | cache | show), nunca a mano: el freno de
+la carpeta del estado lo para. Cada sesión tiene su archivo; el comando toca sólo el de la sesión.`);
   }
 
   // Timer activo de ESTA sesión (walk-up por parents + scope por sessionId).
@@ -146,7 +148,7 @@ timers de otras sesiones (fix race 2026-05-17). NO toques active/*.json de otras
     const matchedStop = detectIntent(prompt, stopKeywords);
     if (matchedStop) {
       emitReminder(`clocki: el prompt parece fin de tarea ("${matchedStop}") y esta sesión tiene el timer "${activeForCwd.description}" abierto (entryId ${activeForCwd.entryId}, workspaceId ${activeForCwd.workspaceId}, projectId ${activeForCwd.projectId}, lastActivity ${activeForCwd.lastActivity}).
-- Terminó: cerralo con update-clockify-time-entry (end = ahora, o lastActivity si hubo pausa) y sacá la key ["${found.matchedKey}"] de ${sessionFile}.
+- Terminó: cerralo con update-clockify-time-entry (end = ahora, o lastActivity si hubo pausa) y sacala con node "${STATE_JS}" close --cwd "${found.matchedKey}".
 - Pasa a otra tarea: cerrá este y abrí el nuevo en el mismo paso, sin hueco.
 - Si no está claro, preguntá antes de cerrar. Nunca dejes el timer corriendo con la tarea terminada.
 Los pasos, en la skill clocki («Flujo de stop» y «Regla atómica close+open»).`);

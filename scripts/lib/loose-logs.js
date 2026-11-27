@@ -24,7 +24,8 @@ const STORES = ['safety-guard.log', 'tycon-observations', 'blocking-meter', 'lec
 /**
  * Los registros sueltos que declaran las integraciones del árbol en su `integration.json`:
  * `"looseStores": [{ "name": "<carpeta o archivo>", "linkOld": true }]`. Con `linkOld`, la mudanza deja en el lugar viejo
- * un enlace (una unión en Windows). Un nombre con barras o que empieza con un punto no se toma.
+ * un enlace (una unión en Windows). Un nombre con barras o que empieza con un punto no se toma. Con `writer` (un guion de
+ * la integración), ese registro lo escribe ese comando: el freno de la carpeta del estado lo nombra al frenar una escritura.
  */
 function integrationStores(root = path.join(__dirname, '..', '..')) {
   const out = [];
@@ -34,7 +35,15 @@ function integrationStores(root = path.join(__dirname, '..', '..')) {
     let m = null;
     try { m = JSON.parse(fs.readFileSync(path.join(root, 'integrations', d, 'integration.json'), 'utf8')); } catch (_) { continue; }
     for (const s of Array.isArray(m && m.looseStores) ? m.looseStores : []) {
-      if (s && typeof s.name === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(s.name)) out.push({ name: s.name, linkOld: s.linkOld === true });
+      if (!s || typeof s.name !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(s.name)) continue;
+      // `writer`: el comando de la integración que escribe ese registro (relativo a su carpeta, sin subir de ella)
+      let writer = typeof s.writer === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._/-]*\.js$/.test(s.writer) && !s.writer.split('/').includes('..')
+        ? path.join(root, 'integrations', d, s.writer) : null;
+      // un comando que no está no se nombra
+      if (writer && !fs.existsSync(writer)) writer = null;
+      // el nombre va al mensaje del freno: una línea, corta, de letras comunes
+      const label = String(typeof m.label === 'string' ? m.label : d).replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 40) || d;
+      out.push({ name: s.name, linkOld: s.linkOld === true, ...(writer ? { writer, label } : {}) });
     }
   }
   return out;

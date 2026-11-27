@@ -271,7 +271,7 @@
     "start-warning": {
       "status": 0,
       "signal": null,
-      "stdout": "Arranque: hecho, con aviso: no se pudo abrir el registro de horas\n",
+      "stdout": "Arranque: hecho, con aviso: no se pudo abrir el registro de horas\nDecile a la persona en una línea, ahora: no se pudo abrir el registro de horas (sin persona); las horas de esta historia pueden quedar mal registradas: la entrada que no queda anotada no la cierra ni la inactividad ni el fin de la historia.\n",
       "stderr": "",
       "archivos": {
         "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"start-warning\",\"part\":\"time-tracking\",\"motivo\":\"sin persona\",\"at\":\"<FECHA>\",\"story\":\"9.1\"}\n",
