@@ -10,9 +10,9 @@
 #
 # CÓMO LLEGA ACÁ
 # El script vive SOLO en el arnés y se referencia por path — no se copia, para que no haya dos
-# versiones que se separen. El instalador del arnés deja en cada máquina el enlace
-# $HOME/.claude/tycon-harness, que apunta al arnés instalado; una máquina de antes del cambio de lugar
-# todavía tiene $HOME/.claude/tycon-claude-guides, y también se busca ahí.
+# versiones que se separen. El gancho global del arnés, que delega en éste, le pasa en TYCON_GUIDES_DIR el arnés que
+# encontró (el lugar que el instalador le dejó anotado). Corrido suelto, sin la variable, mira la casa propia del arnés
+# (TYCON_HOME/harness o ~/.tycon/harness).
 #
 # 🔴 Por qué este archivo recién sirve desde 2026-08-23: con `core.hooksPath` global, git IGNORA
 # los `.githooks/` de cada repo. Este hook sólo corre porque el hook global del arnés ahora DELEGA
@@ -24,8 +24,7 @@
 set -uo pipefail
 
 if [ -z "${TYCON_GUIDES_DIR:-}" ]; then
-  TYCON_GUIDES_DIR="$HOME/.claude/tycon-harness"
-  [ -d "$TYCON_GUIDES_DIR" ] || [ ! -d "$HOME/.claude/tycon-claude-guides" ] || TYCON_GUIDES_DIR="$HOME/.claude/tycon-claude-guides"
+  case "${TYCON_HOME:-}" in /*) TYCON_GUIDES_DIR="$TYCON_HOME/harness" ;; *) TYCON_GUIDES_DIR="$HOME/.tycon/harness" ;; esac
 fi
 FM_LINT="$TYCON_GUIDES_DIR/scripts/lib/lint-story-frontmatter.js"
 

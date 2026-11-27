@@ -783,8 +783,9 @@ test('T22 Codigo_SinValoresDeUnaOrganizacion @story-2.27 @ac-22', () => {
   for (const nombre of ['function idEstable', 'function paraLista', 'function paraDetalle', 'function textosDe', 'function cabecera', 'function tabla', 'function pie']) {
     const i = r.indexOf(nombre);
     assert.ok(i >= 0, `runs.js tiene ${nombre}`);
-    // `.tycon-pipeline` es la carpeta de estado del arnés (el texto de la vista local), no un valor de una organización
-    const cuerpo = r.slice(i, r.indexOf('\n}\n', i)).replace(/\.tycon-pipeline/g, '');
+    // `.tycon-pipeline` y `.tycon/state` son la carpeta de estado del arnés, la vieja y la de hoy (el texto de la vista
+    // local), no un valor de una organización
+    const cuerpo = r.slice(i, r.indexOf('\n}\n', i)).replace(/\.tycon-pipeline|\.tycon\/state/g, '');
     for (const rx of marcas) assert.ok(!rx.test(cuerpo), `${nombre} no trae ${rx}`);
   }
 });

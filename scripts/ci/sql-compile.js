@@ -30,7 +30,7 @@
  * compilar (el Msg 1046 del caso), pero NO ejecuta los lotes anteriores: una tabla creada en un lote
  * y usada en el siguiente puede dar un error que al desplegar no existe. Por eso avisa y no frena.
  *
- * Se mide: cada migración deja una línea en ~/.claude/.tycon-pipeline/sql-compile.jsonl
+ * Se mide: cada migración deja una línea en ~/.tycon/state/sql-compile.jsonl
  * (compila · no-compila · sin-compilar). Con eso se decide después si pasa a frenar.
  *
  * Uso:  node sql-compile.js --staged [--repo <dir>]

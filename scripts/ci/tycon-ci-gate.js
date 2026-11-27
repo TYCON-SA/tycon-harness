@@ -16,7 +16,7 @@
  *
  * ── QUÉ CHEQUEA, Y POR QUÉ SÓLO ESTO ────────────────────────────────────────────────────────────
  * Únicamente lo que se puede decidir **con el repo y nada más**. Un control que necesita el estado
- * de la sesión (`~/.claude/...`), la base de engram o un servidor local NO puede correr acá, y
+ * de la sesión (la carpeta de Claude Code de la máquina), la base de engram o un servidor local NO puede correr acá, y
  * fingir que sí sería peor que no tenerlo.
  *
  *   1. **Frontmatter de stories legible** — cuando el frontmatter no parsea, las tools no dan
@@ -256,7 +256,7 @@ function contenidoEn(repo, ref, rel) {
 // matriz —o un ledger suelto— lo pondría verde sin una corrida real detrás. Mismo criterio que el
 // local: un `.md` con el prefijo de la story que no sea ninguno de esos tres.
 // 🔴 Es una COPIA deliberada de `lib/closing-evidence.js` del skill: este portón corre
-// en un agente sin `~/.claude/`, así que no puede importarla. Las dos las compara
+// en un agente sin las skills instaladas, así que no puede importarla. Las dos las compara
 // `scripts/tests/closing-evidence-parity.test.js` en cada corrida — mismo mecanismo que cuida
 // `validarRoster`. El medidor del tablero importa ESTA copia (mismo repo), así que son dos en total.
 // El freno del commit suma por AC la UNIÓN de las tres fuentes que escribe la máquina (registro de
@@ -708,7 +708,7 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main', { ci
 /**
  * Validación del roster. Es una COPIA deliberada de `lib/review-roster.js → validate` del skill:
  * el portón corre en un agente de CI que sólo hace checkout de este repo y del repo del producto,
- * sin `~/.claude/`. La paridad entre las dos definiciones la cuida
+ * sin las skills instaladas. La paridad entre las dos definiciones la cuida
  * `scripts/tests/roster-validate-parity.test.js`, que corre LAS DOS sobre los mismos casos y
  * compara veredicto y reglas — no la buena memoria de quien las edite.
  */

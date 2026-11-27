@@ -125,9 +125,12 @@ const CODIGO = [
   'app/page.tsx',
 ];
 
-/** Lo que se le sugiere a un pipeline sin filtro. Es la lista de arriba, por carpeta. */
+/**
+ * Lo que se le sugiere a un pipeline sin filtro. Es la lista de arriba, por carpeta, más la carpeta de Claude Code del
+ * repo, que se llama como la de la persona (el nombre lo dice tycon-home.js).
+ */
 const EXCLUDE_SUGERIDO = ['README.md', 'CLAUDE.md', 'AGENTS.md', '.engram-project', 'docs', 'specs', 'qa',
-  'tasks', '.advisors', '.engram', '.tycon', '.claude', '.vscode'];
+  'tasks', '.advisors', '.engram', '.tycon', path.basename(require('../setup/harness/tycon-home.js').claudeDir(os.homedir())), '.vscode'];
 
 function args(argv) {
   const o = { raiz: null, config: null, configDada: false, archivos: [], json: false, repo: null, changed: [] };

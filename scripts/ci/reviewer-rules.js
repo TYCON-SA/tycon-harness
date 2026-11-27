@@ -20,7 +20,7 @@
  *   · Sin llave, o si TypeSafe no contesta / da error: avisa por TODA línea candidata y dice por qué.
  *
  * Lo que imprime también va tachado: nunca una credencial ni un nombre de la lista en la terminal.
- * Se mide: una línea por archivo en ~/.claude/.tycon-pipeline/reviewer-rules.jsonl (conteos, sin texto).
+ * Se mide: una línea por archivo en ~/.tycon/state/reviewer-rules.jsonl (conteos, sin texto).
  *
  * Uso:     node reviewer-rules.js --staged [--repo <dir>]
  * Apagado: TYCON_REVIEWER_RULES=0 · modelo: TYCON_TYPESAFE_MODEL (default jev-latest)

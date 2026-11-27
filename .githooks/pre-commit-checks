@@ -23,21 +23,29 @@ if _checks_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
   export TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$_checks_root}" TYCON_SKILLS_DIR="${TYCON_SKILLS_DIR:-$_checks_root}"
 fi
 
-# El arnés que trae los guiones de la parte de las skills: la variable; si no, ~/.claude/tycon-harness y después el nombre
-# de antes, ~/.claude/tycon-claude-guides, bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Es la misma
-# función que la del hook global (scripts/hooks/git-pre-commit-global.sh), letra por letra: los dos nombres van escritos
-# (scripts/tests/fixtures/harness-place-names.json lo declara). Sin `-L` ni `readlink`: no andan igual en el bash de Git
-# para Windows; alcanza con que la carpeta exista.
+# El arnés que trae los guiones de la parte de las skills: la variable (el gancho global, que delega en éste, la pasa con
+# el arnés que encontró); si no, el lugar y su nombre viejo de un places.sh al lado de este archivo, y con el nombre de
+# la carpeta de Claude Code de ese archivo, bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Es la
+# misma función que la del hook global (scripts/hooks/git-pre-commit-global.sh), letra por letra: los dos nombres van
+# escritos (scripts/tests/fixtures/harness-place-names.json lo declara). Sin `-L` ni `readlink`: no andan igual en el bash
+# de Git para Windows; alcanza con que la carpeta exista.
 harness_dir() {
   if [ -n "${TYCON_GUIDES_DIR:-}" ]; then printf '%s' "$TYCON_GUIDES_DIR"; return 0; fi
+  TYCON_P_PLACE=""; TYCON_P_LEGACY_PLACE=""; TYCON_P_CLAUDE_DIR=""
+  # shellcheck disable=SC1091
+  if [ -f "$(dirname "$0")/places.sh" ]; then . "$(dirname "$0")/places.sh" 2>/dev/null; fi
+  for _hd_cand in "$TYCON_P_PLACE" "$TYCON_P_LEGACY_PLACE"; do
+    if [ -n "$_hd_cand" ] && [ -d "$_hd_cand/scripts" ]; then printf '%s' "$_hd_cand"; return 0; fi
+  done
+  _hd_cname="${TYCON_P_CLAUDE_DIR##*/}"
   for _hd_base in "${HOME:-}" "${USERPROFILE:-}"; do
-    [ -n "$_hd_base" ] || continue
+    [ -n "$_hd_base" ] && [ -n "$_hd_cname" ] || continue
     if command -v cygpath >/dev/null 2>&1; then _hd_base="$(cygpath -u "$_hd_base" 2>/dev/null || printf '%s' "$_hd_base")"; fi
     for _hd_name in tycon-harness tycon-claude-guides; do
-      if [ -d "$_hd_base/.claude/$_hd_name/scripts" ]; then printf '%s' "$_hd_base/.claude/$_hd_name"; return 0; fi
+      if [ -d "$_hd_base/$_hd_cname/$_hd_name/scripts" ]; then printf '%s' "$_hd_base/$_hd_cname/$_hd_name"; return 0; fi
     done
   done
-  printf '%s' "${HOME:-}/.claude/tycon-harness"
+  printf '%s' "$TYCON_P_PLACE"
 }
 
 # Sólo lectura: el chequeo antes de la firma del ok de guardar (lib/save-ok.js) corre estos controles con
