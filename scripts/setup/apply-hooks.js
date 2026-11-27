@@ -481,16 +481,17 @@ const NODE_FLOOR = path.join(__dirname, '..', 'lib', 'node-floor.js');
 // viejo es un enlace al nuevo o, ya retirado, el archivo está en el nuevo. Lo demás se deja y se avisa.
 // La línea de arranque no se toca acá: la reconocen sus propios lectores (startup-line.js) por su forma de hoy.
 
-/** Los lugares viejos y el nuevo de cada uno, leídos de tycon-home.js; ninguno si el lugar nuevo no existe. */
+/**
+ * Los lugares viejos que se retiran y el nuevo de cada uno, leídos de tycon-home.js; ninguno si el lugar nuevo no existe.
+ * Sólo los dos que se retiran: el nombre viejo del arnés y el estado de siempre. El lugar del arnés y las skills
+ * instaladas bajo la carpeta de Claude Code siguen (son por donde Claude Code los descubre): no se mudan.
+ */
 function legacyMoves(home, env = {}) {
   const H = require('./harness/tycon-home.js');
-  const claude = H.claudeDir(home);
   const own = H.ownPathsOf({ home, env });
   const state = path.join(own.root, path.basename(H.ownStateDir(home)));
   return [
-    { old: path.join(claude, H.PLACE_NAME), to: own.harness },
-    { old: path.join(claude, H.LEGACY_PLACE_NAME), to: own.harness },
-    { old: H.installedSkillsDir(home), to: own.harness },
+    { old: H.legacyPlacePath(home), to: own.harness },
     { old: H.legacyStateDir(home), to: state },
   ].filter((m) => path.resolve(m.old) !== path.resolve(m.to) && fs.existsSync(m.to));
 }

@@ -1185,12 +1185,12 @@ test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los
     const estado = path.join(M.home, '.tycon', 'state');
     fs.mkdirSync(estado, { recursive: true });
     fs.writeFileSync(path.join(estado, 'mi-gancho.sh'), 'echo hola\n');
-    fs.symlinkSync(path.join(M.home, '.tycon', 'harness'), path.join(claude, 'tycon-harness'));
+    fs.symlinkSync(path.join(M.home, '.tycon', 'harness'), path.join(claude, 'tycon-claude-guides'));
     fs.symlinkSync(estado, path.join(claude, '.tycon-pipeline'));
-    // una carpeta vieja de verdad, no un enlace: no se sabe que sea la nueva
+    // las skills instaladas siguen en su lugar (no se retiran): un gancho por ahí no se toca
     fs.mkdirSync(path.join(claude, 'agent-skills', 'skills'), { recursive: true });
     fs.writeFileSync(path.join(claude, 'agent-skills', 'skills', 'propio.js'), '// de la persona\n');
-    const viejo = (rel) => path.join(claude, 'tycon-harness', rel).replace(/\\/g, '/');
+    const viejo = (rel) => path.join(claude, 'tycon-claude-guides', rel).replace(/\\/g, '/');
     const arranque = 'node "$HOME/.claude/.tycon-pipeline/harness/bootstrap.js" || bash "$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh"';
     fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: {
       PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: `node "${viejo('scripts/hooks/wait-notice.js')}"` }] }],
@@ -1198,8 +1198,8 @@ test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los
         { type: 'command', command: arranque },
         { type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh" --short >> "$HOME/.claude/.tycon-pipeline/mi.log"' },
         { type: 'command', command: `node "${path.join(claude, 'agent-skills', 'skills', 'propio.js').replace(/\\/g, '/')}"` },
-        { type: 'command', command: 'test -L "$HOME/.claude/tycon-harness" || echo falta' },
-        { type: 'command', command: 'bash "$HOME"/.claude/tycon-harness/scripts/hooks/wait-notice.js' },
+        { type: 'command', command: 'test -L "$HOME/.claude/tycon-claude-guides" || echo falta' },
+        { type: 'command', command: 'bash "$HOME"/.claude/tycon-claude-guides/scripts/hooks/wait-notice.js' },
       ] }],
     } }, null, 2));
     const r = M.aplicar(v, platform);
@@ -1208,14 +1208,14 @@ test('ApplyHooks_GanchosPorLaCarpetaVieja_PasanALaNueva — los del arnés y los
     assert.ok(c.some((x) => x.includes('/.tycon/harness/scripts/hooks/wait-notice.js')), `${platform}, el del arnés: ${JSON.stringify(c)}`);
     assert.ok(c.includes(arranque), `${platform}, la línea de arranque no se toca: ${JSON.stringify(c)}`);
     assert.ok(c.includes('bash "$HOME/.tycon/state/mi-gancho.sh" --short >> "$HOME/.tycon/state/mi.log"'), `${platform}, el propio cambia sólo el tramo de la ruta, también lo que el gancho crea: ${JSON.stringify(c)}`);
-    assert.ok(c.some((x) => x.includes('/.claude/agent-skills/skills/propio.js')), `${platform}, una carpeta vieja de verdad no se toca`);
-    assert.ok(c.includes('test -L "$HOME/.claude/tycon-harness" || echo falta'), `${platform}, el lugar pelado no se toca`);
-    assert.ok(c.includes('bash "$HOME"/.claude/tycon-harness/scripts/hooks/wait-notice.js'), `${platform}, una forma que no se reconoce queda como está`);
+    assert.ok(c.some((x) => x.includes('/.claude/agent-skills/skills/propio.js')), `${platform}, lo que pasa por un lugar que no se retira no se toca`);
+    assert.ok(c.includes('test -L "$HOME/.claude/tycon-claude-guides" || echo falta'), `${platform}, el lugar pelado no se toca`);
+    assert.ok(c.includes('bash "$HOME"/.claude/tycon-claude-guides/scripts/hooks/wait-notice.js'), `${platform}, una forma que no se reconoce queda como está`);
     assert.match(r.stdout, /BACKUP:/, 'hay respaldo');
     assert.match(r.stdout, /^⚠️ tycon: 3 ruta\(s\) .* el archivo de antes quedó en /mu, `${platform}: ${r.stdout}`);
     assert.match(r.stdout, /RELOCATED:3/, `${platform}: ${r.stdout}`);
-    assert.match(r.stdout, /STUCK:3/, `${platform}: ${r.stdout}`);
-    for (const por of ['carpeta de verdad', 'el lugar mismo', 'forma que no reconozco']) assert.ok(r.stdout.includes(por), `${platform}, avisa: ${por}\n${r.stdout}`);
+    assert.match(r.stdout, /STUCK:2/, `${platform}: ${r.stdout}`);
+    for (const por of ['el lugar mismo', 'forma que no reconozco']) assert.ok(r.stdout.includes(por), `${platform}, avisa: ${por}\n${r.stdout}`);
     const backup = /BACKUP:(\S+)/.exec(r.stdout)[1];
     assert.ok(fs.readFileSync(backup, 'utf8').includes('$HOME/.claude/.tycon-pipeline/mi-gancho.sh'), 'el respaldo tiene lo de antes');
     const antes = fs.readFileSync(M.settingsPath, 'utf8');
@@ -1263,4 +1263,53 @@ test('ApplyHooks_CarpetaViejaConFotoDelMecanismo_IgualDejaRespaldo', (t) => {
   assert.strictEqual(r.status, 0, r.stderr);
   const backup = /BACKUP:(\S+)/.exec(r.stdout);
   assert.ok(backup && fs.existsSync(backup[1]), r.stdout);
+});
+
+// 🔴 Falla con: reescribir también lo que pasa por los lugares que NO se retiran (tycon-harness y agent-skills siguen: son
+//    los enchufes de Claude Code). El 7/12 se retiran sólo tycon-claude-guides y .tycon-pipeline.
+test('ApplyHooks_CarpetaVieja_SoloLoQueSeRetira', (t) => {
+  const M = maquinaConVersiones(t);
+  const v = M.version('2026.11.27.04');
+  M.apuntar(v);
+  const claude = path.join(M.home, '.claude');
+  const propia = path.join(M.home, '.tycon', 'harness');
+  const estado = path.join(M.home, '.tycon', 'state');
+  fs.mkdirSync(estado, { recursive: true });
+  fs.writeFileSync(path.join(estado, 'mi-gancho.sh'), 'echo\n');
+  fs.mkdirSync(path.join(propia, 'skills'), { recursive: true });
+  fs.writeFileSync(path.join(propia, 'skills', 'propio.js'), '//\n');
+  fs.symlinkSync(propia, path.join(claude, 'tycon-harness'));
+  fs.symlinkSync(propia, path.join(claude, 'agent-skills'));
+  fs.symlinkSync(propia, path.join(claude, 'tycon-claude-guides'));
+  fs.symlinkSync(estado, path.join(claude, '.tycon-pipeline'));
+  const quedan = ['node "$HOME/.claude/tycon-harness/skills/propio.js"', 'node "$HOME/.claude/agent-skills/skills/propio.js"'];
+  fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: { SessionStart: [{ hooks: [
+    ...quedan.map((command) => ({ type: 'command', command })),
+    { type: 'command', command: 'node "$HOME/.claude/tycon-claude-guides/skills/propio.js"' },
+    { type: 'command', command: 'bash "$HOME/.claude/.tycon-pipeline/mi-gancho.sh"' },
+  ] }] } }, null, 2));
+  const r = M.aplicar(v, 'posix');
+  assert.strictEqual(r.status, 0, r.stderr);
+  const c = M.comandos();
+  for (const q of quedan) assert.ok(c.includes(q), `no se toca: ${q}\n${JSON.stringify(c)}`);
+  assert.ok(c.includes('node "$HOME/.tycon/harness/skills/propio.js"'), JSON.stringify(c));
+  assert.ok(c.includes('bash "$HOME/.tycon/state/mi-gancho.sh"'), JSON.stringify(c));
+  assert.match(r.stdout, /RELOCATED:2/, r.stdout);
+  assert.doesNotMatch(r.stdout, /STUCK:/, r.stdout);
+});
+
+// 🔴 Falla con: tomar por el nuevo un lugar viejo que es una carpeta de verdad (una copia aparte, no un enlace).
+test('ApplyHooks_CarpetaVieja_DeVerdad_SeAvisa', (t) => {
+  const M = maquinaConVersiones(t);
+  const v = M.version('2026.11.27.05');
+  M.apuntar(v);
+  const viejo = path.join(M.home, '.claude', 'tycon-claude-guides');
+  fs.mkdirSync(path.join(viejo, 'skills'), { recursive: true });
+  fs.writeFileSync(path.join(viejo, 'skills', 'propio.js'), '//\n');
+  const cmd = 'node "$HOME/.claude/tycon-claude-guides/skills/propio.js"';
+  const s = { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: cmd }] }] } };
+  const out = require(APPLY).relocateLegacyHooks(s, { home: M.home, windows: false });
+  assert.strictEqual(s.hooks.SessionStart[0].hooks[0].command, cmd);
+  assert.strictEqual(out.moved.length, 0);
+  assert.match(out.stuck.map((x) => x.why).join('\n'), /carpeta de verdad/);
 });
