@@ -1007,7 +1007,7 @@ function startupLineAction(ctx) {
   const known = cmds.filter((c) => SL.classify(c));
   const news = cmds.filter((c) => !SL.classify(c) && SL.isNew(c));
   const unknown = cmds.filter((c) => !SL.classify(c) && !SL.isNew(c) && SL.mentionsHarness(c));
-  if (known.length || news.length > 1 || (isWin(ctx) && news.some((c) => SL.isSuperseded(c)))) return { action: 'update' };
+  if (known.length || news.length > 1 || news.some((c) => SL.isStale(c, ctx.home, ctx.platform))) return { action: 'update' };
   if (news.length === 1) return { action: 'keep' };
   if (unknown.length) return { action: null, note: `la línea de arranque del arnés en ${file} tiene una forma que no reconozco: no la toco` };
   return { action: 'add' };
@@ -3979,6 +3979,9 @@ function cmdDoctor(ctx) {
       const starts = ((conf.hooks && conf.hooks.SessionStart) || []).flatMap((e) => (e && Array.isArray(e.hooks) ? e.hooks : [])).map((h) => (h && typeof h.command === 'string' ? h.command : '')).filter(Boolean);
       const old = starts.filter((c) => SLd.classify(c) || SLd.isSuperseded(c) || (!SLd.isNew(c) && SLd.mentionsHarness(c)));
       if (old.length) add(requirementLevel, `la línea de arranque de ${settingsPath(ctx)} está en una forma vieja (${old.length}): esta máquina no se actualiza sola${isWin(ctx) ? ' (en Windows esa línea no llega a correr)' : ''} — harness.js startup la pasa a la nueva`);
+      // en una máquina mudada, la línea que llama a la copia fija por la carpeta del estado de siempre: hoy anda (es un
+      // enlace), pero esa carpeta se retira, y sin ella la máquina deja de actualizarse sola
+      else if (starts.some((c) => SLd.isStale(c, ctx.home, ctx.platform))) add('warn', `la línea de arranque de ${settingsPath(ctx)} llama a la copia fija por la carpeta del estado de siempre, que se retira — harness.js startup la pasa a la carpeta del estado en uso`);
     } catch (_) { /* sin settings.json legible: lo dicen las piezas, más abajo */ }
   };
   if (read.status === 'missing') {

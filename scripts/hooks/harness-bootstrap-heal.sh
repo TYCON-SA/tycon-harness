@@ -80,10 +80,12 @@ ss = hooks.setdefault("SessionStart", [])
 # ¿Ya sano? (el grep de arriba ya lo dijo, pero el JSON manda). Desde la story 8.13 (tanda A) la línea de arranque nueva
 # llama a la copia fija `<estado>/harness/bootstrap.js`, que corre el aplicador ella misma: también es sana,
 # y pegarle la llamada al instalador sería volver a la forma «heal-appended» que la migración después tiene que deshacer.
+# La copia fija está en la carpeta del estado de siempre o, en una máquina mudada, en la de la casa propia
+# (`<casa>/state/harness/bootstrap.js`): las dos son sanas.
 for h in ss:
     for c in h.get("hooks", []):
-        cmd = c.get("command", "")
-        if "install-tycon-hooks" in cmd or ".tycon-pipeline/harness/bootstrap.js" in cmd:
+        cmd = c.get("command", "").replace("\\", "/")
+        if "install-tycon-hooks" in cmd or ".tycon-pipeline/harness/bootstrap.js" in cmd or "/state/harness/bootstrap.js" in cmd:
             sys.exit(0)
 
 # Buscar la línea de arranque: la que hace los git pull del arnés.

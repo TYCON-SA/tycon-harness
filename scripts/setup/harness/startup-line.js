@@ -63,16 +63,43 @@ function isWindows(platform) { return platform === 'win32' || platform === 'wind
 
 /** La línea nueva para esa plataforma. `{ command, async: true }`. */
 function newLine(home, platform) {
+  return lineFor(TH.stateDir(home || os.homedir()), home, platform);
+}
+
+/**
+ * La línea que llama a la copia fija y al respaldo de la carpeta del estado `estado`. En una máquina mudada es la de la
+ * casa propia (`stateDir` de tycon-home.js): la de la carpeta de Claude Code nombra un enlace que se retira, y sin él la
+ * copia fija y el respaldo quedan sin archivo. Dentro de la carpeta de la persona va por `$HOME` (Mac/Linux) o por la
+ * carpeta escrita (Windows, sin `$`); fuera de ella (`TYCON_HOME` en otro lado), por la ruta entera.
+ */
+function lineFor(estado, home, platform) {
+  const h = path.resolve(home || os.homedir());
+  const rel = path.relative(h, estado).split(path.sep).join('/');
+  const adentro = rel && !rel.startsWith('..') && !path.isAbsolute(rel);
   if (isWindows(platform)) {
     // la ruta va entre comillas simples de PowerShell: una comilla simple adentro se duplica (un HOME «O'Brien»)
-    const h = String(home || os.homedir()).replace(/\\/g, '/').replace(/\/+$/, '').replace(/'/g, "''");
-    return { command: NEW_LINE.windows.replace(/<HOME>/g, () => h), async: true };
+    const base = String(home || os.homedir()).replace(/\\/g, '/').replace(/\/+$/, '');
+    const dir = (adentro ? `${base}/${rel}` : String(estado).replace(/\\/g, '/')).replace(/'/g, "''");
+    return { command: NEW_LINE.windows.split(`<HOME>/${ESTADO}`).join(dir), async: true };
   }
-  return { command: NEW_LINE.posix, async: true };
+  return { command: NEW_LINE.posix.split(`$HOME/${ESTADO}`).join(adentro ? `$HOME/${rel}` : estado), async: true };
+}
+
+/**
+ * ¿Es una línea nueva que quedó vieja en esta máquina? La forma anterior de Windows, o, en una máquina mudada, la que
+ * nombra la carpeta del estado de siempre (la de Claude Code) tal cual la escribía el arnés.
+ */
+function isStale(command, home, platform) {
+  if (typeof command !== 'string') return false;
+  if (isWindows(platform) && isSuperseded(command)) return true;
+  const actual = newLine(home, platform).command;
+  return command !== actual && command === lineFor(TH.legacyStateDir(home || os.homedir()), home, platform).command;
 }
 
 /** ¿Es la línea nueva (llama a la copia fija)? Lo usa harness-bootstrap-heal.sh por grep con la misma marca. */
-function isNew(command) { return typeof command === 'string' && command.includes(BOOTSTRAP_MARK); }
+// la copia fija en la carpeta del estado de siempre o en la de la casa propia (`<casa>/state`)
+const BOOTSTRAP_RX = /[\\/]state[\\/]harness[\\/]bootstrap\.js/;
+function isNew(command) { return typeof command === 'string' && (command.includes(BOOTSTRAP_MARK) || BOOTSTRAP_RX.test(command)); }
 
 // ── el análisis por estructura ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -260,8 +287,9 @@ function migrate(settingsPath, { home, platform = process.platform, nodeOk, node
       else if (mentionsHarness(cmd)) unknown.push({ hook });
     }
   }
-  // la línea nueva en su forma anterior (Windows): pasa a la de ahora, conservando lo demás del hook
-  const refreshed = isWindows(platform) ? alreadyNew.filter((h) => isSuperseded(h.command)) : [];
+  // la línea nueva en una forma que quedó vieja (la anterior de Windows, o la de la carpeta de siempre en una máquina
+  // mudada): pasa a la de ahora, conservando lo demás del hook
+  const refreshed = alreadyNew.filter((h) => isStale(h.command, home, platform));
   const staleBefore = refreshed.length ? refreshed[0].command : null;
   for (const h of refreshed) { h.command = target.command; h.async = true; }
   if (known.length === 0) {
@@ -270,7 +298,8 @@ function migrate(settingsPath, { home, platform = process.platform, nodeOk, node
       return Object.assign(base, { before, reason: `la línea de arranque del arnés en ${settingsPath} no la reconozco y no la toco (forma desconocida). La línea entera:\n  ${before}\nLa nueva, para ponerla a mano:\n  ${target.command}` });
     }
     if (alreadyNew.length === 1 && refreshed.length) {
-      return commit(settingsPath, raw, s, Object.assign(base, { before: staleBefore, reason: 'línea de arranque de Windows actualizada a la forma que corre igual por Git Bash, cmd o PowerShell (sin `$`)' }));
+      const motivo = isWindows(platform) && isSuperseded(staleBefore) ? 'línea de arranque de Windows actualizada a la forma que corre igual por Git Bash, cmd o PowerShell (sin `$`)' : 'línea de arranque actualizada a la carpeta del estado en uso (la de siempre se retira)';
+      return commit(settingsPath, raw, s, Object.assign(base, { before: staleBefore, reason: motivo }));
     }
     if (alreadyNew.length === 1) return Object.assign(base, { before: alreadyNew[0].command, reason: 'la línea de arranque ya es la nueva (sin cambios)' });
     if (alreadyNew.length > 1) {   // varias nuevas repetidas: queda la primera
@@ -318,4 +347,4 @@ function commit(settingsPath, raw, s, result) {
   }
 }
 
-module.exports = { NODE_FLOOR, NEW_LINE, BOOTSTRAP_MARK, FORM_IDS, newLine, isNew, isSuperseded, classify, analyze, mentionsHarness, checkNode, migrate, backupCopy };
+module.exports = { NODE_FLOOR, NEW_LINE, BOOTSTRAP_MARK, FORM_IDS, newLine, lineFor, isNew, isStale, isSuperseded, classify, analyze, mentionsHarness, checkNode, migrate, backupCopy };
