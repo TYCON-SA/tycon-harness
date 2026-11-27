@@ -257,6 +257,11 @@ test('E1 E2E_HorasYTokens_QuienMantiene @story-8.209 @ac-16 @ac-17',{ skip: SIN_
     await page.goto(`${h.base}/`);
     await page.getByRole('link', { name: 'Horas y tokens' }).first().click();
     await page.waitForURL(/\/horas$/);
+    // arriba, el resumen de la semana por persona; la tabla de cada día, plegada abajo
+    const resumen = page.locator('table.personas');
+    await resumen.waitFor({ timeout: 20000 });
+    assert.match(await page.locator('.fichas').innerText(), /sin dato de modelo/);
+    await page.getByText('Ver día por día, por máquina').click();
     const tabla = page.locator('table.horas');
     await tabla.waitFor({ timeout: 20000 });
     const texto = await tabla.innerText();
@@ -281,4 +286,71 @@ test('E2 E2E_HorasYTokens_ProgramadorNoLaVe @story-8.209 @ac-18', { skip: SIN_NA
     const r = await page.goto(`${h.base}/horas`);
     assert.strictEqual(r.status(), 403);
   } finally { await navegador.close(); await h.cerrar(); }
+});
+
+// ── O-horas, parte 1: el resumen de la semana y la tabla por persona ───────────────────────────────────────────────
+
+const PEOPLE = {
+  machines: {
+    'maquina-a': { person: 'ana@acme.example', reported_sha256: null, confirmed_by: 'lider@acme.example', confirmed_on: '2026-11-01' },
+    'maquina-b': { person: 'ana@acme.example', reported_sha256: null, confirmed_by: 'lider@acme.example', confirmed_on: '2026-11-01' },
+    'maquina-c': { person: 'beto@acme.example', reported_sha256: null, confirmed_by: 'lider@acme.example', confirmed_on: '2026-11-01' },
+  },
+  hidden_machines: { 'maquina-vieja': { reason: 'not-team', hidden_by: 'lider@acme.example', hidden_on: '2026-11-02' } },
+};
+// la semana son los 7 días de SEMANA; la anterior, los 7 de antes
+const SEMANA = ['2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09'];
+
+test('OH1 Resumen_PorPersona_SinMedirNoEsCero — las máquinas de una persona suman en su fila; una oculta o sin horas no sale', () => {
+  const maquinas = {
+    // ana: dos máquinas, 1 h cada una los 7 días
+    'maquina-a': Object.fromEntries(SEMANA.map((d) => [d, dia(d, { arnes: 3600, lectura: 1000, escritura: 200 })])),
+    'maquina-b': Object.fromEntries(SEMANA.map((d) => [d, dia(d, { arnes: 3600, lectura: 1000, escritura: 200 })])),
+    // beto: sólo dos días medidos de la semana
+    'maquina-c': { '2026-11-08': dia('2026-11-08', { arnes: 7200, sesion: 9000 }), '2026-11-09': dia('2026-11-09', { arnes: 7200, sesion: 9000 }) },
+    // sin persona, con horas: sale con su nombre
+    'maquina-d': { '2026-11-09': dia('2026-11-09', { arnes: 1800 }) },
+    // oculta: no sale
+    'maquina-vieja': { '2026-11-09': dia('2026-11-09', { arnes: 3000 }) },
+    // sin ningún día con horas (sólo tokens medidos): no sale
+    'runner-ci': { '2026-11-09': dia('2026-11-09', { horas: { medido: false, motivo: 'sin apertura' } }) },
+  };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  assert.deepStrictEqual(r.semana.dias, SEMANA.slice().reverse(), 'la semana son los 7 días más nuevos');
+  const fila = (p) => r.personas.find((x) => x.persona === p);
+  assert.deepStrictEqual(r.personas.map((x) => x.persona), ['ana@acme.example', 'beto@acme.example', 'maquina-d']);
+  assert.deepStrictEqual(fila('ana@acme.example').maquinas, ['maquina-a', 'maquina-b']);
+  assert.strictEqual(fila('ana@acme.example').segundos, 14 * 3600, 'las dos máquinas suman');
+  assert.strictEqual(fila('ana@acme.example').diasMedidos, 7);
+  assert.strictEqual(fila('ana@acme.example').promedioDia, 2 * 3600);
+  assert.strictEqual(fila('beto@acme.example').diasMedidos, 2);
+  assert.strictEqual(fila('beto@acme.example').promedioDia, 7200, 'el promedio es por día medido, no por los 7');
+  assert.strictEqual(fila('ana@acme.example').tokens, 14 * 1200, 'tokens sin caché: lectura más escritura');
+  assert.ok(!r.personas.some((x) => x.maquinas.includes('maquina-vieja')), 'la oculta no sale');
+  assert.ok(!r.personas.some((x) => x.maquinas.includes('runner-ci')), 'la que nunca midió horas no sale');
+  assert.strictEqual(r.fuera, 2, 'se dice cuántas quedaron afuera');
+  // las fichas: el promedio del equipo es por persona-día medido; los días sin medir cuentan máquina × día
+  assert.strictEqual(r.semana.promedioDia, (14 * 3600 + 2 * 7200 + 1800) / (7 + 2 + 1));
+  assert.strictEqual(r.semana.sinMedir, (7 - 2) + (7 - 1), 'beto 5 días y maquina-d 6 días sin medir');
+  // la semana anterior no se midió: no es cero
+  assert.strictEqual(r.anterior.promedioDia, null);
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /ana@acme\.example/);
+  assert.match(html, /2 de 7/, 'beto: días medidos');
+  assert.match(html, /sin dato de modelo/i, 'el costo todavía no se mide');
+  assert.doesNotMatch(html, /maquina-vieja|runner-ci/);
+});
+
+test('OH2 Resumen_PersonaSinNingunDiaEnLaSemana_DiceNoMedido — una persona con horas de antes pero no de esta semana no sale en cero', () => {
+  const maquinas = { 'maquina-c': { '2026-10-30': dia('2026-10-30', { arnes: 3600 }) }, 'maquina-a': { '2026-11-09': dia('2026-11-09') } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  const beto = r.personas.find((x) => x.persona === 'beto@acme.example');
+  assert.strictEqual(beto.diasMedidos, 0);
+  assert.strictEqual(beto.promedioDia, null);
+  assert.strictEqual(beto.segundos, null);
+  assert.strictEqual(r.anterior.promedioDia, 3600, 'la semana anterior sí tiene un día medido');
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /beto@acme\.example[\s\S]*?no medido/);
 });

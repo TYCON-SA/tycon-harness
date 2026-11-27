@@ -462,7 +462,15 @@ says it cannot be used, it is fixed by hand in the profile repo: until then the 
 Maintainers only: a person with the developer role does not see the tab, and the `/api/horas` address answers that
 they have no permission.
 
-It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
+**At the top, the week.** The 7 newest days, against the 7 before. Four cards: the hours per day with the harness
+working, team average per measured day; the week's tokens without cache; the days not measured (machine × day); and the
+estimated cost, which says "no model data" while each day's file does not carry the model. Below, one row per person:
+it groups each person's machines through `people.machines`, and a machine without a person shows its own name. It
+gives the hours per measured day, the week total, how many of the 7 days were measured and the tokens without cache. A
+person with no measured day says "not measured", not zero. Hidden machines and those that never uploaded hours (old
+names, CI machines) are left out: the page says how many.
+
+**Below, folded, the day-by-day table.** It is a table of the last 30 days, one column per machine and a total row per day. The day is each machine's own day
 (its time zone), and only closed days arrive: today is watched in the office. Each cell has:
 
 - **Hours with the harness working:** the time when at least one session was working on that machine. Two sessions at

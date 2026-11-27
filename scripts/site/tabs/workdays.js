@@ -175,6 +175,76 @@ function htmlTabla(tabla, idioma) {
   return `<table class="horas"><thead>${cab}</thead><tbody>${filas}</tbody></table>`;
 }
 
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+
+/**
+ * El resumen de la semana para quien decide: la semana son los 7 días más nuevos de la tabla y la anterior, los 7 de
+ * antes. Junta las máquinas de cada persona (`people.machines`: la máquina → `person`); una máquina sin persona sale con
+ * su nombre. No salen las ocultas (`people.hidden_machines`) ni las que no trajeron horas medidas en ningún día de la
+ * tabla (nombres viejos, máquinas de CI): `fuera` dice cuántas. 🔴 «NO MEDIDO» NUNCA ES CERO: una persona sin días
+ * medidos tiene `segundos`, `promedioDia` y `tokens` en null; un día cuenta como medido si alguna de sus máquinas trae
+ * horas medidas ese día, y el promedio es por día medido.
+ *   → { semana: { dias, promedioDia, tokens, sinMedir }, anterior: { dias, promedioDia, tokens }, personas: [{ persona,
+ *       maquinas, segundos, diasMedidos, promedioDia, tokens }], fuera }
+ */
+function resumen(tabla, people) {
+  const p = isObj(people) ? people : {};
+  const duenos = isObj(p.machines) ? p.machines : {};
+  const ocultas = isObj(p.hidden_machines) ? p.hidden_machines : {};
+  const conHoras = (m) => tabla.dias.some((d) => { const c = tabla.celdas[d][m]; return c && c.estado === 'medido' && c.horas; });
+  const visibles = tabla.maquinas.filter((m) => !Object.prototype.hasOwnProperty.call(ocultas, m) && conHoras(m));
+  const personaDe = (m) => (isObj(duenos[m]) && texto(duenos[m].person) ? duenos[m].person : m);
+  const grupos = new Map();
+  for (const m of visibles) { const k = personaDe(m); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); }
+  const medir = (maqs, dias) => {
+    let segundos = 0; let dm = 0; let tokens = 0; let conTokens = false;
+    for (const d of dias) {
+      let medido = false;
+      for (const m of maqs) {
+        const c = tabla.celdas[d][m];
+        if (!c || c.estado !== 'medido') continue;
+        if (c.horas) { segundos += c.horas.arnes_segundos; medido = true; }
+        if (c.tokens) { tokens += c.tokens.lectura + c.tokens.escritura; conTokens = true; }
+      }
+      if (medido) dm += 1;
+    }
+    return { segundos: dm ? segundos : null, diasMedidos: dm, promedioDia: dm ? segundos / dm : null, tokens: conTokens ? tokens : null };
+  };
+  const semana = tabla.dias.slice(0, 7);
+  const anterior = tabla.dias.slice(7, 14);
+  const personas = [...grupos.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([persona, maqs]) => ({ persona, maquinas: maqs.slice().sort(), ...medir(maqs, semana) }));
+  const equipo = (dias) => {
+    const filas = [...grupos.values()].map((maqs) => medir(maqs, dias));
+    const dm = filas.reduce((a, f) => a + f.diasMedidos, 0);
+    const seg = filas.reduce((a, f) => a + (f.segundos || 0), 0);
+    const tok = filas.filter((f) => f.tokens !== null);
+    return { dias, promedioDia: dm ? seg / dm : null, tokens: tok.length ? tok.reduce((a, f) => a + f.tokens, 0) : null };
+  };
+  let sinMedir = 0;
+  for (const m of visibles) for (const d of semana) { const c = tabla.celdas[d][m]; if (!(c && c.estado === 'medido' && c.horas)) sinMedir += 1; }
+  return { semana: { ...equipo(semana), sinMedir }, anterior: equipo(anterior), personas, fuera: tabla.maquinas.length - visibles.length };
+}
+
+/** El resumen en HTML: cuatro fichas (la del costo dice «sin dato de modelo») y la tabla por persona. */
+function htmlResumen(r, idioma) {
+  const t = (k, v) => TX.t(idioma, k, v);
+  const nm = esc(t('horas.noMedido'));
+  const h = (s) => (s === null ? nm : horasDe(s));
+  const tk = (n) => (n === null ? nm : abreviar(n));
+  const ant = (v) => `<div class="ficha-ant">${esc(t('horas.anterior', { valor: v }))}</div>`;
+  const ficha = (titulo, valor, extra = '') => `<div class="ficha"><div class="ficha-titulo">${esc(titulo)}</div><div class="ficha-valor">${valor}</div>${extra}</div>`;
+  const dias = r.semana.dias;
+  const titulo = dias.length ? `<h2>${esc(t('horas.semanaTitulo', { desde: dias[dias.length - 1], hasta: dias[0] }))}</h2>` : '';
+  const fichas = `<div class="fichas">${ficha(t('horas.fichaHoras'), h(r.semana.promedioDia), ant(r.anterior.promedioDia === null ? t('horas.noMedido') : horasDe(r.anterior.promedioDia)))}`
+    + `${ficha(t('horas.fichaTokens'), tk(r.semana.tokens), ant(r.anterior.tokens === null ? t('horas.noMedido') : abreviar(r.anterior.tokens)))}`
+    + `${ficha(t('horas.fichaSinMedir'), String(r.semana.sinMedir))}${ficha(t('horas.fichaCosto'), esc(t('horas.sinModelo')))}</div>`;
+  const filas = r.personas.map((f) => `<tr><th scope="row">${esc(f.persona)}${f.maquinas.length > 1 || f.maquinas[0] !== f.persona ? `<div class="maquinas">${esc(t('horas.maquinasDe', { lista: f.maquinas.join(', ') }))}</div>` : ''}</th>`
+    + `<td>${h(f.promedioDia)}</td><td>${h(f.segundos)}</td><td>${esc(t('horas.nDe7', { n: f.diasMedidos }))}</td><td>${tk(f.tokens)}</td></tr>`).join('');
+  const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><table class="personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th></tr></thead><tbody>${filas}</tbody></table>` : '';
+  const fuera = r.fuera ? `<p class="nota">${esc(r.fuera === 1 ? t('horas.fuera1') : t('horas.fueraN', { n: r.fuera }))}</p>` : '';
+  return `${titulo}${fichas}${tabla}${fuera}`;
+}
+
 function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
   const solo = ['maintainer'];
   const tabla = () => {
@@ -193,7 +263,10 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
         const tab = tabla();
         // el espejo que no se pudo leer se dice arriba: la tabla vacía no es «no llegó nada»
         const aviso = tab.problema ? `<p>${esc(TX.t(idioma, 'horas.espejoIlegible', { motivo: tab.problema }))}</p>` : '';
-        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${htmlTabla(tab, idioma)}`;
+        let people = null;
+        try { const c = typeof fuentes.config === 'function' ? fuentes.config() : null; people = c && c.people; } catch (e) { log(`horas y tokens: no se pudo leer la configuración de personas (${e.code || e.message})`); }
+        const diario = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorDia'))}</summary>${htmlTabla(tab, idioma)}</details>`;
+        const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${tab.maquinas.length ? htmlResumen(resumen(tab, people), idioma) : ''}${diario}`;
         return { status: 200, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, TX.t(idioma, 'pestana.horas'), cuerpo) };
       },
     },
@@ -201,4 +274,4 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
   ];
 }
 
-module.exports = { crearRutas, leerJornadas, jornadasDe, validarDia, armarTabla, htmlTabla, abreviar };
+module.exports = { crearRutas, leerJornadas, jornadasDe, validarDia, armarTabla, htmlTabla, abreviar, resumen, htmlResumen };
