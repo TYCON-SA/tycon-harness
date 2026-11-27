@@ -1057,9 +1057,9 @@ const RESUMEN = Object.freeze({
 });
 
 /** El resumen guardado de una corrida, o null (no está, o no se puede leer: entonces la corrida se lee sin resumen). */
-function leerResumen(volcado) {
+function leerResumen(volcado, tope = cambios ? cambios.TOPE_JSON_DESCOMPRIMIDO : 64 * 1024 * 1024) {
   try {
-    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(RESUMEN.nombre(volcado))).toString('utf8'));
+    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(RESUMEN.nombre(volcado)), { maxOutputLength: tope }).toString('utf8'));
     return r && r.v === 1 && r.cambios && typeof r.cambios === 'object' ? r : null;
   } catch (e) {
     if (e.code !== 'ENOENT') process.stderr.write(`ejecuciones: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message})\n`);
@@ -1107,9 +1107,12 @@ function resumirEspejo(espejo, { skillsDir = null } = {}) {
       if (!fs.existsSync(hilo) && !fs.existsSync(cambio)) continue;
       try {
         const d = JSON.parse(fs.readFileSync(volcado, 'utf8'));
-        const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio);
+        const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio, { topeHiloBytes: cambios.TOPE_HILO_SITIO });
+        // 🔴 Lo que pasó su tope al descomprimir no es pasajero: la pasada siguiente lo abriría de nuevo, para siempre, y
+        //    la llave de sólo crear puede subir los que quiera. Se resume con su motivo y se borra, como lo demás.
+        const pasoTope = cambios.pasoElTope(x.motivo) || cambios.pasoElTope(x.git && x.git.motivo);
         const pasajero = (e) => e === 'ilegible' || e === 'no_publicado';
-        if ((x.estado !== 'leido' && x.estado !== 'sin_hilo') || pasajero(x.git && x.git.estado)) {
+        if (!pasoTope && ((x.estado !== 'leido' && x.estado !== 'sin_hilo') || pasajero(x.git && x.git.estado))) {
           out.fallidas += 1;
           if (out.motivos.length < 5) out.motivos.push(`${path.basename(dir)}/${f} (sin resumir: ${x.motivo || (x.git && x.git.motivo) || x.estado})`);
           continue;
@@ -1139,15 +1142,16 @@ function resumirEspejo(espejo, { skillsDir = null } = {}) {
 function textosDeUnaCorrida(volcado, { skillsDir = null } = {}) {
   const pasos = skillsDir ? pasosDeLaImagen(skillsDir) : nombresDePasos();
   const d = JSON.parse(fs.readFileSync(volcado, 'utf8'));
-  const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio);
+  const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio, { topeHiloBytes: cambios && cambios.TOPE_HILO_SITIO });
   return { texto: x._texto || null, textoGit: x._textoGit || null };
 }
 
-function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
+// `topeHiloBytes`: el del sitio (cambios.TOPE_HILO_SITIO) cuando lee lo que bajó del buzón; sin él, el de afuera del sitio
+function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado, { topeHiloBytes } = {}) {
   if (!cambios) return { estado: 'no_publicado', motivo: motivoSinCambios };
   const git = modeloGit(rutas, marker, cambioDelVolcado);
   const conHilo = rutas.find((r) => fs.existsSync(cambios.rutaDeHilo(r))) || rutas[0];
-  const x = cambios.cambiosDeCorrida(conHilo, marker, { sanear: rescate && rescate.sanear, cortesDePaso: rescate && rescate.cortesDePaso });
+  const x = cambios.cambiosDeCorrida(conHilo, marker, { sanear: rescate && rescate.sanear, cortesDePaso: rescate && rescate.cortesDePaso, topeHiloBytes });
   if (x.estado !== 'leido') return { estado: x.estado, motivo: x.motivo, git: git.modelo, _textoGit: git.texto };
   // Con git: un nombre que salió de la CONSOLA se muestra con la ruta de git si coincide con uno solo, y se
   // oculta (contado) si git no lo confirma — `p.Id` saldría como archivo porque `p => p.Id` parece `> archivo`.
@@ -3195,7 +3199,7 @@ function main(opts = {}) {
 }
 
 // `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
-module.exports = { enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, filaControles, semanaVisible, dentroDelRepoDelEquipo,
+module.exports = { leerResumen, enIdioma, todoEnIdioma, textosDelCliente, bloqueDeTextos, main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, agruparRepos, esLaboratorio, nombresDePasos, lineaBasePasos, render, CONTROLES, filaControles, semanaVisible, dentroDelRepoDelEquipo,
   // Lo que usa la pestaña Corridas del sitio
   idEstable, runKey, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda

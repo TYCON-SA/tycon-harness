@@ -570,9 +570,10 @@ function negativaDeLectura(sas, ahora = Date.now()) {
 // las dos partes de una corrida que pesan (su conversación y su cambio de git), por el nombre del archivo en el espejo
 const PARTE_DE_CORRIDA = /^(.+)\.(hilo\.jsonl|cambio\.json)\.gz$/;
 /** El resumen que el sitio guardó de una corrida (dashboard/runs.js → resumirEspejo), o null. `volcado`: su ruta local. */
-function leerResumenDe(volcado) {
+function leerResumenDe(volcado, tope) {
   try {
-    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(require('../nightly/dashboard/changes.js').rutaDeResumen(volcado))).toString('utf8'));
+    const ch = require('../nightly/dashboard/changes.js');
+    const r = JSON.parse(ch.abrirGz(ch.rutaDeResumen(volcado), tope || ch.TOPE_JSON_DESCOMPRIMIDO).toString('utf8'));
     return r && r.v === 1 ? r : null;
   } catch (e) {
     if (e.code !== 'ENOENT') process.stderr.write(`bajar-corridas: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message}): se vuelve a bajar\n`);
@@ -1225,7 +1226,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
+module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina, leerResumenDe };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');

@@ -1638,6 +1638,79 @@ test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversa
   }
 });
 
+test('Cambios_DescompresionConTope — lo que baja del buzón se abre con su tope, el renglón gigante no se arma, y lo que pasa el tope se resume y se borra', () => {
+  // 🔴 rojo: el sitio descomprimía de una vez lo que bajó del buzón. Un .hilo.jsonl.gz de 299 KB subido con la llave
+  //    de sólo crear (el tamaño y el MD5 del listado casan) se abría a 300 MB en memoria, y uno más grande tumbaba el
+  //    contenedor (1 GiB). El tope de la bajada mira los bytes comprimidos, no los descomprimidos.
+  const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  const bajada = require(path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'));
+  const MB = 1024 * 1024;
+  // los valores: el del sitio deja el doble que junta gunzip lejos de 1 GiB; el de afuera lee la conversación real de 337 MB
+  assert.ok(ch.TOPE_HILO_SITIO <= 128 * MB, `sitio: ${ch.TOPE_HILO_SITIO}`);
+  assert.ok(ch.TOPE_HILO_DESCOMPRIMIDO >= 400 * MB && ch.TOPE_HILO_DESCOMPRIMIDO <= 512 * MB, `afuera: ${ch.TOPE_HILO_DESCOMPRIMIDO}`);
+  assert.ok(ch.TOPE_JSON_DESCOMPRIMIDO <= 64 * MB && ch.TOPE_RENGLON <= 32 * MB);
+  // el tope con que producción abre cada archivo: se espía gunzip, sin armar archivos de cientos de MB
+  const original = zlib.gunzipSync;
+  const pedidos = [];
+  zlib.gunzipSync = (buf, o) => { pedidos.push({ tope: o && o.maxOutputLength }); return original(buf, o); };
+  try {
+    const dir = tmp('cambios-bomba-');
+    const espejo = path.join(dir, 'espejo'); const maq = path.join(espejo, 'maq-a');
+    fs.mkdirSync(maq, { recursive: true });
+    const v = path.join(maq, 'a.json');
+    fs.writeFileSync(v, JSON.stringify({ marker: { startedAt: '2026-11-20T10:10:00Z' } }));
+    const hiloOk = zlib.gzipSync(Buffer.from('{"x":1}\n'));
+    const tope = (f) => { pedidos.length = 0; f(); return pedidos.map((p) => p.tope); };
+    fs.writeFileSync(ch.rutaDeHilo(v), hiloOk);
+    assert.deepStrictEqual(tope(() => ch.cambiosDeCorrida(v, {}, { sanear: (x) => x })), [ch.TOPE_HILO_DESCOMPRIMIDO], 'la vista local');
+    fs.writeFileSync(ch.rutaDeCambio(v), zlib.gzipSync(Buffer.from('{"estado":"ok"}')));
+    assert.deepStrictEqual(tope(() => ch.leerCambioDeGit(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el cambio de git');
+    fs.writeFileSync(ch.rutaDeResumen(v), zlib.gzipSync(Buffer.from('{"v":1,"cambios":{}}')));
+    assert.deepStrictEqual(tope(() => runs.leerResumen(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el resumen de la vista');
+    assert.deepStrictEqual(tope(() => bajada.leerResumenDe(v)), [ch.TOPE_JSON_DESCOMPRIMIDO], 'el resumen de la bajada');
+    fs.rmSync(ch.rutaDeResumen(v));
+    fs.rmSync(ch.rutaDeCambio(v));
+    assert.ok(tope(() => runs.resumirEspejo(espejo)).includes(ch.TOPE_HILO_SITIO), 'el resumen del sitio abre con el tope del sitio');
+  } finally { zlib.gunzipSync = original; }
+
+  // lo que pasa el tope sale ilegible con su código, y lo chico se lee
+  const dir = tmp('cambios-bomba2-');
+  const v = path.join(dir, 'a.json');
+  fs.writeFileSync(v, '{}');
+  fs.writeFileSync(ch.rutaDeHilo(v), zlib.gzipSync(Buffer.alloc(3 * MB, 0x0a), { level: 9 }));
+  const r = ch.cambiosDeCorrida(v, {}, { sanear: (x) => x, topeHiloBytes: MB });
+  assert.strictEqual(r.estado, 'ilegible', JSON.stringify(r));
+  assert.ok(ch.pasoElTope(r.motivo), r.motivo);
+  fs.writeFileSync(ch.rutaDeCambio(v), zlib.gzipSync(Buffer.from(JSON.stringify({ estado: 'ok', relleno: ' '.repeat(3 * MB) }))));
+  assert.ok(ch.pasoElTope(ch.leerCambioDeGit(v, MB).motivo));
+  fs.writeFileSync(ch.rutaDeResumen(v), zlib.gzipSync(Buffer.from(JSON.stringify({ v: 1, cambios: {}, relleno: ' '.repeat(3 * MB) }))));
+  assert.strictEqual(runs.leerResumen(v, MB), null);
+  assert.strictEqual(bajada.leerResumenDe(v, MB), null);
+  assert.ok(!ch.pasoElTope('la conversación no se pudo leer (Z_DATA_ERROR)'));
+
+  // el renglón de más del tope no se arma como texto: se cuenta ilegible, y los demás se leen
+  assert.deepStrictEqual([...ch.renglonesDe(Buffer.from('ab\nabcdef\nc'), 3)], ['ab', null, 'c']);
+
+  // en el sitio, la conversación que pasa el tope se resume con su motivo y se borra: la pasada siguiente no la abre
+  const espejo = path.join(dir, 'espejo'); const maq = path.join(espejo, 'maq-b');
+  fs.mkdirSync(maq, { recursive: true });
+  const b = path.join(maq, 'b.json');
+  fs.writeFileSync(b, JSON.stringify({ marker: { startedAt: '2026-11-20T10:10:00Z' } }));
+  fs.writeFileSync(ch.rutaDeHilo(b), zlib.gzipSync(Buffer.from('{"x":1}\n')));
+  const sitio = ch.TOPE_HILO_SITIO;
+  const conTope = Object.getOwnPropertyDescriptor(ch, 'TOPE_HILO_SITIO');
+  Object.defineProperty(ch, 'TOPE_HILO_SITIO', { ...conTope, value: 4 });
+  try {
+    const p1 = runs.resumirEspejo(espejo);
+    assert.strictEqual(p1.fallidas, 0, JSON.stringify(p1));
+    assert.strictEqual(p1.resumidas, 1, JSON.stringify(p1));
+  } finally { Object.defineProperty(ch, 'TOPE_HILO_SITIO', { ...conTope, value: sitio }); }
+  assert.ok(!fs.existsSync(ch.rutaDeHilo(b)), 'la conversación se borró');
+  const s = runs.leerResumen(b);
+  assert.strictEqual(s && s.cambios.estado, 'ilegible');
+  assert.ok(ch.pasoElTope(s.cambios.motivo), s.cambios.motivo);
+});
+
 // El texto del error de un hook viaja en la conversación subida, que leen sólo quienes administran el buzón; en el
 // sitio no lo ve el dev dueño de la máquina. 🔴 Falla con: que la lista, el detalle, los textos o la página de una ejecución empiecen a
 // mostrar los adjuntos de la conversación sin mirar el rol.
