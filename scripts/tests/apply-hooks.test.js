@@ -1248,7 +1248,7 @@ test('ApplyHooks_SinCasaPropia_NoMueveNiAvisa', (t) => {
 
 // 🔴 Falla con: la copia de respaldo salteada cuando la actualización la lanza con su propia foto
 //    (TYCON_HARNESS_SNAPSHOT_DIR): la persona no tendría dónde volver a sus ganchos de antes.
-test('ApplyHooks_CarpetaViejaConFotoDelMecanismo_IgualDejaRespaldo', (t) => {
+test('ApplyHooks_CarpetaViejaConFotoDelMecanismo_LaCopiaEsLaFoto', (t) => {
   const M = maquinaConVersiones(t);
   const v = M.version('2026.11.27.03');
   M.apuntar(v);
@@ -1261,8 +1261,18 @@ test('ApplyHooks_CarpetaViejaConFotoDelMecanismo_IgualDejaRespaldo', (t) => {
   const r = spawnSync(process.execPath, [APPLY, '--settings', M.settingsPath, '--hooks-dir', path.join(v, 'scripts', 'hooks'), '--skills', M.skills,
     '--list', M.listPath, '--effects', EFFECTS], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: M.home, USERPROFILE: M.home, TYCON_PROFILE: '0', TYCON_NO_NIGHTLY_EXAM: '1', TYCON_HARNESS_SHARED_DONE: '1', TYCON_HARNESS_SNAPSHOT_DIR: path.join(M.home, 'foto') } });
   assert.strictEqual(r.status, 0, r.stderr);
-  const backup = /BACKUP:(\S+)/.exec(r.stdout);
-  assert.ok(backup && fs.existsSync(backup[1]), r.stdout);
+  // la copia es la foto del mecanismo: el aplicador no deja otra, y el aviso dice dónde está
+  assert.doesNotMatch(r.stdout, /BACKUP:/, r.stdout);
+  assert.ok(r.stdout.includes(`la foto de la actualización (${path.join(M.home, 'foto')})`), r.stdout);
+});
+
+// 🔴 Falla con: pedir las rutas de la casa propia con una TYCON_HOME relativa: tycon-home.js tira y el aplicador entero cae.
+test('ApplyHooks_CarpetaVieja_TyconHomeRelativa_NoCae', (t) => {
+  const M = maquinaConVersiones(t);
+  const v = M.version('2026.11.27.06');
+  M.apuntar(v);
+  fs.writeFileSync(M.settingsPath, JSON.stringify({ hooks: {} }, null, 2));
+  assert.deepStrictEqual(require(APPLY).legacyMoves(M.home, { TYCON_HOME: 'relativa' }), []);
 });
 
 // 🔴 Falla con: reescribir también lo que pasa por los lugares que NO se retiran (tycon-harness y agent-skills siguen: son

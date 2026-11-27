@@ -488,7 +488,9 @@ const NODE_FLOOR = path.join(__dirname, '..', 'lib', 'node-floor.js');
  */
 function legacyMoves(home, env = {}) {
   const H = require('./harness/tycon-home.js');
-  const own = H.ownPathsOf({ home, env });
+  let own;
+  // una casa propia mal declarada (TYCON_HOME relativa) la dice quien la lee; acá no se muda nada
+  try { own = H.ownPathsOf({ home, env }); } catch (_) { return []; }
   const state = path.join(own.root, path.basename(H.ownStateDir(home)));
   return [
     { old: H.legacyPlacePath(home), to: own.harness },
@@ -1114,12 +1116,11 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0 || r.retimed.length > 0 || relocated.moved.length > 0;
   let backup = null;
   if (!a.check && changed) {
-    // con ganchos de la persona reescritos, la copia va siempre, también con la foto del mecanismo de actualización: es lo
-    // que la persona tiene para volver, y el aviso le dice dónde está
-    if (existed && (!env.TYCON_HARNESS_SNAPSHOT_DIR || relocated.moved.length)) {
-      const ts = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}T${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}`;
+    // con la foto del mecanismo de actualización (harness.js), la copia es esa foto: una sola, y el aviso dice dónde quedó
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}T${pad(ts.getHours())}-${pad(ts.getMinutes())}-${pad(ts.getSeconds())}`;
+    if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {
       // dos corridas en el mismo segundo no se pisan la copia
       for (let n = 0; ; n++) {
         const p = `${settingsPath}.bak.${stamp}${n ? `-${n}` : ''}`;
@@ -1144,7 +1145,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   // el aviso a la persona: qué gancho cambió de lugar, dónde quedó el respaldo y lo que no se pudo mover
   if (!a.check && (relocated.moved.length || relocated.stuck.length)) {
     const said = [];
-    if (relocated.moved.length) said.push(`⚠️ tycon: ${relocated.moved.length} ruta(s) de los ganchos de ${settingsPath} pasaban por la carpeta vieja del arnés y ahora van por la nueva (sólo cambió ese tramo de la ruta)${backup ? `; el archivo de antes quedó en ${backup}` : ''}:`, ...relocated.moved.map((x) => `  ~ ${x.event}: ${x.from} → ${x.to}`));
+    if (relocated.moved.length) said.push(`⚠️ tycon: ${relocated.moved.length} ruta(s) de los ganchos de ${settingsPath} pasaban por la carpeta vieja del arnés y ahora van por la nueva (sólo cambió ese tramo de la ruta)${backup ? `; el archivo de antes quedó en ${backup}` : env.TYCON_HARNESS_SNAPSHOT_DIR ? `; el archivo de antes quedó en la foto de la actualización (${env.TYCON_HARNESS_SNAPSHOT_DIR})` : ''}:`, ...relocated.moved.map((x) => `  ~ ${x.event}: ${x.from} → ${x.to}`));
     if (relocated.stuck.length) said.push(`⚠️ tycon: ${relocated.stuck.length} ruta(s) de los ganchos pasan por la carpeta vieja y no los pude mover solo; corregilos a mano antes del retiro de la carpeta vieja:`, ...relocated.stuck.map((x) => `  ! ${x.event}: ${x.path} (${x.why})`));
     process.stdout.write(`${said.join('\n')}\n`);
     for (const l of lines.filter((x) => /^(RELOCATED|STUCK|BACKUP):/.test(x))) process.stdout.write(`${l}\n`);
