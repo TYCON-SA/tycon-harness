@@ -31,7 +31,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * la de `marker.iterations`. Sin ninguna: null con motivo. NUNCA 0 (la métrica es `count1`, y un 0
  * pintado donde no hubo insumo es exactamente lo que `null ≠ 0` prohíbe).
  *
- * 🔴 QUÉ VOLCADO ES «DE ESTE REPO+STORY». En ~/.claude/.tycon-pipeline/timing-history/ sólo se abren
+ * 🔴 QUÉ VOLCADO ES «DE ESTE REPO+STORY». En ~/.tycon/state/timing-history/ sólo se abren
  * los archivos de esa story. Coincide si `marker.storyId` es la story y el repo es el mismo por ruta
  * real, o es un CLON DESCARTABLE: 15 de las 28 corridas del arnés corren en
  * `/private/tmp/claude-501/-Users-…-<repo>/…/scratchpad/tcg-<story>`, con el checkout
@@ -339,9 +339,11 @@ function vueltaDeVolcado(d) {
 // La regla de la nota (los mínimos, qué es válida) vive en lib/rethink.js del pipeline: se usa ESA, no una copia. Se busca
 // al lado del arnés y en las skills instaladas; si no aparece, las notas no se aceptan «tal cual» (ACCOV-C3): se dice.
 function cargarRethink() {
+  const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   const candidatos = [
     path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'rethink.js'),
-    path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'rethink.js'),
+    // las skills instaladas, en la carpeta que dice tycon-home.js
+    ...(fs.existsSync(homeLib) ? [path.join(require(homeLib).installedSkillsDir(os.homedir()), 'skills', 'tycon-pipeline', 'scripts', 'lib', 'rethink.js')] : []),
   ];
   for (const c of candidatos) {
     try { if (fs.existsSync(c)) return require(c); } catch { /* siguiente */ }

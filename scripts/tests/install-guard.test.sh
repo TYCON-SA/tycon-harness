@@ -162,6 +162,8 @@ if [ -f "$SHIM" ]; then
   printf '{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"}]}'     > "$REPOS2/backend-acme/.tycon/production.json"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$RAIZ2/opt/tycon/hooks/"
   cp "$AQUI/scripts/production/guard-libs/lib/shell-parse.js" "$AQUI/scripts/production/guard-libs/lib/repos-root.js" "$RAIZ2/opt/tycon/lib/"
+  # tycon-home.js viaja con el freno (el instalador lo deja en setup/harness/): el freno le pide la carpeta del estado
+  mkdir -p "$RAIZ2/opt/tycon/setup/harness" && cp "$AQUI/scripts/production/guard-libs/setup/harness/tycon-home.js" "$RAIZ2/opt/tycon/setup/harness/"
   cp "$AQUI/scripts/production/production-index.js" "$RAIZ2/opt/tycon/production/"
   cp "$(command -v node)" "$RAIZ2/opt/tycon/bin/node"
   printf '{"/opt/tycon/bin/node":"%s"}' "$(shasum -a 256 "$RAIZ2/opt/tycon/bin/node" | cut -d' ' -f1)" > "$RAIZ2/opt/tycon/huellas.json"

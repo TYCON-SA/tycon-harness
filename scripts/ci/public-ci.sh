@@ -392,9 +392,11 @@ let made = 0;
 function emptyHome() {
   const n = ++made;
   const home = path.join(HOMES, `h${n}`);
-  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-  fs.symlinkSync(SK, path.join(home, '.claude', 'agent-skills'));
-  fs.symlinkSync(path.join(SK, 'agents'), path.join(home, '.claude', 'agents'));
+  // la carpeta de Claude Code de esa HOME y las skills instaladas, donde las dice tycon-home.js
+  const TH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  fs.mkdirSync(TH.claudeDir(home), { recursive: true });
+  fs.symlinkSync(SK, TH.installedSkillsDir(home));
+  fs.symlinkSync(path.join(SK, 'agents'), path.join(TH.claudeDir(home), 'agents'));
   const tmp = path.join(TMP, `t${n}`);
   fs.mkdirSync(tmp, { recursive: true });
   const env = {

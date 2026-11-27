@@ -11,7 +11,7 @@
  * cuatro días separados, y en el medio ese revisor está auditando código de verdad, en silencio.
  *
  * Esto cierra esa distancia: el par canario del revisor tocado corre en el pre-commit del repo
- * donde vive su prosa (`~/.claude/agent-skills`, `agents/*.md`). Son 2 consultas y ~40 s, en un
+ * donde vive su prosa (`~/.tycon/harness`, `agents/*.md`). Son 2 consultas y ~40 s, en un
  * commit que es raro y consecuente.
  *
  * ── LA DECISIÓN QUE LO HACE CREÍBLE ─────────────────────────────────────────────────────────────

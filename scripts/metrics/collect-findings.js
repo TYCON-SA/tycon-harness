@@ -64,7 +64,7 @@
  *
  * DÓNDE ESCRIBE
  * -------------
- * `~/.claude/.tycon-pipeline/hallazgos.jsonl` + `findings-seal.json`, junto a `gates.log` y
+ * `~/.tycon/state/hallazgos.jsonl` + `findings-seal.json`, junto a `gates.log` y
  * `bypass.log`, sin carpeta propia: la subida lo manda como un registro más, con una sola cobertura.
  * Los dos se escriben de forma atómica (primero la serie, después el sello). La salida tiene que
  * terminar en `.jsonl`: una ruta equivocada no se pisa ni se borra. El sello se lee por su nombre

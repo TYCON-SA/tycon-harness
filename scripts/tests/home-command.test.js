@@ -7,7 +7,7 @@
  * comillas dobles, igual que bash, zsh y Git Bash. Lo que imprime el código dice `node "$HOME/<resto>"`; la única firma
  * de esos comandos (`runtime-waiver`) va con la ruta absoluta, porque la forma de la firma exige palabras literales.
  *
- * T1 compara cada una de las 45 líneas de la lista fija (fixtures/home-command/emissions.json) con el código de su
+ * T1 compara cada una de las 42 líneas de la lista fija (fixtures/home-command/emissions.json) con el código de su
  * archivo, ruta y argumentos, y mira tres mensajes que se imprimen de verdad; T2 el ayudante; T3 y T4 corren el comando
  * por bash y por PowerShell; T5 el barrido que frena un «node ~/» nuevo; T6 los frenos con la forma nueva.
  *
@@ -114,8 +114,8 @@ function barrer(raiz) {
 // ── T1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // 🔴 Falla con: una línea de la lista que todavía dice «node ~/», o que cambió algo más que la carpeta (un argumento de
 //    menos, una comilla de más), o un archivo con un comando nuevo de más.
-test('T1 ComandoImpreso_ConHome_EnLasLineas @story-8.218 @ac-1 — cada una de las 45 líneas con su forma nueva, ruta y argumentos iguales', () => {
-  assert.strictEqual(LISTA.length, 45, 'la lista fija tiene las 45 líneas');
+test('T1 ComandoImpreso_ConHome_EnLasLineas @story-8.218 @ac-1 — cada una de las 42 líneas con su forma nueva, ruta y argumentos iguales', () => {
+  assert.strictEqual(LISTA.length, 42, "la lista fija tiene las 42 líneas (los dos ejemplos de install-effects.json nombran el lugar del arnés sin la ruta, story 8.24 B2-5; el cartel de TYCON_STATUS_GATE de safety-guard-pre.sh se arma al correr con las skills de state-dir.sh, story 8.24 B2-4a: lo mide T1b)");
   assert.strictEqual(LISTA.filter((e) => e.forma === 'firma').length, 1, 'una sola firma');
   const porArchivo = new Map();
   const faltan = [];

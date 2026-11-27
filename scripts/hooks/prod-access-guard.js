@@ -73,7 +73,7 @@ const ES_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'eval']);
 // 🔴 Antes era un regex `\b(?:sh|bash|…)\b` sobre los 60 caracteres previos al `<<`, y `\bsh\b`
 // matcheaba la EXTENSIÓN `.sh` del archivo destino: `cat > scripts/tests/x.test.sh <<'FIN'` se leía
 // como «heredoc que alimenta a un shell», y el cuerpo —el CONTENIDO del archivo, con sus `mkdir`,
-// `chmod` y `rm` sobre `$CASA/.claude/.tycon-pipeline` de una prueba— se juzgaba como escrituras de
+// `chmod` y `rm` sobre la carpeta del estado de la casa de una prueba— se juzgaba como escrituras de
 // este comando. Dos falsos positivos en vivo el 2026-09-16 (y `docs/bash-tips.md` caía igual).
 const CONSUME_COMO_SHELL = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'xargs', 'gxargs', 'ssh']);
 const CONSUME_COMO_SHELL_SI_ES_PROGRAMA = new Set(['source', '.', 'eval']);
@@ -175,16 +175,17 @@ function nombraBorradoAzure(texto) {
 const MAX_CMD = 32 * 1024;
 
 function emergencia(texto, e) {
+  let dir = 'la carpeta del estado';
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard FALLÓ: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* si ni eso se puede, queda el mensaje de abajo */ }
   if (CRUDO.test(String(texto || '')) || nombraBorradoAzure(texto)) {
     process.stderr.write(mensaje('el freno de producción no pudo decidir (falla propia) y este comando nombra una base o un borrado en Azure.',
-      ['El motivo quedó en ~/.claude/.tycon-pipeline/hook-errors.log.',
+      [`El motivo quedó en hook-errors.log, en ${dir}.`,
        'Un freno que no pudo mirar NO deja pasar: «no sé» no es «no hay producción acá».']));
     // 🔴 Éste es el OTRO camino de bloqueo, y era el único que no dejaba línea: el freno frenó,
     //    y para la cuenta no existió. `reglaDelMotivo` ya tenía el código para nombrarlo
@@ -222,7 +223,7 @@ function loadGuardRecord() {
   guardRecordLib = null;
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard no pudo cargar la biblioteca de constancias (${failures.join(' · ')}): `
@@ -300,7 +301,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
     try {
       const os = require('os'); const fs = require('fs'); const path = require('path');
-      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
       fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] prod-access-guard NO PUDO MIRAR (frenó): ${motivo}\n\n`, 'utf8');
     } catch { /* noop */ }
@@ -311,7 +312,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
 
 function registrar(ctx, extra) {
   const os = require('os'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
-  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
   fs.mkdirSync(dir, { recursive: true });
   const linea = {
     ts: new Date().toISOString(),
@@ -2133,9 +2134,9 @@ function juzgarSecurity(t0) {
 // Lo que el freno protege de escrituras: el catálogo de cada repo, el índice y la memoria de producción,
 // y las carpetas que los contienen. Se reconoce POR COMPONENTE, no por el texto literal: con
 // `cd repo/.tycon && printf … > production.json`, un comodín `production-*` o `rm -rf
-// ~/.claude/.tycon-pipeline` el texto literal no aparecía y la escritura pasaba (revisores,
+// ~/.tycon/state` el texto literal no aparecía y la escritura pasaba (revisores,
 // 2026-09-15). OJO: NO se protege toda `.tycon-pipeline/` contra escrituras puntuales —el botón de
-// pánico del arnés es `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`—, sólo estos archivos y el
+// pánico del arnés es `touch ~/.tycon/state/STOP_AUTONOMY`—, sólo estos archivos y el
 // borrado o movido de la carpeta entera.
 // 🔴 LOS DOS NOMBRES de cada uno (story 8.9, tanda P): el renombre a inglés deja convivir, hasta que todas las máquinas
 // autorizadas reinstalen, el catálogo con su nombre viejo en los repos de producto y el índice y la memoria escritos con
@@ -2249,7 +2250,7 @@ function escrituraProtegida(cmd, payload) {
   const path = require('path'); const os = require('os'); const fs = require('fs');
   const sp = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
   const home = path.resolve(process.env.HOME || os.homedir());
-  const raizPipeline = path.join(home, '.claude', '.tycon-pipeline');
+  const raizPipeline = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).legacyStateDir(home);
   // el presupuesto es GLOBAL: todas las palabras de todos los textos del comando (AC 15)
   // `substitutionsOf`: el texto de las sustituciones de las que salió el valor de cada variable (`F=$(…)`): el AC 13c vale también
   // cuando la sustitución llega por una variable (pase adversarial de la 8.14 A, #5)
@@ -2702,7 +2703,7 @@ function escrituraProtegida(cmd, payload) {
       return ancestros.some((x) => re.test(x)) ? todo : { catalogo: false, estados: false };
     }
     const lit = sp.patternToLiteral(abs);
-    if (ancestros.includes(lit.toLowerCase())) return todo;                     // `~`, `~/.claude`, `/`: un ancestro
+    if (ancestros.includes(lit.toLowerCase())) return todo;                     // `~`, la carpeta de Claude Code, `/`: un ancestro
     if (existeCarpeta(path.join(lit, '.tycon'))) return { catalogo: true, estados: false };   // un repo
     // una carpeta de repos (un hijo con `.tycon/`). 🔴 Lo que NO se pudo mirar no es «fuera de alcance»: con más de
     // MAX_HIJOS_FIND hijos, o sin permiso para leerla, el catálogo de un hijo puede estar ahí — es indecidible y frena con
