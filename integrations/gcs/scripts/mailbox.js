@@ -46,8 +46,9 @@ const HOST_DE_METADATOS = 'metadata.google.internal';
 const TOPE_METADATOS_MS = 2000;
 // las mil páginas de la bajada de Azure (scripts/metrics/download-runs.js → listarTodo)
 const TOPE_PAGINAS = 1000;
-// lo más que se lee de un objeto que no salió en el listado de este almacén (los que salieron se cortan en su `size`)
-const TOPE_SIN_LISTAR = 256 * 1024 * 1024;
+// un objeto que no salió en el listado de este almacén con un `size` entero no se lee: la bajada sólo pide nombres del
+// listado, y uno sin tamaño (o con «1.5», «-1») sale «llegó distinto» con un byte, en vez de leer sin tope
+const TOPE_SIN_LISTAR = 0;
 const BAJADA = path.join(__dirname, '..', '..', '..', 'scripts', 'metrics', 'download-runs.js');
 
 const esTexto = (v) => typeof v === 'string' && v.trim() !== '';
