@@ -25,6 +25,7 @@ const ERRORES = {
   NoSuchBucket: [404, 'NoSuchBucket'],
   BadDigest: [400, 'BadDigest'],
   PreconditionFailed: [412, 'PreconditionFailed'],
+  NoSuchKey: [404, 'NoSuchKey'],
   503: [503, 'ServiceUnavailable'],
   429: [429, 'SlowDown'],
   408: [408, 'RequestTimeout'],
@@ -63,14 +64,19 @@ function firmaEsperada(req, u, secreto) {
  *   pisar        lo que contesta un PUT SIN precondición de un objeto que ya está: 'AccessDenied' (la cuenta no puede
  *                borrar) u 'ok' (lo pisa)
  *   json         la respuesta del listado JSON: 'ok', '401', '403' o '404'
- *   media        la respuesta a la bajada de un objeto (?alt=media): 'ok', '401', '403' o '500'
+ *   media        la respuesta a la bajada de un objeto (?alt=media): 'ok', '401', '403', '500' o 'inflado' (sirve 32 MB
+ *                para un objeto listado con pocos bytes, como la transcodificación de un objeto con Content-Encoding gzip;
+ *                `servidos` cuenta lo que llegó a escribir)
+ *   leerXml      lo que contesta un GET firmado de un objeto por la API XML: 'AccessDenied' (la cuenta sólo crea) u 'ok'
+ *                (la cuenta lee por nombre: el objeto, o 404 NoSuchKey si no está)
  *   pagina       cuántos objetos trae cada página del listado JSON
  *   metadatos    'ok' o '404'
  */
 function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
   const pedidos = [];
   const objetos = new Map();   // nombre → { cuerpo, md5, creado }
-  const modo = { listado: 'AccessDenied', forzar: {}, pisar: 'AccessDenied', json: 'ok', media: 'ok', pagina: 1000, metadatos: 'ok' };
+  const modo = { listado: 'AccessDenied', forzar: {}, pisar: 'AccessDenied', json: 'ok', media: 'ok', pagina: 1000, metadatos: 'ok', leerXml: 'AccessDenied' };
+  const cuenta = { servidos: 0 };
   const xmlError = (res, clave) => {
     const [status, code] = ERRORES[clave];
     res.writeHead(status, { 'content-type': 'application/xml' });
@@ -118,6 +124,14 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
         }
         const nombre = decodeURIComponent(resto.slice(2).join('/'));
         if (u.searchParams.get('alt') !== 'media') return jsonError(res, 400);
+        if (modo.media === 'inflado') {
+          res.writeHead(200, { 'content-type': 'application/octet-stream' });
+          const trozo = Buffer.alloc(1024 * 1024, 0x20);
+          let i = 0;
+          const dar = () => { while (i < 32) { i += 1; cuenta.servidos += trozo.length; if (!res.write(trozo)) { res.once('drain', dar); return; } } res.end(); };
+          res.on('close', () => { i = 32; });
+          return dar();
+        }
         if (modo.media !== 'ok') return jsonError(res, Number(modo.media));
         const o = objetos.get(nombre);
         if (!o) return jsonError(res, 404);
@@ -136,6 +150,12 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
         if (modo.listado === 'corte') return req.socket.destroy();
         if (modo.listado === 'ok') { res.writeHead(200, { 'content-type': 'application/xml' }); return res.end(`<?xml version='1.0' encoding='UTF-8'?><ListBucketResult><Name>${bucket}</Name></ListBucketResult>`); }
         return xmlError(res, modo.listado);
+      }
+      if (req.method === 'GET' && partes.length >= 2 && modo.leerXml === 'ok') {
+        const o = objetos.get(partes.slice(1).join('/'));
+        if (!o) return xmlError(res, 'NoSuchKey');
+        res.writeHead(200, { 'content-type': 'application/octet-stream' });
+        return res.end(o.cuerpo);
       }
       if (req.method !== 'PUT' || partes.length < 2) return xmlError(res, 'AccessDenied');
       const nombre = partes.slice(1).join('/');
@@ -161,6 +181,8 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
     const { port } = srv.address();
     resolve({
       url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, pedidos, objetos, modo,
+      /** Los bytes que llegó a escribir la bajada inflada. */
+      get servidos() { return cuenta.servidos; },
       /** Guarda un objeto en el bucket, como si alguien lo hubiera subido. */
       poner(nombre, cuerpo) { const b = Buffer.from(cuerpo); objetos.set(nombre, { cuerpo: b, md5: crypto.createHash('md5').update(b).digest('base64'), creado: new Date().toISOString() }); },
       cerrar: () => new Promise((r) => { srv.closeAllConnections && srv.closeAllConnections(); srv.close(() => r()); }),
