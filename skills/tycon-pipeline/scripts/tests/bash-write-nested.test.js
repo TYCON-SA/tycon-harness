@@ -695,6 +695,17 @@ test('T35 Xargs_RutaEnUnaVariableDelComando_Frena', () => {
   frena(c, `f=otro.txt; f=${H}; echo $f | xargs rm`);
   frena(c, `for i in 1 2; do echo $f | xargs rm; f=${H}; done`);
   pasa(c, 'f=README.md; echo $f | xargs rm; f=otro.txt');
+  // pasado el tope de variantes, lo que llega no se ve y frena; y cada combinación es una entrada entera (las posiciones
+  // no se corren)
+  const relleno = Array.from({ length: 17 }, (_, i) => `f=a${i}.txt`).join('; ');
+  frena(c, `${relleno}; f=${H}; echo $f | xargs rm`);
+  frena(c, `f=${H}; echo $f | xargs rm; ${relleno}`);
+  const [carpeta, nombre] = [H.slice(0, H.lastIndexOf('/')), H.slice(H.lastIndexOf('/') + 1)];
+  frena(c, `n=otro.md; n=${nombre}; printf '%s/%s\\n' ${carpeta} $n | xargs rm`);
+  frena(c, `f=otro.txt; f=${H}; echo x $f | xargs sh -c 'rm $1'`);
+  // por `<<<`, lo mismo
+  frena(c, `f=${H}; xargs rm <<< $f; f=otro.txt`);
+  frena(c, `f=${H}; xargs rm <<< "$f"; f=otro.txt`);
 });
 
 // T36 FindName_ClasesPosixYEscapes_Frena
