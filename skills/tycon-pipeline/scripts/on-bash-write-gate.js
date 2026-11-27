@@ -195,7 +195,7 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '
 if (relojRoto) logHookError(relojRoto, 'FAILED OPEN');
 // la segunda lectura va acá: necesita la carpeta del estado para su renglón, y ninguno de los módulos de abajo
 if (require.main === module && !isMainThread && workerData && workerData.modo === 'net') salirPorLaRedConLaEntrada(workerData.falla);
-const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./lib/story-gate.js');
+const { isCodeFile, isManifestFile } = require('./lib/story-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 // ── variables del comando ─────────────────────────────────────
 // `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale frenado como «EDICIÓN INVISIBLE»: el destino se resuelve
@@ -210,8 +210,8 @@ const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
 const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
-const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
-const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
+const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
+const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
 const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
 const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
@@ -245,7 +245,7 @@ function registroDeFallas() {
   return path.join(carpetaDelEstado(), esCopiaQueNoEsLaInstalada() ? 'hook-errors-copies.log' : 'hook-errors.log');
 }
 
-const { PIPELINE_LEE, PIPELINE_LISTA } = require('./lib/marker-command.js');
+const { PIPELINE_LISTA } = require('./lib/marker-command.js');
 /**
  * Lo que decide el freno sobre un comando. Lo lee dos veces si tiene comentarios: con sus comentarios apagados
  * (`conComentariosApagados`) y sin apagarlos, y frena si cualquiera de las dos frena. Así, apagar los comentarios nunca

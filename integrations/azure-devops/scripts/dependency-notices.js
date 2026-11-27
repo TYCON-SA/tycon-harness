@@ -88,7 +88,7 @@ const noc = require(path.join(NUCLEO, 'nightly', 'dependencies', 'nightly-depend
 const wi = require(path.join(NUCLEO, 'nightly', 'dependencies', 'work-items'));
 
 const { listaDe, ponerLista, proyectoDe, proyectoAzureDe, etiqueta, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml } = noc;
-const { parseArgs, recortar, proyectosDeFicha, paresPorPedir, ordenarYTopar, isNoWorkItemStep, yaMarcado, marcar, anotarPedido,
+const { parseArgs, recortar, paresPorPedir, ordenarYTopar, isNoWorkItemStep, yaMarcado, marcar, anotarPedido,
   fallidasDeAnoche, adoptarHuerfanos } = wi;
 const operaciones = require(path.join(NUCLEO, 'lib', 'operations-config.js'));
 const fuentes = require(path.join(NUCLEO, 'nightly', 'findings', 'sources.js'));

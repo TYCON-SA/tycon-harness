@@ -23,7 +23,6 @@
  * pedido, como los de control-size. Sale 0 siempre;
  * lo que no puede medir lo dice («no pude medir»), nunca calla.
  */
-const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
