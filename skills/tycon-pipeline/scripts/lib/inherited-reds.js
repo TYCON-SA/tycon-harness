@@ -221,7 +221,7 @@ function medirEnLaBase(tree, fallas, ausentes, { max, timeout, assembled, privat
     // el árbol que se mide puede ser una subcarpeta del repo (el portón acotado a un proyecto): en la base, la misma
     const prefijo = g('rev-parse', '--show-prefix').stdout.trim();
     const raizBase = prefijo ? path.join(arbolBase, prefijo) : arbolBase;
-    correrEnLaBase(medibles, { raizBase, dir, timeout, extra: [], suites, heredadas, coverage });
+    correrEnLaBase(medibles, { raizBase, raizRama: tree, dir, timeout, extra: [], suites, heredadas, coverage });
     return fin(base);
   } finally {
     if (armado) g('worktree', 'remove', '--force', arbolBase);
@@ -250,7 +250,7 @@ function losMedibles(fallas, max, suites) {
  * Corre cada falla sola sobre la base ya armada en `raizBase`, con el corredor de la puerta y su tope, y anota en `suites`
  * el veredicto de cada una (y en `heredadas` las que dieron rojo también ahí). `extra`: opciones más para el corredor.
  */
-function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, heredadas, coverage = false }) {
+function correrEnLaBase(medibles, { raizBase, raizRama = null, dir, timeout, extra, suites, heredadas, coverage = false }) {
   let enLaBase = null;
   let ilegible = '';
   try {
@@ -264,6 +264,23 @@ function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, hered
   // las skills de la base, no las del cambio: el corredor lee la variable antes que el clon
   const env = { ...process.env };
   delete env.TYCON_SKILLS_DIR;
+  // sin el medidor en la rama, tampoco el que llega heredado del ambiente: la base se mide en las mismas condiciones
+  // (vacía, no borrada: Node se la vuelve a poner a un hijo cuyo ambiente no la trae)
+  if (!coverage) env.NODE_V8_COVERAGE = '';
+  // la misma suite sola en la rama, con el mismo corredor, tope y medidor que la base (las skills de la rama, como en la
+  // corrida): `{ verde: true }`, o `{ verde: false, motivo }` (roja sola también, o no se pudo medir)
+  const envRama = { ...process.env };
+  if (!coverage) envRama.NODE_V8_COVERAGE = '';
+  const correrSola = (raizR, ruta, i) => {
+    const marcaR = path.join(dir, `tope-rama-${i}`);
+    const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', marcaR, '--',
+      process.execPath, RUNNER, raizR, path.join(dir, `rama-${i}.json`), '--suite', ruta,
+      ...(coverage ? ['--coverage', path.join(dir, `cov-rama-${i}`)] : [])],
+    { windowsHide: true, cwd: raizR, env: envRama, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
+    if (fs.existsSync(marcaR)) return { verde: false, motivo: `sola en la rama pasó el tope de ${timeout} s` };
+    if (r.status === 0) return { verde: true };
+    return { verde: false, motivo: r.status === 1 ? 'roja también sola en la rama' : `sola en la rama salió ${r.status}` };
+  };
   medibles.forEach((f, i) => {
     const ruta = rutaDe(f);
     const raiz = f.entrada.raiz || null;
@@ -279,7 +296,19 @@ function correrEnLaBase(medibles, { raizBase, dir, timeout, extra, suites, hered
       ...(coverage ? ['--coverage', path.join(dir, `cov-${i}`)] : [])],
     { windowsHide: true, cwd: raizBase, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
     if (fs.existsSync(marca)) { suites.push({ ruta, raiz, verdict: 'no-medido', motivo: `no medido: pasó el tope de ${timeout} s` }); return; }
-    if (r.status === 0) { suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: 'verde en la base: el rojo es del cambio' }); return; }
+    if (r.status === 0) {
+      // Verde en la base, medida sola. La rama se midió en la corrida completa (con las otras suites antes y la máquina
+      // cargada): para comparar en las mismas condiciones, la misma suite se corre sola también en la rama. Si ahí pasa,
+      // el rojo depende del orden o de la carga de la corrida y no del cambio: avisa, no frena (issue #1855)
+      const sola = raizRama ? correrSola(raizRama, ruta, i) : null;
+      if (sola && sola.verde) {
+        suites.push({ ruta, raiz, verdict: 'no-reproduce', motivo: 'verde en la base y verde sola en la rama: el rojo sale sólo en la corrida completa (orden o carga), no del cambio — avisa, no frena' });
+        heredadas.push(f);
+        return;
+      }
+      suites.push({ ruta, raiz, verdict: 'no-heredada', motivo: sola && sola.motivo ? `verde en la base: el rojo es del cambio (${sola.motivo})` : 'verde en la base: el rojo es del cambio' });
+      return;
+    }
     let roja = null;
     if (r.status === 1) {
       try { roja = (JSON.parse(fs.readFileSync(out, 'utf8')).fallas || []).find((x) => rutaDe(x) === ruta) || null; } catch (_) { roja = null; }
@@ -317,7 +346,7 @@ function medirEnLosDosMain(fallas, ausentes, { max, timeout, privateRoot, public
       return fin(null);
     }
     const base = `${armado.private.commit.slice(0, 10)}+${armado.public.commit.slice(0, 10)}`;
-    correrEnLaBase(medibles, { raizBase: armado.tree, dir, timeout, extra: ['--skills', armado.skills], suites, heredadas, coverage });
+    correrEnLaBase(medibles, { raizBase: armado.tree, raizRama: null, dir, timeout, extra: ['--skills', armado.skills], suites, heredadas, coverage });
     return fin(base);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -379,7 +408,9 @@ function apply(tree, summaryPath, { assembled = false, privateRoot = null, publi
     const at = new Date().toISOString();
     baseCheck = { base: m.base, at, suites: m.suites };
     const vienen = new Set(m.heredadas);
-    heredadas.push(...m.heredadas.map((f) => ({ ...f, measured_on: 'base' })));
+    // las que no se reproducen solas (verde en la base y verde sola en la rama) quedan con su propio origen, a la vista
+    const noReproduce = new Set(m.suites.filter((s) => s.verdict === 'no-reproduce').map((s) => s.ruta));
+    heredadas.push(...m.heredadas.map((f) => ({ ...f, measured_on: noReproduce.has(rutaDe(f)) ? 'branch-alone' : 'base' })));
     fallas = fallas.filter((f) => !vienen.has(f));
     for (const s of m.suites) {
       lines.push(s.verdict === 'heredada'

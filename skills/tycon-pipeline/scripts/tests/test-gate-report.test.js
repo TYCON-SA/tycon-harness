@@ -886,7 +886,8 @@ test('Heredado_MedidoEnMainEnElMomento (constancia) @story-8.230 @ac-14 — la c
   git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
   fs.mkdirSync(results, { recursive: true });
   const baseCheck = { base: 'a'.repeat(40), at: '2026-11-07T12:00:00Z', suites: [{ ruta: 'tests/a.test.sh', raiz: 'arnes', verdict: 'heredada', motivo: 'roja también en la base, sin el cambio' },
-    { ruta: 'tests/b.test.sh', raiz: 'arnes', verdict: 'no-medido', motivo: 'no medido: pasó del tope de 3 suites' }] };
+    { ruta: 'tests/b.test.sh', raiz: 'arnes', verdict: 'no-medido', motivo: 'no medido: pasó del tope de 3 suites' },
+    { ruta: 'tests/o.test.sh', raiz: 'arnes', verdict: 'no-reproduce', motivo: 'verde en la base y verde sola en la rama' }] };
   fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 2, verdes: 0, ausentes: [], deferred_suites: [],
     fallas: [{ ruta: path.join(repo, 'scripts', 'tests', 'b.test.sh'), exit: 1, entrada: { raiz: 'arnes', ruta: 'tests/b.test.sh' } }],
     inherited: { snapshot_ts: null, snapshot_build: null, base: { sha: 'a'.repeat(40), at: '2026-11-07T12:00:00Z' },
@@ -899,6 +900,8 @@ test('Heredado_MedidoEnMainEnElMomento (constancia) @story-8.230 @ac-14 — la c
   assert.strictEqual(r.status, 0, r.stderr);
   const t = JSON.parse(fs.readFileSync(out, 'utf8')).totals;
   assert.deepStrictEqual(t.base_check, baseCheck);
+  // la que no se reproduce sola avisa y no frena: queda nombrada aparte en el informe, para que no se pierda
+  assert.deepStrictEqual(t.not_reproduced_alone, ['tests/o.test.sh']);
   assert.deepStrictEqual(t.failure_entries, [{ raiz: 'arnes', ruta: 'tests/b.test.sh' }]);
   assert.deepStrictEqual(t.inherited_suites, ['a.test.sh']);
   assert.strictEqual(t.inherited_snapshot_ts, null);

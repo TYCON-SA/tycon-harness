@@ -306,14 +306,19 @@ test('T15 PrPorMano_NoAbreLaRegla @story-8.241 @ac-9', () => {
   // el método de lectura, o sin valor, no es una forma (ni a la vista ni adentro de un texto)
   for (const cmd of ['az rest -m GET --uri https://x/_apis/policy/configurations/1', 'az rest -m --uri https://x/_apis/policy/configurations/1',
     "bash -c 'az rest -m get --uri https://x/_apis/policy/configurations/1'"]) assert.deepStrictEqual(formas(cmd), [], cmd);
-  // un texto armado para trabar la lectura no la cuelga: se lee enseguida, y con una escritura frena
-  for (const [largo, frena] of [[`bash -c '${'az rest '.repeat(3000)} -m PUT'`, true], [`bash -c '${'az rest '.repeat(3000)}'`, false],
-    [`bash -c '${'gh api '.repeat(3000)} -X PUT repos/o/r/rulesets/1'`, true],
+  // un texto armado para trabar la lectura no la cuelga: crece lineal con el largo, y con una escritura frena. Se mide
+  // cómo crece (el texto entero contra uno de un octavo), no contra un tope fijo: con el medidor de cobertura o la máquina
+  // cargada, un tope de 2 s fallaba sin que nada se colgara (issue #1855). Lineal da unas 8 veces; cuadrático, 64.
+  for (const [armar, n, frena] of [[(k) => `bash -c '${'az rest '.repeat(k)} -m PUT'`, 3000, true], [(k) => `bash -c '${'az rest '.repeat(k)}'`, 3000, false],
+    [(k) => `bash -c '${'gh api '.repeat(k)} -X PUT repos/o/r/rulesets/1'`, 3000, true],
     // una ruta de gh api enorme, armada para trabar las regex de ruta (medido: 760 KB tardaban 20 s)
-    [`gh api -X PUT ${'repos/a/b/branches/'.repeat(40000)}`, true], [`gh pr view 5 ${'x'.repeat(300000)}`, false]]) {
-    const t0 = Date.now();
-    const hs = leer(largo);
-    assert.ok(Date.now() - t0 < 2000, `tardó ${Date.now() - t0} ms`);
+    [(k) => `gh api -X PUT ${'repos/a/b/branches/'.repeat(k)}`, 40000, true], [(k) => `gh pr view 5 ${'x'.repeat(k)}`, 300000, false]]) {
+    const medir = (texto) => { const t0 = process.hrtime.bigint(); const hs = leer(texto); return { ms: Number(process.hrtime.bigint() - t0) / 1e6, hs }; };
+    medir(armar(n / 8));
+    const chico = medir(armar(n / 8)).ms;
+    const { ms, hs } = medir(armar(n));
+    assert.ok(ms < chico * 24 + 300, `el texto entero tardó ${ms.toFixed(0)} ms y el de un octavo ${chico.toFixed(0)} ms: no crece lineal`);
+    assert.ok(ms < 15000, `tardó ${ms.toFixed(0)} ms`);
     assert.strictEqual(hs.length >= 1 && hs.every((h) => !h.legible), frena, JSON.stringify(hs).slice(0, 200));
   }
   // la red gruesa de lo escondido: lo que lee sin escribir, y el camino normal, pasan
