@@ -47,6 +47,12 @@ const STEPS = {
   'canonical-path': () => require('../lib/canonical-path.js').cli,
   'install-third-party': () => require('../publishing/install-third-party.js').cli,
   'loose-logs': () => require('../lib/loose-logs.js').cli,
+  // la carpeta de Claude Code, de la regla (harness/tycon-home.js): la pregunta del instalador de Windows, sin otro proceso
+  'tycon-home': () => (argv) => {
+    if (argv.length !== 1 || argv[0] !== '--claude-dir') { process.stderr.write('applier-batch: tycon-home sólo contesta --claude-dir\n'); return 2; }
+    process.stdout.write(require('./harness/tycon-home.js').claudeDir());
+    return 0;
+  },
   'apply-hooks': () => {
     const applyHooks = require('./apply-hooks.js');
     return (argv) => applyHooks.cli(argv, { runConfig: configInProcess });

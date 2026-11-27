@@ -1325,6 +1325,7 @@ const textoSalidaDelPedido = (story, sid) => `   Si este pedido no es de la hist
 const textoCambio = (repo) => `🔒 el código cambió después de preparar el pull request (${repo}): volvé a correr los revisores de lo que cambió y ${cerrarPaso11()}.`;
 const textoEmpujado = (repo) => `🔒 lo empujado a la rama no es lo preparado (${repo}): empujá la rama de trabajo (\`git push\`) antes de marcar listo o mergear el pull request.`;
 const textoSinRemota = (repo) => `🔒 no pude leer lo empujado a la rama (${repo}): sin su rama de seguimiento no sé qué sale. Empujala con \`git push -u origin <rama>\` antes de marcar listo o mergear el pull request.`;
+const textoSinPunta = (repo, motivo) => `🔒 no pude comprobar lo empujado a la rama (${repo}: ${motivo}): sin leer su punta en el remoto no sé qué sale en el pull request. Revisá la conexión con el remoto y volvé a intentarlo.`;
 const textoNoComprobado = (motivo) => `🔒 no pude comprobar que el código es el que se preparó (${motivo}): repetí «Preparar el pull request».`;
 const textoFueraDeLaFoto = (repo) => `🔒 ${repo} cambió después de preparar y no está en la foto: repetí «Preparar el pull request».`;
 const TEXTO_MARCADOR = '🔒 no pude leer el marcador de la corrida: no sé si el pull request está preparado.';
@@ -1410,22 +1411,31 @@ function preparado(m, salientes = []) {
   const enLaFoto = new Set(fotos.map((f) => f.repo));
   for (const r of repos) if (!enLaFoto.has(r) && so.tieneCambios(r)) return { texto: textoFueraDeLaFoto(r) };
   for (const s of salientes) {
-    if (!s || !s.origen) continue;
+    if (!s || (!s.origen && !s.remoto)) continue;
     let raiz = null;
     try { raiz = s.dir ? so.raizDe(s.dir) : null; } catch (_) { raiz = null; }
     // un pull request sale del repo donde se abre; sin ubicarlo, de cualquiera de la foto
     const deLaFoto = fotos.filter((f) => !raiz || f.repo === raiz);
+    // la rama remota que se lee es la del repo de la foto: un pedido que se abre desde otro repo no sale de esa rama
+    if (s.remoto && raiz && !deLaFoto.length) continue;
     for (const f of deLaFoto.length ? deLaFoto : fotos) {
       // una foto sin el campo `cabeza` es de antes de este control: se mide sólo el disco, como cuando se tomó. Con el
       // campo en null (la rama no tenía commits), lo que se empuja se compara por el árbol
       if (!Object.prototype.hasOwnProperty.call(f, 'cabeza')) continue;
-      const c = so.arbolDelCommit(f.repo, s.origen);
-      // la rama remota de un pedido que no empuja: sin ella no se sabe qué sale, y con otro árbol sale lo de antes
+      // la rama de un pedido, leída en el remoto: lo que sale es su punta allá, no la copia local, que puede estar
+      // vieja. Sin ella no se sabe qué sale, y con otro árbol sale lo de antes. Al crear, una rama que todavía no está
+      // en el remoto la empuja el mismo comando (o el comando falla): se mide lo local, abajo
       if (s.remoto) {
-        if (c.falta || c.error) return { texto: textoSinRemota(f.repo) };
-        if (!(f.cabeza && c.commit === f.cabeza) && c.arbol !== f.arbol) return { texto: textoEmpujado(f.repo) };
+        const c = so.puntaRemota(f.repo);
+        if (c.falta && s.crear) continue;
+        if (c.falta) return { texto: textoSinRemota(f.repo) };
+        if (c.error) return { texto: textoSinPunta(f.repo, c.error) };
+        // por el árbol, sin el atajo de la cabeza: con la foto tomada sin commitear, el remoto en el commit de antes
+        // de preparar es justo lo que no tiene que salir
+        if (c.arbol !== f.arbol) return { texto: textoEmpujado(f.repo) };
         continue;
       }
+      const c = so.arbolDelCommit(f.repo, s.origen);
       // lo que no existe en el repo no sale (git rechaza el empuje); lo que no se pudo medir, no pasa. El texto no
       // repite lo escrito en el comando
       if (c.falta) continue;
@@ -1528,12 +1538,15 @@ function decidir({ command, cwd, sid, home, arnes }) {
   }
   const pasoCerrado = pasoPreparado(m);
   // lo que manda cada comando que sale: el pull request, la rama actual; el empuje, su origen
-  // marcar listo o mergear no empuja nada: lo que sale es lo que ya está en la rama remota (su rama de seguimiento),
-  // y también tiene que ser lo preparado
+  // lo que sale en un pull request es lo que ya está en la rama remota, leída en vivo, y también tiene que ser lo
+  // preparado: al marcar listo o mergear, siempre; al crear, si la rama ya está en el remoto
   const sinEmpujar = (c) => c.tipo === 'pr' && (c.listo || /(^|\s)merge$/.test(String(c.forma)));
+  // Si el mismo comando empuja y abre el pedido, lo que sale es ese empuje, que se mide por su origen: el
+  // remoto todavía tiene lo de antes cuando el freno mira
+  const empuja = cs.some((c) => c.tipo === 'push' && c.origen);
   const salientes = cs.filter((c) => c.tipo === 'pr' || (c.tipo === 'push' && c.origen)).flatMap((c) => [
     { dir: c.dir, origen: c.tipo === 'pr' ? 'HEAD' : c.origen },
-    ...(sinEmpujar(c) ? [{ dir: c.dir, origen: '@{u}', remoto: true }] : []),
+    ...(c.tipo === 'pr' && !empuja ? [{ dir: c.dir, remoto: true, ...(sinEmpujar(c) ? {} : { crear: true }) }] : []),
   ]);
   let prep = null;
   const prepDe = () => { prep = prep || preparado(m, salientes); return prep; };

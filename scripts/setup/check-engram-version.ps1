@@ -61,8 +61,16 @@ function Get-OffStateDir {
     try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
     return $null
 }
-# los sellos: con Claude Code, donde siempre; sin él, en la carpeta del estado (sin ella, en el temporal)
-$StampDir = Join-Path $HOME '.claude'
+# los sellos: con Claude Code, en su carpeta (la de tycon-home.js); sin él, en la carpeta del estado (sin ella, en el
+# temporal)
+function Get-ClaudeDir {
+    $lib = Join-Path (Join-Path $PSScriptRoot 'harness') 'tycon-home.js'
+    if (-not (Test-Path $lib)) { return $null }
+    try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).claudeDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
+    return $null
+}
+$StampDir = Get-ClaudeDir
+if (-not $StampDir) { $StampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' }
 if ($env:TYCON_HARNESS_CLAUDE -eq 'off') { $StampDir = Get-OffStateDir; if (-not $StampDir) { $StampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' } }
 
 function Get-Semver([string]$text) {

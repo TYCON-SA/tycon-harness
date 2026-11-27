@@ -60,8 +60,10 @@ class RutaArnesError extends Error {
 }
 
 function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
-function enlace(home) { return tyconHome ? tyconHome.placePath(home || os.homedir()) : path.join(home || os.homedir(), '.claude', PLACE_NAME); }
-function legacyLink(home) { return tyconHome ? tyconHome.legacyPlacePath(home || os.homedir()) : path.join(home || os.homedir(), '.claude', LEGACY_PLACE_NAME); }
+// sin tycon-home.js (un clon de skills aparte), la carpeta de Claude Code la dice state-dir.js, la definición de este lado
+function claudeDirOf(home) { return require('./state-dir.js').claudeDir(home || os.homedir()); }
+function enlace(home) { return tyconHome ? tyconHome.placePath(home || os.homedir()) : path.join(claudeDirOf(home), PLACE_NAME); }
+function legacyLink(home) { return tyconHome ? tyconHome.legacyPlacePath(home || os.homedir()) : path.join(claudeDirOf(home), LEGACY_PLACE_NAME); }
 /** El lugar como se le muestra a la persona: `~/` y su camino desde la carpeta de la persona. */
 function enlaceParaMostrar(home = os.homedir()) { return `~/${path.relative(home, enlace(home)).split(path.sep).join('/')}`; }
 function present(p) { try { fs.lstatSync(p); return true; } catch (_) { return false; } }

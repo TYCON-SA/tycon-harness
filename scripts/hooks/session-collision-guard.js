@@ -37,7 +37,7 @@
  * sobre otro repo no "ve" las sesiones de éste (ver "qué repo toca…").
  *
  * Escape puntual: `TYCON_SESSION_GUARD_OK=1 git ...` como prefijo pegado al comando — deja
- * constancia en stderr y en ~/.claude/.tycon-pipeline/bypass.log. Ventana: TYCON_SESSION_GUARD_MIN
+ * constancia en stderr y en ~/.tycon/state/bypass.log. Ventana: TYCON_SESSION_GUARD_MIN
  * (3 minutos). Off: TYCON_SESSION_GUARD=0. Fail-open ante todo lo que no pueda leer.
  */
 const fs = require('fs');

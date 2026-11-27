@@ -544,7 +544,7 @@ if (!has(sh, /\[\[\s*"\$CHECK_ONLY"\s*==\s*"1"\s*\]\]\s*&&\s*_TP_ARGS\+=\(--chec
 only(".sh", "la raíz (AGENT_SKILLS_REPO)", assigned(sh, /(?:^|[\s;&|])AGENT_SKILLS_REPO=("[^"]*(?:"[^"]*"[^"]*)*"|\S*)/g),
   ["\"$(dirname \"$AGENT_SKILLS\")\""], "\"$(dirname \"$AGENT_SKILLS\")\"");
 only(".sh", "la carpeta de skills (AGENT_SKILLS)", assigned(sh, /(?:^|[\s;&|])AGENT_SKILLS=("\$\(_skills_dir write --skills[^)]*\)"|"[^"]*"|\S*)/g).map((v) => v.replace(/;$/, "")),
-  ["\"\"", "\"$(_skills_dir write --skills 2>/dev/null)\"", "\"$HOME/.claude/agent-skills/skills\""], "\"$(_skills_dir write --skills 2>/dev/null)\"");
+  ["\"\"", "\"$(_skills_dir write --skills 2>/dev/null)\"", "\"$INSTALLED_SKILLS/skills\""],"\"$(_skills_dir write --skills 2>/dev/null)\"");
 only(".sh", "la raíz del modo revisión (_CHECK_IN_CLONE)", assigned(sh, /(?:^|[\s;&|])_CHECK_IN_CLONE=("[^"]*"|\S*)/g), ["\"$AGENT_SKILLS_REPO\""], "\"$AGENT_SKILLS_REPO\"");
 if (!has(sh, /^\s*write\)\s+TYCON_SKILLS_DIR=\s+node\s+"\$SKILLS_DIR_JS"\s+"\$2"\s+--installed\b/)) why.push(".sh: `_skills_dir write` ya no le pregunta a la biblioteca con --installed y sin la variable");
 if (!has(sh, /^\s*SKILLS_DIR_JS="\$SCRIPT_DIR\/lib\/skills-dir\.js"/)) why.push(".sh: la biblioteca ya no es scripts/lib/skills-dir.js");

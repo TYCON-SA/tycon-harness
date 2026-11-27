@@ -45,9 +45,14 @@ const TOPES = Object.freeze({
 // latidoNavegadorMs: el sitio le escribe a cada navegador aunque nada cambie, así la página se entera de una conexión muerta
 // reconectandoMs: después de un reinicio, cuánto se ve «reconectando» una máquina que estaba (las máquinas reintentan en
 // menos de 5 minutos); estabaMs: qué tan reciente tiene que ser su última conexión en disco (se escribe cada hora)
-const PLAZOS = Object.freeze({ saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000, reconectandoMs: 10 * 60 * 1000, estabaMs: 2 * 60 * 60 * 1000 });
+// vidaMaquinaMs: a cuánto el sitio corta una conexión de máquina para que vuelva (0 la deja abierta). Tras un despliegue, una
+// plataforma como Cloud Run deja las conexiones abiertas en la instancia vieja hasta su plazo, y la oficina de la nueva queda
+// vacía; la máquina reconecta en unos segundos y la conexión nueva entra a la revisión nueva (SITE_OFFICE_RECONNECT_MINUTES)
+const PLAZOS = Object.freeze({ vidaMaquinaMs: 10 * 60 * 1000, saludoMs: 5000, cierreMs: 2000, repartoMs: 500, revisionMs: 60000, sinLatidoMs: 3 * 60 * 1000, fotoMs: 24 * 60 * 60 * 1000, latidoNavegadorMs: 25000, reconectandoMs: 10 * 60 * 1000, estabaMs: 2 * 60 * 60 * 1000 });
 const CIERRE_MUY_GRANDE = 1009;
 const CIERRE_PROBA_DESPUES = 1013;
+// «el servicio se reinicia»: la máquina lo toma como un corte común y reintenta en unos segundos
+const CIERRE_RENOVAR = 1012;
 const NONCE_BYTES = 32;
 
 /** La dirección de quien pide: la del socket, o la última de `X-Forwarded-For` si la instalación confía en el intermediario. */
@@ -80,6 +85,14 @@ function sinPuerto(d) {
  * intermediario) o la lista de direcciones y redes del intermediario (`10.0.0.0/8,127.0.0.1`): `{ incluye(dir) }`.
  * Una entrada que no es una dirección ni una red tira, con el motivo: un sitio mal configurado no arranca.
  */
+/** SITE_OFFICE_RECONNECT_MINUTES en milisegundos: vacía, 10 minutos; 0 apaga el corte; si no, un entero de 1 a 60. */
+function vidaMaquinaDe(valor) {
+  const v = String(valor === undefined || valor === null ? '' : valor).trim();
+  if (v === '') return PLAZOS.vidaMaquinaMs;
+  if (!/^\d+$/.test(v) || Number(v) > 60) throw new Error('tiene que ser un número entero de minutos, de 0 (no corta) a 60');
+  return Number(v) * 60 * 1000;
+}
+
 function confianzaDe(valor) {
   const v = String(valor === undefined || valor === null ? '' : valor).trim();
   if (v === '' || v === '0') return false;
@@ -192,9 +205,9 @@ function limpiarCharla(datos) {
 // Los nombres de la foto: una conversación se guarda sólo si su sesión está en la oficina
 const nombresDe = (foto) => new Set([...((foto && foto.agents) || []).map((a) => a && a.nombre), ...((foto && foto.free) || [])].filter((n) => typeof n === 'string'));
 
-function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = () => {}, topes = {}, plazos = {}, repartoMs, firstMaintainer = null }) {
+function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = () => {}, topes = {}, plazos = {}, repartoMs, firstMaintainer = null, azar = Math.random }) {
   const T = { ...TOPES, ...topes };
-  const P = { ...PLAZOS, ...plazos, ...(repartoMs ? { repartoMs } : {}) };
+  const P = { ...PLAZOS, ...(Number.isFinite(cfg && cfg.vidaMaquinaMs) ? { vidaMaquinaMs: cfg.vidaMaquinaMs } : {}), ...plazos, ...(repartoMs ? { repartoMs } : {}) };
   // autoPong apagado: contestar cada ping apila las respuestas en memoria si el otro no lee, y el protocolo no los usa
   const puerta = new WebSocketServer({ noServer: true, maxPayload: T.bytesAutenticada, autoPong: false });
   const sinAutenticar = new Set();
@@ -304,6 +317,8 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
       // su clave venció mientras estaba abierta: lo que llega por una conexión abierta no vuelve a mirarla
       const clave = llaves.clave(conn.fingerprint);
       if (disponible && (!clave || clave.estado !== 'aprobada')) { cerrar(conn.ws, CLOSE.unknown, 'la clave venció'); continue; }
+      // la foto queda: la máquina vuelve en segundos y la oficina no parpadea
+      if (conn.vence && t >= conn.vence) { log(`oficinas: el sitio renueva la conexión de ${id}`); cerrar(conn.ws, CIERRE_RENOVAR, 'renovar la conexión'); continue; }
       const callada = t - conn.ultimoLatido >= P.sinLatidoMs;
       // sin foto no hay oficina que marcar: una conexión muda ocuparía su lugar para siempre
       if (callada && !oficinas.has(id)) {
@@ -414,6 +429,8 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     conn.id = id;
     conn.fingerprint = huella;
     conn.ultimoLatido = ahora();
+    // con algo de azar (hasta un quinto antes), para que las máquinas que conectaron juntas no vuelvan juntas
+    conn.vence = P.vidaMaquinaMs > 0 ? conn.ultimoLatido + Math.round(P.vidaMaquinaMs * (1 - 0.2 * azar())) : null;
     maquinas.set(id, conn);
     llaves.anotarConexion(id, true);
     const o = oficinas.get(id);
@@ -637,4 +654,4 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
   };
 }
 
-module.exports = { crearCentro, limpiarFoto, limpiarCharla, direccionDe, confianzaDe, TOPES, PLAZOS };
+module.exports = { crearCentro, limpiarFoto, limpiarCharla, direccionDe, confianzaDe, vidaMaquinaDe, TOPES, PLAZOS };

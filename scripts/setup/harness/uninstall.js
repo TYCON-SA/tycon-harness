@@ -129,6 +129,8 @@ function ownExtras(home, registered) {
   const seen = new Set(registered.map((p) => path.resolve(p.where)));
   const out = [];
   for (const f of BOOTSTRAP_FILES) { const p = path.join(dir, f); if (lexists(p) && !seen.has(path.resolve(p))) out.push({ kind: 'file', where: p, id: f }); }
+  // las rutas que copyBootstrap escribe al lado de las copias fijas: se van con ellas
+  for (const f of ['places.json', 'places.sh']) { const p = path.join(dir, f); if (lexists(p) && !seen.has(path.resolve(p))) out.push({ kind: 'file', where: p, id: f }); }
   const prog = path.join(dir, 'program');
   if (lexists(prog)) out.push({ kind: 'file', where: prog, id: 'program/' });
   return out;

@@ -1,5 +1,5 @@
 'use strict';
-// import-line.js — la línea de ~/.claude/CLAUDE.md que carga en cada sesión el índice de guías del arnés.
+// import-line.js — la línea del CLAUDE.md de la carpeta de Claude Code que carga en cada sesión el índice de guías del arnés.
 //
 // El índice se llama `INDEX.md`; `README.md` es la portada para personas (la que muestra GitHub). Una máquina con la
 // línea que apunta a `README.md` cargaría la portada en vez del índice, así que esa línea se reescribe a la nueva en su
@@ -15,17 +15,20 @@
 //
 // Este archivo viaja en la copia fija del programa: sólo `require` dentro de scripts/setup/harness/.
 // Uso suelto (lo llama el aplicador): node import-line.js --fix [--check] [--quiet] [<CLAUDE.md>] — sale 0 siempre; dice
-// qué hizo (con --quiet, sólo si cambió algo o no pudo). Sin ruta, ~/.claude/CLAUDE.md o $CLAUDE_MD_PATH.
+// qué hizo (con --quiet, sólo si cambió algo o no pudo). Sin ruta, el CLAUDE.md de la carpeta de Claude Code o $CLAUDE_MD_PATH.
 // Casos: scripts/tests/import-line.test.js.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const PLACE = require('./place.js');
+const TH = require('./tycon-home.js');
 
 const INDEX_FILE = 'INDEX.md';
 const OLD_INDEX_FILE = 'README.md';
-const lineFor = (place, file) => `@~/.claude/${place}/${file}`;
+// la carpeta de Claude Code por su nombre (el de tycon-home.js): la línea se escribe relativa a la casa, con «~/»
+const CLAUDE_DIR_NAME = path.basename(TH.claudeDir(os.homedir()));
+const lineFor = (place, file) => `@~/${CLAUDE_DIR_NAME}/${place}/${file}`;
 /** La línea de hoy. */
 const IMPORT_LINE = lineFor(PLACE.PLACE_NAME, INDEX_FILE);
 /** La de hoy con el nombre viejo del lugar: vale (el nombre viejo resuelve) y sólo `relocate` la muda. */
@@ -72,7 +75,7 @@ function rewrite(text, { relocate = false } = {}) {
 /** ¿El texto tiene una forma VIEJA de la línea? (la sesión que lo leyó cargó la portada, o nada) */
 const hasOldForm = (text) => String(text).split('\n').some((l) => OLD_FORMS.includes(trimmed(l)));
 
-const claudeMdPath = (env = process.env, home = os.homedir()) => env.CLAUDE_MD_PATH || path.join(home, '.claude', 'CLAUDE.md');
+const claudeMdPath = (env = process.env, home = os.homedir()) => env.CLAUDE_MD_PATH || path.join(TH.claudeDir(home), 'CLAUDE.md');
 
 /**
  * Reescribe la línea en el archivo, sólo si tiene una forma vieja o repetida. Nunca la agrega (eso es de `harness.js`):

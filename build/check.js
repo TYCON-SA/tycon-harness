@@ -17,7 +17,7 @@
  *      casos o deuda declarada (scripts/controls-bench/hook-debt.json).
  *
  * Snippet pre-commit (mismo patrón referencia-por-path que lint-story-frontmatter.js):
- *   node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/build/check.js" || exit 1
+ *   node "${TYCON_GUIDES_DIR:-$HOME/.tycon/harness}/build/check.js" || exit 1
  */
 'use strict';
 const { spawnSync } = require('child_process');
