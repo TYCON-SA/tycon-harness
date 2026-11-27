@@ -110,8 +110,7 @@ function firmar({ metodo, host, ruta, consulta = [], cabeceras = {}, accessId, s
 }
 
 /** Un pedido HTTP: `{ status, cuerpo, cabeceras }` o `{ error }`; nunca rechaza. `topeMs` corta todo el pedido. */
-// Con `maxBytes`, un cuerpo que lo pasa no se junta: se corta y sale `{ status, cuerpo, cortado: true }` (A38).
-function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs = 60000, topeMs = null, maxBytes = null } = {}) {
+function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs = 60000, topeMs = null } = {}) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(url); } catch (e) { resolve({ error: e }); return; }
@@ -120,16 +119,7 @@ function pedir(url, { metodo = 'GET', cabeceras = {}, cuerpo = null, timeoutMs =
     const fin = (r) => { if (!hecho) { hecho = true; if (reloj) clearTimeout(reloj); resolve(r); } };
     const req = (u.protocol === 'http:' ? http : https).request(u, { method: metodo, headers: cabeceras, timeout: timeoutMs }, (res) => {
       const trozos = [];
-      let juntos = 0;
-      const tope = Number.isFinite(maxBytes) && maxBytes >= 0 ? maxBytes : null;
-      const cortar = () => { fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers, cortado: true }); req.destroy(); };
-      if (tope !== null && Number(res.headers['content-length']) > tope) { cortar(); return; }
-      res.on('data', (c) => {
-        if (hecho) return;
-        juntos += c.length;
-        if (tope !== null && juntos > tope) { cortar(); return; }
-        trozos.push(c);
-      });
+      res.on('data', (c) => trozos.push(c));
       res.on('end', () => fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers }));
       res.on('error', (e) => fin({ error: e }));
     });
@@ -228,7 +218,7 @@ async function tokenDelEntorno(env = process.env) {
 const LECTOR_SITIO = Object.freeze({ quien: 'la identidad del sitio', sinRol: (bucket) => ({ estado: 'sin_permiso', motivo: `la identidad del sitio no tiene el rol de lector del bucket ${bucket} (403)` }) });
 const LECTOR_MAQUINA = Object.freeze({ quien: 'tu sesión de gcloud', sinRol: (bucket) => ({ permiso: true, motivo: `tu cuenta de gcloud no tiene el rol de lector del bucket ${bucket} (403): sólo lo lee quien fue autorizado` }) });
 
-/** El almacén de la API JSON: `{ destino, listar(prefijo), leer(nombre, timeoutMs, maxBytes) }`, para el sitio o una máquina. */
+/** El almacén de la API JSON: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }`, para el sitio o una máquina. */
 function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
   const cab = { authorization: `Bearer ${token}`, accept: 'application/json' };
   const raiz = `${base}/storage/v1/b/${codificar(bucket)}/o`;
@@ -260,8 +250,8 @@ function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
   }
   // un 401 al bajar es el token que venció o no vale, como al listar: la bajada lo toma de `estado` (un 403 sigue siendo
   // el permiso que falta, y lo clasifica la bajada como siempre)
-  async function leer(nombre, timeoutMs, maxBytes) {
-    const r = await pedir(`${raiz}/${codificar(nombre)}?alt=media`, { cabeceras: { authorization: cab.authorization }, timeoutMs, maxBytes });
+  async function leer(nombre, timeoutMs) {
+    const r = await pedir(`${raiz}/${codificar(nombre)}?alt=media`, { cabeceras: { authorization: cab.authorization }, timeoutMs });
     if (r.status === 401) return { ...r, estado: 'credencial_rechazada', motivo: `el buzón rechazó el token de ${lector.quien} al bajar ${nombre} (401): venció o no vale` };
     return r;
   }
@@ -309,7 +299,7 @@ function almacenDeBajada(cfg, { urlBase = null } = {}) {
   return {
     destino: `${PROVIDER}/${cfg.bucket}`,
     listar: async (prefijo = '') => { const a = preparar(); return a.falla ? { permiso: true, motivo: a.falla } : a.listar(prefijo); },
-    leer: async (nombre, timeoutMs, maxBytes) => { const a = preparar(); return a.falla ? { estado: 'sin_permiso', motivo: a.falla } : a.leer(nombre, timeoutMs, maxBytes); },
+    leer: async (nombre, timeoutMs) => { const a = preparar(); return a.falla ? { estado: 'sin_permiso', motivo: a.falla } : a.leer(nombre, timeoutMs); },
   };
 }
 

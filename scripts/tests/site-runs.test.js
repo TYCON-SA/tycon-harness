@@ -2353,12 +2353,16 @@ test('Cambios_ConsolaLargaEnTiempoLineal — un comando con «sed -i» repetido 
   // 🔴 rojo: `destinosDeConsola` buscaba el archivo de cada `sed -i` hasta el fin del renglón: con el comando repetido,
   //    el tiempo crecía al cuadrado (70 KB, 1,7 s; unos MB pasaban los 10 minutos del hilo del resumen)
   const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
-  const cmd = 'sed -i x '.repeat(16000);   // ~140 KB
-  // stable-data: el reloj mide cuánto tarda la lectura; no compara fechas
-  const t = Date.now();
-  ch.destinosDeConsola(cmd);
-  const ms = Date.now() - t;
-  assert.ok(ms < 2000, `tardó ${ms} ms`);
+  // ~560 KB de cada forma: sin el tope, `sed -i` repetido tardaba más de un minuto y `open(` repetido casi otro tanto
+  for (const cmd of ['sed -i x '.repeat(64000), 'python - <<x\nopen( '.repeat(1) + 'open( '.repeat(90000)]) {
+    // stable-data: el reloj mide cuánto tarda la lectura; no compara fechas
+    const t = Date.now();
+    ch.destinosDeConsola(cmd);
+    const ms = Date.now() - t;
+    assert.ok(ms < 3000, `tardó ${ms} ms con ${cmd.slice(0, 12)}…`);
+  }
+  // una expresión de sed larga (más de 500 caracteres) sigue dando su archivo
+  assert.deepStrictEqual(ch.destinosDeConsola(`sed -i 's/${'a'.repeat(1500)}/b/' docs/largo.md`), ['docs/largo.md']);
   // lo que ya leía, lo sigue leyendo
   assert.deepStrictEqual(ch.destinosDeConsola("sed -i 's/a/b/' docs/guia.md && perl -pi -e 's/x/y/' lib/a.js"), ['docs/guia.md', 'lib/a.js']);
   assert.deepStrictEqual(ch.destinosDeConsola('echo hola > salida.txt; cat a | tee -a log/b.log'), ['salida.txt', 'log/b.log']);

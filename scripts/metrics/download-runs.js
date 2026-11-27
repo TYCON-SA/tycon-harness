@@ -753,15 +753,19 @@ async function bajarUnaCorrida(opts = {}) {
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
   let alguna = false;
   for (const parte of [`${opts.base}.hilo.jsonl.gz`, `${opts.base}.cambio.json.gz`]) {
-    const versiones = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
-    if (!versiones.length) continue;
+    const todas = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
+    if (!todas.length) continue;
+    alguna = true;
+    const conTopeDelSitio = parte.endsWith('.hilo.jsonl.gz') && Number.isFinite(opts.hiloTopeBytes) && opts.hiloTopeBytes > 0;
+    // como la pasada: la versión que pasa su tope de bajada no cuenta, y se usa la anterior (una versión nueva y enorme
+    // subida con la llave de sólo crear no le saca el detalle a la ejecución). La conversación en el sitio no: la
+    // pasada mira la más nueva contra el tope del sitio y la da por grande, y el detalle dice lo mismo
+    const versiones = conTopeDelSitio ? todas : todas.filter(({ b }) => Number.isFinite(b.largo) && b.largo <= topeDeBajada(parte));
+    const topeParte = conTopeDelSitio ? Math.min(opts.hiloTopeBytes, topeDeBajada(parte)) : topeDeBajada(parte);
+    if (!versiones.length) return fin(1, 'grande', `${todas[0].b.nombre} pasa el tope de bajada (${mbDe(topeParte)} MB) en todas sus versiones: no se pidió`);
     // la más nueva: el nombre sin versión es la más vieja
     versiones.sort((x, y) => ((x.f.version || '') < (y.f.version || '') ? -1 : 1));
     const { b } = versiones[versiones.length - 1];
-    alguna = true;
-    // el sitio pasa su tope de conversación (`hiloTopeBytes`, el de la pasada): una versión nueva y enorme de una
-    // conversación ya resumida no entra por acá antes de que la pasada la marque como grande
-    const topeParte = parte.endsWith('.hilo.jsonl.gz') && Number.isFinite(opts.hiloTopeBytes) && opts.hiloTopeBytes > 0 ? Math.min(opts.hiloTopeBytes, topeDeBajada(parte)) : topeDeBajada(parte);
     if (!Number.isFinite(b.largo) || b.largo > topeParte) return fin(1, 'grande', `${b.nombre} pesa ${mbDe(b.largo)} MB y pasa el tope de bajada (${mbDe(topeParte)} MB): no se pidió`);
     const r = await almacen.leer(b.nombre, Math.max(60000, Math.min(300000, b.largo / 20)), b.largo);
     if (r.error) return fin(1, 'sin_red', `sin red al bajar ${b.nombre} (${r.error.code || r.error.message})`);

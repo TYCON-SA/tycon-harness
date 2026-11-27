@@ -138,15 +138,16 @@ function relativa(ruta, repoPath) {
  */
 // Con los archivos fuente de skills/tycon-pipeline/scripts/lib/code-files.js (Svelte, Vue, Go, Java…).
 const EXT_ARCHIVO = /\.(cs|csproj|sln|ts|tsx|js|jsx|mjs|cjs|mts|cts|json|ya?ml|md|sql|sh|ps1|py|go|rb|java|kt|swift|vue|svelte|html?|css|scss|xml|bpmn|toml|txt|config|props|razor|cshtml)$/i;
-const ESCRIBE = /open\([^)]*['"][wa]['"]|\.write_text\(|writeFileSync\(|appendFileSync\(|\.write\(/;
+const ESCRIBE = /open\([^)]{0,4000}['"][wa]['"]|\.write_text\(|writeFileSync\(|appendFileSync\(|\.write\(/;
 function destinosDeConsola(cmd) {
   const c = String(cmd || '');
   const out = new Set();
   const ext = '[\\w./~$-]+\\.[A-Za-z]{1,6}';
   for (const m of c.matchAll(new RegExp(`(?:>>?|\\btee(?:\\s+-a)?)\\s*["']?(${ext})["']?`, 'g'))) out.add(m[1]);
-  // el archivo de un `sed -i`/`perl -i`, hasta 500 caracteres después: sin el tope, un comando con `sed -i` repetido se
-  // leía en tiempo cuadrático (cada uno buscaba hasta el fin del renglón) y unos MB trababan el hilo del resumen (A39)
-  for (const m of c.matchAll(new RegExp(`\\b(?:sed|perl)\\s+-[a-zA-Z]*i[^\\n|;&]{0,500}?\\s["']?(${ext})["']?\\s*(?:$|[\\n|;&])`, 'gm'))) out.add(m[1]);
+  // el archivo de un `sed -i`/`perl -i`, hasta 4000 caracteres después (una expresión real entra de sobra): sin el tope, un
+  // comando con `sed -i` repetido se leía en tiempo cuadrático (cada uno buscaba hasta el fin del renglón) y unos MB
+  // trababan el hilo del resumen (A39). `open(` de ESCRIBE lleva el mismo tope, por lo mismo
+  for (const m of c.matchAll(new RegExp(`\\b(?:sed|perl)\\s+-[a-zA-Z]*i[^\\n|;&]{0,4000}?\\s["']?(${ext})["']?\\s*(?:$|[\\n|;&])`, 'gm'))) out.add(m[1]);
   if (ESCRIBE.test(c)) {
     // Una ruta entre comillas de un script: con barra, o con extensión de archivo de verdad (`d.type` no lo es).
     for (const m of c.matchAll(new RegExp(`["'](${ext})["']`, 'g'))) if (m[1].includes('/') || EXT_ARCHIVO.test(m[1])) out.add(m[1]);

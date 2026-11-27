@@ -34,17 +34,20 @@ function almacen(grandes, chicos = {}) {
     ...grandes.map((n) => blob(n, GB5, 'AAAAAAAAAAAAAAAAAAAAAA==')),
     ...Object.entries(chicos).map(([n, c]) => blob(n, c.length, crypto.createHash('md5').update(c).digest('base64'))),
   ];
-  return {
+  const lista_ = {
     pedidos,
     destino: 'falso/buzon',
     listar: async () => ({ blobs: lista }),
-    leer: async (nombre) => {
+    topes: {},
+    leer: async (nombre, _ms, maxBytes) => {
       const corto = nombre.split('/').slice(1).join('/');
       pedidos.push(corto);
+      lista_.topes[corto] = maxBytes;
       if (chicos[corto]) return { status: 200, cuerpo: chicos[corto], cabeceras: {} };
       return { status: 404, cuerpo: Buffer.alloc(0), cabeceras: {} };
     },
   };
+  return lista_;
 }
 
 const GRANDES = ['1.1-2026-11-20T1010.json', '1.1-2026-11-20T1010.cambio.json.gz', '1.2-2026-11-20T1110.json', '1.2-2026-11-20T1110.hilo.jsonl.gz', 'registros/gates.log.gz'];
@@ -120,4 +123,50 @@ test('T38g SitioYConectores_PasanElTopeAlDetalle', () => {
   assert.match(leer('scripts/site/sources.js'), /bajarUnaCorrida\(\{[^}]*hiloTopeBytes: topeConversacionBytes \}\)/);
   assert.match(leer('scripts/site/cloud/azure.js'), /bajarUnaCorrida\(\{[^}]*hiloTopeBytes \}\)/);
   assert.match(leer('integrations/gcs/scripts/mailbox.js'), /bajarUnaCorrida\(\{ almacen: p\.almacen, maquina, base, dir, hiloTopeBytes \}\)/);
+});
+
+test('T38h CadaPedido_LlevaElLargoDelListado_Y_ElCuerpoCortadoNoSeEscribe', async (t) => {
+  // el corte del cuerpo tiene que llegar a `leer` desde la pasada, la cobertura y el detalle: sin el largo, un objeto que
+  // sirve más de lo listado se juntaba entero
+  const dir = path.join(carpeta(t), 'buzon');
+  const volcado = Buffer.from(JSON.stringify({ story: '2.1' }));
+  const cob = Buffer.from(JSON.stringify({ fuentes: {} }));
+  const a = almacen([], { '2.1-2026-11-20T1210.json': volcado, 'registros/cobertura.json': cob });
+  await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+  assert.strictEqual(a.topes['2.1-2026-11-20T1210.json'], volcado.length, 'la pasada');
+  assert.strictEqual(a.topes['registros/cobertura.json'], cob.length, 'la cobertura');
+  // la cobertura de un juego con versión se pide aparte, para saber si el juego está completo
+  const v = almacen([], { 'registros/v20261121T000000000Z/cobertura.json': cob });
+  await B.bajar({ almacen: v, dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
+  assert.strictEqual(v.topes['registros/v20261121T000000000Z/cobertura.json'], cob.length, 'la cobertura de un juego con versión');
+  const cambio = Buffer.from('x');
+  const d = almacen([], { '3.1-2026-11-20T1310.cambio.json.gz': cambio });
+  await B.bajarUnaCorrida({ almacen: d, dir: carpeta(t), maquina: MAQ, base: '3.1-2026-11-20T1310' });
+  assert.strictEqual(d.topes['3.1-2026-11-20T1310.cambio.json.gz'], cambio.length, 'el detalle');
+  // un cuerpo cortado no se escribe en el espejo y la pasada no queda entera
+  const c = almacen([], { '4.1-2026-11-20T1410.json': volcado });
+  c.leer = async () => ({ status: 200, cuerpo: volcado, cabeceras: {}, cortado: true });
+  const dir2 = path.join(carpeta(t), 'buzon');
+  const r = await B.bajar({ almacen: c, dir: dir2, budgetMs: 20000, log: () => {} });
+  assert.ok(!fs.existsSync(path.join(dir2, MAQ, '4.1-2026-11-20T1410.json')), 'no se escribió');
+  assert.strictEqual(r.res.completo, false);
+});
+
+test('T38i DetalleADemanda_UnaVersionNuevaEnorme_UsaLaAnterior', async (t) => {
+  // una versión nueva y enorme del cambio, subida con la llave de sólo crear, no le saca el detalle a la ejecución
+  const cambio = Buffer.from('x');
+  const md5 = crypto.createHash('md5').update(cambio).digest('base64');
+  const base = '5.1-2026-11-20T1510';
+  const pedidos = [];
+  const a = {
+    destino: 'falso/buzon',
+    listar: async () => ({ blobs: [
+      { nombre: `${MAQ}/${base}.cambio.json.gz`, largo: cambio.length, md5, etag: 'a' },
+      { nombre: `${MAQ}/v20261121T000000000Z/${base}.cambio.json.gz`, largo: GB5, md5: 'AAAAAAAAAAAAAAAAAAAAAA==', etag: 'b' },
+    ] }),
+    leer: async (nombre) => { pedidos.push(nombre); return { status: 200, cuerpo: cambio, cabeceras: {} }; },
+  };
+  const { res } = await B.bajarUnaCorrida({ almacen: a, dir: carpeta(t), maquina: MAQ, base });
+  assert.deepStrictEqual(pedidos, [`${MAQ}/${base}.cambio.json.gz`]);
+  assert.strictEqual(res.estado, 'bajado');
 });
