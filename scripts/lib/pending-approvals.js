@@ -26,7 +26,8 @@
  *     firmada por su huella y la de base por su código (`claveDeLinea`). La misma aprobación con otro espaciado no es
  *     nueva, y cambiarle a una ya commiteada un campo que su huella no cubre se nombra. Una aprobación firmada no se
  *     borra: sin ella en el último commit, volver a ponerla la haría pasar por nueva. Si el borrado llegó a main sin los
- *     controles, volver a ponerla no se ve.
+ *     controles, volver a ponerla no se ve. `git revert` y `git cherry-pick` no corren el pre-commit: ese borrado lo
+ *     frena la validación del pedido.
  *   · `aprobacionVigente`: lo que mira `approve-pending` antes de pedir la firma, contra el último commit y contra el
  *     ancestro común con la rama principal, que es lo que compara la validación del pedido.
  * La revisión de la noche no ve el registro del arnés ni la historia: una línea fabricada, o un pendiente reabierto con
