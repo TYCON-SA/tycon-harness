@@ -1763,6 +1763,29 @@ for p in ${INSTALADOS}; do
   is "T115b el inventario real marca ${p} (lo instala el freno o aprueba producción) con «sign_on_change»" "si" "${MARKED}"
 done
 
+# T115c · lo que cargan las dos bibliotecas del click del dueño (owner-approvals.js y owner-window.js) para decidirlo
+# —dónde se anotan los clicks, quién cuenta como dueño, de qué máquina, qué zona es un archivo, qué versión de Claude
+# Code, cómo se firma, qué exenciones son críticas, cómo se lee el comando y el bash de Windows— pide la constancia en
+# cada cambio, como las dos bibliotecas. Ninguna pasada de la revisión prueba el click: un pedido que amplía quién es
+# dueño pasa las dos en verde. También el mapa de nombres viejos que la copia instalada del freno consulta (sólo el repo
+# del equipo lo trae: `optional`). Todo lo que cargan las dos son ~250 archivos; firmar cada uno no se sostiene, así que
+# la lista es la de los que deciden el click (revisión de la fila 283, S1 y S2).
+# 🔴 mutación: sin la marca, un cambio en approver.js que amplía quién es dueño entra sin constancia
+DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/lib/approver.js scripts/lib/machine-id.js scripts/lib/file-zones.js scripts/lib/claude-versions.js scripts/lib/harness-sign.js skills/tycon-pipeline/scripts/lib/critical-waivers.js skills/tycon-pipeline/scripts/lib/marker-command.js scripts/lib/git-bash.js scripts/lib/renames.json"
+for p in ${DECIDEN_CLICK}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.controls.some(c=>(c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true))?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T115c el inventario real marca ${p} (decide el click del dueño) con «sign_on_change»" "si" "${MARKED}"
+  case "${p}" in *.json) ;; *) [ -f "${ROOT}/${p}" ] && ok "T115c …y ${p} existe" || no "T115c ${p} no existe: la marca no protege nada" ;; esac
+done
+# la lista no se queda vieja sin que se note: cada biblioteca la carga todavía alguna de las dos
+for p in ${DECIDEN_CLICK}; do
+  case "${p}" in *.json) continue ;; esac
+  b="$(basename "${p}")"
+  if grep -qE "require\(.*'(\./)?${b}'" "${ROOT}/scripts/lib/owner-approvals.js" "${ROOT}/scripts/lib/owner-window.js"; then
+    ok "T115c ${b} lo carga una biblioteca del click"
+  else no "T115c ${b} ya no lo carga owner-approvals.js ni owner-window.js: sacalo de la lista o mirá quién decide ahora"; fi
+done
+
 # T116 · las claves que vale sólo el perfil del equipo viven en un archivo chico que firma siempre, y la configuración
 # las lee de ahí: una copia propia en tycon-config.js (que se toca en casi cada pedido) se podría achicar sin constancia
 MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/lib/profile-only.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
