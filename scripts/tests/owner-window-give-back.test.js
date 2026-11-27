@@ -15,21 +15,22 @@ const oa = require('../lib/owner-approvals.js');
 
 const SESION = 'ses-a';
 const TOOL = 'toolu_firma_1';
-const APROBACION = 'aprob-123';
+const APROBACION = 'a'.repeat(64);
+const HERRAMIENTA = { pid: 4242, inicio: 'Thu Nov 27 10:00:00 2026' };
 
 /** Una casa de prueba con un pedido de la ventana que gastó una aprobación, como lo deja el freno antes de correr. */
-function armar({ consumido = false, otraHerramienta = false, sinAprobacion = false } = {}) {
-  const casa = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ow-giveback-')));
+function armar({ consumido = false, otraHerramienta = false, sinAprobacion = false, aprobacion = APROBACION, tool = TOOL, casa: casaDada } = {}) {
+  const casa = casaDada || fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ow-giveback-')));
   const dirVentana = ow.carpeta(casa);
   fs.mkdirSync(dirVentana, { recursive: true });
-  const reg = { firma: 'escape:controles', sesion: SESION, destino: SESION, tool_use_id: otraHerramienta ? 'toolu_otro' : TOOL,
-    comando: 'run-base-controls.sh approve --expect abc', ts: '2026-11-27T10:00:00.000Z', ...(sinAprobacion ? {} : { via: 'click', aprobacion: APROBACION }) };
-  const nombre = `escape_controles--${SESION}--${SESION}.json`;
+  const reg = { firma: 'escape:controles', sesion: SESION, destino: SESION, tool_use_id: otraHerramienta ? 'toolu_otro' : tool, herramienta: HERRAMIENTA,
+    comando: 'run-base-controls.sh approve --expect abc', ts: '2026-11-27T10:00:00.000Z', ...(sinAprobacion ? {} : { via: 'click', aprobacion }) };
+  const nombre = `escape_controles${tool === TOOL ? '' : `-${tool}`}--${SESION}--${SESION}.json`;
   fs.writeFileSync(path.join(dirVentana, consumido ? `${nombre}.consumido-1` : nombre), JSON.stringify(reg));
   const usadas = path.join(oa.carpeta(casa), 'usadas');
   fs.mkdirSync(usadas, { recursive: true });
   fs.writeFileSync(path.join(usadas, APROBACION), '{}\n');
-  return { casa, usada: () => fs.existsSync(path.join(usadas, APROBACION)), pedidos: () => fs.readdirSync(dirVentana) };
+  return { casa, usada: () => fs.existsSync(path.join(usadas, APROBACION)), gastar: () => fs.writeFileSync(path.join(usadas, APROBACION), '{}\n'), pedidos: () => fs.readdirSync(dirVentana) };
 }
 const falla = (error, o = {}) => ({ hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', session_id: SESION, tool_use_id: TOOL, error, ...o });
 
@@ -84,4 +85,36 @@ test('OwnerWindowBox_ExactForm — el detalle del cuadro dice el comando con su 
   assert.deepStrictEqual(ow.formaExacta('/p/marker.js sign-file x a', ['/p/marker.js', 'sign-file', 'x', 'a']), ['/p/marker.js', 'sign-file', 'x', 'a']);
   assert.deepStrictEqual(ow.formaExacta('bash /p/run.sh go', ['bash', '/p/run.sh', 'go']), ['bash', '/p/run.sh', 'go']);
   assert.strictEqual(ow.formaExacta('x', null), null);
+});
+
+test('OwnerWindowGiveBack_OncePerClick — la misma aprobación vuelve una sola vez, aunque el comando repetido vuelva a salir 127', () => {
+  // 🔴 rojo si: cada pedido nuevo con la misma aprobación la devuelve otra vez (Fable H3: 5 de 5)
+  const t = armar();
+  assert.ok(ow.devolverSiNoCorrio(falla('Exit code 127\nx'), { casa: t.casa }));
+  t.gastar();
+  armar({ casa: t.casa, tool: 'toolu_firma_2' });
+  assert.strictEqual(ow.devolverSiNoCorrio(falla('Exit code 127\nx', { tool_use_id: 'toolu_firma_2' }), { casa: t.casa }), null);
+  assert.strictEqual(t.usada(), true);
+});
+
+test('OwnerWindowGiveBack_RejectsOddIdOrOtherTool — un id que no es una huella, o otra herramienta que la del pedido: no devuelve', () => {
+  // 🔴 rojo si: un `aprobacion` con `../` borra fuera de usadas/ (Fable H4), o devuelve el pedido de otra herramienta (H5)
+  const t = armar({ aprobacion: '../victima.jsonl' });
+  const victima = path.join(oa.carpeta(t.casa), 'victima.jsonl');
+  fs.writeFileSync(victima, '{}\n');
+  assert.strictEqual(ow.devolverSiNoCorrio(falla('Exit code 127\nx'), { casa: t.casa }), null);
+  assert.ok(fs.existsSync(victima));
+  const u = armar();
+  assert.strictEqual(ow.devolverSiNoCorrio(falla('Exit code 127\nx'), { casa: u.casa, herramienta: { pid: 1, inicio: 'otro' } }), null);
+  assert.strictEqual(u.usada(), true);
+  assert.ok(ow.devolverSiNoCorrio(falla('Exit code 127\nx'), { casa: u.casa, herramienta: { ...HERRAMIENTA } }));
+});
+
+test('OwnerWindowBox_ExactForm_HomeAndInterpreterPath — `~/` queda fuera de las comillas, y un intérprete con ruta se conserva', () => {
+  // 🔴 rojo si: la ruta del arnés instalado sale como `'~/…'`, que la consola no expande y da 127 (Fable H1), o
+  // `/bin/bash` se pierde (H8)
+  const r = '~/.tycon/harness/scripts/ci/run-base-controls.sh';
+  assert.deepStrictEqual(ow.formaExacta(`bash ${r} approve`, [r, 'approve']), ['bash', r, 'approve']);
+  assert.deepStrictEqual(ow.formaExacta("bash '~/a b/run.sh' x", ['~/a b/run.sh', 'x']), ['bash', "~/'a b/run.sh'", 'x']);
+  assert.deepStrictEqual(ow.formaExacta('/bin/bash /p/run.sh go', ['/p/run.sh', 'go']), ['/bin/bash', '/p/run.sh', 'go']);
 });

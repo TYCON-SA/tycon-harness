@@ -56,10 +56,16 @@ function main() {
   let evento;
   try { evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, '')); } catch (_) { return; }
   if (evento && evento.hook_event_name === 'PostToolUseFailure') {
+    // primero lo barato (corre en cada comando que falla): el código de salida y si hay un pedido con click de ese comando
+    if (!/^Exit code 12[67]\b/.test(String(evento.error || ''))) return;
     const casa = require(path.join(LIB, 'real-home.js')).casaDeLaCuenta();
-    // como al anotar: sólo lo que lanza la herramienta, no un agente que corre el gancho a mano con un evento inventado
-    if (!require(path.join(LIB, 'owner-approvals.js')).lanzadoPorLaHerramienta({ casa }).ok) return;
-    require(path.join(LIB, 'owner-window.js')).devolverSiNoCorrio(evento, { casa });
+    const ow = require(path.join(LIB, 'owner-window.js'));
+    if (!ow.pedidoConClick(casa, String(evento.session_id || ''), evento.tool_use_id == null ? '' : String(evento.tool_use_id))) return;
+    // como al anotar: sólo lo que lanza la herramienta, no un agente que corre el gancho a mano con un evento inventado;
+    // y la misma herramienta que anotó el pedido
+    const h = require(path.join(LIB, 'owner-approvals.js')).lanzadoPorLaHerramienta({ casa });
+    if (!h.ok) return;
+    ow.devolverSiNoCorrio(evento, { casa, herramienta: h.herramienta });
     return;
   }
   const rs = registrosDe(evento);
