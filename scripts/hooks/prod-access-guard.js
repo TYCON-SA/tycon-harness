@@ -178,7 +178,7 @@ function emergencia(texto, e) {
   let dir = 'la carpeta del estado';
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js, la carpeta temporal */ } return path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard FALLÓ: ${(e && e.stack) || e}\n\n`, 'utf8');
@@ -223,7 +223,7 @@ function loadGuardRecord() {
   guardRecordLib = null;
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js, la carpeta temporal */ } return path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+    const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard no pudo cargar la biblioteca de constancias (${failures.join(' · ')}): `
@@ -262,7 +262,7 @@ const CAMINO_DE_LA_PUERTA = [
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
-  '   Producción caída: guides/produccion-con-permiso.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
+  '   Producción caída: guides/production-with-permission.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
 ];
 
 // El mensaje de un borrado en Azure: la puerta no borra nada, así que no se la nombra ni se sugiere un rodeo.
@@ -301,7 +301,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
     try {
       const os = require('os'); const fs = require('fs'); const path = require('path');
-      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js, la carpeta temporal */ } return path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+      const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
       fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] prod-access-guard NO PUDO MIRAR (frenó): ${motivo}\n\n`, 'utf8');
     } catch { /* noop */ }
@@ -312,7 +312,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
 
 function registrar(ctx, extra) {
   const os = require('os'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
-  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js, la carpeta temporal */ } return path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
+  const dir = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* sin tycon-home.js: la casa propia si existe, si no la carpeta temporal */ } const propia = path.join(os.homedir(), '.tycon', 'state'); return fs.existsSync(propia) ? propia : path.join(os.tmpdir(), 'tycon-state'); })();   // la carpeta del estado la sabe tycon-home.js (story 8.23, tanda D: en /opt viaja su copia)
   fs.mkdirSync(dir, { recursive: true });
   const linea = {
     ts: new Date().toISOString(),
@@ -1013,7 +1013,7 @@ function decidir(entrada) {
         'Un grupo de recursos que no es de producción se pide por la puerta, que pide la aprobación del dueño en el cuadro',
         'y comprueba en Azure qué contiene antes de borrar: /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>',
         'Lo demás (un grupo con algo de producción, un candado, otro recurso) lo corre una persona en su propia terminal,',
-        'fuera del asistente, después de mirar qué contiene. Detalle: guides/produccion-con-permiso.md',
+        'fuera del asistente, después de mirar qué contiene. Detalle: guides/production-with-permission.md',
       ], { cmd }, 'borrado-de-azure', { sinPuerta: true });
     }
   }

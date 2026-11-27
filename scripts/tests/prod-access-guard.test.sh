@@ -322,9 +322,12 @@ pasa  "T34c · el mismo comando sin nada de bases pasa" 'bash -c "$CMD"'
 # adentro del try (la misma receta que el caso del banco `falla-real-del-freno-con-base-frena-y-anota`).
 freno_roto(){ # deja en $TMP/roto una copia del freno sin sus bibliotecas, e imprime la ruta del hook
   local r="$TMP/roto"; rm -rf "$r"
-  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production"
+  mkdir -p "$r/scripts/hooks" "$r/scripts/lib" "$r/scripts/production" "$r/scripts/setup/harness"
   cp "$HOOK" "$r/scripts/hooks/"
   cp "$AQUI/scripts/lib/repos-root.js" "$r/scripts/lib/"
+  # tycon-home.js viaja siempre con el freno (en /opt lo deja el instalador al lado): con él, la falla se anota donde la
+  # lee el aviso de arranque
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$r/scripts/setup/harness/"
   cp "$INDICE" "$r/scripts/production/"
   echo "$r/scripts/hooks/prod-access-guard.js"
 }
