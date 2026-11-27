@@ -623,3 +623,41 @@ test('T36 un commit que saca la lista de pendientes no deja pasar el borrado de 
   git('checkout', '-q', '--', PA.archivoDe(l));
   assert.strictEqual(check(d, '--staged').status, 0);
 });
+
+test('T37 borrar una aprobación (un revert, o arrepentirse en la rama): el mensaje dice la salida, no que el registro se escribió a mano', (t) => {
+  const l = firmada('DEF-hecho');
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  git('rm', '-q', PA.archivoDe(l));
+  const r = check(d, '--staged', '--no-local-signature');
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stderr, /dejá el archivo de la aprobación/);
+  assert.match(r.stderr, /sacá sólo el renglón/);
+  assert.doesNotMatch(r.stderr, /no se escribe a mano/, 'quien borra no escribió nada a mano');
+});
+
+test('T38 el registro se lee con pocos procesos de git: la carpeta sólo crece', (t) => {
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  for (let i = 0; i < 40; i++) {
+    const l = firmada(`DEF-a${i}`);
+    fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  }
+  git('add', '-A');
+  git('commit', '-q', '-m', 'muchas');
+  // un git que anota cada llamada y pasa al de verdad
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'git-cuenta-'));
+  t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const log = path.join(bin, 'llamadas');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho x >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const r = spawnSync(process.execPath, [CHECK, '--repo', d, '--staged', '--no-local-signature'], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const llamadas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
+  assert.ok(llamadas <= 15, `con 40 aprobaciones hizo ${llamadas} llamadas a git: una por archivo no escala`);
+});
