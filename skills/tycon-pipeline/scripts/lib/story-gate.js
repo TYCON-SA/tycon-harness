@@ -807,6 +807,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Lo escriben sólo el arnés al lanzar un revisor y al leer lo que contestó: escribirlo o borrarlo es cambiar lo que dijo',
       '  un revisor. Si un revisor no se pudo leer, se vuelve a correr; si un crítico no aplica, va en findings.json con su',
       '  motivo, o lo exime una persona (marker.js waive-critical).',
+      '  Para saber qué agente le tocó a cada revisor (para escribirle), no se abre el registro: pipeline.js reviewer-agents',
+      '  lo da (con --json, por revisor: la vuelta, el agente y si su reporte se leyó).',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan-review') {
