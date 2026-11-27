@@ -419,8 +419,12 @@ function readFrontmatter(content) {
   return { ok: true, fm: trimmed.slice(3, end) };
 }
 
-/** Mismo scalar que usan tycon-backfill-followups / validator / status scripts. */
+/**
+ * El escalar del descubridor de historias (`fmScalar`), el mismo del freno del commit y del portón de CI. Sin el
+ * descubridor el lint ya cae al layout clásico y lo avisa; acá queda la lectura vieja, sin el comentario de YAML.
+ */
 function scalar(fm, key) {
+  if (discovery && discovery.fmScalar) return discovery.fmScalar(fm, key);
   const m = fm.match(new RegExp(`^${key}:\\s*"?([^"\\n]+?)"?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 }

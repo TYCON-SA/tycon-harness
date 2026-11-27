@@ -125,8 +125,20 @@ function declaraSerStory(txt, rel) {
   return detector.DECLARES_STORY.test(zona);
 }
 
-/** Escalar del frontmatter — MISMO regex que usan las tools del arnés (si esto lee, ellas leen). */
+/**
+ * Escalar del frontmatter: el lector del descubridor de historias (`fmScalar`), el mismo del freno del commit, el lint y
+ * el índice. Si esto lee distinto que ellos, una historia con `status: done   # nota` pasa por uno y no por el otro. Sin
+ * el skill (el juez de la evidencia tampoco corre, y lo dice), queda la lectura vieja, sin el comentario de YAML.
+ */
+let lectorDelSkill;
 function escalar(fm, clave) {
+  if (lectorDelSkill === undefined) {
+    try {
+      const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
+      lectorDelSkill = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js')).fmScalar || null;
+    } catch { lectorDelSkill = null; }
+  }
+  if (lectorDelSkill) return lectorDelSkill(fm, clave);
   const m = String(fm).match(new RegExp(`^${clave}:\\s*["']?([^"'\\n]+?)["']?\\s*$`, 'm'));
   return m ? m[1].trim() : null;
 }

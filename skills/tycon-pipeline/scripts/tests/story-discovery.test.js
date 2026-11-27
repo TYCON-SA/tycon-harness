@@ -533,6 +533,48 @@ test('story-discovery: `story:` SIN `status:` no es una story (y al revés tampo
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('story-discovery: el freno del commit, el portón de CI y el descubridor leen igual el estado y el número (A34)', () => {
+  // 🔴 rojo: el portón y el freno leían `status: done   # nota` y `story: "9.2"   # nota` con su regex propio. La historia
+  //    se le escapaba al portón y al freno del commit, y el índice la mostraba `done`: dos lectores distintos del mismo
+  //    archivo son un hueco.
+  const ROOT_ARNES = path.join(__dirname, '..', '..', '..', '..');
+  const gate = require(path.join(ROOT_ARNES, 'scripts', 'ci', 'tycon-ci-gate.js'));
+  const freno = require(path.join(__dirname, '..', 'on-pre-commit.js'));
+  const casos = [
+    ['status: done   # nota', 'status', 'done'], ['status:  # x', 'status', null], ['status: "done # no"  # si', 'status', 'done # no'],
+    ['story: "9.2"   # nota', 'story', '9.2'], ["story: '9.3'\t# t", 'story', '9.3'], ['title: C# y más', 'title', 'C# y más'],
+    ['status: "done"\nstatus: review', 'status', 'done'], ['status: review\nstatus: "done"', 'status', 'review'],
+    ['status: done\r', 'status', 'done'], ['status:\nepic: 3', 'status', null],
+  ];
+  for (const [fm, k, esperado] of casos) {
+    assert.strictEqual(discovery.fmScalar(fm, k), esperado, `descubridor: ${JSON.stringify(fm)}`);
+    assert.strictEqual(gate.escalar(fm, k), esperado, `portón: ${JSON.stringify(fm)}`);
+  }
+  // el freno del commit reconoce la historia con comentario en el número y en el estado, como el descubridor
+  const texto = (id, st) => `---\nstory: ${id}\nstatus: ${st}\nepic: 9\n---\n# h\n`;
+  assert.strictEqual(freno.looksLikeStorySpec(texto('"9.2"   # nota', 'done   # nota')), true);
+  assert.strictEqual(freno.looksLikeStorySpec(texto('"9.2"', '  # sin estado')), false);
+});
+
+test('story-discovery: el comentario de YAML al final de un valor no es parte del valor', () => {
+  // el caso: `status: cancelled   # descartada por el dueño` salía con el comentario en los índices generados
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-coment-'));
+  fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+  writeStoryFile(root, 'specs/a/8-1-con-comentario.md', ['story: "8.1"   # el número', 'status: cancelled   # descartada por el dueño', 'epic: 8 # la épica']);
+  writeStoryFile(root, 'specs/a/8-2-entre-comillas.md', ['story: "8.2"', 'status: "done"  # cerrada', 'epic: 8', 'title: "El arreglo del PR #12"']);
+  writeStoryFile(root, 'specs/a/8-3-numeral-pegado.md', ['story: "8.3"', 'status: done', 'epic: 8', 'title: El lenguaje C# y sus pruebas']);
+  const p = (f) => discovery.probeStoryFile(path.join(root, 'specs/a', f));
+  const a = p('8-1-con-comentario.md');
+  assert.equal(a.status, 'cancelled', 'el estado sin el comentario');
+  assert.equal(a.id, '8.1');
+  assert.equal(a.epic, '8');
+  const b = p('8-2-entre-comillas.md');
+  assert.equal(b.status, 'done', 'entre comillas, con un comentario después');
+  assert.equal(b.title, 'El arreglo del PR #12', 'un « #» adentro de las comillas es texto');
+  assert.equal(p('8-3-numeral-pegado.md').title, 'El lenguaje C# y sus pruebas', 'un # sin espacio antes es texto');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('story-discovery: la relectura por frontmatter largo NO se dispara de más', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-relect-'));
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
