@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-spec-first-checker.md
-# source_sha256: f3232767066bbc41fc58a71f019065418264fac0460d0534141ad1e59a64b609
+# source_sha256: aeec5e6f94972f0fe2c3719e868f9d720a18fe4e837069dca6035f5e2f003a26
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-spec-first-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-spec-first-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -316,9 +316,9 @@ Se invoca en paralelo con los otros advisors post-build. Detecta el caso donde l
 
 ## Referencias
 
-- Catálogo de reglas: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` (sección Spec-First Checker).
-- Guía Mary+GOLD: `~/.claude/tycon-harness/story-format.md`.
-- Arquitectura de advisors: `~/.claude/tycon-harness/guides/agent-architecture.md`.
+- Catálogo de reglas: `~/.tycon/harness/guides/advisor-rules-catalog.md` (sección Spec-First Checker).
+- Guía Mary+GOLD: `~/.tycon/harness/story-format.md`.
+- Arquitectura de advisors: `~/.tycon/harness/guides/agent-architecture.md`.
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
 

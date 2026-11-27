@@ -105,7 +105,7 @@ function sinBlancosDeLasPuntas(t) {
  * La línea de cierre admite blancos alrededor, por el lado seguro: un cierre antes del real deja más texto como comandos.
  * Un heredoc sin cierre no sale: su texto queda como comandos.
  */
-function heredocs(texto) {
+function heredocsPorOperador(texto) {
   const s = String(texto);
   const out = [];
   let lineas = null;                                      // por texto de línea, dónde empieza cada una (en orden)
@@ -145,6 +145,145 @@ function heredocs(texto) {
     finPrevio = cierre[1];
   }
   return out;
+}
+
+/**
+ * Los heredocs del texto leídos con UN lector, como los lee el shell: una sola pasada que sabe de comillas (`'…'`,
+ * `"…"`, `$'…'`), de sustituciones (`$(…)`, comillas invertidas, `${…}`), de cuentas (`$((…))`, `((…))`), de comentarios
+ * y de los cuerpos de heredoc. Un `<<` adentro de una comilla, de un comentario, de una cuenta o del cuerpo de otro
+ * heredoc es texto, y su cuerpo no se esconde. El cuerpo empieza en el primer salto de línea que no está adentro de una
+ * comilla, como en el shell. Misma forma de salida que `heredocsPorOperador`.
+ *
+ * Es la segunda lectura del freno de producción (`conLectura`): la primera (`heredocsPorOperador`) toma todo `<<` por
+ * heredoc. Ninguna sola es segura: la primera esconde lo que sigue a un `<<` que era texto, y ésta, si se equivoca al
+ * leer una comilla, deja como comandos un cuerpo que era texto. Por eso el freno juzga las dos y frena si una frena.
+ * Límites: un `)` del patrón de un `case` adentro de `$(…)` la cierra antes de tiempo, y en zsh algunas formas de
+ * comillas no son las de bash. Si se equivoca, la otra lectura sigue en pie.
+ */
+function heredocsLeidos(texto) {
+  const s = String(texto);
+  const out = [];
+  // la pila de contextos: 'cmd' (afuera o adentro de `$(…)`), '"', "'", "$'", '${' y 'cuenta'
+  const pila = [{ t: 'cmd', parens: 0 }];
+  const tope = () => pila[pila.length - 1];
+  let pendientes = [];
+  const enComando = () => tope().t === 'cmd';
+  const re = new RegExp(OPERADOR_HEREDOC.source, 'y');
+  // al salto de línea de un comando: los cuerpos de los heredocs pendientes, en orden. Devuelve dónde sigue la lectura
+  const leerCuerpos = (nl) => {
+    let desde = nl;                                        // el salto de línea anterior al cuerpo
+    for (const p of pendientes) {
+      let cierre = null;
+      for (let ini = desde + 1; ini <= s.length;) {
+        let fin = s.indexOf('\n', ini); if (fin < 0) fin = s.length;
+        if (sinBlancosDeLasPuntas(s.slice(ini, fin)) === p.delim) { cierre = [ini, fin]; break; }
+        if (fin >= s.length) break;
+        ini = fin + 1;
+      }
+      // sin cierre no sale, como en la otra lectura: lo que sigue se lee como comandos
+      if (!cierre) { pendientes = []; return nl; }
+      out.push({
+        indice: p.indice, fin: cierre[1], delim: p.delim, comillas: p.comillas,
+        resto: s.slice(p.restoDesde, nl), cuerpo: cierre[0] > desde + 1 ? s.slice(desde + 1, cierre[0] - 1) : '',
+      });
+      desde = cierre[1];
+    }
+    pendientes = [];
+    return desde;
+  };
+  for (let j = 0; j < s.length; j++) {
+    const c = s[j];
+    const t = tope().t;
+    if (t === "'") { if (c === "'") pila.pop(); continue; }
+    if (t === "$'") { if (c === '\\') j++; else if (c === "'") pila.pop(); continue; }
+    if (c === '\\') {
+      // `\` y salto de línea junta las dos líneas: no es el salto que abre un cuerpo
+      j++;
+      continue;
+    }
+    if (t === '"') {
+      if (c === '"') pila.pop();
+      else if (c === '$' && s[j + 1] === '(' && s[j + 2] === '(') { pila.push({ t: 'cuenta', parens: 0 }); j += 2; }
+      else if (c === '$' && s[j + 1] === '(') { pila.push({ t: 'cmd', parens: 0, cierra: ')' }); j++; }
+      else if (c === '$' && s[j + 1] === '{') { pila.push({ t: '${' }); j++; }
+      else if (c === '$' && s[j + 1] === '[') { pila.push({ t: 'cuenta', parens: 0, corchete: true }); j++; }
+      else if (c === '`') j = finDeSustitucion(s, j) - 1;
+      continue;
+    }
+    if (t === 'cuenta') {
+      const abre = tope().corchete ? '[' : '(';
+      const cierra = tope().corchete ? ']' : ')';
+      if (c === abre) tope().parens++;
+      else if (c === cierra) {
+        if (tope().parens > 0) tope().parens--;
+        else if (tope().corchete) pila.pop();
+        else if (s[j + 1] === ')') { pila.pop(); j++; }
+      }
+      continue;
+    }
+    // de acá en adelante: comando, comilla invertida o `${…}`, donde las comillas abren
+    if (c === '$' && s[j + 1] === '$') { j++; continue; }
+    if (c === '$' && s[j + 1] === "'") { pila.push({ t: "$'" }); j++; continue; }
+    if (c === "'") { pila.push({ t: "'" }); continue; }
+    if (c === '"') { pila.push({ t: '"' }); continue; }
+    if (c === '$' && s[j + 1] === '(' && s[j + 2] === '(') { pila.push({ t: 'cuenta', parens: 0 }); j += 2; continue; }
+    if (c === '$' && s[j + 1] === '(') { pila.push({ t: 'cmd', parens: 0, cierra: ')' }); j++; continue; }
+    if (c === '$' && s[j + 1] === '{') { pila.push({ t: '${' }); j++; continue; }
+    // `$[ … ]`, la cuenta vieja de bash y de zsh: su `<<` es un corrimiento
+    if (c === '$' && s[j + 1] === '[') { pila.push({ t: 'cuenta', parens: 0, corchete: true }); j++; continue; }
+    if (t === '${') { if (c === '}') pila.pop(); continue; }
+    // lo de entre comillas invertidas llega hasta la próxima comilla invertida sin escapar, haya lo que haya adentro
+    // (comillas, `#`): se salta entero, y un `<<` adentro queda para la otra lectura
+    if (c === '`') { j = finDeSustitucion(s, j) - 1; continue; }
+    // `((…))` es una cuenta donde aparezca: suelta, tras `while`, `for`, `time`, o como cuerpo de una función. Si eran dos
+    // subshells (`((a); b)`), esta lectura difiere de la otra y el freno juzga las dos
+    if (c === '(' && s[j + 1] === '(') { pila.push({ t: 'cuenta', parens: 0 }); j++; continue; }
+    if (c === '(') { tope().parens++; continue; }
+    if (c === ')') {
+      if (tope().parens > 0) tope().parens--;
+      else if (tope().cierra === ')') pila.pop();
+      continue;
+    }
+    // un comentario: `#` al empezar una palabra, hasta el fin del renglón (el salto de línea no es parte de él)
+    if (c === '#' && (j === 0 || /[\s;&|()]/.test(s[j - 1]))) {
+      const fin = s.indexOf('\n', j);
+      if (fin < 0) break;
+      j = fin - 1;
+      continue;
+    }
+    if (c === '<' && s[j + 1] === '<' && s[j + 2] !== '<' && s[j - 1] !== '<' && enComando()) {
+      re.lastIndex = j;
+      const m = re.exec(s);
+      if (!m) { j++; continue; }
+      // `<<EO\` y en la línea siguiente `F`: como en la otra lectura, no es un heredoc
+      if (s[re.lastIndex] === '\\' && s[re.lastIndex + 1] === '\n') { j = re.lastIndex - 1; continue; }
+      pendientes.push({ indice: j, delim: delimitadorDelShell(m[1]), comillas: /[\\'"]/.test(m[1]), restoDesde: re.lastIndex });
+      j = re.lastIndex - 1;
+      continue;
+    }
+    if (c === '\n' && pendientes.length && enComando()) j = leerCuerpos(j);
+  }
+  return out;
+}
+
+// La lectura de heredocs que usan `heredocs()` y todo lo que la llama (`sinHeredocs`, `segmentos`). La de siempre es
+// 'operador'; el freno de producción juzga además con 'comillas' (ver `heredocsLeidos`).
+let LECTURA = 'operador';
+/** Corre `fn` con la lectura `nombre` ('operador' o 'comillas') y vuelve a la de antes. */
+function conLectura(nombre, fn) {
+  if (nombre !== 'operador' && nombre !== 'comillas') throw new Error(`no conozco la lectura ${nombre}`);
+  const antes = LECTURA;
+  LECTURA = nombre;
+  try { return fn(); } finally { LECTURA = antes; }
+}
+/** Los heredocs con la lectura en curso. */
+function heredocs(texto) {
+  return LECTURA === 'comillas' ? heredocsLeidos(texto) : heredocsPorOperador(texto);
+}
+/** ¿Las dos lecturas dan los mismos heredocs? Si no, el freno juzga las dos. */
+function lecturasCoinciden(texto) {
+  const clave = (l) => l.map((h) => `${h.indice}:${h.fin}`).join(',');
+  return clave(heredocsPorOperador(texto)) === clave(heredocsLeidos(texto));
 }
 
 function sinHeredocs(cmd, opciones) {
@@ -1818,6 +1957,8 @@ module.exports = {
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,
   heredocs, OPERADOR_HEREDOC,
+  // las dos lecturas de los heredocs (S247e): el freno de producción juzga las dos cuando difieren
+  heredocsPorOperador, heredocsLeidos, conLectura, lecturasCoinciden,
   // story 8.14
   lex, lexWords, splitWords, parseSimpleCommand, substitutions, decodeAnsiC,
   expandWord, ExpansionBudget, EXPANSION_LIMIT, applyAssignments, commandVariables, changesShellOptions,

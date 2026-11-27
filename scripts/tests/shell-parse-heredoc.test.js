@@ -84,3 +84,53 @@ test('ShellParse_EjecutaTexto_SoloDiceQueNoConProgramasConocidos — ante la dud
   for (const c of noCorren) assert.strictEqual(P.ejecutaTexto(c), false, `tomó por ejecutor: ${c}`);
   for (const c of corren) assert.strictEqual(P.ejecutaTexto(c), true, `no vio que corre: ${c}`);
 });
+
+// ── las dos lecturas (S247e) ─────────────────────────────────────────────────────────────────────────────────────
+// La de siempre (`heredocsPorOperador`) toma todo `<<` por heredoc; la de comillas (`heredocsLeidos`) lee comillas,
+// comentarios y cuerpos con un mismo lector. El freno de producción juzga las dos cuando difieren.
+const q = "'";
+const marcas = (l) => l.map((h) => `${h.delim}@${h.indice}`);
+
+test('ShellParseHeredocReadings_LtLtInsideQuotes_IsText @S247e — un << adentro de una comilla, de una sustitución entre comillas o de un comentario no es heredoc', () => {
+  // 🔴 rojo si: la lectura de comillas toma por heredoc un << que es texto, y esconde lo que sigue hasta su «cierre»
+  assert.deepStrictEqual(P.heredocsLeidos(`echo "$(echo " <<EOF\n")"\nrm x\nEOF`), []);
+  assert.deepStrictEqual(P.heredocsLeidos(`echo it${q}s\n<<EOF\n${q}a\nrm x\nEOF`), []);
+  assert.deepStrictEqual(P.heredocsLeidos('# ver cat <<EOF\nrm x\nEOF'), []);
+  assert.deepStrictEqual(P.heredocsLeidos('python3 -c "print(1 << 3)"\nrm x\n3)"'), []);
+  assert.deepStrictEqual(P.heredocsLeidos('echo $((1 <<EOF))\nrm x\nEOF'), []);
+  // la de siempre sí los toma: por eso difieren y el freno juzga las dos
+  assert.strictEqual(P.lecturasCoinciden(`echo "$(echo " <<EOF\n")"\nrm x\nEOF`), false);
+});
+
+test('ShellParseHeredocReadings_CommonForms_Agree @S247e — en las formas de siempre las dos lecturas dan lo mismo', () => {
+  // 🔴 rojo si: el mensaje de un commit con heredoc, o dos heredocs en una línea, se leen distinto: el freno lanzaría la
+  // segunda lectura en cada commit
+  const formas = [
+    `git log -1 --format="$(cat <<${q}EOF${q}\nmensaje\nEOF\n)"`,
+    `cat > a.md <<${q}FIN${q}\nit${q}s "una" nota\nFIN\necho fin`,
+    'cat <<A; python3 - <<B\nuno\nA\ndos\nB\necho fin',
+    'cat <<-EOF\n\ttexto\n\tEOF\necho fin',
+    `MSG="$(cat <<${q}EOF${q}\ncuerpo\nEOF\n)"\ncat > n.md <<${q}FIN${q}\necho don${q}t\nFIN`,
+    'echo `date` && cat <<EOF\nhola $(whoami)\nEOF',
+  ];
+  for (const f of formas) {
+    assert.ok(P.lecturasCoinciden(f), `difieren en: ${JSON.stringify(f)} → ${marcas(P.heredocsPorOperador(f))} / ${marcas(P.heredocsLeidos(f))}`);
+    assert.deepStrictEqual(P.heredocsLeidos(f), P.heredocsPorOperador(f), JSON.stringify(f));
+  }
+});
+
+test('ShellParseHeredocReadings_BodyOfAnother_IsText @S247e — un << adentro del cuerpo de otro heredoc es texto, y lo de después del cierre son comandos', () => {
+  // 🔴 rojo si: el << del cuerpo se toma por heredoc y su «cuerpo» se lleva el comando de verdad que sigue al cierre
+  const c = `cat <<A\necho ${q} <<B\nA\nrm x\nB`;
+  assert.deepStrictEqual(marcas(P.heredocsLeidos(c)), ['A@4']);
+  const segs = P.conLectura('comillas', () => P.segmentos(c)).map((s) => s.texto.trim());
+  assert.ok(segs.includes('rm x'), JSON.stringify(segs));
+});
+
+test('ShellParseHeredocReadings_ConLectura_RestoresAndRejects @S247e — conLectura vuelve a la lectura de antes, también si tira, y rechaza un nombre que no conoce', () => {
+  const c = `echo "$(echo " <<EOF\n")"\nrm x\nEOF`;
+  assert.throws(() => P.conLectura('comillas', () => { throw new Error('x'); }));
+  assert.strictEqual(P.heredocs(c).length, 1, 'volvió a la de siempre');
+  assert.strictEqual(P.conLectura('comillas', () => P.heredocs(c).length), 0);
+  assert.throws(() => P.conLectura('otra', () => 0), /no conozco/);
+});
