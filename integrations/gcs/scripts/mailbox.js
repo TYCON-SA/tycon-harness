@@ -365,10 +365,10 @@ async function bajarBuzon({ dir, log, sinHilos = true, budgetMs = 120000, resume
 }
 
 /** La conversación y el cambio de UNA corrida, para el detalle a demanda. */
-async function bajarUnaCorrida({ maquina, base, dir, ...opts } = {}) {
+async function bajarUnaCorrida({ maquina, base, dir, hiloTopeBytes = null, ...opts } = {}) {
   const p = await prepararSitio(opts);
   if (p.falla) return p.falla;
-  return require(BAJADA).bajarUnaCorrida({ almacen: p.almacen, maquina, base, dir });
+  return require(BAJADA).bajarUnaCorrida({ almacen: p.almacen, maquina, base, dir, hiloTopeBytes });
 }
 
 module.exports = {
