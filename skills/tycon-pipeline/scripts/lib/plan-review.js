@@ -901,6 +901,7 @@ function topeDeRechazos(cfg, repo) {
       const v = RR.delYaml(require('./config-source.js').leerCommiteado(repo));
       const n = Number(v);
       if (v !== undefined && Number.isInteger(n) && n >= RR.MINIMO && n <= RR.MAXIMO) return n;
+      if (v !== undefined) process.stderr.write(`⚠️  review.max_rounds de ${repo} vale «${String(v).slice(0, 40)}», que no es un número entre ${RR.MINIMO} y ${RR.MAXIMO}: vale el de la organización (${cfg.review.max_rounds}).\n`);
     } catch (e) {
       // sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código; se dice, porque el
       // número del repo puede ser otro

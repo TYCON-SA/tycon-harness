@@ -173,6 +173,7 @@ function parteMedible(story, batch, { deLaCorrida = false } = {}) {
     return null;
   }
   const p = validarParte(texto, batch);
+  if (!p.valid) process.stderr.write(`⚠️  no sé la parte ${batch} de ${story} (${p.reason || 'no es válida'}): se mide la historia entera.\n`);
   return p.valid && (!p.done || deLaCorrida) ? p : null;
 }
 

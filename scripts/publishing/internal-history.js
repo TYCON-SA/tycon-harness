@@ -712,7 +712,7 @@ const SWITCH_VALUES = { block: 'block', warn: 'warn', 0: 'off', off: 'off' };
 /** El modo efectivo del control: lo escrito, pisado por la variable. Lo que no se entiende es `block` (falla cerrado). */
 function effectiveMode(config, env = process.env) {
   const written = ['warn', 'block'].includes(config && config.mode) ? config.mode : 'block';
-  const raw = String((env && env[SWITCH]) || '').trim().toLowerCase();
+  const raw = String((env && env.TYCON_INTERNAL_HISTORY) || '').trim().toLowerCase();
   if (!raw) return { mode: written, lowered: false, odd: false };
   if (!Object.prototype.hasOwnProperty.call(SWITCH_VALUES, raw)) return { mode: 'block', lowered: false, odd: true };
   const mode = SWITCH_VALUES[raw];
