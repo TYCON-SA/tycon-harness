@@ -1241,7 +1241,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
       const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
       if (!mb || !nube || typeof nube.bajarUnaCorrida !== 'function' || !cfg.mailboxCredencial) return { codigo: 1, res: { estado: 'sin_configurar', motivo: 'el buzón no está configurado en el sitio' } };
-      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
+      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir, hiloTopeBytes: topeConversacionBytes });
     },
     /** ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de
