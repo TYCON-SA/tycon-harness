@@ -1879,6 +1879,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['review-skip', ['node', M, 'review-answer', '--kind', 'code', '--choice', 'skip']],
     ['pending-approval', ['node', M, 'approve-pending', '--id', 'DEF-9.99-algo', '--repo', '/r']],
     ['compare-waiver', ['node', M, 'compare-waiver', '--story', '/r/specs/story-9.99.md', '--command', 'cli.js', '--reason', 'usa la red']],
+    ['write-after-release', ['node', M, 'release-write-after', '--for-session', 'ses-b', '--reason', 'miré la historia']],
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['escape:no-mutation', ['node', M, 'complete-step', 'run-tests', '--no-mutation', '--reason', 'refactor sin código nuevo']],

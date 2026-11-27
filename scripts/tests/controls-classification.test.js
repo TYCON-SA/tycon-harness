@@ -8,6 +8,8 @@
  *   T3 ControlsClassification_ExigenciaWithoutReason_Red          — una exigencia cuyo motivo no nombra qué protege: rojo
  *   T4 ControlsClassification_PipelineControl_OnlyIfAScriptBlocksWithIt — un control del pipeline (`del_pipeline`) vale
  *      sólo si un guion del pipeline lo anota en gates.log como blocked, y sin ganchos
+ *   T5 ControlsClassification_ControlInsideAHook_HasEntry — cada control que frena adentro de hook-pre-edit.js y cada
+ *      control del pipeline que frena tienen su entrada; una entrada `dentro_de` nombra un archivo que existe, sin ganchos
  *
  * 🔴 Falla con: un freno de guard-record.js o un gancho que frena sin entrada, un gancho en dos entradas, una entrada sin
  *    `review_before` o con una fecha que no existe, una exigencia sin decir qué protege, una firmada sin quién y cuándo,
@@ -40,6 +42,21 @@ function fechaValida(s) {
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
 }
 
+/** Los controles que frenan adentro de hook-pre-edit.js: los de su cadena con `effect: 'blocks'` (dispatch.js). */
+function cadenaDePreEdit() {
+  const { CHAINS } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'dispatch.js'));
+  return (CHAINS['pre-edit'] || []).filter((x) => x.effect === 'blocks').map((x) => x.name);
+}
+
+/** ¿Existe `rel` en el árbol del repo? (la entrada `dentro_de` nombra el gancho que corre el control) */
+const existeEnElRepo = (rel) => require('fs').existsSync(path.join(ROOT, String(rel)));
+/** El texto de `rel` en el repo, o '' si no se lee. */
+const textoDelRepo = (rel) => { try { return require('fs').readFileSync(path.join(ROOT, String(rel)), 'utf8'); } catch { return ''; } };
+
+// Los controles del pipeline que anotan su `blocked` con el estado en una variable (mutation-gate.js,
+// marker-complete-step.js): la búsqueda por `status: 'blocked'` no los ve.
+const CON_ESTADO_EN_VARIABLE = ['mutation', 'manual-checks'];
+
 /** Los controles del pipeline que frenan: los nombres que sus guiones anotan en gates.log con `status: 'blocked'`. */
 function controlesDelPipeline() {
   const fs = require('fs');
@@ -53,6 +70,17 @@ function controlesDelPipeline() {
     }
   };
   leer(dir);
+  // los que anotan su `blocked` con el estado en una variable (`status: f.status`, `...base, status: 'blocked'`): la
+  // búsqueda de arriba no los ve; cuentan si su guion los nombra
+  const todo = [];
+  const juntar = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) { if (e.name !== 'tests') juntar(path.join(d, e.name)); continue; }
+      if (e.name.endsWith('.js')) todo.push(fs.readFileSync(path.join(d, e.name), 'utf8'));
+    }
+  };
+  juntar(dir);
+  for (const n of CON_ESTADO_EN_VARIABLE) if (todo.some((t) => t.includes(`name: '${n}'`))) out.add(n);
   return [...out];
 }
 
@@ -60,11 +88,14 @@ function controlesDelPipeline() {
  * Los problemas de una clasificación contra los frenos, los ganchos que frenan y los controles del pipeline: lista vacía
  * si está bien.
  */
-function problemas(c, frenos, ganchos, delPipeline = []) {
+function problemas(c, frenos, ganchos, delPipeline = [], { cadena = [], existe = existeEnElRepo, texto = textoDelRepo, todoElPipeline = false } = {}) {
   const out = [];
   const entradas = Object.entries(c).filter(([k]) => !k.startsWith('__'));
   const claves = new Set(entradas.map(([k]) => k));
   for (const f of frenos) if (!claves.has(f)) out.push(`el freno ${f} no tiene entrada`);
+  // los controles que frenan adentro de un gancho que corre varios, y (con `todoElPipeline`) los del pipeline
+  for (const n of cadena) if (!claves.has(n)) out.push(`el control ${n} de hook-pre-edit.js no tiene entrada`);
+  if (todoElPipeline) for (const n of delPipeline) if (!claves.has(n)) out.push(`el control del pipeline ${n} no tiene entrada`);
   const donde = new Map();
   for (const [k, v] of entradas) {
     if (!['exigencia', 'preferencia'].includes(v.tipo)) out.push(`${k}: tipo ${JSON.stringify(v.tipo)} no es exigencia ni preferencia`);
@@ -78,6 +109,12 @@ function problemas(c, frenos, ganchos, delPipeline = []) {
     if (v.del_pipeline === true) {
       if (!delPipeline.includes(k)) out.push(`${k}: no es un control del pipeline que frena (ningún guion anota «${k}» como blocked)`);
       if ((v.ganchos || []).length) out.push(`${k}: un control del pipeline no lleva ganchos`);
+    } else if (v.dentro_de !== undefined) {
+      // un control que corre adentro de un gancho (la cadena de hook-pre-edit.js, un gancho de git): nombra ese archivo
+      if (typeof v.dentro_de !== 'string' || !v.dentro_de || !existe(v.dentro_de)) out.push(`${k}: dentro_de no nombra un archivo del repo (${JSON.stringify(v.dentro_de)})`);
+      // y el control es de ese gancho: de la cadena de hook-pre-edit.js, o nombrado en el gancho que dice (un guion de git)
+      else if (/hook-pre-edit\.js$/.test(v.dentro_de) ? !cadena.includes(k) : !texto(v.dentro_de).includes(k)) out.push(`${k}: no corre en ${v.dentro_de}`);
+      if ((v.ganchos || []).length) out.push(`${k}: un control adentro de un gancho no lleva ganchos (el gancho es de otra entrada)`);
     } else if (!frenos.includes(k) && !ganchos.includes(k)) out.push(`${k}: no es un freno de guard-record.js ni un gancho que frena`);
   }
   for (const g of ganchos) {
@@ -92,7 +129,7 @@ const entrada = (extra = {}) => ({ tipo: 'preferencia', motivo: 'un trámite', r
 
 test('T1 ControlsClassification_EveryBlockingHookAndGuard_HasEntry — cada freno y gancho que frena, con su entrada', () => {
   const c = clasificacion();
-  assert.deepEqual(problemas(c, Object.keys(FRENOS), ganchosQueFrenan(), controlesDelPipeline()), []);
+  assert.deepEqual(problemas(c, Object.keys(FRENOS), ganchosQueFrenan(), controlesDelPipeline(), { cadena: cadenaDePreEdit(), todoElPipeline: true }), []);
   // la propuesta todavía no la firmó el dueño
   for (const [k, v] of Object.entries(c)) if (!k.startsWith('__')) assert.equal(v.estado, 'propuesta', k);
 });
@@ -135,4 +172,31 @@ test('T4 ControlsClassification_PipelineControl_OnlyIfAScriptBlocksWithIt — un
   // sin la marca, el mismo nombre no pasa como freno
   assert.ok(problemas({ 'step-arg': entrada() }, [], [], ['step-arg']).includes('step-arg: no es un freno de guard-record.js ni un gancho que frena'));
   assert.deepEqual(problemas({ 'step-arg': entrada({ del_pipeline: true }) }, [], [], ['step-arg']), []);
+});
+
+test('T5 ControlsClassification_ControlInsideAHook_HasEntry — los controles de hook-pre-edit.js y del pipeline, con su entrada', () => {
+  // los ocho de la cadena que no anotan en FRENOS: la cadena real los trae y la clasificación los tiene
+  const cadena = cadenaDePreEdit();
+  for (const n of ['on-controls-off', 'on-story-gate', 'on-story-skill-gate', 'on-red-test-edit', 'on-coordination-write', 'on-atdd-preedit', 'on-planning-artifact', 'on-deprecated-edit']) {
+    assert.ok(cadena.includes(n), `${n} no está en la cadena de pre-edit: ${cadena.join(', ')}`);
+    assert.ok(clasificacion()[n], `${n} sin entrada`);
+  }
+  // uno de la cadena sin entrada, uno del pipeline sin entrada, un dentro_de que no existe y uno con ganchos: rojo
+  const p = problemas({ 'adentro': entrada({ dentro_de: 'no/existe.js' }), 'con-ganchos': entrada({ dentro_de: 'a.js', ganchos: ['a.js'] }) },
+    [], ['a.js'], ['del-pipeline'], { cadena: ['de-la-cadena'], existe: (r) => r === 'a.js', todoElPipeline: true });
+  assert.ok(p.includes('el control de-la-cadena de hook-pre-edit.js no tiene entrada'), p.join('\n'));
+  assert.ok(p.includes('el control del pipeline del-pipeline no tiene entrada'), p.join('\n'));
+  assert.ok(p.includes('adentro: dentro_de no nombra un archivo del repo ("no/existe.js")'), p.join('\n'));
+  assert.ok(p.includes('con-ganchos: un control adentro de un gancho no lleva ganchos (el gancho es de otra entrada)'), p.join('\n'));
+  // un nombre que el gancho no corre: rojo; uno que sí, pasa
+  const ajeno = problemas({ 'inventado': entrada({ dentro_de: 'a.js' }) }, [], [], [], { existe: () => true, texto: () => 'corre otro-control.js' });
+  assert.ok(ajeno.includes('inventado: no corre en a.js'), ajeno.join('\n'));
+  assert.ok(problemas({ 'inventado': entrada({ dentro_de: 'x/hook-pre-edit.js' }) }, [], [], [], { existe: () => true, cadena: [] }).includes('inventado: no corre en x/hook-pre-edit.js'));
+  assert.deepEqual(problemas({ 'adentro': entrada({ dentro_de: 'a.js' }) }, [], [], [], { existe: () => true, texto: () => 'corre adentro.js' }), []);
+  // los que anotan su estado en una variable también se exigen
+  const reales = controlesDelPipeline();
+  for (const n of ['mutation', 'manual-checks']) assert.ok(reales.includes(n), `${n} no aparece entre los controles del pipeline`);
+  // el freno retirado ya no está en la lista
+  assert.equal(clasificacion()['pr-sin-portables'], undefined);
+  assert.equal(FRENOS['pr-sin-portables'], undefined);
 });

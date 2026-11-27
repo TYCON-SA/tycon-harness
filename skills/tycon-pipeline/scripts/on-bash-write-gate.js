@@ -212,7 +212,7 @@ const { expandirRuta } = require('./lib/command-vars.js');
 const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
 const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
-const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
+const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
 const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
 const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
 
@@ -435,6 +435,12 @@ function handleCarrilEHistoria(event, opts = {}) {
   if (corridas.length) {
     const sg = require('./lib/story-gate.js');
     return { block: sg.blockMessage({ kind: 'advisor-runs' }, { filePath: corridas[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
+  }
+  // las fotos de lo protegido, también al borrarlas o moverlas
+  const fotos = constancias.length ? [] : fotosTocadas(cmd, cwd, stateDir);
+  if (fotos.length) {
+    const sg = require('./lib/story-gate.js');
+    return { block: sg.blockMessage({ kind: 'write-photos' }, { filePath: fotos[0], via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}` }) + '\n' };
   }
   // la revisión automática del plan, también al borrarla o moverla, o con un `--out` que no es el del corredor del pase
   const ajena = constancias.length ? null : salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots);

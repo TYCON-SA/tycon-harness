@@ -51,6 +51,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
 // el sitio lee un buzón de un conector: el perfil se valida con los conectores de buzón de integrations/
@@ -232,7 +233,8 @@ function nubesDeCloud(log) {
 
 function escribirAtomico(archivo, contenido) {
   fs.mkdirSync(path.dirname(archivo), { recursive: true });
-  const tmp = `${archivo}.tmp-${process.pid}`;
+  // con algo al azar: las réplicas de un contenedor son todas el proceso 1 y comparten la carpeta de datos
+  const tmp = `${archivo}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   fs.writeFileSync(tmp, contenido);
   fs.renameSync(tmp, archivo);
 }
@@ -314,7 +316,7 @@ function leerHuellas(dirBuzon, log = () => {}) {
 function leerCorridas(dirBuzon) {
   const runs = require('../nightly/dashboard/runs.js');
   const nombres = runs.nombresDePasos().nombres;
-  const sinLocal = path.join(os.tmpdir(), `site-sin-registro-local-${process.pid}`);
+  const sinLocal = path.join(os.tmpdir(), `site-sin-registro-local-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
   const r = runs.leerRegistro(sinLocal, nombres, { buzon: dirBuzon, maquina: null });
   // el motivo (que nombra la carpeta) viaja sólo para el registro: quien llama lo saca antes del modelo
   if (!r.buzon || r.buzon.estado !== 'leido') return { ...noMedida('ilegible'), _motivo: r.buzon ? String(r.buzon.motivo || r.buzon.estado) : 'sin lectura del buzón' };
@@ -731,7 +733,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   function guardarMemoria() {
     try {
       fs.mkdirSync(dataDir, { recursive: true });
-      const tmp = `${rutaMemoria}.tmp-${process.pid}`;
+      const tmp = `${rutaMemoria}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
       fs.writeFileSync(tmp, `${JSON.stringify(memoria)}\n`, { mode: 0o600 });
       fs.renameSync(tmp, rutaMemoria);
     } catch (e) { log(`no se pudo guardar la memoria del espejo en SITE_DATA_DIR (${e.code || e.message}): el próximo despertar relee el espejo`); }
@@ -1259,4 +1261,4 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   };
 }
 
-module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, leerHuellas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };
+module.exports = { escribirAtomico, crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, leerHuellas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

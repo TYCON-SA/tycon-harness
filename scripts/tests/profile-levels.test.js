@@ -45,7 +45,7 @@ test('niveles Perfil_ExcepcionesDeTramite_PasanSoloPorSuNombre', () => {
   assert.deepStrictEqual(deTramite.slice().sort(), ['adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:ALLOW_DOD_EVIDENCE_WRITE',
     'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:cerrar-como-deuda', 'escape:cerrar-la-ejecucion', 'escape:force-manual',
     'escape:red-control-test-edit', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous', 'escape:trust-ran', 'lost-run', 'manual-test',
-    'plan-approval:delicada', 'runtime-waiver', 'save:sensible']);
+    'plan-approval:delicada', 'runtime-waiver', 'save:sensible', 'write-after-release']);
   assert.deepStrictEqual(check(perfil(deTramite)).rejected, []);
   // el grupo de antes no las trae: las que son de trámite también salen si vienen por el grupo
   const porGrupo = check(perfil(['escape-phrases'])).rejected;

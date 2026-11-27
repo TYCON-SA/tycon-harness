@@ -78,16 +78,22 @@ function copia(stateDir, huella) {
   return m && m.contenido && sha(m.contenido) === huella ? m.contenido : null;
 }
 
-/** Borra las copias que nadie usó en 7 días; corre a lo sumo una vez por día. */
+/**
+ * Borra las copias que nadie usó en 7 días, y las fotos y los registros de inicio de más de 7 días (los de un comando
+ * que otro freno negó, o de una sesión que terminó); corre a lo sumo una vez por día. El plazo de las fotos es el de las
+ * copias: un comando que espera su permiso una noche entera tiene que encontrar su foto al correr.
+ */
 function limpiarCopias(stateDir, ahora) {
   const sello = path.join(dirFotos(stateDir), '.limpieza');
   try { if (ahora - fs.statSync(sello).mtimeMs < DIA_MS) return; } catch (_) { /* nunca se limpió */ }
-  let nombres = [];
-  try { nombres = fs.readdirSync(dirCopias(stateDir)); } catch (_) { return; }
-  for (const n of nombres) {
-    const f = path.join(dirCopias(stateDir), n);
-    try { if (ahora - fs.statSync(f).mtimeMs > DIAS_DE_LAS_COPIAS * DIA_MS) fs.unlinkSync(f); } catch (_) { /* otra la borró */ }
-  }
+  const borrarViejos = (dir, tope) => {
+    for (const f of entradas(dir)) {
+      try { if (ahora - fs.lstatSync(f).mtimeMs > tope) fs.unlinkSync(f); } catch (_) { /* otra la borró */ }
+    }
+  };
+  borrarViejos(dirCopias(stateDir), DIAS_DE_LAS_COPIAS * DIA_MS);
+  borrarViejos(dirFotos(stateDir), DIAS_DE_LAS_COPIAS * DIA_MS);
+  borrarViejos(path.join(dirFotos(stateDir), 'in-progress'), DIAS_DE_LAS_COPIAS * DIA_MS);
   escribirEntero(sello, '');
 }
 
@@ -151,7 +157,7 @@ const huellaDeLaFoto = (f) => sha(JSON.stringify({ ...f, hash: undefined }));
  * Saca la foto de lo protegido en `roots` y guarda las copias de cada versión.
  * @returns {{v, at, roots, bases, storyDirs, files: Object<string, {kind, sha?, status?, link?, ilegible?}>, hash}}
  */
-function takePhoto({ roots, stateDir, now = Date.now() }) {
+function takePhoto({ roots, stateDir, now = Date.now(), extra = {} }) {
   const storyDirs = carpetasDeHistorias(roots);
   const hoy = relevar({ roots, storyDirs, stateDir });
   const files = {};
@@ -162,7 +168,8 @@ function takePhoto({ roots, stateDir, now = Date.now() }) {
   }
   // el camino real de cada raíz: deshacer no escribe donde un enlace puesto en el medio la lleve afuera
   const bases = [...roots, stateDir].map((b) => [b, realOrNull(b)]).filter(([, r]) => r);
-  const foto = { v: 2, at: now, roots, bases, storyDirs, files };
+  // `extra`: lo que el gancho sabe antes del comando (las otras sesiones vivas), dentro de la huella como lo demás
+  const foto = { ...extra, v: 2, at: now, roots, bases, storyDirs, files };
   foto.hash = huellaDeLaFoto(foto);
   try { limpiarCopias(stateDir, now); } catch (_) { /* la limpieza no frena nada */ }
   return foto;
@@ -261,4 +268,50 @@ function undo(foto, diferencias, { stateDir }) {
   return { hechas, fallas };
 }
 
-module.exports = { takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };
+// ── el freno que deja una mirada fallida ─────────────────────────────────────────────────────────────────────────────
+// Una mirada que no se pudo hacer frena los comandos siguientes de esa sesión hasta que otra sesión o la persona la
+// libere (marker.js release-write-after). Un archivo por sesión en `write-photos/stopped/`.
+// el id en minúsculas: en un disco que no distingue mayúsculas, `S1` y `s1` son el mismo archivo y la misma sesión
+const sesionDelFreno = (sid) => String(sid || '_nosession').replace(/[^\w.-]/g, '_').toLowerCase();
+const archivoDelFreno = (stateDir, sid) => path.join(dirFotos(stateDir), 'stopped', `${sesionDelFreno(sid)}.json`);
+
+function setBrake(stateDir, sid, motivo) {
+  // stable-data: la hora en que quedó frenada, para el mensaje
+  escribirEntero(archivoDelFreno(stateDir, sid), JSON.stringify({ sesion: sid || null, motivo, desde: new Date().toISOString() }));
+}
+
+/**
+ * El freno de la sesión: `{ sesion, motivo, desde }`, o null si no está frenada. Cualquier cosa en el lugar del freno
+ * cuenta como freno: un archivo ilegible, una carpeta, un enlace, o una carpeta `stopped` que no es una carpeta (si no,
+ * poner algo ahí antes evitaría quedar frenada).
+ */
+function readBrake(stateDir, sid) {
+  const ilegible = { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
+  const archivo = archivoDelFreno(stateDir, sid);
+  // una carpeta del freno donde no se puede escribir también frena: sin poder anotar el freno, una mirada fallida no
+  // frenaría nada. Se prueba escribiendo, no mirando permisos: así cuentan un `chmod`, un enlace colgado, la marca de
+  // inmutable y un disco lleno. Si la carpeta de las fotos no existe todavía, la crea (la primera vez)
+  const dir = path.dirname(archivo);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const prueba = path.join(dir, `.write-probe-${process.pid}`);
+    fs.writeFileSync(prueba, '');
+    fs.rmSync(prueba, { force: true });
+  } catch (e) {
+    return { sesion: sid, motivo: `no se puede escribir en ${dir} (${e.code || e.message})`, desde: null, carpeta: dir };
+  }
+  // con `stopped` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
+  let st;
+  try { st = fs.lstatSync(archivo); } catch (e) { return e.code === 'ENOENT' ? null : ilegible; }
+  if (!st.isFile()) return ilegible;
+  const m = mirar(archivo);
+  if (!m || !m.contenido) return ilegible;
+  try {
+    const r = JSON.parse(m.contenido.toString('utf8'));
+    return r && typeof r === 'object' && typeof r.motivo === 'string' ? r : ilegible;
+  } catch (_) { return ilegible; }
+}
+
+const clearBrake = (stateDir, sid) => fs.rmSync(archivoDelFreno(stateDir, sid), { force: true, recursive: true });
+
+module.exports = { setBrake, readBrake, clearBrake, brakeSession: sesionDelFreno, copyOf: copia, takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };

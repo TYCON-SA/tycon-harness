@@ -101,7 +101,12 @@ function contar({ frenos, firmas }) {
 function leerClasificacion(file = CLASIFICACION) {
   try {
     const c = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return { estado: 'ok', entradas: Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('__'))) };
+    const entradas = Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('__')));
+    // un control que anota con otro nombre (`anota`) se encuentra también por ese nombre, sin listarse dos veces
+    for (const e of Object.values({ ...entradas })) {
+      if (e && typeof e.anota === 'string' && e.anota && !(e.anota in entradas)) Object.defineProperty(entradas, e.anota, { value: e, enumerable: false });
+    }
+    return { estado: 'ok', entradas };
   } catch (e) { return { estado: 'ilegible', entradas: {}, motivo: e.code || e.message }; }
 }
 
