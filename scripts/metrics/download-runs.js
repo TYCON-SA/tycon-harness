@@ -130,6 +130,13 @@ function escribirAtomico(archivo, contenido) {
   fs.renameSync(tmp, archivo);
 }
 
+/** escribirAtomico, salvo que el archivo ya tenga ese contenido: entonces no se toca. */
+function escribirSiCambio(archivo, contenido) {
+  try { if (fs.readFileSync(archivo, 'utf8') === contenido) return false; } catch (_) { /* no está o no se lee: se escribe */ }
+  escribirAtomico(archivo, contenido);
+  return true;
+}
+
 function selloDiario(archivo, texto) {
   try { if (fs.readFileSync(resolveFile(archivo, { where: DONDE }), 'utf8').slice(0, 10) === hoy()) return 'ya_emitido_hoy'; } catch (_) { /* primera vez */ }
   try { prepareStateWrite(archivo, { where: DONDE }); escribirAtomico(archivo, `${hoy()} ${texto}\n`); } catch (_) { /* se avisa igual */ }
@@ -549,7 +556,8 @@ function escribirCarpetasDeMaquina(espejoDir, aMedias = null) {
   // una carpeta vieja con un archivo que no bajó tiene una huella que no se puede confiar: queda la unión anterior
   const tocada = aMedias ? Object.keys(u.carpetas).find((v) => aMedias.has(v)) : null;
   if (tocada) return `no se escribió .carpetas-de-maquina.json: la carpeta ${tocada} no bajó entera (queda la anterior)`;
-  try { escribirAtomico(path.join(espejoDir, '.carpetas-de-maquina.json'), `${JSON.stringify(u, null, 1)}\n`); return null; }
+  // sólo si cambió: se escribe en cada pasada, y en el disco montado del sitio cada escritura son varias aperturas (A48)
+  try { escribirSiCambio(path.join(espejoDir, '.carpetas-de-maquina.json'), `${JSON.stringify(u, null, 1)}\n`); return null; }
   catch (e) { return `no se pudo escribir .carpetas-de-maquina.json (${e.code || 'error'})`; }
 }
 

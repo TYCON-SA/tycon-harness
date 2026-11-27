@@ -1868,6 +1868,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/site-disk-opens.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
+        "scripts/site/**",
+        "scripts/nightly/dashboard/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/download-runs-size-cap.test.js",
       "requiere": [],
       "gate_only_when_touching": [
