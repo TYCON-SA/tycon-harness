@@ -86,6 +86,15 @@ test('T28 EnvSwitches_InventoryMatchesReaders @story-8.256 @ac-2', () => {
   assert.deepStrictEqual([...ES.lecturas(d).keys()].sort(), ['TYCON_EIGHT', 'TYCON_FIVE', 'TYCON_FOUR', 'TYCON_ONE', 'TYCON_SEVEN', 'TYCON_SIX', 'TYCON_THREE', 'TYCON_TWO']);
 });
 
+// 🔴 Falla con: TYCON_INTERNAL_HISTORY apaga el control de historia interna y no estaba en la lista (el control no la ve
+//    porque el guion la nombra por una constante, `env[SWITCH]`).
+test('EnvSwitches_InternalHistory_IsDeclared — la variable que apaga el control de historia interna está en la lista', () => {
+  const e = ES.leer().entradas.find((x) => x.nombre === 'TYCON_INTERNAL_HISTORY');
+  assert.ok(e, 'la lista la declara');
+  assert.deepStrictEqual(e.lectores, ['scripts/publishing/internal-history.js']);
+  assert.strictEqual(e.clase, 'kill-switch', 'apaga un control');
+});
+
 /**
  * ¿El archivo nombra la variable en su código? Por las formas que cuenta `lecturas()` o como texto entre comillas: una
  * constante con el nombre, o un ayudante que la recibe por nombre (`readEnv('X')`). Los comentarios no cuentan. Un
