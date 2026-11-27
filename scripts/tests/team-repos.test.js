@@ -1116,3 +1116,27 @@ test('TeamRepos_SinConectores_NoRechazaYAvisaUnaVez: sin integrations/ valida la
     assert.strictEqual(r.stderr.split('\n').filter((l) => /sin conectores: no se validan los nombres de los repos/.test(l)).length, 1, `el aviso, una vez: ${r.stderr}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// La tabla de precios del costo estimado de la pestaña «Horas y tokens»: dólares por millón, con su fuente y su fecha
+test('OH9 OperationsConfig_SitePrices — cada modelo con sus tres precios, la fuente y la fecha; lo demás es un problema', () => {
+  const precio = (extra = {}) => ({ lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.example/claude', fecha: '2026-11-27', ...extra });
+  const buenos = { 'claude-opus-5-5': precio(), 'gpt-5.6-terra': precio({ lectura: 2, escritura: 12 }), 'kimi-k2.7-code:cloud': precio({ lectura: 0, escritura: 0, cache: 0 }) };
+  const r = OPS.parse(JSON.stringify(opsWithSite({ prices: buenos })));
+  assert.deepStrictEqual(r.problems, []);
+  assert.deepStrictEqual(r.data.site.prices, buenos, 'los precios salen tal cual');
+  const casos = [
+    [{ prices: [] }, ['site.prices']],
+    [{ prices: { 'claude-opus-5-5': precio({ lectura: -1 }) } }, ['site.prices.claude-opus-5-5.lectura']],
+    [{ prices: { 'claude-opus-5-5': precio({ cache: '0.2' }) } }, ['site.prices.claude-opus-5-5.cache']],
+    [{ prices: { 'claude-opus-5-5': { lectura: 4, escritura: 20, cache: 0.2 } } }, ['site.prices.claude-opus-5-5.fecha', 'site.prices.claude-opus-5-5.fuente']],
+    [{ prices: { 'claude-opus-5-5': precio({ fuente: 'http://precios.example' }) } }, ['site.prices.claude-opus-5-5.fuente']],
+    [{ prices: { 'claude-opus-5-5': precio({ fecha: '27/11/2026' }) } }, ['site.prices.claude-opus-5-5.fecha']],
+    [{ prices: { 'claude-opus-5-5': precio({ moneda: 'ARS' }) } }, ['site.prices.claude-opus-5-5.moneda']],
+    [{ prices: { 'con espacio': precio() } }, ['site.prices.con espacio']],
+  ];
+  for (const [site, esperado] of casos) {
+    const m = OPS.parse(JSON.stringify(opsWithSite(site)));
+    assert.strictEqual(m.ok, false, JSON.stringify(site));
+    assert.deepStrictEqual(paths(m), esperado, JSON.stringify(site));
+  }
+});

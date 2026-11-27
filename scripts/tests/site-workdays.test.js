@@ -166,7 +166,7 @@ test('T32 Sitio_ArchivoRaro_NoMedidoYElResto @story-8.209 @ac-20', () => {
   delete sinCampo.tokens;
   const negativo = dia('2026-11-08', { arnes: -5 });
   const t = WD().armarTabla(WD().leerJornadas(espejo({ 'maquina-a': {
-    '2026-11-06': { ...dia('2026-11-06'), v: 2 }, '2026-11-07': sinCampo, '2026-11-08': negativo, '2026-11-05': '{roto', '2026-11-09': dia('2026-11-09'),
+    '2026-11-06': { ...dia('2026-11-06'), v: 3 }, '2026-11-07': sinCampo, '2026-11-08': negativo, '2026-11-05': '{roto', '2026-11-09': dia('2026-11-09'),
   } })), { ayer: '2026-11-09' });
   for (const d of ['2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08']) assert.strictEqual(t.celdas[d]['maquina-a'].estado, 'raro', d);
   assert.strictEqual(t.celdas['2026-11-09']['maquina-a'].estado, 'medido', 'el resto igual');
@@ -342,7 +342,7 @@ test('OH1 Resumen_PorPersona_SinMedirNoEsCero — las máquinas de una persona s
   const html = WD().htmlResumen(r, 'es');
   assert.match(html, /ana@acme\.example/);
   assert.match(html, /2 de 7/, 'beto: días medidos');
-  assert.match(html, /sin dato de modelo/i, 'el costo todavía no se mide');
+  assert.match(html, /sin dato de modelo/i, 'los días de la versión 1 no tienen el reparto por modelo: el costo no es cero');
   assert.doesNotMatch(html, /maquina-vieja|runner-ci/);
 });
 
@@ -415,4 +415,64 @@ test('OH5 DiaADia_PorPersona — la tabla diaria plegada tiene una fila por pers
   const celdas = (f) => [...f.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((m) => m[1]);
   assert.deepStrictEqual(celdas(fila('ana@acme.example')).slice(0, 3), ['2.0 h', '1.0 h', 'no medido'], 'ana: las dos máquinas suman el 9');
   assert.deepStrictEqual(celdas(fila('beto@acme.example')).slice(0, 3), ['no medido', 'no medido', '1.0 h']);
+});
+
+// ── O-horas, parte 3: el costo estimado por modelo (los días de la versión 2 traen el reparto) ─────────────────────────
+
+const dia2 = (d, porModelo, opts = {}) => {
+  const base = dia(d, opts);
+  const suma = (k) => Object.values(porModelo).reduce((a, m) => a + m[k], 0);
+  return { ...base, v: 2, tokens: { lectura: suma('lectura'), escritura: suma('escritura'), cache: suma('cache'), medido: true, por_modelo: porModelo } };
+};
+const PRECIOS = {
+  'claude-opus-5-5': { lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.example/claude', fecha: '2026-11-27' },
+  'gpt-5.6-terra': { lectura: 2, escritura: 12, cache: 0.2, fuente: 'https://precios.example/openai', fecha: '2026-11-27' },
+};
+
+test('OH10 Costo_V1yV2_EstimadoNuncaCero — la versión 1 dice «sin dato de modelo», un modelo sin precio lo dice, y lo medido suma «estimado»', () => {
+  const M = 1e6;
+  const maquinas = {
+    // ana: dos días de la versión 2 con precio: 1 M de lectura y 0,1 M de escritura de opus = 4 + 2 = US$ 6 por día
+    'maquina-a': { '2026-11-09': dia2('2026-11-09', { 'claude-opus-5-5': { lectura: M, escritura: 0.1 * M, cache: 0 } }), '2026-11-08': dia2('2026-11-08', { 'claude-opus-5-5': { lectura: M, escritura: 0.1 * M, cache: 0 } }) },
+    // ana, la otra máquina: un día de la versión 1, sin reparto
+    'maquina-b': { '2026-11-09': dia('2026-11-09') },
+    // beto: sólo un modelo sin precio
+    'maquina-c': { '2026-11-09': dia2('2026-11-09', { 'kimi-k2.7-code:cloud': { lectura: M, escritura: M, cache: 0 } }) },
+    // maquina-d: sólo la versión 1
+    'maquina-d': { '2026-11-09': dia('2026-11-09') },
+  };
+  const jornadas = WD().leerJornadas(espejo(maquinas));
+  assert.ok(jornadas.maquinas['maquina-a']['2026-11-09'].ok, 'la versión 2 se entiende');
+  assert.ok(jornadas.maquinas['maquina-b']['2026-11-09'].ok, 'la versión 1 se sigue entendiendo');
+  const t = WD().armarTabla(jornadas, { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE, PRECIOS);
+  const fila = (p) => r.personas.find((x) => x.persona === p);
+  assert.strictEqual(fila('ana@acme.example').costo.usd, 12, 'los dos días con precio');
+  assert.strictEqual(fila('ana@acme.example').costo.sinModelo, 1, 'el día de la versión 1 se cuenta aparte, no como cero');
+  assert.strictEqual(fila('beto@acme.example').costo.usd, null, 'sin ningún precio no hay costo, ni cero');
+  assert.deepStrictEqual(fila('beto@acme.example').costo.sinPrecio, ['kimi-k2.7-code:cloud']);
+  assert.strictEqual(fila('maquina-d').costo.usd, null);
+  assert.strictEqual(r.semana.costo.usd, 12);
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /US\$\s?12\.00 estimado/, 'la ficha dice «estimado»');
+  assert.match(html, /sin precio para kimi-k2\.7-code:cloud/);
+  assert.match(html, /sin dato de modelo/);
+  assert.doesNotMatch(html, /US\$\s?0\.00/, 'nada sin medir sale en cero');
+  // sin tabla de precios: todo dice que no hay precio, nunca cero
+  const sinTabla = WD().htmlResumen(WD().resumen(t, PEOPLE, null), 'es');
+  assert.doesNotMatch(sinTabla, /US\$/);
+  assert.match(sinTabla, /sin precio para claude-opus-5-5/);
+  // en inglés también dice «estimated»
+  assert.match(WD().htmlResumen(r, 'en'), /US\$\s?12\.00 estimated/);
+});
+
+test('OH11 Costo_DiaV2RaroYSinModelo — un reparto mal formado es un archivo raro; los tokens sin modelo cuentan como sin dato', () => {
+  const malo = dia2('2026-11-09', { 'claude-opus-5-5': { lectura: -1, escritura: 0, cache: 0 } });
+  assert.strictEqual(WD().validarDia(malo, '2026-11-09').ok, false);
+  assert.strictEqual(WD().validarDia({ ...dia('2026-11-09'), v: 3 }, '2026-11-09').ok, false, 'una versión que no se conoce');
+  const maquinas = { 'maquina-a': { '2026-11-09': dia2('2026-11-09', { 'claude-opus-5-5': { lectura: 1e6, escritura: 0, cache: 0 }, sin_modelo: { lectura: 5, escritura: 0, cache: 0 } }) } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const c = WD().resumen(t, PEOPLE, PRECIOS).personas[0].costo;
+  assert.strictEqual(c.usd, 4, 'la parte con modelo y precio');
+  assert.strictEqual(c.sinModelo, 1, 'y el día se marca con tokens sin modelo');
 });

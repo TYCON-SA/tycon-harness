@@ -12,6 +12,10 @@
  * un día dice «no medido»; un archivo con otra forma, «no medido (no se entendió el archivo)»; una parte sin medir,
  * «horas/tokens no medidos» con el motivo al pasar el mouse.
  *
+ * El costo es una estimación: los tokens de cada modelo (`tokens.por_modelo`, desde la versión 2 del día) por los precios
+ * de `site.prices` de operations.json, en dólares por millón. Un día de la versión 1 dice «sin dato de modelo» y un modelo
+ * sin precio, «sin precio para <modelo>»: ninguno de los dos suma cero.
+ *
  * Rutas (`maintainer`): GET /horas · GET /api/horas. Casos: scripts/tests/site-workdays.test.js.
  */
 const fs = require('fs');
@@ -37,6 +41,10 @@ const esDia = (d) => {
 const ARCHIVO = /^(\d{4}-\d{2}-\d{2})\.json$/;
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const entero = (n) => Number.isInteger(n) && n >= 0;
+const PARTES = ['lectura', 'escritura', 'cache'];
+// el nombre de un modelo como lo escriben las conversaciones; `sin_modelo` junta los tokens que llegaron sin él
+const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/;
+const SIN_MODELO = 'sin_modelo';
 const texto = (s) => typeof s === 'string' && s.trim().length > 0;
 
 /** Una parte del día (`horas` o `tokens`) con la forma esperada, o null. */
@@ -47,12 +55,34 @@ function parte(o, campos) {
   return Object.fromEntries([...campos.map((k) => [k, o[k]]), ['medido', true]]);
 }
 
-/** El día leído, validado: `{ ok: true, horas, tokens }` o `{ ok: false }` (otra versión, un campo que falta, un negativo). */
+/** El reparto por modelo de la versión 2: `{ <modelo>: { lectura, escritura, cache } }`, o undefined si está mal formado. */
+function reparto(pm) {
+  if (!pm || typeof pm !== 'object' || Array.isArray(pm)) return undefined;
+  const out = {};
+  for (const [m, v] of Object.entries(pm)) {
+    if (!MODELO.test(m) || !v || typeof v !== 'object' || !PARTES.every((k) => entero(v[k]))) return undefined;
+    out[m] = { lectura: v.lectura, escritura: v.escritura, cache: v.cache };
+  }
+  return out;
+}
+
+/**
+ * El día leído, validado: `{ ok: true, horas, tokens }` o `{ ok: false }` (otra versión, un campo que falta, un negativo).
+ * Los tokens medidos traen `porModelo`: el reparto de la versión 2, o null si el día no lo tiene (la versión 1, o uno
+ * rearmado con los tokens de antes).
+ */
 function validarDia(o, dia) {
-  if (!o || typeof o !== 'object' || o.v !== 1 || o.dia !== dia || !texto(o.tz)) return { ok: false };
+  if (!o || typeof o !== 'object' || (o.v !== 1 && o.v !== 2) || o.dia !== dia || !texto(o.tz)) return { ok: false };
   const horas = parte(o.horas, ['arnes_segundos', 'sesion_segundos', 'sesiones']);
-  const tokens = parte(o.tokens, ['lectura', 'escritura', 'cache']);
+  const tokens = parte(o.tokens, PARTES);
   if (!horas || !tokens) return { ok: false };
+  if (tokens.medido) {
+    tokens.porModelo = null;
+    if (o.v === 2 && o.tokens.por_modelo !== undefined) {
+      tokens.porModelo = reparto(o.tokens.por_modelo);
+      if (!tokens.porModelo) return { ok: false };
+    }
+  }
   if (horas.medido && horas.arnes_segundos > horas.sesion_segundos) return { ok: false };
   return { ok: true, horas, tokens };
 }
@@ -185,6 +215,49 @@ function htmlTabla(tabla, idioma) {
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
+// El costo estimado de un grupo de celdas: `usd` (null si ninguna tuvo costo), cuántas celdas con tokens no traen el
+// reparto o traen tokens sin modelo (`sinModelo`), y los modelos sin precio (`sinPrecio`). Un precio vale si trae sus tres
+// números de cero en adelante; lo valida también el lector de operations.json.
+const costoVacio = () => ({ usd: 0, conCosto: false, sinModelo: 0, sinPrecio: new Set() });
+const precioValido = (p) => isObj(p) && PARTES.every((k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && p[k] >= 0);
+function costeador(precios) {
+  const tabla = isObj(precios) ? precios : {};
+  return (tokens) => {
+    const c = costoVacio();
+    if (!tokens.porModelo) { c.sinModelo = 1; return c; }
+    let sinModelo = false;
+    // un día medido sin tokens cuesta cero de verdad: lo medido en cero no es «sin medir»
+    if (!Object.keys(tokens.porModelo).length) c.conCosto = true;
+    for (const [m, v] of Object.entries(tokens.porModelo)) {
+      if (m === SIN_MODELO) { sinModelo = true; continue; }
+      const p = Object.prototype.hasOwnProperty.call(tabla, m) ? tabla[m] : null;
+      if (!precioValido(p)) { c.sinPrecio.add(m); continue; }
+      c.usd += PARTES.reduce((a, k) => a + v[k] * p[k], 0) / 1e6;
+      c.conCosto = true;
+    }
+    if (sinModelo) c.sinModelo = 1;
+    return c;
+  };
+}
+function sumarCosto(a, b) {
+  if (b.conCosto) { a.usd += b.usd || 0; a.conCosto = true; }
+  a.sinModelo += b.sinModelo;
+  for (const m of b.sinPrecio) a.sinPrecio.add(m);
+}
+const cerrarCosto = (c) => ({ usd: c.conCosto ? c.usd : null, conCosto: c.conCosto, sinModelo: c.sinModelo, sinPrecio: [...c.sinPrecio].sort() });
+
+/** El costo en texto: «US$ 12.00 estimado» y lo que no se contó, o por qué no hay costo; nunca cero sin medir. */
+function textoCosto(c, t) {
+  const sinPrecio = c.sinPrecio.length ? t('horas.sinPrecio', { lista: c.sinPrecio.join(', ') }) : null;
+  const sinModelo = c.sinModelo ? (c.sinModelo === 1 ? t('horas.sinModelo1') : t('horas.sinModeloN', { n: c.sinModelo })) : null;
+  if (c.usd === null) {
+    if (!sinPrecio && !sinModelo) return esc(t('horas.noMedido'));
+    return esc([sinPrecio, sinModelo ? t('horas.sinModelo') : null].filter(Boolean).join(' · '));
+  }
+  const faltan = [sinModelo, sinPrecio].filter(Boolean);
+  return `${esc(t('horas.costoEstimado', { valor: c.usd.toFixed(2) }))}${faltan.length ? `<div class="nota">${esc(t('horas.costoParcial', { partes: faltan.join(' · ') }))}</div>` : ''}`;
+}
+
 /**
  * El resumen de la semana para quien decide: la semana son los 7 días más nuevos de la tabla y la anterior, los 7 de
  * antes. Junta las máquinas de cada persona (`people.machines`: la máquina → `person`); una máquina sin persona sale con
@@ -195,8 +268,9 @@ const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
  *   → { semana: { dias, promedioDia, tokens, sinMedir }, anterior: { dias, promedioDia, tokens }, personas: [{ persona,
  *       maquinas, segundos, diasMedidos, promedioDia, tokens }], fuera }
  */
-function resumen(tabla, people) {
+function resumen(tabla, people, precios = null) {
   const p = isObj(people) ? people : {};
+  const costoDe = costeador(precios);
   const duenos = isObj(p.machines) ? p.machines : {};
   const ocultas = isObj(p.hidden_machines) ? p.hidden_machines : {};
   const conHoras = (m) => tabla.dias.some((d) => { const c = tabla.celdas[d][m]; return c && c.estado === 'medido' && c.horas; });
@@ -206,17 +280,18 @@ function resumen(tabla, people) {
   for (const m of visibles) { const k = personaDe(m); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); }
   const medir = (maqs, dias) => {
     let segundos = 0; let dm = 0; let tokens = 0; let conTokens = false;
+    const costo = costoVacio();
     for (const d of dias) {
       let medido = false;
       for (const m of maqs) {
         const c = tabla.celdas[d][m];
         if (!c || c.estado !== 'medido') continue;
         if (c.horas) { segundos += c.horas.arnes_segundos; medido = true; }
-        if (c.tokens) { tokens += c.tokens.lectura + c.tokens.escritura; conTokens = true; }
+        if (c.tokens) { tokens += c.tokens.lectura + c.tokens.escritura; conTokens = true; sumarCosto(costo, costoDe(c.tokens)); }
       }
       if (medido) dm += 1;
     }
-    return { segundos: dm ? segundos : null, diasMedidos: dm, promedioDia: dm ? segundos / dm : null, tokens: conTokens ? tokens : null };
+    return { segundos: dm ? segundos : null, diasMedidos: dm, promedioDia: dm ? segundos / dm : null, tokens: conTokens ? tokens : null, costo: cerrarCosto(costo) };
   };
   const semana = tabla.dias.slice(0, 7);
   const anterior = tabla.dias.slice(7, 14);
@@ -226,7 +301,9 @@ function resumen(tabla, people) {
     const dm = filas.reduce((a, f) => a + f.diasMedidos, 0);
     const seg = filas.reduce((a, f) => a + (f.segundos || 0), 0);
     const tok = filas.filter((f) => f.tokens !== null);
-    return { dias, promedioDia: dm ? seg / dm : null, tokens: tok.length ? tok.reduce((a, f) => a + f.tokens, 0) : null };
+    const costo = costoVacio();
+    for (const f of filas) sumarCosto(costo, f.costo);
+    return { dias, promedioDia: dm ? seg / dm : null, tokens: tok.length ? tok.reduce((a, f) => a + f.tokens, 0) : null, costo: cerrarCosto(costo) };
   };
   let sinMedir = 0;
   for (const m of visibles) for (const d of semana) { const c = tabla.celdas[d][m]; if (!(c && c.estado === 'medido' && c.horas)) sinMedir += 1; }
@@ -248,7 +325,7 @@ function resumen(tabla, people) {
   return { semana: { ...equipo(semana), sinMedir }, anterior: equipo(anterior), personas, fuera: tabla.maquinas.length - visibles.length, semanas, sinHoras };
 }
 
-/** El resumen en HTML: cuatro fichas (la del costo dice «sin dato de modelo») y la tabla por persona. */
+/** El resumen en HTML: cuatro fichas (la del costo, estimado) y la tabla por persona, con su costo estimado. */
 function htmlResumen(r, idioma) {
   const t = (k, v) => TX.t(idioma, k, v);
   const nm = esc(t('horas.noMedido'));
@@ -264,10 +341,10 @@ function htmlResumen(r, idioma) {
   const titulo = dias.length ? `<h2>${esc(t('horas.semanaTitulo', { desde: dias[dias.length - 1], hasta: dias[0] }))}</h2>` : '';
   const fichas = `<div class="fichas">${ficha(t('horas.fichaHoras'), h(r.semana.promedioDia), ant(r.anterior.promedioDia === null ? t('horas.noMedido') : horasDe(r.anterior.promedioDia), r.semana.promedioDia, r.anterior.promedioDia))}`
     + `${ficha(t('horas.fichaTokens'), tk(r.semana.tokens), ant(r.anterior.tokens === null ? t('horas.noMedido') : abreviar(r.anterior.tokens), r.semana.tokens, r.anterior.tokens))}`
-    + `${ficha(t('horas.fichaSinMedir'), String(r.semana.sinMedir))}${ficha(t('horas.fichaCosto'), esc(t('horas.sinModelo')))}</div>`;
+    + `${ficha(t('horas.fichaSinMedir'), String(r.semana.sinMedir))}${ficha(t('horas.fichaCosto'), textoCosto(r.semana.costo, t))}</div>`;
   const filas = r.personas.map((f) => `<tr><th scope="row">${esc(f.persona)}${f.maquinas.length > 1 || f.maquinas[0] !== f.persona ? `<div class="maquinas">${esc(t('horas.maquinasDe', { lista: f.maquinas.join(', ') }))}</div>` : ''}</th>`
-    + `<td>${h(f.promedioDia)}</td><td>${h(f.segundos)}</td><td>${esc(t('horas.nDe7', { n: f.diasMedidos }))}</td><td>${tk(f.tokens)}</td></tr>`).join('');
-  const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><table class="horas-personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th></tr></thead><tbody>${filas}</tbody></table>` : '';
+    + `<td>${h(f.promedioDia)}</td><td>${h(f.segundos)}</td><td>${esc(t('horas.nDe7', { n: f.diasMedidos }))}</td><td>${tk(f.tokens)}</td><td>${textoCosto(f.costo, t)}</td></tr>`).join('');
+  const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><table class="horas-personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th><th>${esc(t('horas.costoColumna'))}</th></tr></thead><tbody>${filas}</tbody></table>` : '';
   const fuera = r.fuera ? `<p class="nota">${esc(r.fuera === 1 ? t('horas.fuera1') : t('horas.fueraN', { n: r.fuera }))}</p>` : '';
   const avisos = (r.sinHoras || []).map((m) => `<p class="aviso">${esc(t('horas.sinHoras', { maquina: m }))}</p>`).join('');
   return `${titulo}${avisos}${fichas}${tabla}${fuera}`;
@@ -353,8 +430,13 @@ function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {
         // el espejo que no se pudo leer se dice arriba: la tabla vacía no es «no llegó nada»
         const aviso = tab.problema ? `<p>${esc(TX.t(idioma, 'horas.espejoIlegible', { motivo: tab.problema }))}</p>` : '';
         let people = null;
-        try { const c = typeof fuentes.config === 'function' ? fuentes.config() : null; people = c && c.people; } catch (e) { log(`horas y tokens: no se pudo leer la configuración de personas (${e.code || e.message})`); }
-        const r = tab.maquinas.length ? resumen(tab, people) : null;
+        let precios = null;
+        try {
+          const c = typeof fuentes.config === 'function' ? fuentes.config() : null;
+          people = c && c.people;
+          precios = c && c.site && c.site.prices;
+        } catch (e) { log(`horas y tokens: no se pudo leer la configuración de personas y precios (${e.code || e.message})`); }
+        const r = tab.maquinas.length ? resumen(tab, people, precios) : null;
         const porMaquina = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorMaquina'))}</summary>${htmlTabla(tab, idioma)}</details>`;
         const diario = `<details class="dia-a-dia"><summary>${esc(TX.t(idioma, 'horas.diaPorDia'))}</summary>${r ? htmlDiaPorPersona(tab, r, idioma) : ''}${porMaquina}</details>`;
         const cuerpo = `<p class="lede">${esc(TX.t(idioma, 'horas.lede'))}</p>${aviso}${r ? htmlResumen(r, idioma) + htmlSemanas(r, idioma) : ''}${diario}`;
