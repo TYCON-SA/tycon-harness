@@ -460,18 +460,46 @@ SH
   else no "T19c · el matcher administrado no cubre Monitor/PowerShell"; fi
 
   # T824d @story-8.24 @ac-3 · el instalador deja al lado del freno los lugares de la persona, con lo que da tycon-home.js
-  # (el lanzador y la puerta, en bash, toman de ahí el nombre de la carpeta de Claude Code), y la plantilla administrada
-  # protege los archivos de producción del estado de siempre sin nombrar esa carpeta
-  p_json="$TMP/sys2/opt/tycon/places.json"; p_sh="$TMP/sys2/opt/tycon/places.sh"
+  # (places.json, para la próxima instalación) y el nombre de la carpeta de Claude Code en un renglón (claude-dir-name:
+  # el lanzador y la puerta lo leen sin ejecutar nada), y la plantilla administrada protege los archivos de producción
+  # del estado de siempre sin nombrar esa carpeta
+  p_json="$TMP/sys2/opt/tycon/places.json"; p_nombre="$TMP/sys2/opt/tycon/claude-dir-name"
   p_esperado="$(node -e 'const T=require(process.argv[1]); console.log(T.claudeDir(process.argv[2]) + " " + T.legacyStateDir(process.argv[2]))' "$AQUI/scripts/setup/harness/tycon-home.js" "$HOME")"
   p_json_val="$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log(d.claude_dir + " " + d.legacy_state_dir)' "$p_json" 2>/dev/null)"
-  p_sh_val="$( . "$p_sh" 2>/dev/null && printf '%s %s' "${TYCON_P_CLAUDE_DIR:-}" "${TYCON_P_LEGACY_STATE_DIR:-}")"
-  if [ -n "$p_esperado" ] && [ "$p_json_val" = "$p_esperado" ] && [ "$p_sh_val" = "$p_esperado" ]; then
-    ok "T824d · places.json y places.sh al lado del freno, con lo que da tycon-home.js"
-  else no "T824d · los lugares de al lado del freno no son los de tycon-home.js: json «${p_json_val}», sh «${p_sh_val}», esperado «${p_esperado}»"; fi
+  p_nombre_val="$(cat "$p_nombre" 2>/dev/null)"
+  if [ -n "$p_esperado" ] && [ "$p_json_val" = "$p_esperado" ] && [ "$p_nombre_val" = "$(basename "${p_esperado%% *}")" ] && [ ! -e "$TMP/sys2/opt/tycon/places.sh" ]; then
+    ok "T824d · places.json y claude-dir-name al lado del freno, con lo que da tycon-home.js"
+  else no "T824d · los lugares de al lado del freno no son los de tycon-home.js: json «${p_json_val}», nombre «${p_nombre_val}», esperado «${p_esperado}»"; fi
   if grep -q 'Edit(//\*\*/\.tycon-pipeline/production-index\.json)' "$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.d/tycon-production.json" 2>/dev/null; then
     ok "T824e · la plantilla administrada protege el índice del estado de siempre"
   else no "T824e · la plantilla administrada no protege .tycon-pipeline/production-index.json"; fi
+
+  # T824f @story-8.24 @ac-3 · cómo pregunta el instalador los lugares viejos (lugar_instalado), sobre una raíz de juguete:
+  # (1) un freno de antes de places.json: le pregunta a su tycon-home.js con su node, el camino de la primera
+  # reinstalación de cada máquina; (2) con places.json de otra casa, la misma posición dentro de la casa pedida;
+  # (3) una ruta fuera de la casa no se toma y lo dice; (4) un places.json ilegible es «no sé», en rojo, nunca «no hay»;
+  # (5) sin freno anterior, vacío y callado
+  FUNC824="$(awk '/^nodo_de_pruebas\(\)\{/{print} /^lugar_instalado\(\)\{/{on=1} on{print} on&&/^\}$/{exit}' "$INSTALADOR")"
+  R824="$TMP/sys-824f"; C824="$TMP/casa-824f"; rm -rf "$R824" "$C824"; mkdir -p "$R824/opt/tycon/setup/harness" "$C824"
+  cp "$AQUI/scripts/production/guard-libs/setup/harness/tycon-home.js" "$R824/opt/tycon/setup/harness/"
+  lugar824(){ ( SIN_SUDO=1; TYCON_PROD_ROOT="$R824"; TYCON_PROD_NODE_LOCAL=1; eval "$FUNC824"; lugar_instalado "$C824" "$1" ) 2>"$TMP/824f-err"; }
+  e824="$(node -e 'console.log(require(process.argv[1]).legacyStateDir(process.argv[2]))' "$AQUI/scripts/setup/harness/tycon-home.js" "$C824")"
+  [ "$(lugar824 legacy_state_dir)" = "$e824" ] && ok "T824f · un freno de antes de places.json: le pregunta a su tycon-home.js" \
+    || no "T824f · el respaldo de node no dio «${e824}»: $(head -c 200 "$TMP/824f-err")"
+  printf '{"home":"/casa/otra","legacy_state_dir":"/casa/otra/x/.y","claude_dir":"/fuera/de/la/casa"}' > "$R824/opt/tycon/places.json"
+  [ "$(lugar824 legacy_state_dir)" = "$C824/x/.y" ] && ok "T824f · places.json de otra casa: la misma posición dentro de ésta" \
+    || no "T824f · el traslado entre casas dio «$(lugar824 legacy_state_dir)»"
+  v824="$(lugar824 claude_dir)"
+  { [ -z "$v824" ] && grep -q 'queda fuera de' "$TMP/824f-err"; } && ok "T824f · una ruta fuera de la casa no se toma y lo dice" \
+    || no "T824f · la ruta fuera de la casa dio «${v824}»: $(head -c 200 "$TMP/824f-err")"
+  printf '{ roto' > "$R824/opt/tycon/places.json"
+  v824="$(lugar824 claude_dir)"
+  { [ -z "$v824" ] && grep -q 'no sé dónde estaban' "$TMP/824f-err"; } && ok "T824f · places.json ilegible es «no sé», en rojo" \
+    || no "T824f · places.json ilegible dio «${v824}» y avisó «$(head -c 200 "$TMP/824f-err")»"
+  rm -rf "$R824/opt/tycon"
+  v824="$(lugar824 claude_dir)"
+  { [ -z "$v824" ] && [ ! -s "$TMP/824f-err" ]; } && ok "T824f · sin freno anterior, vacío y callado" \
+    || no "T824f · sin freno anterior dio «${v824}» y dijo «$(head -c 200 "$TMP/824f-err")»"
 
   # T33o · el instalador anota los datos del intérprete junto a su huella, iguales a los del archivo instalado. Con
   # ellos el lanzador no lee los 122 MB del intérprete en cada comando. T19d, abajo, mide que no se reescriban.
@@ -1435,15 +1463,20 @@ fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
     else no "T30r · archivo fuera del manifiesto: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
     cp "$MAPA_BAK30" "$SRC30/scripts/lib/renames.json"; G30 add -A >/dev/null; G30 commit -q -m "con el mapa y skills-dir" >/dev/null; G30 push -q -f "$BARE30" main >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   fi
-  # (i) una máquina instalada con `install --version` CON Claude Code tiene el estado donde siempre, no en ~/.tycon/state:
-  # el instalador lo mira donde esté
+  # (i) una máquina que no se mudó a ~/.tycon (el estado donde siempre) y nunca tuvo el freno: no hay un freno anterior
+  # que diga dónde queda ese estado, y el instalador no lo adivina. Frena diciendo qué hacer (decisión del dueño,
+  # 2026-11-26: las máquinas del equipo ya se mudaron)
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CASA30/.claude/.tycon-pipeline"; mv "$ESTADO30" "$CASA30/.claude/.tycon-pipeline/harness-state.json"; rmdir "$CASA30/.tycon/state" 2>/dev/null
-  if PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=1 HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1; then ok "T30s · con el estado en la carpeta de siempre (instalada con Claude Code), instala igual"
-  else no "T30s · estado en la carpeta de siempre: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  if ! PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=1 HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1 \
+     && grep -q 'actualizá el arnés para que se mude a ~/.tycon' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon/bin" ]; then
+    ok "T30s · con el estado en la carpeta de siempre y sin freno anterior, frena y dice que se actualice el arnés"
+  else no "T30s · estado en la carpeta de siempre sin freno anterior: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   # (j) 🔴 el ancla contra un repo AJENO que GitHub verifica igual: el origen fijado en
   # /opt (root) la primera vez; otro repo en el estado —aunque exista y cierre— exige --change-origin y la confirmación por
   # teclado, como en el modo clon. (El estado vuelve a ~/.tycon/state para este caso.)
   mkdir -p "$CASA30/.tycon/state"; mv "$CASA30/.claude/.tycon-pipeline/harness-state.json" "$ESTADO30"
+  # (i) frenó antes de instalar: el freno se vuelve a instalar entero, como lo dejaba (i), para los casos que siguen
+  instala30 >/dev/null 2>&1 || no "T30s · no pude volver a instalar el freno para los casos siguientes"
   # (u) 🔴 LA MUDANZA OFICIAL A GITHUB. Una máquina que instaló desde el clon de Azure
   # tiene ese clon fijado; la versión bajada de GitHub frenaría pidiendo --change-origin. Declarada en origin-moves.json (al
   # lado del instalador; en pruebas, TYCON_PROD_ORIGIN_MOVES), se acepta SOLA —sin teclado— y se dice; otro clon fijado,
@@ -1645,7 +1678,7 @@ if [ -n "${HARNESS_T19:-}" ]; then
   # conocido no toca nada, y el programa mismo se niega a correr como root
   FUNC40="$(awk '/^retirar_estados_viejos\(\)\{/{on=1} on{print} on&&/^\}$/{exit}' "$INSTALADOR")"
   printf '{"ts":"no-tocar"}\n' > "$A40/$OLDLOG40"
-  out40="$(cd "$TMP" && id(){ echo 0; }; ok(){ echo "ok $*"; }; USUARIO=""; HOME_USUARIO="$CASA40"; CLAUDE_LEIDA="$CASA40/.claude"; eval "$FUNC40"; retirar_estados_viejos 2>&1)"
+  out40="$(cd "$TMP" && id(){ echo 0; }; ok(){ echo "ok $*"; }; USUARIO=""; HOME_USUARIO="$CASA40"; eval "$FUNC40"; retirar_estados_viejos 2>&1)"
   if [ -e "$A40/$OLDLOG40" ] && printf '%s' "$out40" | grep "como administrador no los toco" >/dev/null; then
     ok "RetireD_OldMemoryMergedBeforeDelete · como administrador y sin saber qué usuario lanzó, la limpieza no toca la casa y lo dice @story-8.15 @ac-14"
   else no "RetireD_OldMemoryMergedBeforeDelete · como administrador sin usuario: $(printf '%s' "$out40" | head -c 200) @story-8.15 @ac-14"; fi

@@ -46,20 +46,22 @@ PATRON
 }
 
 registro_de() {
-  # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23,
-  # tanda D). Si no, la de siempre, con el nombre de la carpeta de Claude Code que dejó el instalador del freno en
-  # /opt/tycon/places.sh; en el árbol (pruebas), la que da state-dir.sh. Bash puro: esto corre justo
-  # cuando node puede no estar. Sin ninguno, la casa propia.
-  _estado="$HOME/.tycon/state"
-  if [ ! -d "$_estado" ]; then
-    if [ -f "$RAIZ/opt/tycon/places.sh" ]; then
-      _cdir="$(. "$RAIZ/opt/tycon/places.sh" >/dev/null 2>&1; printf '%s' "${TYCON_P_CLAUDE_DIR:-}")"
-      [ -n "$_cdir" ] && _estado="$HOME/${_cdir##*/}/.tycon-pipeline"
-    elif [ ! -d /opt/tycon ] && [ -f "$(dirname "$0")/../lib/state-dir.sh" ]; then
-      _estado="$(. "$(dirname "$0")/../lib/state-dir.sh" && tycon_state_dir)"
-    fi
+  # la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí). Si no,
+  # la de siempre, con el nombre de la carpeta de Claude Code que dejó el instalador del freno en un renglón de root
+  # (/opt/tycon/claude-dir-name: se lee, no se ejecuta); en el árbol (pruebas), la que da state-dir.sh. Bash puro: esto
+  # corre justo cuando node puede no estar. Sin ninguno, vacío: no se adivina, y ~/.tycon/state nunca se crea desde acá
+  # (que exista es lo que dice que la máquina se mudó).
+  _estado=""
+  if [ -d "$HOME/.tycon/state" ]; then _estado="$HOME/.tycon/state"
+  elif [ -f "$RAIZ/opt/tycon/claude-dir-name" ]; then
+    IFS= read -r _cdir < "$RAIZ/opt/tycon/claude-dir-name" 2>/dev/null || _cdir=""
+    case "$_cdir" in ''|.|..|*[!A-Za-z0-9._-]*) ;; *) _estado="$HOME/$_cdir/.tycon-pipeline" ;; esac
+  elif [ ! -d /opt/tycon ] && [ -f "$(dirname "$0")/../lib/state-dir.sh" ]; then
+    _estado="$(. "$(dirname "$0")/../lib/state-dir.sh" && tycon_state_dir)"
+    case "$_estado" in "$HOME/.tycon/state") [ -d "$_estado" ] || _estado="" ;; esac
   fi
-  printf '%s' "$_estado/hook-errors.log"
+  [ -n "$_estado" ] && printf '%s' "$_estado/hook-errors.log"
+  return 0
 }
 
 frenar() { # $1 = encabezado · $2 = motivo · $3 = qué hacer
@@ -67,7 +69,9 @@ frenar() { # $1 = encabezado · $2 = motivo · $3 = qué hacer
   # sólo existía en la pantalla del momento: se frenaba bien, pero nadie se enteraba de que el freno
   # está roto en esa máquina, que es el problema de fondo (revisores del Step 5, 2026-09-15).
   registro="$(registro_de)"
-  if mkdir -p "$(dirname "$registro")" 2>/dev/null; then
+  if [ -z "$registro" ]; then
+    printf 'prod-access-guard (lanzador): no sé dónde dejar la constancia (sin ~/.tycon/state ni /opt/tycon/claude-dir-name): reinstalá el freno\n' >&2
+  elif mkdir -p "$(dirname "$registro")" 2>/dev/null; then
     printf '%s prod-access-guard (lanzador): %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" >> "$registro" 2>/dev/null || true
   fi
   printf '🛑 FRENO DE PRODUCCIÓN — %s\n\nMotivo: %s\n\n   %s\n' "$1" "$2" "$3" >&2
@@ -87,7 +91,8 @@ ok_o_frenar() {
 sin_decidir() { # $1 = motivo
   # `disown` antes de matar: si no, bash anuncia «Killed: 9» por stderr antes del cartel
   [ -n "${pid:-}" ] && { disown "$pid" 2>/dev/null; matar_arbol "$pid"; }
-  _que="Suele ser la carga de la máquina: reintentá en un momento. Queda constancia en $(registro_de)."
+  _reg="$(registro_de)"
+  _que="Suele ser la carga de la máquina: reintentá en un momento.${_reg:+ Queda constancia en $_reg.}"
   [ "${VIEJAS:-}" = 1 ] && _que="$_que Y reinstalá el freno (scripts/production/install-guard.command): trae los datos del intérprete y deja de leerlo entero en cada comando."
   frenar "el freno no pudo decidir, así que el comando no corre." "$1" "$_que"
 }
