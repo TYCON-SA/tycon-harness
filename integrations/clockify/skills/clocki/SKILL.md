@@ -51,7 +51,7 @@ con ese nombre (`mcp__<servidor>__create-clockify-time-entry`). Usá el que nomb
 
 **Verificación**: si llamás `update-clockify-time-entry` para CERRAR una entry, en el mismo bloque tool-call DEBE haber:
 - Un `create-clockify-time-entry` para la nueva tarea (si trabajo continúa), Y
-- Un `Write` actualizando `<estado>/active/<sessionId>.json` con el nuevo entryId.
+- Un `state.js open --entry <nuevo entryId>` que anota la entrada nueva en `<estado>/active/<sessionId>.json`.
 
 Si no hay (a) Y (b) → estás creando billing gap: cerrar la entry de una tarea y empezar la siguiente sin crear la entry nueva deja ese tiempo sin registrar.
 
@@ -123,9 +123,9 @@ sweep la cerraba **aunque la sesión estuviera viva**.
 `readActive()` mergea el legacy **primero** y los per-session **después**, así la copia
 per-session (fresca) gana sobre la legacy (stale) si la migración no alcanzó a drenarla.
 
-**🔴 Regla de escritura:** una sesión SOLO lee/escribe `active/<suSessionId>.json`.
-`Read` ese archivo, modificá la key `[cwd]`, `Write`. NUNCA toques el archivo de otra
-sesión. NUNCA `printf '{}'` global.
+**🔴 Regla de escritura:** el estado lo escribe SÓLO el comando de la integración, `node "<arnés>/integrations/clockify/scripts/state.js"` (`<arnés>` es `~/.tycon/harness`, o `~/.claude/tycon-harness` en una máquina sin la casa propia; el aviso de trabajo y el freno dan la ruta entera)
+(`open`, `close`, `cache`, `show`), y sólo el archivo de tu sesión. Con `Write` o por consola el freno de la
+carpeta del estado lo para: el estado vive en la carpeta del estado del arnés. NUNCA `printf '{}'` global.
 
 ### `heartbeat/<sessionId>` — señal de liveness de sesión
 
@@ -188,12 +188,12 @@ Evita llamar `list-clockify-projects` cada vez. Invalidable a mano borrando la e
 Cuando se invoca `clocki:start "descripción" [--project NAME]`:
 
 1. **Leer estado**: obtené tu `sessionId` (del reminder del hook o `$CLAUDE_CODE_SESSION_ID`;
-   si no, `_nosession`). `Read <estado>/active/<sessionId>.json` (tu archivo propio,
-   forma `{ cwd: entry }`). Obtené el `cwd` actual.
+   sin sesión, el comando no anota: decíselo a la persona). Lo que tenés abierto en el `cwd`
+   actual, con `state.js show --cwd <cwd>` (sale 1 si no hay nada).
 
 2. **Cerrar timer activo previo de ESTA sesión en este cwd** (si existe):
    - Si tu archivo tiene la key `[cwd]`, llamar `mcp__clockify__update-clockify-time-entry` con `end = <tu archivo>[cwd].lastActivity` (NO `now` — el `lastActivity` representa la última vez que se trabajó, antes del idle gap. Consistente con el flujo `stop`).
-   - Remover esa key del archivo (`delete [cwd]`; si el archivo queda `{}`, borralo). Es tu archivo — no afecta a otras sesiones.
+   - Sacala con `state.js close --cwd <cwd>` (si el archivo queda vacío, el comando lo borra). Es tu archivo — no afecta a otras sesiones.
 
 3. **Resolver project** (orden de prioridad):
    - Si vino `--project NAME` explícito → buscar ese nombre en Clockify.
@@ -202,7 +202,7 @@ Cuando se invoca `clocki:start "descripción" [--project NAME]`:
      1. Match exacto case-insensitive
      2. Match parcial (basename contiene project name o viceversa)
      3. Si no hay match único → preguntar al usuario qué project usar (lista hasta 10 opciones).
-   - Guardar el resultado en `project-cache.json` con `Write`.
+   - Guardar el resultado con `state.js cache --workspace <id> --project <id> --name <proyecto> --cwd <cwd>`.
 
 4. **Crear entry**:
    - Llamar `mcp__clockify__create-clockify-time-entry` con:
@@ -212,7 +212,7 @@ Cuando se invoca `clocki:start "descripción" [--project NAME]`:
      - `end` = MISMO valor que `start` (NO null, NO futuro). El MCP wrapper requiere `end` como string obligatorio. Esto crea entry con duración ~0 que se extiende en cada touch-activity update.
    - **🔴 NUNCA usar `end` en el futuro** como placeholder de "running entry" — Clockify muestra duración fake y los hours billables quedan inflados.
 
-5. **Persistir estado**: `Read <estado>/active/<sessionId>.json` (o `{}` si no existe), set la key `[cwd]` con la nueva entry (`entryId, workspaceId, projectId, description, startedAt = now, lastActivity = now, source = <contexto>`), y `Write` ese archivo. Es tu archivo exclusivo — no hay otras sesiones que preservar dentro.
+5. **Persistir estado**: `state.js open --entry <entryId> --workspace <id> --project <id> --description "<desc>" --cwd <cwd> --source <contexto>`. Anota la entrada en tu archivo (`startedAt` y `lastActivity` = ahora, en hora local). Si no anda, decile a la persona en una línea que la entrada quedó abierta en la herramienta sin anotar: el cierre por inactividad y el de fin de tarea no la van a ver.
 
 6. **Confirmar al usuario**: "✓ Timer abierto en Clockify: `<desc>` en project `<name>`. Cerrará automáticamente tras 15min idle o con `/clocki stop`."
 
@@ -220,7 +220,7 @@ Cuando se invoca `clocki:start "descripción" [--project NAME]`:
 
 1. `Read <estado>/active/<sessionId>.json`. Buscar la key `[cwd]` (con walk-up por parents si el cwd es subdir). Si no hay entry → "No hay timer activo de esta sesión en este cwd." y terminar.
 2. Llamar `mcp__clockify__update-clockify-time-entry` con `end = <tu archivo>[cwd].lastActivity` (NO `now` — usar el último activity timestamp así no contamos tiempo idle).
-3. Eliminar esa key (`delete [cwd]`; si el archivo queda `{}`, borralo) y `Write`. Es tu archivo — no afecta a otras sesiones.
+3. Sacala con `state.js close --cwd <cwd>`. Es tu archivo — no afecta a otras sesiones.
 4. Confirmar: "✓ Timer cerrado. Duración: H:MM."
 
 ## 🔴 Reglas CRÍTICAS de timestamps (billing-grade)
@@ -265,7 +265,7 @@ El MCP de Clockify recibe el timestamp en hora local y **lo convierte a UTC** al
 Diálogo interactivo:
 1. "¿Qué workspace? (números, listo desde `list-clockify-workspaces`)"
 2. "¿Qué project? (números, listo desde `list-clockify-projects`)"
-3. Persistir en `project-cache.json[cwd]` con `matchedName = <manual>`.
+3. Persistir con `state.js cache --workspace <id> --project <id> --name <manual> --cwd <cwd>`.
 4. "✓ Mapping configurado. Próximo `/clocki start` usa este project sin preguntar."
 
 ## Flujo de `sweep`

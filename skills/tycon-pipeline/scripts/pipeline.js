@@ -97,6 +97,7 @@ function main() {
   if (cmd === 'siblings') return cargar('pipeline-reviewers.js').cmdSiblings(cmd, args);
   if (cmd === 'validators') return cargar('pipeline-reviewers.js').cmdValidators(cmd, args);
   if (cmd === 'smart-reloop') return cargar('pipeline-rounds.js').cmdSmartReloop(cmd, args);
+  if (cmd === 'reviewer-agents') return cargar('pipeline-rounds.js').cmdReviewerAgents(cmd, args);
   if (cmd === 'preflight-frontmatter') return cargar('pipeline-preflight.js').cmdPreflightFrontmatter(cmd, args);
   if (cmd === 'reviewers-run') return cargar('pipeline-reviewers.js').cmdReviewersRun(cmd, args);
   if (cmd === 'check-count') return cargar('pipeline-reviewers.js').cmdCheckCount(cmd, args);
@@ -172,6 +173,7 @@ function main() {
     '       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
+    '  node pipeline.js reviewer-agents [--json]   (por revisor de la corrida: vuelta, agente y si su reporte se leyó)\n' +
     '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
     '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n' +

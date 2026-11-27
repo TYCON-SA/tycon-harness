@@ -134,8 +134,12 @@ test('T14 StartWarning_OtraParteMotivoVacioYYaCorrida @story-8.93 @ac-7 — lo q
 
   // el aviso sale cuando el arnés pone la bandera de la parte: un reintento de `work-signal start` que salió bien
   E.escribir(sid, { ...E.leer(sid), workSignalStarted: false });
-  assert.strictEqual(E.correr('marker.js', ['start-warning', 'time-tracking', 'MCP caído'], sid).status, 0);
+  const declarada = E.correr('marker.js', ['start-warning', 'time-tracking', 'MCP caído'], sid);
+  assert.strictEqual(declarada.status, 0);
   assert.ok(E.leer(sid).startWarnings.some((w) => w.part === 'time-tracking'));
+  // A68: la persona se entera al declararlo (la nota de `next` la lee el agente); el de ADO no le pide nada
+  assert.match(declarada.stdout, /Decile a la persona en una línea, ahora: no se pudo abrir el registro de horas \(MCP caído\); las horas/);
+  assert.doesNotMatch(E.correr('marker.js', ['start-warning', 'ado', 'otra vez 401'], sid).stdout, /Decile a la persona/);
   const re = E.correr('pipeline.js', ['work-signal', 'start'], sid, E.integracion());
   assert.strictEqual(re.status, 0, re.stderr);
   const m = E.leer(sid);

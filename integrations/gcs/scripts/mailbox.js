@@ -154,8 +154,9 @@ const esDelServicio = (status) => status >= 500 || status === 429 || status === 
 
 /**
  * El almacén de la subida para una llave gcs ya validada. `urlBase` (las pruebas) reemplaza el host de Cloud Storage.
- *   · probarListado() → `{ ok: true }` (403 AccessDenied al listar y al leer un objeto por su nombre: la llave sólo
- *     crea) o `{ codigo, estado, motivo }`;
+ *   · probarListado({ maquina, conocido }) → `{ ok: true }` (403 AccessDenied al listar y al leer por su nombre un objeto
+ *     que no existe bajo `<maquina>/` y uno que esta máquina ya subió, `conocido`: la llave sólo crea) o
+ *     `{ codigo, estado, motivo }`;
  *   · poner(nombre, cuerpo, md5, timeoutMs, { pisar }) → `{ status, codigo }` o `{ error }`; sin `pisar`, con la
  *     precondición de no pisar;
  *   · clasificar(r) → `{ tipo, motivo? }`, con el vocabulario de la subida (creado, ya_existe, sin_permiso, llave,
@@ -170,14 +171,14 @@ function almacenDeSubida(cfg, { urlBase = null } = {}) {
   const firmado = (metodo, ruta, consulta, cabeceras) => firmar({ metodo, host, ruta, consulta, cabeceras, accessId: cfg.accessId, secret: cfg.secret });
   const url = (ruta, consulta = []) => `${base.slice(0, base.length - prefijo.length)}${ruta}${consulta.length ? `?${consulta.map(([k, v]) => `${codificar(k)}=${codificar(v)}`).join('&')}` : ''}`;
 
-  async function probarListado() {
+  async function probarListado({ maquina = null, conocido = null } = {}) {
     const ruta = rutaDe('');
     const consulta = [['max-keys', '1']];
     const r = await pedir(url(ruta, consulta), { cabeceras: firmado('GET', ruta, consulta, {}), timeoutMs: 30000 });
     if (r.error) return { codigo: 1, estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al probar la llave (${r.error.code || r.error.message}): no se sube nada` };
     const codigo = codigoXml(r.cuerpo);
     const visto = `${r.status}${codigo ? ` ${codigo}` : ''}`;
-    if (r.status === 403 && codigo === 'AccessDenied') return probarLectura();
+    if (r.status === 403 && codigo === 'AccessDenied') return probarLectura({ maquina, conocido });
     if (r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: `la llave del buzón puede listar el bucket ${cfg.bucket} (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
     if (r.status === 404) return { codigo: 1, estado: 'llave_invalida', motivo: `el bucket ${cfg.bucket} no existe o la llave no lo ve (${visto}): revisar "bucket" en corridas-buzon.json. No se sube nada` };
     if (r.status === 401 || r.status === 403) return { codigo: 1, estado: 'llave_invalida', motivo: `el buzón rechazó la llave (${visto}): desactivada, borrada o inválida — hay que rotarla (corridas-buzon.json → "rotar", vence ${cfg.vence}). No se sube nada` };
@@ -187,15 +188,31 @@ function almacenDeSubida(cfg, { urlBase = null } = {}) {
 
   // Una cuenta con storage.objects.get y sin storage.objects.list no lista, pero lee cualquier objeto cuyo nombre sepa: la
   // llave de las máquinas tampoco puede leer. Se pide por la API XML un nombre que no existe: la que sólo crea contesta
-  // 403 AccessDenied; la que lee, 404 NoSuchKey
-  async function probarLectura() {
-    const ruta = rutaDe(`tycon-sonda-de-lectura-${crypto.randomBytes(8).toString('hex')}`);
+  // 403 AccessDenied; la que lee, 404 NoSuchKey. Ese nombre va bajo la carpeta de la máquina, no en la raíz: una lectura
+  // dada por una condición de prefijo o por una carpeta administrada sólo se ve ahí. Y se pide también un objeto que esta
+  // máquina ya subió: con permisos por objeto (un bucket sin acceso uniforme), quien subió un objeto lo lee, y a lo que no
+  // existe le contesta 403 igual que a la llave que sólo crea (A35)
+  async function probarLectura({ maquina = null, conocido = null } = {}) {
+    const azar = `tycon-sonda-de-lectura-${crypto.randomBytes(8).toString('hex')}`;
+    const carpeta = typeof maquina === 'string' && /^[A-Za-z0-9._-]+$/.test(maquina) ? maquina : null;
+    const nombres = [carpeta ? `${carpeta}/${azar}` : azar];
+    if (carpeta && typeof conocido === 'string' && conocido.startsWith(`${carpeta}/`)) nombres.push(conocido);
+    for (const nombre of nombres) {
+      const r = await leerUno(nombre, nombre === conocido);
+      if (!r.ok) return r;
+    }
+    return { ok: true };
+  }
+  async function leerUno(nombre, esConocido) {
+    const ruta = rutaDe(nombre);
     const r = await pedir(url(ruta), { cabeceras: firmado('GET', ruta, [], {}), timeoutMs: 30000, topeBytes: 64 * 1024 });
     if (r.error) return { codigo: 1, estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al probar la llave (${r.error.code || r.error.message}): no se sube nada` };
     const codigo = codigoXml(r.cuerpo);
     const visto = `${r.status}${codigo ? ` ${codigo}` : ''}`;
     if (r.status === 403 && codigo === 'AccessDenied') return { ok: true };
-    if (r.status === 404 || r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: `la llave del buzón puede leer objetos del bucket ${cfg.bucket} por su nombre (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
+    if (r.status === 404 || r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: esConocido
+      ? `la llave del buzón puede leer lo que esta máquina ya subió al bucket ${cfg.bucket} (${visto}): con permisos por objeto leería también las ejecuciones de las demás máquinas. Prendé el acceso uniforme del bucket (guides/integrations/gcs-mailbox.md). No se sube nada`
+      : `la llave del buzón puede leer objetos del bucket ${cfg.bucket} por su nombre (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
     if (esDelServicio(r.status)) return { codigo: 1, estado: 'servicio_fallo', motivo: `el servicio del buzón falló al probar la llave (${visto}): se reintenta en el próximo arranque` };
     return { codigo: 1, estado: 'otro', motivo: `el buzón contestó ${visto} al probar si la llave lee: no se sube nada` };
   }

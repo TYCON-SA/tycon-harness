@@ -189,6 +189,23 @@ function entradaAbierta({ repo, sessionId, env = process.env, home } = {}) {
 }
 
 /**
+ * ¿La entrada `id` quedó anotada en el estado de la integración? `true` / `false`, o `null` si la integración no anota sus
+ * entradas (o no se pudo preguntar): ahí no hay nada que comparar.
+ */
+function entradaAnotada({ repo, sessionId, id, env = process.env, home } = {}) {
+  try {
+    const dir = require('./harness-path.js').rutaArnesHook({ env, home }).dir;
+    if (!dir || !sessionId || !id) return null;
+    const ws = require(path.join(dir, 'scripts', 'lib', 'work-signal.js'));
+    if (!Array.isArray(ws.EVENTS) || !ws.EVENTS.includes('entry')) return null;
+    const r = ws.emit('entry', { repo: repo || null, sessionId }, { env, home });
+    const res = (r && r.result) || {};
+    if (typeof res.entryId === 'string' && res.entryId.trim()) return res.entryId.trim() === String(id).trim();
+    return res.tracked === true ? false : null;
+  } catch (_) { return null; }
+}
+
+/**
  * La evidencia de la acción para la sesión. `abierta` es la entrada que la integración tiene abierta (`entradaAbierta`):
  * sin un aviso de trabajo reconocible, un id que es esa entrada marca si algo de la conversación lo confirma; si nada lo
  * confirma, no marca y vuelve `sinConfirmar`. → `{ ok, verificado, herramienta?, motivo?, sinConfirmar? }`.
@@ -302,5 +319,5 @@ function horasDeLaAccion({ id, env = process.env, home = os.homedir() }) {
 
 module.exports = {
   EXTERNAL_FLAGS, RUN_FLAGS, VALID_FLAGS, HARNESS_COMMAND, PART_OF,
-  adoMarkActive, actionDone, enRegistros, entradaAbierta, esCodex, horasDeLaAccion, entradaDelResultado,
+  adoMarkActive, actionDone, enRegistros, entradaAbierta, entradaAnotada, esCodex, horasDeLaAccion, entradaDelResultado,
 };
