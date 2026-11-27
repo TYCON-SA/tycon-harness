@@ -1424,6 +1424,8 @@ function comandosPorOtroPrograma(cmd, cwd) {
       if (heredocVaAUnShell(lineas[abre], indice)) out.push(lineas.slice(desde, cierre).join('\n'));
     }
   }
+  // los bucles que recorren lo que lista un `find` (A50)
+  out.push(...require('./bash-gate-folders.js').ordenesDeBucles(s, { palabras, alcanzadas: (w) => alcanzadasPorFind(w, absoluta), citar: citarParaElShell }));
   return [...new Set(out)];
 }
 

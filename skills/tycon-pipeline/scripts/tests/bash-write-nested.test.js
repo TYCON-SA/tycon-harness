@@ -846,3 +846,21 @@ test('T41 CarpetaDelComando_DespuesDeUnCd @A50 — el cd mueve $PWD una vez, cd 
   for (const cmd of [`cd ${afuera} && rm $PWD/${H}`, `pushd ${afuera} && rm $PWD/${H}`, 'find . -type d -empty -delete',
     `(cd ${afuera} && rm $PWD/${H})`]) pasa(c, cmd);
 });
+
+// T42 FindName_ComoLoDejaElShell_YBucles @A50
+// 🔴 Falla con: un `-name` sin comillas con barra (`\*.md`), con una variable o con `$'…'` leído tal cual; una carpeta que
+// cumple el `-name` borrada entera con `rm -rf` sin mirar sus historias; o un bucle que recorre lo que lista un `find`
+// (`for f in $(find …)`, `find … | while read f`) sin mirar lo que corre su cuerpo.
+test('T42 FindName_ComoLoDejaElShell_YBucles @A50 — el -name como lo deja el shell, la carpeta que cumple y los bucles de un find', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), '# a\n');
+  for (const cmd of [
+    'find . -name \\*.md -exec rm {} \\;', 'find . -name story-\\*.md -exec rm {} \\;', "p='story-*.md'; find . -name \"$p\" -exec rm {} \\;",
+    "find . -name $'story-1.1.md' -exec rm {} \\;", 'find . -name specs -exec rm -rf {} +', 'find . -type d -name specs -exec rm -rf {} \\;',
+    "find specs -name 'story-*.md' | while read f; do rm \"$f\"; done", "for f in $(find specs -name 'story-*.md'); do rm $f; done",
+    "find $PWD -name 'story-*.md' | while read -r f; do rm \"$f\"; done",
+  ]) frena(c, cmd);
+  for (const cmd of ["find docs -name '*.md' | while read f; do rm \"$f\"; done", "for f in $(find docs -name '*.md'); do rm $f; done",
+    "for f in $(find specs -name 'story-*.md'); do cat $f; done", 'find . -name docs -exec rm -rf {} +']) pasa(c, cmd);
+});
