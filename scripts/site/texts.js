@@ -466,6 +466,7 @@ const TEXTOS = {
   'corridas.rearmadoSeMuestra': { es: ' Se muestra la armada el {generado} UTC, entera.', en: ' The one built on {generado} UTC is shown, complete.' },
   'corridas.fichasDeLaNoche': { es: 'Estas fichas son de la noche y no siguen el filtro: cuentan todas las ejecuciones que leyó el tablero de la noche, con la fecha de su fuente.', en: 'These cards are from last night and do not follow the filter: they count every run the nightly dashboard read, with the date of their source.' },
   'corridas.guardada': { es: 'Se muestra la vista guardada el {generado} UTC; se actualiza sola cuando termine de bajar el depósito entero.', en: 'Showing the view saved on {generado} UTC; it updates itself once the run storage finishes downloading in full.' },
+  'corridas.textosOcupado': { es: 'hay muchos cambios de ejecuciones bajándose ahora: probá de nuevo en un rato', en: 'many run changes are being downloaded right now: try again in a while' },
   'corridas.textosVuelven': { es: 'los cambios de esta ejecución vuelven cuando termine de armarse la vista', en: 'the changes of this run come back once the view finishes building' },
   'corridas.textosNoDisponibles': { es: 'los cambios de esta ejecución no están disponibles hasta el próximo armado de la vista', en: 'the changes of this run are not available until the view is built again' },
   'corridas.textosIlegibles': { es: 'los textos de esta ejecución no se pudieron leer del disco del sitio', en: "this run's texts could not be read from the site's disk" },
