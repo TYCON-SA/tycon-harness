@@ -427,6 +427,11 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           const ours = body.includes(`git-${piece.id}-global.sh`) || (src && fs.existsSync(src) && fs.readFileSync(src, 'utf8') === body);
           if (!ours) { keep(piece, `${piece.where} ya no es el del arnés: no lo toco`); break; }
           if (!rm(piece, piece.where)) break;
+          // el lugar del arnés que el instalador anotó al lado del pre-commit (places.sh): se va con él, si es el nuestro
+          if (piece.id === 'pre-commit' && !dryRun) {
+            const places = path.join(path.dirname(piece.where), 'places.sh');
+            try { if (fs.readFileSync(places, 'utf8').startsWith('# places.sh — lo escribe install-tycon-hooks.sh')) fs.rmSync(places, { force: true }); } catch (_) { /* no está, o no se lee: queda */ }
+          }
           const local = `${piece.where}.local`;
           if (lexists(local) && !dryRun) {
             try { fs.renameSync(local, piece.where); say(`${local} vuelve a ${piece.where}`); } catch (e) { keep(piece, `quité el del arnés pero no pude volver ${local} a ${piece.where} (${e.code || e.message})`, true); }

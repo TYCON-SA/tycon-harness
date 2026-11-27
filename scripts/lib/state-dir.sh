@@ -9,11 +9,13 @@
 # Es la ÚNICA copia de la ruta en shell (declarada en scripts/tests/fixtures/legacy-home-names.json); su paridad con JS
 # la mide scripts/tests/state-dir-parity.test.js.
 #
-# Se carga con `.` y deja tres funciones; no exporta nada ni cambia el PATH:
+# Se carga con `.` y deja cinco funciones; no exporta nada ni cambia el PATH:
 #   . "<árbol>/scripts/lib/state-dir.sh"
 #   tycon_state_dir     # la carpeta del estado (bypass.log, sellos, candado)
 #   tycon_logs_dir      # la carpeta de los registros sueltos (safety-guard.log)
 #   tycon_own_home      # sale 0 si la máquina vive en la casa propia
+#   tycon_claude_dir    # la carpeta de Claude Code (`claudeDir` de tycon-home.js)
+#   tycon_skills_dir    # las skills instaladas (`installedSkillsDir` de tycon-home.js)
 
 # sin los blancos de los bordes, como trim() en JS: los de ASCII y los de Unicode que JS también saca (BOM, NBSP, los
 # espacios de U+2000 a U+200A, U+3000…)
@@ -66,12 +68,16 @@ _tycon_home_root() {
 
 tycon_own_home() { [ -d "$(_tycon_home_root)/state" ]; }
 
+tycon_claude_dir() { printf '%s/.claude' "${HOME:-}"; }
+
+tycon_skills_dir() { printf '%s/agent-skills' "$(tycon_claude_dir)"; }
+
 tycon_state_dir() {
   if tycon_own_home; then printf '%s/state' "$(_tycon_home_root)"
-  else printf '%s/.claude/.tycon-pipeline' "${HOME:-}"; fi
+  else printf '%s/.tycon-pipeline' "$(tycon_claude_dir)"; fi
 }
 
 tycon_logs_dir() {
   if tycon_own_home; then printf '%s/state' "$(_tycon_home_root)"
-  else printf '%s/.claude' "${HOME:-}"; fi
+  else tycon_claude_dir; fi
 }

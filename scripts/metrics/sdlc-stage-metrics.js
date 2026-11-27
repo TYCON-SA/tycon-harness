@@ -84,7 +84,7 @@ function nightDefaults() {
   return m.dir ? { dirs: [m.dir, m.history].filter(Boolean), snapshot: m.history || m.dir } : null;
 }
 // Dónde están las skills lo dice LA función que usan todos, no una ruta armada acá: la variable
-// TYCON_SKILLS_DIR › el propio clon si es unido › ~/.claude/agent-skills. Así, corriendo desde un clon que trae su propio
+// TYCON_SKILLS_DIR › el propio clon si es unido › ~/.tycon/harness. Así, corriendo desde un clon que trae su propio
 // descubridor de stories, se usa ése y no el INSTALADO.
 const SKILLS_DIR = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');

@@ -1113,7 +1113,7 @@ function checkMap(args) {
     if (es.length) problems.push(`${at}: el nombre nuevo «${e.new}» está en castellano (${[...new Set(es.flatMap((s) => s.words))].join(', ')})`);
     if (isFile(e) && pathsOk) {
       const root = rootOf(e);
-      if (!root) { problems.push(`${at}: no encontré agent-skills en esta máquina (TYCON_SKILLS_DIR o ~/.claude/agent-skills): no pude mirar esta entrada`); return; }
+      if (!root) { problems.push(`${at}: no encontré agent-skills en esta máquina (TYCON_SKILLS_DIR o las skills instaladas): no pude mirar esta entrada`); return; }
       const oldAbs = path.join(root, e.old);
       const newAbs = path.join(root, e.new);
       const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
@@ -1301,7 +1301,7 @@ const baseRe = (p, folder) => {
   return new RegExp(`(?<![\\w.~-])${where}${esc(path.posix.basename(p))}${folder ? '(?![\\w.@+~-])' : '(?![\\w.@+~/-])'}`);
 };
 function esc(x) { return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-// La misma ruta escrita a la Windows (`scripts\x.ps1`, `~\.claude\…\scripts\x.ps1`): las guías y las cabeceras de los
+// La misma ruta escrita a la Windows (`scripts\x.ps1`, o bajo la carpeta de la persona, `~\…\scripts\x.ps1`): las guías y las cabeceras de los
 // .ps1 la usan de verdad, y el instalador ya la reescribe (`machineRewrites`); sin esta variante, una mención vieja así
 // pasaría el control en verde.
 const winRes = (p, folder, inside) => (p.includes('/') ? [pathRe(p.split('/').join('\\'), folder, inside ? inside.split('/').join('\\') : inside)] : []);
@@ -1384,8 +1384,9 @@ const FOREIGN_SCHEMAS = Object.freeze([
   { what: 'una entrada de scripts/tests/suites.json', marker: 'requiere', keys: ['raiz', 'ruta'] },
   { what: 'la tabla de reemplazos (replacements.json, privada)', marker: 'pares', keys: ['afuera'] },
 ]);
-// el archivo de configuración de cada máquina y su lector: las claves del primero se nombran también por el segundo
-const MACHINE_CONFIG = '~/.claude/tycon.json';
+// el archivo de configuración de cada máquina y su lector: las claves del primero se nombran también por el segundo. El
+// archivo, como lo nombra el mapa de nombres (`where`), lo dice su lector.
+const MACHINE_CONFIG = require('../lib/tycon-config.js').DONDE_CLAVES;
 const CONFIG_READER = 'tycon-config.js';
 const quotedKeyRe = (k) => new RegExp(`(?<![\\w-])\\\\?["']${esc(k)}\\\\?["']\\s*:`);
 /**

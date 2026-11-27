@@ -4,7 +4,7 @@
  * upload-runs.js — LAS CORRIDAS DEL PIPELINE, AL BUZÓN DE AZURE STORAGE
  *
  * Sube lo nuevo o lo que creció del registro de corridas de esta máquina
- * (`~/.claude/.tycon-pipeline/timing-history/`: el volcado `<story>-<ts>.json` y su
+ * (`~/.tycon/state/timing-history/`: el volcado `<story>-<ts>.json` y su
  * `<story>-<ts>.hilo.jsonl.gz`) al contenedor privado del buzón, como `<maquina>/<archivo>`. Lo lanza el
  * instalador en cada arranque, en segundo plano, después del barrido rescata-corridas (`tokens-digest.js`). Todas las máquinas del
  * equipo suben; sólo pueden leer quienes tienen el rol de lectura (lo baja `download-runs.js`, con su cuenta).
@@ -18,7 +18,7 @@
  *      · NADA SE PISA: la primera subida de una corrida va a `<maquina>/<archivo>`; lo que se vuelve a subir porque
  *        cambió va a `<maquina>/v<AAAAMMDDTHHMMSSmmmZ>/<archivo>` (el inicio de la pasada, en UTC, monótono por
  *        archivo), y la bajada toma la versión más nueva;
- *      · qué ya subió lo recuerda un REGISTRO LOCAL (`~/.claude/.tycon-pipeline/mailbox-uploads.json`:
+ *      · qué ya subió lo recuerda un REGISTRO LOCAL (`~/.tycon/state/mailbox-uploads.json`:
  *        tamaño, mtime, sha256, blob y versión por archivo), que se anota archivo por archivo y SÓLO después de que
  *        el servicio confirmó con 201. Un corte a mitad nunca queda como «subido».
  *    Retención sin vencimiento: el buzón guarda la conversación entera.
@@ -37,8 +37,8 @@
  *    Sale ≠ 0; el instalador lo corre de fondo, así que no pone rojo el arranque: queda en `upload-runs.log`.
  *
  * 🔴 Y LOS REGISTROS DE FRENOS Y ESCAPES: una vez por día prepara
- *    `gates.log.gz`, `bypass.log.gz` (los registros completos de `~/.claude/.tycon-pipeline/`, comprimidos) y
- *    un `cobertura.json` que dice si pudo leer cada uno, en `~/.claude/.tycon-pipeline/registros-buzon/`, y los
+ *    `gates.log.gz`, `bypass.log.gz` (los registros completos de `~/.tycon/state/`, comprimidos) y
+ *    un `cobertura.json` que dice si pudo leer cada uno, en `~/.tycon/state/registros-buzon/`, y los
  *    sube como UN JUEGO ENTERO bajo `<maquina>/registros/v<momento de la preparación>/<archivo>` (todos,
  *    también el idéntico al de ayer) ANTES que las corridas —pesan poco y al final de la cola no
  *    entrarían—, con la cobertura al final de los tres: es la marca de que los de arriba están completos. Un
@@ -432,7 +432,7 @@ function rutaConfig() {
 
 /**
  * La integración «buzón» según la configuración del arnés: `integrations.mailbox` por variable
- * (TYCON_MAILBOX), ~/.claude/tycon.json o el perfil del equipo, y si nada la dice, PRENDIDA sólo si la llave existe
+ * (TYCON_MAILBOX), ~/.tycon/config.json o el perfil del equipo, y si nada la dice, PRENDIDA sólo si la llave existe
  * (`rutaConfig()`, la misma que lee `leerConfig`). Apagada → el comando sale 0 y lo dice; prendida sin archivo → el
  * error de siempre (falta la llave: en el repo del equipo, un clon incompleto). Configuración rota → `{ error }` (exit 2). Sin lector al lado:
  * como hoy (prendida). La usa también la bajada.
@@ -966,11 +966,14 @@ function placeFactsForMailbox(day, folder = null) {
     const inTree = sha(path.join(tree, 'scripts', 'setup', 'harness', 'bootstrap.js'));
     out.bootstrap = { fixed_sha256: fixed, tree_sha256: inTree, same: fixed === inTree };
   } catch (e) { out.bootstrap = notMeasured(`la copia fija o la del árbol no se pudo leer (${code(e)})`); }
-  // las skills: de un clon aparte (~/.claude/agent-skills fuera del árbol) o del árbol mismo, y de qué commit
-  const skillsClone = path.join(home, '.claude', 'agent-skills');
+  // las skills: de un clon aparte (~/.tycon/harness fuera del árbol) o del árbol mismo, y de qué commit. La carpeta de
+  // las skills instaladas la dice tycon-home.js; sin él, cuentan como del árbol.
+  const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  const skillsClone = fs.existsSync(homeLib) ? require(homeLib).installedSkillsDir(home) : null;
   let skillsDir = tree;
   let separate = false;
   try {
+    if (!skillsClone) throw new Error('sin tycon-home.js');
     const r = fs.realpathSync(skillsClone);
     const t = tree ? fs.realpathSync(tree) : null;
     separate = !t || !(r === t || r.startsWith(t + path.sep));

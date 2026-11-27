@@ -1202,13 +1202,18 @@ let commandPrefixesCache = null;
 function PREFIJOS_COMANDO() {
   if (commandPrefixesCache) return commandPrefixesCache;
   const P = require('../setup/harness/place.js');
-  const names = [P.PLACE_NAME, P.LEGACY_PLACE_NAME].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const names = [P.PLACE_NAME, P.LEGACY_PLACE_NAME].map(esc).join('|');
+  // la carpeta de Claude Code y las skills instaladas como se escriben bajo la de la persona (`~/`, `$HOME/`): las dice
+  // tycon-home.js
+  const TH = require('../setup/harness/tycon-home.js');
+  const bajoCasa = (p) => `^(?:~|\\$HOME|\\$\\{HOME\\})\\/${esc(path.relative(os.homedir(), p).split(path.sep).join('/'))}\\/`;
   commandPrefixesCache = [
-    [new RegExp(`^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\.claude\\/(?:${names})\\/`), 'arnes/'],
+    [new RegExp(`${bajoCasa(TH.claudeDir(os.homedir()))}(?:${names})\\/`), 'arnes/'],
     [/^\$\{TYCON_GUIDES_DIR(?::-[^}]*)?\}\//, 'arnes/'],
     [/^\$TYCON_GUIDES_DIR\//, 'arnes/'],
-    [/^(?:~|\$HOME|\$\{HOME\})\/\.claude\/agent-skills\//, 'agent-skills/'],
-    [/^(?:~|\$HOME|\$\{HOME\})\/\.claude\/skills\//, 'agent-skills/skills/'],
+    [new RegExp(bajoCasa(TH.installedSkillsDir(os.homedir()))), 'agent-skills/'],
+    [new RegExp(`${bajoCasa(TH.claudeDir(os.homedir()))}skills\\/`), 'agent-skills/skills/'],
   ];
   return commandPrefixesCache;
 }
@@ -1219,9 +1224,12 @@ function candidatosDeComando(dicha, md) {
   // Los marcadores que las skills y los comandos usan con un solo sentido: `<skill>` es la skill del .md, `<arnés>` el
   // arnés, y `<repo>` en un comando del arnés es el arnés. Cualquier otro marcador no se puede resolver.
   const skillDelMd = /^agent-skills\/skills\/([^/]+)\//.exec(md);
-  const placeRoot = `~/.claude/${require('../setup/harness/place.js').PLACE_NAME}/`;   // `<arnés>/` y `<repo>/` van al lugar (8.19)
+  // las carpetas bajo la de la persona, como las dice tycon-home.js
+  const TH = require('../setup/harness/tycon-home.js');
+  const bajoCasa = (p) => `~/${path.relative(os.homedir(), p).split(path.sep).join('/')}/`;
+  const placeRoot = bajoCasa(TH.placePath(os.homedir()));   // `<arnés>/` y `<repo>/` van al lugar (8.19)
   let ruta = dicha.replace(/^<(?:arnés|arnes)>\//, placeRoot);
-  if (skillDelMd) ruta = ruta.replace(/^<skill>\//, `~/.claude/agent-skills/skills/${skillDelMd[1]}/`);
+  if (skillDelMd) ruta = ruta.replace(/^<skill>\//, `${bajoCasa(TH.installedSkillsDir(os.homedir()))}skills/${skillDelMd[1]}/`);
   if (md.startsWith('arnes/')) ruta = ruta.replace(/^<repo>\//, placeRoot);
   for (const [re, pre] of PREFIJOS_COMANDO()) if (re.test(ruta)) return [path.posix.normalize(pre + ruta.replace(re, ''))];
   // Una variable, un marcador (`<skill>`, `...`) o una ruta de la máquina: no se puede resolver, no se juzga.
@@ -1716,7 +1724,7 @@ function nombresViejos(ctx) {
 // pueden ser el repo de un producto con su propio `scripts/`, y traducirlas sería inventar. Un marcador nuevo que nombre
 // al arnés se suma acá, con su caso en export.test.js (T19f).
 const MARCADORES_DE_RAIZ = '<(?:arn[eé]s|tcg|TCG|tycon-claude-guides|agent-skills)>';
-// La raíz del arnés escrita también como el LUGAR: `~/.claude/<lugar>/scripts/<viejo>` es la misma
+// La raíz del arnés escrita también como el LUGAR: `<lugar>/scripts/<viejo>`, en la carpeta de Claude Code, es la misma
 // ruta vieja que detrás del nombre viejo. El nombre sale de place.js, la primera vez que se usa (quien carga este archivo
 // sólo para un lector no la necesita); sin place.js, la raíz es el nombre clásico.
 let placeRootAlt = null;

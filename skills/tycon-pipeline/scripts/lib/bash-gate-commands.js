@@ -396,7 +396,7 @@ function borradosProfundos(cmd) {
  * Los marcadores de la ejecución (`<estado>/active/`, `<estado>/active.json`) que el comando puede borrar o mover:
  * `[ruta o texto]`. La regla: un comando que borra o mueve algo y nombra un marcador frena. Nombrarlo es una palabra
  * que, expandida (variables, `~`, llaves), cae en uno o en su carpeta, o un texto que lo nombra por la carpeta del estado
- * (`'/.claude/.tycon-pipeline/active/x.json'` armado en un guion). Una carpeta de arriba (`rm -rf ~/.claude`) cuenta
+ * (`'<estado>/active/x.json'` armado en un guion). Una carpeta de arriba (`rm -rf <la carpeta de Claude Code>`) cuenta
  * sólo si es lo que el comando borra o recorre.
  */
 function marcadoresTocados(cmd, cwd, stateDir) {
@@ -581,7 +581,7 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     for (const x of expandirLlaves(w)) {
       const abs = resolver(x);
       if (toca(abs, false)) { out.push(abs); continue; }
-      // un comodín en una carpeta del medio (`~/.claude/.tycon-p*/active`): lo que nombra en el disco
+      // un comodín en una carpeta del medio (`<casa>/.tycon-p*/active`): lo que nombra en el disco
       if (/[*?[]/.test(path.dirname(abs))) for (const r of expandirComodin(abs, cwd)) if (toca(r, false)) out.push(r);
     }
   }

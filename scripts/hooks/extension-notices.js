@@ -23,11 +23,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js, si está al lado (el banco copia este hook suelto).
-// Se resuelve adentro de main(): si el módulo fallara al cargar, el gancho igual sale 0 y lo dice.
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js, si está al lado; suelto (el banco copia este hook
+// así), la carpeta temporal. Se resuelve adentro de main(): si el módulo fallara al cargar, el gancho igual sale 0 y lo dice.
 function stateDirOf(home) {
   const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(home) : path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+  return fs.existsSync(lib) ? require(lib).stateDir(home) : path.join(os.tmpdir(), 'tycon-state');
 }
 
 /**

@@ -3,7 +3,7 @@
  * build/deploy-shared-skills.js — expone las skills del arnés a Codex vía symlinks en
  * ~/.codex/skills. Lo invoca install-tycon-hooks.sh (TYCON_CODEX=1).
  *
- * Fuente: el clon de agent-skills (~/.claude/agent-skills/skills — override TYCON_SKILLS_DIR).
+ * Fuente: el clon de agent-skills (~/.tycon/harness/skills — override TYCON_SKILLS_DIR).
  * Un symlink por skill → cero copias, cero drift: la skill que Claude lee es EXACTAMENTE la
  * que Codex lee (formato SKILL.md estándar en ambas, plan §7).
  *
