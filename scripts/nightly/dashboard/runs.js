@@ -1100,11 +1100,14 @@ function resumirEspejo(espejo, { skillsDir = null } = {}) {
   for (const dir of carpetas) {
     let archivos = [];
     try { archivos = fs.readdirSync(dir); } catch (e) { out.motivos.push(`${path.basename(dir)} (${e.code || e.message})`); out.fallidas += 1; continue; }
+    // 🔴 lo que hay en la carpeta sale de su listado, no de dos existsSync por corrida: en el disco montado del sitio
+    //    (Azure Files) cada existsSync es una apertura que se cobra como escritura, y esto corre en cada pasada (A48)
+    const hay = new Set(archivos);
     for (const f of archivos.filter((x) => /\.json$/.test(x))) {
       const volcado = path.join(dir, f);
       const hilo = cambios.rutaDeHilo(volcado);
       const cambio = cambios.rutaDeCambio(volcado);
-      if (!fs.existsSync(hilo) && !fs.existsSync(cambio)) continue;
+      if (!hay.has(path.basename(hilo)) && !hay.has(path.basename(cambio))) continue;
       try {
         const d = JSON.parse(fs.readFileSync(volcado, 'utf8'));
         const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio, { topeHiloBytes: cambios.TOPE_HILO_SITIO });

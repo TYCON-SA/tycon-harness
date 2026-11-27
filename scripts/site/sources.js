@@ -86,6 +86,8 @@ const ARCHIVO_MEMORIA = 'espejo-memoria.json';
 const FORMATO_MEMORIA = 1;
 // cada cuánto la bajada vuelve a mirar el disco entero aunque nada haya cambiado
 const VERIFICAR_CADA_MS = 6 * 3600000;
+// lo más seguido que se relee el espejo entero mientras la bajada se pone al día de a tandas (A48)
+const RELEER_PARCIAL_MS = 5 * 60000;
 // cuánto bajan de conversaciones (y cambios de git) una pasada del buzón, antes de resumirlas y borrarlas del disco: el
 // disco del sitio guarda a lo sumo esto más los resúmenes y los volcados
 const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
@@ -994,6 +996,16 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} ${r.res.sin_tiempo === 1 ? 'archivo pendiente' : 'archivos pendientes'}; la siguiente sigue enseguida`);
     if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes === 1 ? '1 conversación pasa' : `${r.res.hilos_grandes} conversaciones pasan`} el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
+    // 🔴 A48: mientras la bajada se pone al día (una pasada cada pocos segundos que avanza), releer el espejo entero en
+    //    cada una son decenas de miles de aperturas del disco montado, que Azure Files cobra como escrituras. La vista
+    //    parcial se rearma como mucho cada RELEER_PARCIAL_MS; entre una y otra queda la anterior. La entera rearma siempre
+    if (st.buzon.armable && st.buzon.seguir && previo && previo.estado === 'medido'
+      && Number.isFinite(st.buzon.parcialEn) && t - st.buzon.parcialEn < RELEER_PARCIAL_MS) {
+      st.fallas.buzon = null;
+      if (memoria.generacion !== generacionAntes || verificar) guardarMemoria();
+      return previo;
+    }
+    st.buzon.parcialEn = st.buzon.armable && !st.buzon.completo ? t : null;
     if (st.buzon.armable) {
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
