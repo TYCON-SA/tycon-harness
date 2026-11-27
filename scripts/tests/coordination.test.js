@@ -4266,3 +4266,40 @@ test('T98d Status_OcupadaCallada_CarpetaLarga: con un cwd largo, Claude Code cor
   conversacionQuieta(t, 's-larga', { minutos: 70, dir: path.join(t.home, '.claude', 'projects', `${codificado.slice(0, 200)}-1a2b3c`) });
   assert.deepStrictEqual(C.status(t.opts).busySilent.map((b) => b.session), ['Larga']);
 });
+
+// Con el dueño ausente, qué le llega por los canales de aviso lo elige la organización:
+// `coordination.away_notify` = signatures (de fábrica, lo de antes) | broken-only | never.
+test('T-Oauto1 Coordinacion_ClaveAwayNotify_DeFabricaSignatures_YValoresCerrados', () => {
+  const tc = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
+  assert.deepStrictEqual(tc.coordinacion(tc.cargar(toy().opts)).away_notify, { value: 'signatures', origin: 'sin-valor' });
+  for (const v of ['broken-only', 'never']) {
+    const p = toy({ profile: { coordination: { away_notify: v } } });
+    assert.strictEqual(tc.coordinacion(tc.cargar(p.opts)).away_notify.value, v);
+  }
+  const t = toy({ machine: { coordination: { away_notify: 'a veces' } } });
+  const cfg = tc.cargar(t.opts);
+  assert.strictEqual(tc.coordinacion(cfg).away_notify.value, 'signatures');
+  assert.ok(cfg.errores.some((e) => /away_notify/.test(e.clave || '')), JSON.stringify(cfg.errores));
+  // el freno de producción la acepta, como las otras de coordination
+  const prod = fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  assert.match(prod, /away_notify: 'aceptada'/);
+});
+
+test('T-Oauto2 OwnerNext_DuenoAusente_AvisaSegunAwayNotify', () => {
+  const r = { tipo: 'firma', id: 'firma-ab12', pregunta: '¿Aprobás el cambio del freno?', rotulo: 'Firma 1/1', opciones: ['Sí, aprobar', 'No'], problemas: [], faltaRepetir: [], saltados: [] };
+  const marca = { setAt: '2026-11-27T23:00:00Z' };
+  // de fábrica, como antes: sin cuadro, y el aviso por los canales
+  for (const txt of [C.ownerNextText(r, 's-coord', null, marca), C.ownerNextText(r, 's-coord', null, marca, 'signatures')]) {
+    assert.match(txt, /no muestres el cuadro/);
+    assert.match(txt, /notify\.js/);
+  }
+  // con broken-only o never: sin cuadro y sin aviso; el renglón espera la vuelta
+  for (const v of ['broken-only', 'never']) {
+    const txt = C.ownerNextText(r, 's-coord', null, marca, v);
+    assert.match(txt, /no muestres el cuadro/, v);
+    assert.doesNotMatch(txt, /notify\.js/, v);
+    assert.match(txt, new RegExp(`away_notify: ${v}`), v);
+  }
+  // con el dueño presente, el valor no cambia nada: el cuadro va
+  assert.match(C.ownerNextText(r, 's-coord', null, null, 'never'), /AskUserQuestion/);
+});
