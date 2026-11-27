@@ -314,3 +314,21 @@ test('T10 Readers_BypassLogNotWritable_WarnAndGoOn @story-8.256 @ac-9', () => {
     assert.match(r.err, /no pude anotar el escape TYCON_ATDD_PREEDIT_GATE en bypass\.log/);
   } finally { if (antes === undefined) delete process.env.TYCON_ATDD_PREEDIT_GATE; else process.env.TYCON_ATDD_PREEDIT_GATE = antes; }
 });
+
+test('A51 EnvSwitches_ConstantName_CountsAsRead — una variable nombrada por una constante y leída con env[X] se cuenta', () => {
+  const d = tmp('es-constante-');
+  fs.mkdirSync(path.join(d, 'scripts'));
+  fs.writeFileSync(path.join(d, 'scripts', 'a.js'), [
+    "const VAR = 'TYCON_BY_CONSTANT';",
+    'const ENV_GUIA = "TYCON_BY_CONSTANT_TWO";',
+    'function f(env) { return process.env[VAR] || env[ ENV_GUIA ]; }',
+    // una constante que nadie lee con env[...] no es una lectura
+    "const SOLO_TEXTO = 'TYCON_ONLY_A_NAME';",
+    'console.log(SOLO_TEXTO);',
+    '',
+  ].join('\n'));
+  // la constante de otro archivo no cuenta: el nombre es de su archivo
+  fs.writeFileSync(path.join(d, 'scripts', 'b.js'), 'module.exports = (env) => env[VAR];\n');
+  assert.deepStrictEqual([...ES.lecturas(d).keys()].sort(), ['TYCON_BY_CONSTANT', 'TYCON_BY_CONSTANT_TWO']);
+  assert.deepStrictEqual([...ES.lecturas(d).get('TYCON_BY_CONSTANT')], ['scripts/a.js']);
+});

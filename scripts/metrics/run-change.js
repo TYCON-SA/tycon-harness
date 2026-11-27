@@ -63,6 +63,9 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const zlib = require('zlib');
+// lo más que se descomprime de un hilo: baja del buzón, y un .gz de unos KB puede abrirse a GB; lo que pasa el tope
+// sale ilegible (ERR_BUFFER_TOO_LARGE), nunca leído a medias
+const TOPE_HILO = 512 * 1024 * 1024;
 const { spawnSync } = require('child_process');
 
 const VERSION = 1;
@@ -211,10 +214,10 @@ function rutaDeHilo(volcado) { return String(volcado).replace(/\.json$/, '') + '
  * [{ desde, hasta, texto }] con el comando (o el pedido al subagente) y lo que devolvió, acotado. Más
  * `desde`/`hasta` de todo el hilo: fuera de eso el hilo no dice nada.
  */
-function ventanasDelHilo(volcado) {
+function ventanasDelHilo(volcado, { tope = TOPE_HILO } = {}) {
   const f = rutaDeHilo(volcado);
   let lineas;
-  try { lineas = zlib.gunzipSync(fs.readFileSync(f)).toString('utf8').split('\n'); } catch (e) {
+  try { lineas = zlib.gunzipSync(fs.readFileSync(f), { maxOutputLength: tope }).toString('utf8').split('\n'); } catch (e) {
     return { error: `no se pudo leer el hilo de la conversación (${e.code || e.message}): no se sabe qué commits son de esta sesión` };
   }
   const abiertas = new Map();
