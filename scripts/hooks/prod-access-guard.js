@@ -3611,8 +3611,10 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       // de una suscripción) leído como servidor frenaba una consulta de configuración
       const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
       for (let i = 1; i < t.length; i++) {
-        // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
-        const esSqlServer = t.includes('sql') && t.includes('server');
+        // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo. En los subgrupos
+        // (`az sql server firewall-rule|ad-admin|… -n <nombre>`), `-n` es el nombre de la regla o del objeto, y el
+        // servidor va por `-s`/`--server`: leer el nombre como servidor frenaba una regla sobre un servidor de prueba
+        const esSqlServer = t.includes('sql') && t.includes('server') && sinFlagS;
         const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
                                 (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
         if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');

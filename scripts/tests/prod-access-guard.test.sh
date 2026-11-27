@@ -138,6 +138,14 @@ frena "T4k · en az sql db, -s sigue siendo el servidor" "az sql db list -s acme
 frena "T4l · el servidor de az sql server se sigue leyendo por -n" "az sql server show -n acme-sql -g ACME -s 0f1e2d3c-1111-2222-3333-444455556666"
 frena "T4m · en los grupos de az sql server, -s es el servidor" "az sql server firewall-rule create -s acme-sql -g ACME -n abrir --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
 frena "T4n · la palabra server en otra posición no apaga el -s" "az sql db list -s acme-sql -g ACME --query server"
+# A53: en los subgrupos de az sql server (firewall-rule, ad-admin…), -n/--name es el nombre del objeto, no el servidor.
+# Tomarlo por servidor frenaba al dueño una regla de firewall sobre un servidor que no es de producción.
+pasa  "T4o · firewall-rule sobre no-producción: --name es la regla" "az sql server firewall-rule create --server acme-sql-staging -g ACME --name abrir --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+pasa  "T4p · firewall-rule sobre no-producción con -n corto" "az sql server firewall-rule delete -s acme-sql-staging -g ACME -n abrir"
+frena "T4q · firewall-rule sobre producción sigue frenando" "az sql server firewall-rule create --server acme-sql -g ACME --name abrir --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+pasa  "T4r · ad-admin sobre no-producción" "az sql server ad-admin create --server acme-sql-staging -g ACME --display-name equipo --object-id 0f1e2d3c-1111-2222-3333-444455556666"
+frena "T4s · ad-admin sobre producción sigue frenando" "az sql server ad-admin create --server acme-sql -g ACME --display-name equipo --object-id 0f1e2d3c-1111-2222-3333-444455556666"
+frena "T4t · un --name que nombra producción en firewall-rule no esconde el --server de producción" "az sql server firewall-rule create --name acme-sql-staging --server acme-sql -g ACME --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
 # 6.3 · T11 y T12: el borrado de un servidor o de una base de producción ya frenaba; se fija. La sentencia de borrado se
 # arma por partes: escrita entera, el freno general corta el comando que corre esta suite.
 frena "6.3 T11 · borrar el servidor de producción por -n" "az sql server delete -n acme-sql --yes"
