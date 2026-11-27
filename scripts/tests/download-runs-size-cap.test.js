@@ -5,6 +5,7 @@
 // pedía entero y se juntaba en memoria. Ahora cada archivo tiene un tope por tipo, el mismo con el que después se abre
 // (lo que pasa ese tope no se podría leer nunca), y el pedido se corta si el cuerpo trae más de lo que dijo el listado.
 // Sin red salvo un servidor local: el almacén es falso y todo pasa en una carpeta temporal.
+// stable-data: T60a lee el reloj sólo para medir cuánto dura una pasada, nunca como fecha.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -313,4 +314,61 @@ test('T44c Bajada_TrasUnaFalla_LosQueEsperabanLugarNoSePiden', async (t) => {
   assert.strictEqual(codigo, 1);
   assert.strictEqual(res.estado, 'sin_red');
   assert.strictEqual(a.pedidos, 1, `después de la falla se pidieron ${a.pedidos - 1} más`);
+});
+
+test('T58a Bajada_LaAnotacionPorHuella_SeUsa_YSoloMientrasSuRegistroSigaEnorme', async (t) => {
+  // (Fable S1/S4) la anotación «esta cobertura declara un registro enorme» evita volver a pedirla; vale sólo para la
+  // misma cobertura (su huella) y mientras ESE registro siga enorme
+  const V1 = 'v20261120T000000000Z';
+  const V2 = 'v20261121T000000000Z';
+  const archivos = {
+    [`registros/${V1}/gates.log.gz`]: Buffer.from('viejo'), [`registros/${V1}/cobertura.json`]: cobertura(['gates']),
+    [`registros/${V2}/gates.log.gz`]: GB5, [`registros/${V2}/bypass.log.gz`]: Buffer.from('b'), [`registros/${V2}/cobertura.json`]: cobertura(['gates', 'bypass']),
+  };
+  const a = almacenMixto(archivos);
+  const dir = path.join(carpeta(t), 'buzon');
+  await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+  assert.ok(a.pedidos.includes(`registros/${V2}/cobertura.json`), 'la primera vez la lee');
+  assert.strictEqual(fs.readFileSync(path.join(dir, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'viejo');
+  // segunda pasada: la del juego nuevo es distinta de la del anterior (no se lee del espejo); con la anotación no se pide
+  a.pedidos.length = 0;
+  await B.bajar({ almacen: a, dir, budgetMs: 20000, log: () => {} });
+  assert.ok(!a.pedidos.includes(`registros/${V2}/cobertura.json`), `la segunda pasada la volvió a pedir: ${a.pedidos.join(', ')}`);
+  // otra cobertura (otra huella) con el mismo nombre: la anotación no vale, se vuelve a leer
+  const b = almacenMixto({ ...archivos, [`registros/${V2}/cobertura.json`]: cobertura(['gates', 'bypass', 'frenos']) });
+  await B.bajar({ almacen: b, dir, budgetMs: 20000, log: () => {} });
+  assert.ok(b.pedidos.includes(`registros/${V2}/cobertura.json`), 'con otra huella se vuelve a leer');
+  // el registro de la anotación ya no es enorme y aparece OTRO enorme que la cobertura no declara: el juego baja
+  const c = almacenMixto({ ...archivos, [`registros/${V2}/gates.log.gz`]: Buffer.from('nuevo'), [`registros/${V2}/frenos.jsonl.gz`]: GB5 });
+  const dir2 = path.join(carpeta(t), 'buzon');
+  await B.bajar({ almacen: almacenMixto(archivos), dir: dir2, budgetMs: 20000, log: () => {} });
+  await B.bajar({ almacen: c, dir: dir2, budgetMs: 20000, log: () => {} });
+  assert.strictEqual(fs.readFileSync(path.join(dir2, MAQ, 'registros', 'gates.log.gz'), 'utf8'), 'nuevo', 'la anotación vieja no saca al juego');
+});
+
+test('T60a Bajada_SinTiempoMientrasEsperaLugar_NoPide_YLaCuentaDaElTotal', async (t) => {
+  // (Fable S5) con presupuesto corto, lo que esperaba lugar no se pide al vencer, y pedidos + pendientes = el total
+  const MB = 1024 * 1024;
+  const n = 12;
+  const archivos = Array.from({ length: n }, (_, i) => [`${i + 1}.1-2026-11-20T10${10 + i}.hilo.jsonl.gz`, 100 * MB]);
+  const a = almacenQueMideLoQueVuela(archivos, 120);
+  const t0 = Date.now();
+  const { res } = await B.bajar({ almacen: a, dir: path.join(carpeta(t), 'buzon'), budgetMs: 250, log: () => {} });
+  const duro = Date.now() - t0;
+  assert.ok(a.pedidos < n, `se pidieron todos (${a.pedidos}): el presupuesto no cortó`);
+  assert.strictEqual(a.pedidos + res.sin_tiempo, n, `pedidos ${a.pedidos} + pendientes ${res.sin_tiempo} ≠ ${n}`);
+  assert.ok(duro < 250 + 3 * 120, `después del corte se siguió pidiendo: ${duro} ms`);
+});
+
+test('T60b Bajada_LosAvisosDeJuego_VanPrimero', async (t) => {
+  // (Fable N5/S5) con más de 20 archivos grandes, el aviso de que una máquina vuelve al juego anterior no se pierde
+  const V1 = 'v20261120T000000000Z';
+  const V2 = 'v20261121T000000000Z';
+  const archivos = {
+    [`registros/${V1}/gates.log.gz`]: Buffer.from('viejo'), [`registros/${V1}/cobertura.json`]: cobertura(['gates']),
+    [`registros/${V2}/gates.log.gz`]: GB5, [`registros/${V2}/cobertura.json`]: cobertura(['gates']),
+  };
+  for (let i = 0; i < 25; i++) archivos[`9.${i}-2026-11-20T1010.json`] = GB5;
+  const { res } = await B.bajar({ almacen: almacenMixto(archivos), dir: path.join(carpeta(t), 'buzon'), budgetMs: 20000, log: () => {} });
+  assert.match(res.grandes_nombres[0], new RegExp(`${V2}.*juego anterior`), res.grandes_nombres.slice(0, 2).join(' | '));
 });

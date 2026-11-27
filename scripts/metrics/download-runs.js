@@ -1056,10 +1056,15 @@ async function bajar(opts = {}) {
   const juegoConGrande = async (maquina, v, juego) => {
     const grandes = juegosConGrandes.get(`${maquina}\0${v}`);
     const cob = juego.get('registros/cobertura.json');
-    const anotado = Boolean(grandes && cob && cob.b.md5 && indice.coberturas_con_grande[cob.b.nombre] === cob.b.md5);
-    const r = anotado ? { completo: false, faltan: [...grandes] } : await juegoCompleto(maquina, juego);
-    const porTamano = Boolean(grandes && !r.estado && !r.completo && Array.isArray(r.faltan) && r.faltan.some((f) => grandes.has(f)));
-    if (porTamano && !anotado && cob && cob.b.md5) { indice.coberturas_con_grande[cob.b.nombre] = cob.b.md5; indiceSucio = true; }
+    // la anotación es `{ md5, registros }`: vale para esa misma cobertura y mientras alguno de SUS registros siga enorme
+    // (otro enorme que la cobertura no declara no saca al juego). Una anotación vieja (sólo la huella) no vale: se relee
+    const nota = cob ? indice.coberturas_con_grande[cob.b.nombre] : null;
+    const notados = isObject(nota) && Array.isArray(nota.registros) && grandes ? nota.registros.filter((x) => grandes.has(x)) : [];
+    const anotado = Boolean(cob && cob.b.md5 && isObject(nota) && nota.md5 === cob.b.md5 && notados.length);
+    const r = anotado ? { completo: false, faltan: notados } : await juegoCompleto(maquina, juego);
+    const porGrande = grandes && !r.estado && !r.completo && Array.isArray(r.faltan) ? r.faltan.filter((f) => grandes.has(f)) : [];
+    const porTamano = porGrande.length > 0;
+    if (porTamano && !anotado && cob && cob.b.md5) { indice.coberturas_con_grande[cob.b.nombre] = { md5: cob.b.md5, registros: porGrande }; indiceSucio = true; }
     return { ...r, porTamano };
   };
   for (const [maquina, vs] of juegos) {
