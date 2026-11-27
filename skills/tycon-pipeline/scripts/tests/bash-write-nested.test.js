@@ -808,3 +808,41 @@ test('T15 Bench_FrenoComandosAnidados', () => {
   assert.strictEqual(r.status, 0, `${r.stdout.slice(-2000)}\n${r.stderr.slice(-2000)}`);
   assert.match(r.stdout, new RegExp(`✅ ${ids.length} corridos · 0 rojos · .*0 NO MEDIDOS`), r.stdout.slice(-1500));
 });
+
+// T40 CarpetaDelComando_Nombrada_Frena @A50
+// 🔴 Falla con: `$PWD`, `$(pwd)`, `~+`, la raíz de git o `$OLDPWD` resueltos sólo en la carpeta de un find, o un
+// `find … -delete` que el freno de historias no mira: borraban la historia sin que el freno la viera.
+test('T40 CarpetaDelComando_Nombrada_Frena @A50 — la carpeta del comando nombrada de otra forma, y find -delete', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), '# a\n');
+  for (const cmd of [
+    `rm $PWD/${H}`, `rm "$PWD/${H}"`, `rm "$(pwd)/${H}"`, `rm ~+/${H}`, 'cd $PWD/specs && rm story-1.1.md',
+    `f=$PWD/${H}; rm "$f"`, `ROOT=$(git rev-parse --show-toplevel); rm "$ROOT/${H}"`, `echo $PWD/${H} | xargs rm`,
+    `xargs rm <<< $PWD/${H}`, "find ~+ -name 'story-*.md' -exec rm {} \;", "find \"$(pwd -P)\" -name 'story-*.md' -exec rm {} \;",
+    "find ${PWD:-.} -name 'story-*.md' -exec rm {} \;", "d=$PWD; find $d -name 'story-*.md' -exec rm {} \;",
+    "cd specs && find $OLDPWD -name 'story-*.md' -exec rm {} \;", "rm $(find $PWD -name 'story-*.md')",
+    "find . -name 'story-1.1.md' -delete", 'find specs -type f -delete', "find $PWD -name 'story-1.1.md' -delete",
+  ]) frena(c, cmd);
+  // lo que no toca historias sigue pasando, también con la carpeta nombrada y comillas pegadas
+  pasa(c, "find \"$PWD\"/docs -name '*.md' -exec rm {} \;");
+  pasa(c, `rm $PWD/docs/a.md`);
+  pasa(c, 'find docs -name a.md -delete');
+  pasa(c, 'ls $PWD/specs');
+});
+
+// T41 CarpetaDelComando_DespuesDeUnCd @A50
+// 🔴 Falla con: el recorrido que arranca desde la carpeta ya movida al primer `cd` (lo aplicaba dos veces), `cd -` que
+// no vuelve, un `cd` entre paréntesis que mueve el resto, `pushd` o las opciones de `cd` leídas como carpeta, o un
+// `-delete` que arma el borrado de archivos con `-type d` o `-empty` (revisión de Fable de la A50).
+test('T41 CarpetaDelComando_DespuesDeUnCd @A50 — el cd mueve $PWD una vez, cd - vuelve, el paréntesis devuelve la carpeta', () => {
+  const c = corral();
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'freno-afuera-')));
+  for (const cmd of [
+    'cd specs && rm $PWD/story-1.1.md', 'cd specs; rm "$(pwd)/story-1.1.md"', `cd ${afuera} && rm $OLDPWD/${H}`,
+    `cd ${afuera} && cd - && rm $PWD/${H}`, `(cd ${afuera} && true); rm $PWD/${H}`, 'pushd specs && rm $PWD/story-1.1.md',
+    'cd -P specs && rm $PWD/story-1.1.md', `rm "$(git rev-parse --show-toplevel 2>/dev/null)/${H}"`,
+  ]) frena(c, cmd);
+  for (const cmd of [`cd ${afuera} && rm $PWD/${H}`, `pushd ${afuera} && rm $PWD/${H}`, 'find . -type d -empty -delete',
+    `(cd ${afuera} && rm $PWD/${H})`]) pasa(c, cmd);
+});

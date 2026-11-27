@@ -26,7 +26,7 @@ const { resolveSessionId } = require('./session-id.js');
 const { expandirRuta } = require('./command-vars.js');
 const { GUION_ESCRIBE, NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
-const { ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
+const { CD_DEL_TRAMO, conCarpetasNombradas, conCarpetasPorTramo, ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { carpetasDeLosCd, carpetasDeLosCdDeConstancias, destinosArmados, extractWriteTargets, heredocs, quitarCuerposDeHeredoc, scriptsInline, tramos } = require('./bash-gate-targets.js');
 const { FOR_IN, anidadosHasta, carpetasDelComando, cdInicial, comandosAnidados, comandosPorOtroPrograma, cwdDelComando, destinosBorrados, destinosDeCopia, destinosDeGuionDeSed, editaEnSitio, guionesDeShellEscritos, guionesDeShellEnDisco, movidosFueraDeMd, palabrasDelEditor, sedsLiterales, sinCuerposDeTexto, todoCorreDespuesDelCd } = require('./bash-gate-commands.js');
 const { cdSinResolver, conLosCdDeSiempre, destinosDeLaCoordinadora, destinosResueltos, palabrasDelBucleSiFueraSoloSeLee, sinMayoresQueNoRedirigen } = require('./bash-gate-scripts.js');
@@ -501,12 +501,48 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   return [...new Set(out)];
 }
 
+// mientras se lee el comando con la carpeta escrita (abajo): esa lectura no abre otra
+let leyendoConLaCarpeta = false;
+
+/** La raíz del repo de `carpeta` (la primera carpeta hacia arriba con `.git`), o null. */
+function raizDelRepo(carpeta) {
+  let d = path.resolve(carpeta);
+  for (;;) {
+    try { if (fs.existsSync(path.join(d, '.git'))) return d; } catch (_) { return null; }
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    d = arriba;
+  }
+}
+
 function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0, instalados = []) {
   // con las comillas pegadas en medio de una palabra (`rm sp""ecs/h.md`) se lee también como lo deja el shell
   const pegadas = sinComillasPegadas(cmd);
   if (pegadas !== String(cmd)) {
     const h = historiasPorConsola(pegadas, cwd, extractWriteTargets(pegadas, { keep: () => true }), sesion, destinosConComodin, hondo, instalados);
     if (h.length) return h;
+  }
+  // con la carpeta del comando nombrada (`rm $PWD/specs/h.md`, `find ~+ …`, `$(git rev-parse --show-toplevel)`), se lee
+  // también con esa carpeta escrita, tramo por tramo: cada `cd` mueve `$PWD` (A50)
+  if (hondo === 0 && !leyendoConLaCarpeta) {
+    // desde la carpeta de la sesión: quien llama puede haber movido `cwd` al primer `cd` del comando, que el recorrido
+    // vuelve a aplicar (`cd specs && rm $PWD/h.md`)
+    const raiz = raizDelRepo(sesion) || raizDelRepo(cwd);
+    const porTramo = conCarpetasPorTramo(cmd, sesion, { raiz });
+    // y con la carpeta de cada `cd` del comando en todo el texto (hasta ocho): con `cd $PWD/specs && rm h.md`, quien llama
+    // no pudo mover la carpeta y el `rm` relativo se lee desde la del `cd`
+    const destinos = [...porTramo.matchAll(CD_DEL_TRAMO)].map((m) => m[2]).filter((d) => !/[$*?[{`]/.test(d) && d !== '-')
+      .map((d) => resolveTarget(d, sesion, process.platform, { homeVariable: true }));
+    const escritos = [porTramo, ...[...new Set(destinos)].slice(0, 8).map((d) => conCarpetasNombradas(cmd, d, { raiz, carpetaAnterior: sesion }))];
+    for (const escrito of [...new Set(escritos)].filter((e) => e !== String(cmd))) {
+      // en el mismo nivel: lo que corre otro programa (`find … -exec`, `| xargs`) también se mira. El texto escrito ya no
+      // nombra la carpeta, así que no vuelve a entrar acá
+      // una sola vez por comando: adentro, la segunda lectura no se vuelve a abrir
+      leyendoConLaCarpeta = true;
+      let h;
+      try { h = historiasPorConsola(escrito, cwd, extractWriteTargets(escrito, { keep: () => true }), sesion, destinosConComodin, 0, instalados); } finally { leyendoConLaCarpeta = false; }
+      if (h.length) return h;
+    }
   }
   const enSitio = editaEnSitio(cmd);
   const destinosB = destinosBorrados(cmd);
