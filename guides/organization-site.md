@@ -462,7 +462,15 @@ que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el
 día? Sólo la ve quien mantiene: una persona con rol de programador no ve la pestaña, y la dirección `/api/horas` le
 contesta que no tiene permiso.
 
-Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
+**Arriba, la semana.** Los 7 días más nuevos, contra los 7 de antes. Cuatro fichas: las horas por día con el arnés
+trabajando, promedio del equipo por día medido; los tokens de la semana sin caché; los días sin medir (máquina × día); y
+el costo estimado, que dice «sin dato de modelo» mientras el archivo de cada día no traiga el modelo. Debajo, una fila
+por persona: junta las máquinas de cada una según `people.machines`, y una máquina sin persona sale con su nombre. Dice
+las horas por día medido, el total de la semana, cuántos días de los 7 se midieron y los tokens sin caché. Una persona
+sin ningún día medido dice «no medido», no cero. No salen las máquinas ocultas ni las que nunca subieron horas (nombres
+viejos, máquinas de CI): la página dice cuántas quedaron afuera.
+
+**Abajo, plegada, la tabla de cada día.** Es una tabla de los últimos 30 días, una columna por máquina y una fila de total por día. El día es el de cada máquina
 (su zona horaria), y sólo llegan días cerrados: lo de hoy se mira en la oficina. Cada celda trae:
 
 - **Horas con el arnés trabajando:** el tiempo en que hubo al menos una sesión trabajando en esa máquina. Dos sesiones a
