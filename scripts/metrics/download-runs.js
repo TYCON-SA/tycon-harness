@@ -795,7 +795,7 @@ async function bajarUnaCorrida(opts = {}) {
 }
 
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, grandes: 0, grandes_nombres: [], registros_enteros: true, volcados_enteros: true };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0, hilos_grandes: 0, grandes: 0, grandes_nombres: [], coberturas_ilegibles: 0, registros_enteros: true, volcados_enteros: true };
   const log = (m) => { if (opts.log) opts.log(m); };
   // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo, salvo la que
   // cortó antes de bajar todos los volcados, o la que no pudo bajar un archivo de una carpeta vieja: con la vieja a medio
@@ -1036,10 +1036,9 @@ async function bajar(opts = {}) {
     // versión anterior, que queda en el espejo como hoy.
     let c;
     try { c = JSON.parse(texto.toString('utf8')); } catch (_) { c = null; }
-    if (!c || !c.fuentes || typeof c.fuentes !== 'object') {
-      noLeidos.push(`${cob.b.nombre} (cobertura ilegible: no se puede saber si el juego está completo)`);
-      return { completo: false, ilegible: true };
-    }
+    // 🔴 No va a «no leídos» (A59, 27/11): eso dejaba la pasada «parcial» en cada vuelta mientras la cobertura rota
+    //    estuviera, y con la llave de sólo crear cualquiera la subía. Quien llama la nombra y sigue con el juego anterior
+    if (!c || !c.fuentes || typeof c.fuentes !== 'object') return { completo: false, ilegible: true };
     const faltan = [];
     for (const [id, f] of Object.entries(c.fuentes)) {
       if (!f || f.estado !== 'medido') continue;
@@ -1056,10 +1055,15 @@ async function bajar(opts = {}) {
   const juegoConGrande = async (maquina, v, juego) => {
     const grandes = juegosConGrandes.get(`${maquina}\0${v}`);
     const cob = juego.get('registros/cobertura.json');
-    const anotado = Boolean(grandes && cob && cob.b.md5 && indice.coberturas_con_grande[cob.b.nombre] === cob.b.md5);
-    const r = anotado ? { completo: false, faltan: [...grandes] } : await juegoCompleto(maquina, juego);
-    const porTamano = Boolean(grandes && !r.estado && !r.completo && Array.isArray(r.faltan) && r.faltan.some((f) => grandes.has(f)));
-    if (porTamano && !anotado && cob && cob.b.md5) { indice.coberturas_con_grande[cob.b.nombre] = cob.b.md5; indiceSucio = true; }
+    // la anotación es `{ md5, registros }`: vale para esa misma cobertura y mientras alguno de SUS registros siga enorme
+    // (otro enorme que la cobertura no declara no saca al juego). Una anotación vieja (sólo la huella) no vale: se relee
+    const nota = cob ? indice.coberturas_con_grande[cob.b.nombre] : null;
+    const notados = isObject(nota) && Array.isArray(nota.registros) && grandes ? nota.registros.filter((x) => grandes.has(x)) : [];
+    const anotado = Boolean(cob && cob.b.md5 && isObject(nota) && nota.md5 === cob.b.md5 && notados.length);
+    const r = anotado ? { completo: false, faltan: notados } : await juegoCompleto(maquina, juego);
+    const porGrande = grandes && !r.estado && !r.completo && Array.isArray(r.faltan) ? r.faltan.filter((f) => grandes.has(f)) : [];
+    const porTamano = porGrande.length > 0;
+    if (porTamano && !anotado && cob && cob.b.md5) { indice.coberturas_con_grande[cob.b.nombre] = { md5: cob.b.md5, registros: porGrande }; indiceSucio = true; }
     return { ...r, porTamano };
   };
   for (const [maquina, vs] of juegos) {
@@ -1074,20 +1078,22 @@ async function bajar(opts = {}) {
       // un juego cuya cobertura declara medido un registro que pasa su tope nunca va a bajar entero: no es «incompleto»
       // (eso es una subida a medias), se nombra y se usa el anterior
       if (r.porTamano) { avisarJuego(`${nombreMostrable(`${maquina}/registros/${v}`)} (su cobertura declara un registro que pasa su tope: se usa el juego anterior)`); continue; }
-      if (!r.ilegible) res.versiones_incompletas += 1;   // la ilegible ya quedó en no_leidos: no es «incompleta»
+      // una cobertura rota tampoco va a cambiar: no es «incompleta» ni deja la pasada parcial; se nombra (A59)
+      if (r.ilegible) { res.coberturas_ilegibles += 1; avisarJuego(`${nombreMostrable(`${maquina}/registros/${v}`)} (su cobertura no se puede leer: se usa el juego anterior)`); continue; }
+      res.versiones_incompletas += 1;
     }
     if (elegido === null && vs.has('')) elegido = '';
     if (elegido === null) continue;
     for (const v of vs.keys()) if (v !== elegido && (v === '' || v < elegido)) res.versiones_viejas += 1;
     // el juego de nombres de siempre no se elige por su cobertura: si ésta declara medido un registro que pasa su tope,
     // bajarla lo daría por medido sin estar en el espejo. Queda la anterior (o ninguna), y se dice
-    let sinCobertura = false;
+    let sinCobertura = null;
     if (elegido === '' && juegosConGrandes.has(`${maquina}\0`)) {
       const r = await juegoConGrande(maquina, '', vs.get(''));
       if (r.estado) { res.registros_enteros = false; return fin(1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`); }
-      sinCobertura = r.porTamano;
+      if (r.ilegible) { res.coberturas_ilegibles += 1; sinCobertura = 'no se puede leer'; } else if (r.porTamano) sinCobertura = 'declara un registro que pasa su tope';
     }
-    if (sinCobertura) avisarJuego(`${nombreMostrable(`${maquina}/registros/cobertura.json`)} (no se baja: declara un registro que pasa su tope; queda la anterior)`);
+    if (sinCobertura) avisarJuego(`${nombreMostrable(`${maquina}/registros/cobertura.json`)} (no se baja: ${sinCobertura}; queda la anterior)`);
     elegidos.push(...[...vs.get(elegido).values()].filter((e) => !(sinCobertura && e.forma.archivo === 'registros/cobertura.json')));
   }
   // con resúmenes: las dos partes de cada corrida (conversación y cambio) se deciden JUNTAS. Una corrida está resumida si
@@ -1186,7 +1192,7 @@ async function bajar(opts = {}) {
   // Lo que no se baja se NOMBRA: la llave de escritura está en el repo, así que cualquiera puede dejar un
   // nombre sin forma de corrida, y la vista nunca lo va a ver (no llega al disco).
   if (avisosDeJuego.length) res.grandes_nombres = [...avisosDeJuego, ...res.grandes_nombres].slice(0, 40);
-  if (res.grandes) log(`${res.grandes} archivo(s) del buzón pasan su tope de bajada y no se bajan: ${res.grandes_nombres.join(', ')}${res.grandes_nombres.length - avisosDeJuego.length < res.grandes ? '…' : ''}`);
+  if (res.grandes || res.coberturas_ilegibles) log(`${res.grandes} archivo(s) del buzón pasan su tope de bajada y ${res.coberturas_ilegibles} cobertura(s) no se pueden leer; no se bajan: ${res.grandes_nombres.join(', ')}${res.grandes_nombres.length - avisosDeJuego.length < res.grandes ? '…' : ''}`);
   if (res.ignorados) log(`${res.ignorados} blob(s) del buzón no tienen forma <maquina>/<volcado, hilo o cambio> y no se bajaron: ${res.ignorados_nombres.join(', ')}${res.ignorados > res.ignorados_nombres.length ? '…' : ''}`);
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto

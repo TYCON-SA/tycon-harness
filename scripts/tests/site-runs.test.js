@@ -2199,7 +2199,7 @@ test('T-A45 Corridas_ArchivosQuePasanSuTopeDeBajada_LosVeQuienMantiene_NoElDev',
     const l = (await h.pedir('/api/corridas', { cookie: await entrar(LEAD) })).json;
     assert.strictEqual(l.buzon && l.buzon.grandes, 2, `quien mantiene: ${JSON.stringify(l.buzon)}`);
     const pagina = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-    assert.match(pagina, /2 archivos del depósito pasan su tope de bajada/, 'la banda en la página');
+    assert.match(pagina, /2 archivos del depósito no se bajan: pasan su tope de bajada o no se pueden leer/, 'la banda en la página');
     const d = (await h.pedir('/api/corridas', { cookie: await entrar(DEV_A) })).json;
     assert.ok(!(d.buzon && d.buzon.grandes), `el dev no: ${JSON.stringify(d.buzon)}`);
   });
