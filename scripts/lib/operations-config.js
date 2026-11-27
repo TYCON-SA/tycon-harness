@@ -121,8 +121,9 @@ const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url',
 // los precios del costo estimado: tres números por modelo, en dólares por millón, con su fuente y su fecha
 const PRICE_KEYS = ['lectura', 'escritura', 'cache', 'fuente', 'fecha'];
 const PRICE_PARTS = ['lectura', 'escritura', 'cache'];
-// el nombre de un modelo como lo escriben las conversaciones (claude-opus-5-5, gpt-5.6-terra, kimi-k2.7-code:cloud)
-const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/;
+// el nombre de un modelo como lo escriben las conversaciones (claude-opus-5-5, gpt-5.6-terra, kimi-k2.7-code:cloud): la
+// misma forma que sube cada máquina (scripts/lib/transcript-tokens.js)
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const OFFICES_KEYS = ['visibility'];
 const OFFICES_VISIBILITY = ['maintainers', 'everyone'];
 // la marca de cada persona invitada desde el sitio: quién la invitó y cuándo (la invitación la manda el sitio)
@@ -293,7 +294,7 @@ function pricesProblems(prices) {
   for (const [modelo, p] of Object.entries(prices)) {
     if (comment(modelo)) continue;
     const at = `site.prices.${modelo}`;
-    if (!MODEL_NAME.test(modelo)) { problems.push({ path: at, message: `«${modelo}» no es el nombre de un modelo (letras, números, «.», «_», «:», «/» y «-», sin espacios)` }); continue; }
+    if (!MODEL_NAME.test(modelo)) { problems.push({ path: at, message: `«${modelo}» no es el nombre de un modelo (letras, números, «.», «_», «:» y «-», sin espacios)` }); continue; }
     if (!isObject(p)) { problems.push({ path: at, message: 'tiene que ser un objeto { lectura, escritura, cache, fuente, fecha }' }); continue; }
     problems.push(...siteKeyProblems(p, PRICE_KEYS, at));
     for (const k of PRICE_PARTS) {

@@ -476,3 +476,25 @@ test('OH11 Costo_DiaV2RaroYSinModelo — un reparto mal formado es un archivo ra
   assert.strictEqual(c.usd, 4, 'la parte con modelo y precio');
   assert.strictEqual(c.sinModelo, 1, 'y el día se marca con tokens sin modelo');
 });
+
+test('OH14 Costo_RepartoQueNoSuma_SinDatoYLasHorasQuedan — un reparto que no da los totales no vale como costo, ni en cero; las horas se ven igual', () => {
+  const noSuma = { ...dia2('2026-11-09', { 'claude-opus-5-5': { lectura: 1e6, escritura: 0, cache: 0 } }) };
+  noSuma.tokens = { ...noSuma.tokens, lectura: 5e6 };
+  const vacio = dia2('2026-11-08', {});
+  vacio.tokens = { ...vacio.tokens, lectura: 5e6 };
+  const maquinas = { 'maquina-a': { '2026-11-09': noSuma, '2026-11-08': vacio } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  assert.strictEqual(t.celdas['2026-11-09']['maquina-a'].estado, 'medido', 'el día se lee, con sus horas');
+  const r = WD().resumen(t, PEOPLE, PRECIOS);
+  const c = r.personas[0].costo;
+  assert.strictEqual(c.usd, null);
+  assert.strictEqual(c.sinModelo, 2);
+  assert.doesNotMatch(WD().htmlResumen(r, 'es'), /US\$/);
+});
+
+test('OH15 Costo_DiasSinModelo_SonDiasNoMaquinas — dos máquinas de una persona sin reparto el mismo día son un día', () => {
+  const maquinas = { 'maquina-a': { '2026-11-09': dia('2026-11-09') }, 'maquina-b': { '2026-11-09': dia('2026-11-09') } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE, PRECIOS);
+  assert.strictEqual(r.personas.find((x) => x.persona === 'ana@acme.example').costo.sinModelo, 1);
+});

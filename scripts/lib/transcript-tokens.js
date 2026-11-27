@@ -16,8 +16,12 @@ const fs = require('fs');
 const TOKEN_STEP_BYTES = 1024 * 1024;
 const PARTES = ['lectura', 'escritura', 'cache'];
 const SIN_MODELO = 'sin_modelo';
+// el nombre de un modelo que sube: letras, números, «.», «_», «:» y «-», hasta 100. Otro (con espacios, una ruta) va a
+// SIN_MODELO: el archivo del día no lleva rutas, y el sitio no entendería el día. La misma forma valida el sitio
+// (scripts/site/tabs/workdays.js) y el lector de operations.json
+const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const newCount = () => ({ offset: 0, byMessage: new Map(), lectura: 0, escritura: 0, cache: 0, porModelo: {}, ultimo: null, codex: null, codexTurno: null });
-const modeloDe = (m) => (typeof m === 'string' && m.trim() ? m.trim() : SIN_MODELO);
+const modeloDe = (m) => (typeof m === 'string' && MODELO.test(m.trim()) ? m.trim() : SIN_MODELO);
 
 /** Suma `delta` (lectura, escritura, caché) al modelo `modelo` de `porModelo`. */
 function sumarModelo(porModelo, modelo, delta, signo = 1) {
@@ -128,4 +132,4 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
   return result;
 }
 
-module.exports = { dayTokens, newCount, addTurn, codexDiff, sumarModelo, SIN_MODELO, TOKEN_STEP_BYTES };
+module.exports = { dayTokens, newCount, addTurn, codexDiff, sumarModelo, SIN_MODELO, MODELO, TOKEN_STEP_BYTES };

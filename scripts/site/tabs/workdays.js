@@ -43,7 +43,7 @@ const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const entero = (n) => Number.isInteger(n) && n >= 0;
 const PARTES = ['lectura', 'escritura', 'cache'];
 // el nombre de un modelo como lo escriben las conversaciones; `sin_modelo` junta los tokens que llegaron sin él
-const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/;
+const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const SIN_MODELO = 'sin_modelo';
 const texto = (s) => typeof s === 'string' && s.trim().length > 0;
 
@@ -81,6 +81,8 @@ function validarDia(o, dia) {
     if (o.v === 2 && o.tokens.por_modelo !== undefined) {
       tokens.porModelo = reparto(o.tokens.por_modelo);
       if (!tokens.porModelo) return { ok: false };
+      // un reparto que no suma los totales no vale como costo: el día se lee igual, «sin dato de modelo»
+      if (PARTES.some((k) => Object.values(tokens.porModelo).reduce((a, m) => a + m[k], 0) !== tokens[k])) tokens.porModelo = null;
     }
   }
   if (horas.medido && horas.arnes_segundos > horas.sesion_segundos) return { ok: false };
@@ -215,8 +217,9 @@ function htmlTabla(tabla, idioma) {
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
-// El costo estimado de un grupo de celdas: `usd` (null si ninguna tuvo costo), cuántas celdas con tokens no traen el
-// reparto o traen tokens sin modelo (`sinModelo`), y los modelos sin precio (`sinPrecio`). Un precio vale si trae sus tres
+// El costo estimado de un grupo de celdas: `usd` (null si ninguna tuvo costo), cuántos días de una persona con tokens no
+// traen el reparto o traen tokens sin modelo (`sinModelo`; el de un equipo suma los de sus personas), y los modelos sin
+// precio (`sinPrecio`). Un precio vale si trae sus tres
 // números de cero en adelante; lo valida también el lector de operations.json.
 const costoVacio = () => ({ usd: 0, conCosto: false, sinModelo: 0, sinPrecio: new Set() });
 const precioValido = (p) => isObj(p) && PARTES.every((k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && p[k] >= 0);
@@ -283,12 +286,16 @@ function resumen(tabla, people, precios = null) {
     const costo = costoVacio();
     for (const d of dias) {
       let medido = false;
+      // el costo del día de la persona: «sin dato de modelo» cuenta días, aunque falte en dos de sus máquinas
+      const delDia = costoVacio();
       for (const m of maqs) {
         const c = tabla.celdas[d][m];
         if (!c || c.estado !== 'medido') continue;
         if (c.horas) { segundos += c.horas.arnes_segundos; medido = true; }
-        if (c.tokens) { tokens += c.tokens.lectura + c.tokens.escritura; conTokens = true; sumarCosto(costo, costoDe(c.tokens)); }
+        if (c.tokens) { tokens += c.tokens.lectura + c.tokens.escritura; conTokens = true; sumarCosto(delDia, costoDe(c.tokens)); }
       }
+      delDia.sinModelo = Math.min(1, delDia.sinModelo);
+      sumarCosto(costo, delDia);
       if (medido) dm += 1;
     }
     return { segundos: dm ? segundos : null, diasMedidos: dm, promedioDia: dm ? segundos / dm : null, tokens: conTokens ? tokens : null, costo: cerrarCosto(costo) };

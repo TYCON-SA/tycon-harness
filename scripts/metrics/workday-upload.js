@@ -216,9 +216,13 @@ function prepareDays({ sdir, home, outDir, now = Date.now(), env = process.env, 
               const base = savedBefore(totals, g.conv.key, d) || b.codex.primero;
               const diff = codexDiff(base, b.codex.ultimo);
               for (const k of ['lectura', 'escritura', 'cache']) t[k] += diff[k];
-              // el reparto sigue la misma resta: lo que creció hasta el primer conteo del día es del modelo de ese conteo
-              TT.sumarModelo(porModelo, b.codex.modeloPrimero || TT.SIN_MODELO, codexDiff(base, b.codex.primero));
-              sumarTodo(b.codex.pasos);
+              // el reparto sigue la misma resta: lo que creció hasta el primer conteo del día es del modelo de ese conteo.
+              // Si un total bajó en el medio, los pasos no suman la resta: entonces la resta entera va a sin_modelo
+              const suyo = {};
+              TT.sumarModelo(suyo, b.codex.modeloPrimero || TT.SIN_MODELO, codexDiff(base, b.codex.primero));
+              for (const [modelo, v] of Object.entries(b.codex.pasos || {})) TT.sumarModelo(suyo, modelo, v);
+              const cierra = ['lectura', 'escritura', 'cache'].every((k) => Object.values(suyo).reduce((a, v) => a + v[k], 0) === diff[k]);
+              if (cierra) sumarTodo(suyo); else TT.sumarModelo(porModelo, TT.SIN_MODELO, diff);
               totals[d] = { ...(totals[d] || {}), [g.conv.key]: b.codex.ultimo };
             }
           } else { for (const k of ['lectura', 'escritura', 'cache']) t[k] += b[k]; sumarTodo(b.porModelo); }

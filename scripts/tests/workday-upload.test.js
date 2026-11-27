@@ -513,3 +513,28 @@ test('OH8 Rearmado_DiaArmadoAntes_SinReparto — un día armado sin reparto se r
   assert.strictEqual(d.v, 2);
   assert.deepStrictEqual(d.tokens, viejo, 'sin por_modelo: el sitio dice «sin dato de modelo»');
 });
+
+test('OH12 Tokens_PorModelo_CodexTotalQueBaja — si un total baja, el reparto que no cierra va a sin_modelo y suma lo mismo que el total', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const key = 'rollout-2026-11-08T08-00-00-x12.jsonl';
+  fs.writeFileSync(path.join(workedDir(w), 'codex-totals.json'), JSON.stringify({ '2026-11-08': { [key]: { input_tokens: 1000, cached_input_tokens: 500, output_tokens: 100 } } }));
+  codexConvModelos(w, 'x12', [['turno', '2026-11-09 09:00', 'gpt-5.6-terra'], ['conteo', '2026-11-09 10:00', 100, 50, 10], ['conteo', '2026-11-09 12:00', 400, 200, 40]], { mtime: at('2026-11-09 12:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  const { lectura, escritura, cache } = d.tokens;
+  assert.deepStrictEqual(sumaModelos(d.tokens.por_modelo), { lectura, escritura, cache }, 'el reparto nunca dice más que el total');
+});
+
+test('OH13 Tokens_NombreDeModeloRaro_VaASinModelo — un nombre con espacio, «/» o demasiado largo no sube: va a sin_modelo', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  claudeConvModelos(w, 'c13', [
+    ['2026-11-09 09:00', 'modelo con espacio', 1, 1, 1, 0],
+    ['2026-11-09 09:10', 'Users/ana/modelos/local.gguf', 2, 2, 2, 0],
+    ['2026-11-09 09:20', `m${'x'.repeat(120)}`, 3, 3, 3, 0],
+    ['2026-11-09 09:30', 'kimi-k2.7-code:cloud', 4, 4, 4, 0],
+  ], { mtime: at('2026-11-09 10:00') });
+  prepare(w, at('2026-11-10 09:00'));
+  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens.por_modelo, { sin_modelo: { lectura: 6, escritura: 6, cache: 6 }, 'kimi-k2.7-code:cloud': { lectura: 4, escritura: 4, cache: 4 } });
+});
