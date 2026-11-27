@@ -333,8 +333,8 @@ test('T42 LateMachine_RetiresLegacyWhateverItsShape_NoOrderDependency', () => {
 // ── T43 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Lo que no se retira aunque el viejo sea un enlace al lugar con sólo permisos: (1) cuando quien llama corre POR el nombre
 // viejo (el instalador lanzado por ~/.claude/<viejo>/scripts/… se quedaría sin su carpeta a mitad de camino): se retira
-// en la corrida siguiente, por otro camino; (2) cuando el lugar llega al clon pasando por el viejo (quedaría colgado), y
-// un --link pedido por el viejo deja el lugar apuntando a lo que el viejo lleva, nunca a ese nombre; (3) con
+// en la corrida siguiente, por otro camino; (2) mientras el lugar llegue al clon pasando por el viejo (quedaría colgado):
+// la regla re-apunta antes el lugar a lo que el viejo lleva, y un --link pedido por el viejo hace lo mismo; (3) con
 // `keepLegacy` (la mudanza), que lo deja para el arranque siguiente.
 test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', () => {
   const perm = (h) => fs.writeFileSync(path.join(h, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: [`Read(~/.claude/${PLACE.LEGACY_PLACE_NAME}/**)`] } }, null, 2) + '\n');
@@ -350,7 +350,8 @@ test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', ()
   // (2) el lugar pasa por el viejo
   const K2 = clone('por-el-viejo'); const h2 = home('lugar-por-el-viejo'); link(K2, legacyOf(h2)); link(legacyOf(h2), placeOf(h2)); perm(h2);
   const r2 = CP.ensurePlace({ clon: K2, home: h2 });
-  assert.ok(isLink(legacyOf(h2)) && real(placeOf(h2)) === K2, `(2) el retiro dejó el lugar colgado (${r2.mensaje})`);
+  assert.ok(real(placeOf(h2)) === K2 && !PLACE.samePath(direct(placeOf(h2)), legacyOf(h2)), `(2) el lugar quedó colgado o sigue pasando por el viejo (${direct(placeOf(h2))}; ${r2.mensaje})`);
+  assert.ok(!exists(legacyOf(h2)), `(2) con el lugar re-apuntado, el viejo no se retiró (${r2.mensaje})`);
   // …y un --link pedido por el viejo, en una máquina sin el lugar: el lugar va al clon, no al nombre viejo
   const K3 = clone('link-viejo'); const h3 = home('link-por-el-viejo'); link(K3, legacyOf(h3)); perm(h3);
   const r3 = CP.ensurePlace({ clon: K3, home: h3, forzar: legacyOf(h3) });
@@ -365,6 +366,34 @@ test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', ()
   assert.strictEqual(c.status, 0); assert.ok(isLink(legacyOf(h4)), `(3) --keep-legacy: el viejo se retiró (${c.stdout})`);
   CP.ensurePlace({ clon: K4, home: h4 });
   assert.ok(!exists(legacyOf(h4)), '(3) sin keepLegacy, la corrida siguiente no lo retiró');
+  // (4) con una mudanza a medias (su diario en la casa propia) no se retira, lo pida quien lo pida
+  const K5 = clone('diario'); const h5 = home('mudanza-a-medias'); link(K5, placeOf(h5)); link(placeOf(h5), legacyOf(h5)); perm(h5);
+  const journal = path.join(h5, '.tycon', 'migrate.json'); fs.mkdirSync(path.dirname(journal), { recursive: true }); fs.writeFileSync(journal, '{ "stage": "links" }\n');
+  CP.ensurePlace({ clon: K5, home: h5 });
+  assert.ok(isLink(legacyOf(h5)), '(4) con la mudanza a medias, el viejo se retiró');
+  fs.unlinkSync(journal); CP.ensurePlace({ clon: K5, home: h5 });
+  assert.ok(!exists(legacyOf(h5)), '(4) terminada la mudanza, el viejo no se retiró');
+  // (5) por el viejo escrito con otras mayúsculas, en un disco que no las distingue
+  const K6 = clone('mayusculas'); const h6 = home('via-mayusculas'); link(K6, placeOf(h6)); link(placeOf(h6), legacyOf(h6)); perm(h6);
+  const upper = path.join(path.dirname(legacyOf(h6)), PLACE.LEGACY_PLACE_NAME.toUpperCase());
+  if (exists(upper)) {
+    CP.ensurePlace({ clon: upper, home: h6 });
+    assert.ok(isLink(legacyOf(h6)), '(5) por el viejo con otras mayúsculas, se retiró el nombre por el que corre');
+  } else console.log('⏭ T43 (5): NO MEDIDO — este disco distingue mayúsculas');
+  // (6) --link por el viejo en una máquina mudada sin el lugar: el lugar va a ~/.tycon/harness (el nombre estable), no a
+  // la carpeta a la que lleva
+  const K7 = clone('mudada-link'); const h7 = home('mudada-link-viejo'); const own = path.join(h7, '.tycon', 'harness');
+  fs.mkdirSync(path.dirname(own), { recursive: true }); link(K7, own); link(own, legacyOf(h7)); perm(h7);
+  CP.ensurePlace({ clon: K7, home: h7, forzar: legacyOf(h7) });
+  assert.ok(PLACE.samePath(direct(placeOf(h7)), own), `(6) el lugar no apunta a ~/.tycon/harness: ${direct(placeOf(h7))}`);
+  // (7) un retiro de permisos que falla no deja respaldos: el archivo queda como estaba y el viejo, también
+  if (!IS_WIN && typeof process.getuid === 'function' && process.getuid() !== 0) {
+    const K8 = clone('falla'); const h8 = home('permisos-que-fallan'); link(K8, placeOf(h8)); link(placeOf(h8), legacyOf(h8)); perm(h8);
+    fs.chmodSync(path.join(h8, '.claude'), 0o555);
+    let r8; try { r8 = CP.ensurePlace({ clon: K8, home: h8 }); } finally { fs.chmodSync(path.join(h8, '.claude'), 0o755); }
+    assert.ok(isLink(legacyOf(h8)), `(7) con los permisos sin poder escribirse, el viejo se retiró (${r8.mensaje})`);
+    assert.deepStrictEqual(fs.readdirSync(path.join(h8, '.claude')).filter((n) => /bak-retire|tmp-retire/.test(n)), [], '(7) quedó un respaldo o un temporal');
+  } else console.log('⏭ T43 (7): NO MEDIDO — Windows o root: no hay permiso que negar así');
 });
 
 // ── T7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

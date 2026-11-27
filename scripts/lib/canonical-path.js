@@ -296,7 +296,13 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
     // apunta a ese nombre, nunca a la carpeta numerada a la que lleva: con la ruta real, la versión siguiente lo dejaría
     // apuntando a la vieja
     // (pedido por el nombre viejo, el lugar va a lo que ese nombre lleva: nunca a través de él, que se retira)
-    const stable = (() => { const x = stableName(forzar); return x && same(x, V.ruta) ? null : x; })();
+    const stable = (() => {
+      const x = stableName(forzar);
+      if (!x || !same(x, V.ruta)) return x;
+      // el nombre estable de lo que el viejo lleva, salvo que sea el propio lugar (o el viejo): ahí, la ruta real
+      const d = V.direct && stableName(V.direct);
+      return d && !same(d, P.ruta) && !same(d, V.ruta) ? d : null;
+    })();
     if (!(P.kind === 'E' && same(P.real, f) && (!stable || (P.direct && same(P.direct, stable))))) { plan.place = stable || f; plan.accion = 'repointed'; }
     if (V.kind === 'R' && !same(V.real, f)) say(`ℹ tycon: el nombre viejo ${V.ruta} es una carpeta real (otro clon, ${V.real}): no lo toco`);
     else legacyFollows();
@@ -322,6 +328,14 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   }
   // el lugar ya resuelve a un clon: P.kind es E (→ P.real) o R (la carpeta misma)
   const here = P.real;
+  // un lugar que llega a su clon PASANDO por el viejo se re-apunta a lo que el viejo lleva: así el viejo se puede retirar
+  // sin dejarlo colgado (el retiro se decide después de escribir el lugar)
+  if (P.kind === 'E' && V.kind === 'E' && throughName(P.ruta, V.ruta)) {
+    plan.place = (V.direct && !underName(V.direct, V.ruta) && stableName(V.direct)) || V.real;
+    plan.accion = 'repaired';
+    plan.retireLegacy = true;
+    return plan;
+  }
   if (V.kind === 'E' && !legacyAtPlace && !same(V.real, here)) plan.conflict = true;
   else if (V.kind === 'R' && (P.kind === 'R' || !same(V.real, here))) plan.conflict = true;
   if (plan.conflict) {
@@ -359,9 +373,10 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
   const legacyRuta = PLACE().legacyPlacePath(home);
   // no se retira el nombre por el que corre quien llama (el instalador lanzado por ~/.claude/<viejo>/scripts/… perdería su
   // propia carpeta a mitad de camino): se retira en la corrida siguiente. Tampoco con `keepLegacy` (la mudanza, que lo
-  // deja para el arranque siguiente y así su deshacer no tiene que reponerlo)
+  // deja para el arranque siguiente y así su deshacer no tiene que reponerlo), ni mientras haya una mudanza a medias (su
+  // diario existe: el aplicador que corre la mudanza, o un programa anterior que no pasa `keepLegacy`)
   const viaLegacy = [clon, forzar].some((x) => x && underName(path.resolve(String(x)), legacyRuta));
-  const mayRetire = () => !keepLegacy && !viaLegacy && !throughName(placeRuta, legacyRuta);
+  const mayRetire = () => !keepLegacy && !viaLegacy && !moveInProgress(home) && !throughName(placeRuta, legacyRuta);
   let current = null;   // el plan con el que se contesta: de él sale lo que le pasa al nombre viejo (el plan del instalador)
   let retired = false;
   let retireProblem = null;   // por qué el viejo quedó, si se intentó retirar y no se pudo
@@ -468,10 +483,32 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
   }
 }
 
-/** ¿`p` es `name` o algo adentro de él? (comparando la ruta escrita, sin resolver enlaces) */
+/**
+ * ¿`p` es el nombre `name` o algo adentro de él? Por la ruta escrita y por identidad: cada tramo de `p`, sin seguir su
+ * último enlace, se compara con el `lstat` de `name` (mismo disco y mismo nodo). Así se reconoce aunque esté escrito con
+ * otras mayúsculas (Mac, Windows), por otro alias de la casa o por una carpeta madre enlazada.
+ */
 function underName(p, name) {
   const a = path.resolve(p); const b = path.resolve(name);
-  return PLACE().samePath(a, b) || (process.platform === 'win32' ? a.toLowerCase().startsWith(b.toLowerCase() + path.sep) : a.startsWith(b + path.sep));
+  if (PLACE().samePath(a, b) || samePath(a, b)) return true;
+  if ((process.platform === 'win32' || process.platform === 'darwin') ? a.toLowerCase().startsWith(b.toLowerCase() + path.sep) : a.startsWith(b + path.sep)) return true;
+  let id;
+  try { const st = fs.lstatSync(b); id = `${st.dev}:${st.ino}`; } catch (_) { return false; }
+  if (id === '0:0') return false;   // un sistema que no da nodos: sólo la ruta escrita
+  for (let at = a, i = 0; i < 64; i++) {
+    try { const st = fs.lstatSync(at); if (`${st.dev}:${st.ino}` === id) return true; } catch (_) { /* un tramo que no existe */ }
+    const up = path.dirname(at);
+    if (up === at) break;
+    at = up;
+  }
+  return false;
+}
+/** ¿Hay una mudanza a la casa propia a medias? (su diario, `migrate.json` de la casa propia, existe) */
+function moveInProgress(home) {
+  const h = home || os.homedir();
+  const roots = [path.join(h, '.tycon')];
+  try { roots.unshift(tyconHome().ownRootOf(h)); } catch (_) { /* sin tycon-home.js: la casa de siempre */ }
+  return roots.some((r) => { try { return fs.existsSync(path.join(r, 'migrate.json')); } catch (_) { return false; } });
 }
 /** ¿El enlace `from` llega a su destino pasando por `name`? Sigue la cadena de enlaces escrita, hasta 16 saltos. */
 function throughName(from, name) {
@@ -551,7 +588,11 @@ function retirePermissions({ from, to, home }) {
     res.removed += pl.removed; res.replaced += pl.replaced;
   }
   if (res.notes.length) {
-    for (const d of done) { try { fs.copyFileSync(d.bak, d.target); } catch (e) { res.notes.push(`no pude volver ${d.target} a su respaldo ${d.bak} (${why(e)})`); } }
+    for (const d of done) {
+      try { fs.copyFileSync(d.bak, d.target); fs.unlinkSync(d.bak); } catch (e) { res.notes.push(`no pude volver ${d.target} a su respaldo ${d.bak} (${why(e)})`); }
+    }
+    // el respaldo del archivo que falló ya no sirve: el archivo quedó como estaba
+    for (const pl of plans) { const bak = `${pl.entry.file}.bak-retire-${stamp}`; if (!done.some((d) => d.bak === bak)) { try { fs.unlinkSync(bak); } catch (_) { /* no llegó a crearse */ } } }
     res.removed = 0; res.replaced = 0;
   }
   return res;
