@@ -1337,8 +1337,12 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // un comodín de la fuente (`ls *.log`) acota como una carpeta. Lo que git lista como cambiado (`git diff
         // --name-only`, `git ls-files -m`) no: puede traer una historia, y `… | xargs sed -i s/draft/done/` la escribe
         const acotada = carpetas.length || comodines.length;
+        // con un `cd` a una carpeta que el freno no recorre (`node_modules`, `.git`…), lo que lista un `ls` suelto es de
+        // ahí: el comodín suelto no va, como no va en un `cd` así seguido de un editor
+        const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
+        const cdNunca = bases.length > 1 && path.relative(cwd, bases[bases.length - 1]).split(/[\\/]+/).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
         const entrada = escribe ? fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w))
-          : [...previas, ...(pegado || !acotada ? ['*'] : []), ...comoCarpeta];
+          : [...previas, ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
