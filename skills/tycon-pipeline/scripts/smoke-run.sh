@@ -38,7 +38,8 @@
 #     curl -sf -X POST http://localhost:5001/api/pedidos/42/articulos ...
 #
 # Exit: el exit code REAL del comando (0 se registra como evidencia válida;
-# !=0 también se registra, pero la matriz no lo cuenta).
+# !=0 también se registra, pero la matriz no lo cuenta). Una excepción: si sale 0 y su última línea dice
+# «⏭ <suite>: NO MEDIDO — <motivo>», queda 77 con el motivo en `not_measured` (no midió, no es verde).
 # =============================================================================
 set -u
 
@@ -338,6 +339,27 @@ else
   T1="$(reloj)"
 fi
 
+# ── Salir 0 diciendo «no medí» no es verde ──
+# La misma regla que el nocturno (pipelines/azure-pipelines-banco.yml): una suite que sale 0 con su ÚLTIMA línea no
+# vacía «⏭ <suite>: NO MEDIDO — <motivo>» no midió lo suyo (el freno instalado, sin pwsh…). El humo la registra con exit
+# 77 y el motivo en `not_measured`, en el registro y en el espejo: la matriz cuenta sólo exit 0, así que no la cuenta, y
+# quien llamó ve que no salió verde. Una marca que no es la última línea no cambia nada (lo suyo lo midió), y un rojo
+# sigue con su código. Sin la salida guardada no se puede leer la marca; ese humo ya queda con output: null.
+NOMED_FIELD=""
+if [ "$EXIT" = 0 ] && [ -n "$SALIDA_TMP" ] && [ -s "$SALIDA_TMP" ]; then
+  # el aviso que este guion agrega cuando un proceso de fondo deja la salida abierta no es del comando: se saltea
+  ULTIMA="$(tr -d '\r' < "$SALIDA_TMP" | awk 'NF && $0 !~ /^\[… la salida siguió después de guardarla/ { l = $0 } END { print l }')"
+  case "$ULTIMA" in
+    "⏭ "*": NO MEDIDO"*)
+      POR_QUE="${ULTIMA#*NO MEDIDO}"; POR_QUE="${POR_QUE# — }"; [ -n "$POR_QUE" ] || POR_QUE="sin motivo"
+      POR_QUE_JSON="$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$POR_QUE" 2>/dev/null)" || POR_QUE_JSON='"sin motivo"'
+      [ -n "$POR_QUE_JSON" ] || POR_QUE_JSON='"sin motivo"'
+      NOMED_FIELD=",\"not_measured\":$POR_QUE_JSON"
+      EXIT=77
+      echo "[smoke-run] ⏭ el comando salió 0 pero su última línea dice NO MEDIDO ($POR_QUE): queda con exit 77 y la matriz no lo cuenta." >&2 ;;
+  esac
+fi
+
 # En la ejecución aislada, lo que el encierro niega sin matar (fuera de las carpetas vigiladas) no queda anotado: el comando
 # sólo dice que no pudo escribir, con el texto del sistema. Si eso está en su salida y falló, se dice qué hacer en una
 # línea, por la salida de error: no entra en la salida guardada ni repite el texto que se busca.
@@ -476,7 +498,7 @@ PROV_FIELD=""
 [ -n "$PROV" ] && PROV_FIELD=",$PROV"
 
 ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s%s%s,"target":%s}' \
-  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$MEAS_FIELD" "$LEDGER_EXTRA" "$PROV_FIELD" "$TARGET_JSON")
+  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD$NOMED_FIELD" "$MEAS_FIELD" "$LEDGER_EXTRA" "$PROV_FIELD" "$TARGET_JSON")
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
@@ -484,7 +506,7 @@ MIRROR_DIR="$(node "$(cd "$(dirname "$0")" && pwd)/lib/state-dir.js")"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
 printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s%s,"target":%s}\n' \
-  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MEAS_FIELD" "$MIRROR_EXTRA" "$PROV_FIELD" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
+  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD$NOMED_FIELD" "$MEAS_FIELD" "$MIRROR_EXTRA" "$PROV_FIELD" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
 
 echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledger + gates.log" >&2
 

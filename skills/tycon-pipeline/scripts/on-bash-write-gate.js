@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tycon-pipeline PreToolUse hook (matcher: Bash|PowerShell) — la segunda puerta del portón de CARRIL.
+ * tycon-pipeline PreToolUse hook (matcher: Bash|PowerShell|Monitor) — la segunda puerta del portón de CARRIL.
  *
  * El portón de carril vive en PreToolUse Edit|Write (`on-story-gate.js`). Pero un archivo también se
  * escribe por Bash: `cat > src/Foo.cs <<'EOF'`, `sed -i`, `tee`, `perl -pi`, `cp`, un `python3 -c
@@ -303,7 +303,7 @@ function handleUnaLectura(event, opts = {}) {
   }
   // el stash que se llevaría archivos de otra sesión viva, y el drop/pop/clear de lo que guardó otra
   // (lib/stash-guard.js). Una falla del freno queda en hook-errors.log y deja pasar: el caso de «no pude calcular» lo decide él
-  if (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell') {
+  if (deConsola(event)) {
     let stash = null;
     try {
       const cmd = event?.tool_input?.command;
@@ -321,7 +321,7 @@ function handleUnaLectura(event, opts = {}) {
   let deprecado = null;
   try {
     const cmd = event?.tool_input?.command;
-    if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
+    if (cmd && deConsola(event)) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
       paso('mirando si escribe código deprecado');
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
@@ -339,11 +339,15 @@ function handleUnaLectura(event, opts = {}) {
   return handleCarrilEHistoria(event, opts) || deprecado;
 }
 
+// Bash, la herramienta PowerShell de Claude Code en Windows y Monitor, que corre su comando de fondo: las tres traen el
+// comando en la misma entrada. Un evento sin nombre de herramienta es el de las pruebas y el de Codex
+const HERRAMIENTAS_DE_CONSOLA = ['Bash', 'PowerShell', 'Monitor'];
+const deConsola = (event) => !event?.tool_name || HERRAMIENTAS_DE_CONSOLA.includes(event.tool_name);
+
 function handleCarrilEHistoria(event, opts = {}) {
   const laneOff = String(process.env.TYCON_STORY_GATE || '').toLowerCase() === 'off';
   const skillOff = String(process.env.TYCON_STORY_SKILL_GATE || '').toLowerCase() === 'off';
-  // Bash, o la herramienta PowerShell de Claude Code en Windows (misma entrada)
-  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  if (!deConsola(event)) return null;
   const cmd = event?.tool_input?.command;
   if (!cmd) return null;
   const baseCwd = nativePath(event?.cwd || process.cwd());
