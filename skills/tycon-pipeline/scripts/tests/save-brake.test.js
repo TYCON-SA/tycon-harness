@@ -1801,8 +1801,10 @@ test('8.242-Pase_LoQueSeEmpujaEsLoPreparado @story-8.242 @ac-2 @ac-3', (t) => {
   const a = repoConOrigin(t);
   escribir(a, 'app.js', 'module.exports = 1;\n');
   abrir(h, preparada(a));
-  // sin commitear todavía, lo que sale es lo de antes de preparar: pregunta
-  assert.match((decide(h, 'gh pr create --fill', a) || {}).pregunta || '', ABRO, 'sin commitear, pregunta');
+  // sin commitear todavía, el pedido solo saldría con lo de antes de preparar, que es lo que está en el remoto: frena
+  // (S237); con el commit y el empuje en el mismo comando, sale lo preparado: pregunta
+  assert.match((decide(h, 'gh pr create --fill', a) || {}).texto || '', /lo empujado a la rama no es lo preparado/, 'sin commitear, frena');
+  assert.match((decide(h, 'git add -A && git commit -q -m x && git push && gh pr create --fill', a) || {}).pregunta || '', ABRO, 'con el empuje, pregunta');
   // otra rama con código sin revisar, empujada a main
   sh(a, 'branch', 'otra');
   sh(a, 'checkout', '-q', 'otra');
@@ -2174,6 +2176,25 @@ test('SaveBrake_PrAfterPrepare_LiveRemoteTip (T5c) @story-8.332 @ac-5', (t) => {
     const d = decide(h, cmd, a);
     assert.ok(d && d.texto, `«${cmd}» con otra punta remota frena: ${JSON.stringify(d)}`);
     assert.match(d.texto, /lo empujado a la rama no es lo preparado|no pude comprobar/, cmd);
+  }
+  // una rama que sigue a main (creada desde `origin/main`) y empujada sin -u: la rama del pedido es la del mismo
+  // nombre, no main (tercera vuelta de Fable)
+  sh(a, 'fetch', '-q', 'origin');
+  sh(a, 'checkout', '-q', '-b', 'wt/sigue-main', 'origin/main');
+  escribir(a, 'de-la-rama.txt', 'lo de la rama\n');
+  sh(a, 'add', 'de-la-rama.txt');
+  sh(a, 'commit', '-q', '-m', 'de la rama');
+  sh(a, 'push', '-q', 'origin', 'wt/sigue-main');
+  abrir(h, preparada(a));
+  assert.strictEqual(sh(a, 'config', '--get', 'branch.wt/sigue-main.merge'), 'refs/heads/main');
+  for (const cmd of ['gh pr ready 12', 'gh pr create --fill']) {
+    assert.ok((decide(h, cmd, a) || {}).pregunta, `«${cmd}» en una rama que sigue a main, empujada, pregunta`);
+  }
+  // la foto con cambios sin commitear y el remoto en el commit de antes: lo preparado no salió
+  escribir(a, 'sin-commitear.txt', 'lo preparado\n');
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12', 'gh pr create --fill']) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', /lo empujado a la rama no es lo preparado/, `«${cmd}» sin commitear`);
   }
   // un remoto que no responde: no pude comprobar, no pasa
   sh(a, 'remote', 'set-url', 'origin', path.join(path.dirname(a), 'no-existe.git'));

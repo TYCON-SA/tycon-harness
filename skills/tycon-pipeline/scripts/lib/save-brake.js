@@ -1416,6 +1416,8 @@ function preparado(m, salientes = []) {
     try { raiz = s.dir ? so.raizDe(s.dir) : null; } catch (_) { raiz = null; }
     // un pull request sale del repo donde se abre; sin ubicarlo, de cualquiera de la foto
     const deLaFoto = fotos.filter((f) => !raiz || f.repo === raiz);
+    // la rama remota que se lee es la del repo de la foto: un pedido que se abre desde otro repo no sale de esa rama
+    if (s.remoto && raiz && !deLaFoto.length) continue;
     for (const f of deLaFoto.length ? deLaFoto : fotos) {
       // una foto sin el campo `cabeza` es de antes de este control: se mide sólo el disco, como cuando se tomó. Con el
       // campo en null (la rama no tenía commits), lo que se empuja se compara por el árbol
@@ -1428,7 +1430,9 @@ function preparado(m, salientes = []) {
         if (c.falta && s.crear) continue;
         if (c.falta) return { texto: textoSinRemota(f.repo) };
         if (c.error) return { texto: textoSinPunta(f.repo, c.error) };
-        if (!(f.cabeza && c.commit === f.cabeza) && c.arbol !== f.arbol) return { texto: textoEmpujado(f.repo) };
+        // por el árbol, sin el atajo de la cabeza: con la foto tomada sin commitear, el remoto en el commit de antes
+        // de preparar es justo lo que no tiene que salir
+        if (c.arbol !== f.arbol) return { texto: textoEmpujado(f.repo) };
         continue;
       }
       const c = so.arbolDelCommit(f.repo, s.origen);
@@ -1537,9 +1541,12 @@ function decidir({ command, cwd, sid, home, arnes }) {
   // lo que sale en un pull request es lo que ya está en la rama remota, leída en vivo, y también tiene que ser lo
   // preparado: al marcar listo o mergear, siempre; al crear, si la rama ya está en el remoto
   const sinEmpujar = (c) => c.tipo === 'pr' && (c.listo || /(^|\s)merge$/.test(String(c.forma)));
+  // Si el mismo comando empuja y abre el pedido, lo que sale es ese empuje, que se mide por su origen: el
+  // remoto todavía tiene lo de antes cuando el freno mira
+  const empuja = cs.some((c) => c.tipo === 'push' && c.origen);
   const salientes = cs.filter((c) => c.tipo === 'pr' || (c.tipo === 'push' && c.origen)).flatMap((c) => [
     { dir: c.dir, origen: c.tipo === 'pr' ? 'HEAD' : c.origen },
-    ...(c.tipo === 'pr' ? [{ dir: c.dir, remoto: true, ...(sinEmpujar(c) ? {} : { crear: true }) }] : []),
+    ...(c.tipo === 'pr' && !empuja ? [{ dir: c.dir, remoto: true, ...(sinEmpujar(c) ? {} : { crear: true }) }] : []),
   ]);
   let prep = null;
   const prepDe = () => { prep = prep || preparado(m, salientes); return prep; };

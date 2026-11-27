@@ -301,15 +301,19 @@ const PUNTA_MS = Number(process.env.TYCON_SAVE_REMOTE_MS) > 0 ? Number(process.e
 
 /**
  * La punta de la rama actual en el remoto, leída en vivo (`git ls-remote`, con tope): lo que sale en un pull request es
- * eso, no la copia local de la rama remota, que puede estar vieja. El remoto y la rama son los del seguimiento de la
- * rama; sin seguimiento, `origin` y la rama del mismo nombre. `{ commit, arbol }`; `{ falta: true }` si la rama no está
+ * eso, no la copia local de la rama remota, que puede estar vieja. La rama es la del mismo nombre en el remoto de
+ * empuje (`branch.X.pushRemote`, `remote.pushDefault`, el del seguimiento, `origin`). `{ commit, arbol }`; `{ falta: true }` si la rama no está
  * en el remoto; `{ error }` si no se pudo leer, o si la punta no está en esta copia (sin ella no se conoce su árbol).
  */
 function puntaRemota(repo, timeoutMs = PUNTA_MS) {
   const rama = git(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
   if (!rama.ok || !rama.out) return { error: 'no estoy en una rama' };
-  const remoto = git(repo, ['config', '--get', `branch.${rama.out}.remote`]).out || 'origin';
-  const ref = git(repo, ['config', '--get', `branch.${rama.out}.merge`]).out || `refs/heads/${rama.out}`;
+  // la rama de un pedido es la del mismo nombre en el remoto de empuje: el seguimiento (`branch.X.merge`) no lo dice, y
+  // una rama creada desde `origin/main` sigue a main. Un seguimiento a la copia misma (`.`) no es un remoto
+  const conf = (k) => git(repo, ['config', '--get', k]).out;
+  const seguido = conf(`branch.${rama.out}.remote`);
+  const remoto = conf(`branch.${rama.out}.pushRemote`) || conf('remote.pushDefault') || (seguido && seguido !== '.' ? seguido : '') || 'origin';
+  const ref = `refs/heads/${rama.out}`;
   const r = spawnSync('git', ['-C', repo, 'ls-remote', '--', remoto, ref], {
     windowsHide: true, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'],
     env: entornoDeGit().idiomaFijo(process.env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
