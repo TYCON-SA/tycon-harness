@@ -157,6 +157,9 @@ function main(argv) {
   let todo; let registro; let nuevas = [];
   try {
     todo = o.staged ? deGit(o.repo, `:${PA.TODO}`) : delDisco(o.repo, PA.TODO);
+    // un commit que saca la lista no se salta el control si el último commit tenía lista o registro: lo que borra del
+    // registro se mira igual, como una lista vacía
+    if (todo == null && o.staged && (deGit(o.repo, `HEAD:${PA.TODO}`) != null || registroDeGit(o.repo, 'HEAD') != null)) todo = '';
     if (todo == null) { console.log(`check-pending-approvals: no hay ${PA.TODO}: nada que revisar`); return 0; }
     registro = (o.staged ? registroDeGit(o.repo, null) : PA.registroDelDisco(o.repo)) || '';
     if (o.staged) {

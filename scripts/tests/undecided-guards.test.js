@@ -35,7 +35,7 @@ const faltantes = (lista, guia) => {
 test('T9 UndecidedGuards_GuideCoversEveryBlockingHook @story-8.308 @ac-9 — la tabla cubre cada freno de consola, y uno nuevo da rojo', () => {
   const lista = JSON.parse(leer('scripts/setup/hooks-list.json'));
   const guia = leer('guides/safety-guard.md');
-  assert.strictEqual(frenosDeConsola(lista).length, 11, 'la lista de frenos de consola cambió: revisar la guía');
+  assert.strictEqual(frenosDeConsola(lista).length, 12, 'la lista de frenos de consola cambió: revisar la guía');
   assert.deepStrictEqual(faltantes(lista, guia), []);
   const conGancho = { hooks: [...lista.hooks, { event: 'PreToolUse', matcher: 'Bash|PowerShell', spec: '@tcg:freno-de-juguete.js', effect: 'blocks' }] };
   assert.deepStrictEqual(faltantes(conGancho, guia), ['freno-de-juguete.js']);

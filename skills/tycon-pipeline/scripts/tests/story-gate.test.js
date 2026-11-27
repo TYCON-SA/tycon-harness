@@ -1032,6 +1032,19 @@ test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+test('T38 Freno_Monitor_LeeSuComando @story-8.320 @ac-9: el comando de Monitor pasa por el mismo freno que el de Bash', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const ev = (command) => ({ tool_name: 'Monitor', session_id: 's1', cwd: repo, tool_input: { command } });
+  const traer = ['git', 'checkout', '--', 'package.json'].join(' ');
+  conEnv(SIN_REGISTRO, () => {
+    for (const cmd of ['rm package-lock.json', traer, 'sleep 1; rm src/a.ts']) {
+      const b = bash.handle(ev(cmd), { stateDir, installedRoots: [] });
+      assert.ok(b && INVISIBLE.test(b.block), cmd);
+    }
+  });
+  // que el registro lo nombre lo mira installer-shell-matcher.test.sh: la lista de ganchos no viaja con las skills
+});
+
 // 🔴 Falla con: `git reset --hard`, el stash de git, `git clean -f` o `find -delete` deshacen o borran código del repo de
 // una corrida abierta y el freno no los ve: el control al cerrar no encuentra nada en el diff.
 // arma un repo de juguete con git: sin git (el instalador corre la suite rápida con un PATH sin git) no mide. Un git que
