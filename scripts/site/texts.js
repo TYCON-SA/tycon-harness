@@ -2766,6 +2766,7 @@ const TEXTOS = {
   'horas.costoEstimado': { es: 'US$ {valor} estimado', en: 'US$ {valor} estimated' },
   'horas.sinPrecio': { es: 'sin precio para {lista}', en: 'no price for {lista}' },
   'horas.costoParcial': { es: 'sin contar: {partes}', en: 'not counted: {partes}' },
+  'horas.sinPrecioCache': { es: 'sin precio de escritura de caché para {lista}', en: 'no cache-write price for {lista}' },
   'horas.sinModelo1': { es: '1 día sin dato de modelo', en: '1 day without model data' },
   'horas.sinModeloN': { es: '{n} días sin dato de modelo', en: '{n} days without model data' },
   'horas.costoColumna': { es: 'Costo estimado', en: 'Estimated cost' },

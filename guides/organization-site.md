@@ -479,8 +479,10 @@ operaciones. Nada se cuenta como cero sin saberlo:
 - Un modelo que no está en `site.prices` dice «sin precio para <modelo>».
 - Si parte de la semana tiene costo y parte no, sale el costo de lo que se pudo contar y, debajo, lo que no se contó.
 
-La lectura de un modelo de Claude incluye la escritura de caché, que cuesta más que la entrada: el costo queda algo por
-debajo del real.
+La lectura de un modelo de Claude incluye la escritura de caché, que cuesta más que la entrada y distinto según dure 5
+minutos o 1 hora. Se cobra con su propio precio (`cache_escrita_5m` y `cache_escrita_1h` en `site.prices`). Si el modelo
+no trae ese precio, esa parte no se cuenta como entrada: la página dice «sin precio de escritura de caché para
+<modelo>».
 
 **Las últimas 6 semanas.** Dos gráficos de barras, uno por medida: las horas con el arnés trabajando por persona,
 apiladas por semana, y los tokens sin caché por semana. Una semana sin medir queda vacía y dice «sin medir», nunca cero.

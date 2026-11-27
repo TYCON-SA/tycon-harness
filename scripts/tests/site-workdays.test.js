@@ -498,3 +498,27 @@ test('OH15 Costo_DiasSinModelo_SonDiasNoMaquinas — dos máquinas de una person
   const r = WD().resumen(t, PEOPLE, PRECIOS);
   assert.strictEqual(r.personas.find((x) => x.persona === 'ana@acme.example').costo.sinModelo, 1);
 });
+
+// ── O-horas-cache: la escritura de caché con su precio propio ──────────────────────────────────────────────────────
+
+test('OH17 Costo_EscrituraDeCache_ConSuPrecio — se cobra con el precio de su plazo; sin ese precio no se cuenta como entrada, se dice', () => {
+  const M = 1e6;
+  const repartoOpus = { 'claude-opus-5-5': { lectura: 3 * M, escritura: 0, cache: 0, cache_escrita_5m: M, cache_escrita_1h: M } };
+  const maquinas = { 'maquina-a': { '2026-11-09': dia2('2026-11-09', repartoOpus) } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  // 1 M de entrada a 4 + 1 M de 5 minutos a 5 + 1 M de 1 hora a 8 = 17
+  const conPrecio = { 'claude-opus-5-5': { ...PRECIOS['claude-opus-5-5'], cache_escrita_5m: 5, cache_escrita_1h: 8 } };
+  assert.strictEqual(WD().resumen(t, PEOPLE, conPrecio).personas[0].costo.usd, 17);
+  // sin el precio de la escritura de caché: sólo la entrada, y lo que falta se dice
+  const c = WD().resumen(t, PEOPLE, PRECIOS).personas[0].costo;
+  assert.strictEqual(c.usd, 4);
+  assert.deepStrictEqual(c.sinPrecio, []);
+  assert.deepStrictEqual(c.sinPrecioCache, ['claude-opus-5-5']);
+  assert.match(WD().htmlResumen(WD().resumen(t, PEOPLE, PRECIOS), 'es'), /sin precio de escritura de caché para claude-opus-5-5/);
+  assert.match(WD().htmlResumen(WD().resumen(t, PEOPLE, PRECIOS), 'en'), /no cache-write price for claude-opus-5-5/);
+  // una escritura de caché mayor que la lectura no cierra: sin dato de modelo, y el día se lee igual
+  const malo = dia2('2026-11-08', { 'claude-opus-5-5': { lectura: 10, escritura: 0, cache: 0, cache_escrita_1h: 11 } });
+  const v = WD().validarDia(malo, '2026-11-08');
+  assert.ok(v.ok);
+  assert.strictEqual(v.tokens.porModelo, null);
+});

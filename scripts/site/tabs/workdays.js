@@ -42,6 +42,8 @@ const ARCHIVO = /^(\d{4}-\d{2}-\d{2})\.json$/;
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const entero = (n) => Number.isInteger(n) && n >= 0;
 const PARTES = ['lectura', 'escritura', 'cache'];
+// la escritura de caché por plazo: parte de la lectura, con su propio precio (`site.prices.<modelo>.cache_escrita_*`)
+const EXTRAS = ['cache_escrita_5m', 'cache_escrita_1h'];
 // el nombre de un modelo como lo escriben las conversaciones; `sin_modelo` junta los tokens que llegaron sin él
 const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const SIN_MODELO = 'sin_modelo';
@@ -61,7 +63,9 @@ function reparto(pm) {
   const out = {};
   for (const [m, v] of Object.entries(pm)) {
     if (!MODELO.test(m) || !v || typeof v !== 'object' || !PARTES.every((k) => entero(v[k]))) return undefined;
+    if (!EXTRAS.every((k) => v[k] === undefined || entero(v[k]))) return undefined;
     out[m] = { lectura: v.lectura, escritura: v.escritura, cache: v.cache };
+    for (const k of EXTRAS) if (v[k]) out[m][k] = v[k];
   }
   return out;
 }
@@ -82,7 +86,9 @@ function validarDia(o, dia) {
       tokens.porModelo = reparto(o.tokens.por_modelo);
       if (!tokens.porModelo) return { ok: false };
       // un reparto que no suma los totales no vale como costo: el día se lee igual, «sin dato de modelo»
-      if (PARTES.some((k) => Object.values(tokens.porModelo).reduce((a, m) => a + m[k], 0) !== tokens[k])) tokens.porModelo = null;
+      // y la escritura de caché de un modelo no puede pasar de su lectura
+      const escritaDeMas = Object.values(tokens.porModelo).some((m) => EXTRAS.reduce((a, k) => a + (m[k] || 0), 0) > m.lectura);
+      if (escritaDeMas || PARTES.some((k) => Object.values(tokens.porModelo).reduce((a, m) => a + m[k], 0) !== tokens[k])) tokens.porModelo = null;
     }
   }
   if (horas.medido && horas.arnes_segundos > horas.sesion_segundos) return { ok: false };
@@ -221,7 +227,8 @@ const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // traen el reparto o traen tokens sin modelo (`sinModelo`; el de un equipo suma los de sus personas), y los modelos sin
 // precio (`sinPrecio`). Un precio vale si trae sus tres
 // números de cero en adelante; lo valida también el lector de operations.json.
-const costoVacio = () => ({ usd: 0, conCosto: false, sinModelo: 0, sinPrecio: new Set() });
+const costoVacio = () => ({ usd: 0, conCosto: false, sinModelo: 0, sinPrecio: new Set(), sinPrecioCache: new Set() });
+const numeroValido = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const precioValido = (p) => isObj(p) && PARTES.every((k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && p[k] >= 0);
 function costeador(precios) {
   const tabla = isObj(precios) ? precios : {};
@@ -235,7 +242,15 @@ function costeador(precios) {
       if (m === SIN_MODELO) { sinModelo = true; continue; }
       const p = Object.prototype.hasOwnProperty.call(tabla, m) ? tabla[m] : null;
       if (!precioValido(p)) { c.sinPrecio.add(m); continue; }
-      c.usd += PARTES.reduce((a, k) => a + v[k] * p[k], 0) / 1e6;
+      // la escritura de caché sale de la lectura y se cobra con el precio de su plazo; sin ese precio no se cuenta (no
+      // se cobra como entrada) y se dice
+      const escrita = EXTRAS.reduce((a, k) => a + (v[k] || 0), 0);
+      let usd = (v.lectura - escrita) * p.lectura + v.escritura * p.escritura + v.cache * p.cache;
+      for (const k of EXTRAS) {
+        if (!v[k]) continue;
+        if (numeroValido(p[k])) usd += v[k] * p[k]; else c.sinPrecioCache.add(m);
+      }
+      c.usd += usd / 1e6;
       c.conCosto = true;
     }
     if (sinModelo) c.sinModelo = 1;
@@ -246,18 +261,20 @@ function sumarCosto(a, b) {
   if (b.conCosto) { a.usd += b.usd || 0; a.conCosto = true; }
   a.sinModelo += b.sinModelo;
   for (const m of b.sinPrecio) a.sinPrecio.add(m);
+  for (const m of b.sinPrecioCache) a.sinPrecioCache.add(m);
 }
-const cerrarCosto = (c) => ({ usd: c.conCosto ? c.usd : null, conCosto: c.conCosto, sinModelo: c.sinModelo, sinPrecio: [...c.sinPrecio].sort() });
+const cerrarCosto = (c) => ({ usd: c.conCosto ? c.usd : null, conCosto: c.conCosto, sinModelo: c.sinModelo, sinPrecio: [...c.sinPrecio].sort(), sinPrecioCache: [...c.sinPrecioCache].sort() });
 
 /** El costo en texto: «US$ 12.00 estimado» y lo que no se contó, o por qué no hay costo; nunca cero sin medir. */
 function textoCosto(c, t) {
   const sinPrecio = c.sinPrecio.length ? t('horas.sinPrecio', { lista: c.sinPrecio.join(', ') }) : null;
   const sinModelo = c.sinModelo ? (c.sinModelo === 1 ? t('horas.sinModelo1') : t('horas.sinModeloN', { n: c.sinModelo })) : null;
+  const sinPrecioCache = c.sinPrecioCache && c.sinPrecioCache.length ? t('horas.sinPrecioCache', { lista: c.sinPrecioCache.join(', ') }) : null;
   if (c.usd === null) {
     if (!sinPrecio && !sinModelo) return esc(t('horas.noMedido'));
     return esc([sinPrecio, sinModelo ? t('horas.sinModelo') : null].filter(Boolean).join(' · '));
   }
-  const faltan = [sinModelo, sinPrecio].filter(Boolean);
+  const faltan = [sinModelo, sinPrecio, sinPrecioCache].filter(Boolean);
   return `${esc(t('horas.costoEstimado', { valor: c.usd.toFixed(2) }))}${faltan.length ? `<div class="nota">${esc(t('horas.costoParcial', { partes: faltan.join(' · ') }))}</div>` : ''}`;
 }
 
