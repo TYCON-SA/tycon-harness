@@ -1779,6 +1779,17 @@ DECIDEN_CLICK="skills/tycon-pipeline/scripts/lib/state-dir.js scripts/setup/harn
 # cambian (delegation-routing.js, ci-bypass.js y external-pr.js, arriba) y estas dos no. SIN_MARCA: lo demás (avisos, la
 # oficina, la lista de ejecuciones, el portón de la historia, cómo se muestra una exención).
 SIN_MARCA_DECIDIDO="scripts/lib/signature-list.js scripts/hooks/background-question-guard.js"
+# Los lectores del comando de ci-bypass.js y external-pr.js: ellas no lo leen, se lo piden a command-readers.js, que carga
+# el lector de cada plataforma. Sin su marca, la de las dos no cubre nada (revisión de Fable de la F28, H2). Cambian 1 o 2
+# veces por mes: entran por el mismo criterio del dueño («las que menos cambian»). Par «quién carga:qué carga».
+LECTORES_DEL_CLICK="scripts/lib/ci-bypass.js:scripts/lib/command-readers.js scripts/lib/external-pr.js:scripts/lib/command-readers.js scripts/lib/command-readers.js:integrations/github/scripts/command-reader.js scripts/lib/command-readers.js:integrations/azure-devops/scripts/command-reader.js"
+for par in ${LECTORES_DEL_CLICK}; do
+  quien="${par%%:*}"; que="${par#*:}"
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.controls.some(c=>(c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true))?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${que}")"
+  is "T115c el inventario real marca ${que} (lee el comando para ${quien}) con «sign_on_change»" "si" "${MARKED}"
+  grep -qF "$(basename "${que}")" "${ROOT}/${quien}" && ok "T115c ${quien} todavía carga ${que}" \
+    || no "T115c ${quien} ya no nombra ${que}: sacalo de LECTORES_DEL_CLICK o mirá quién lee el comando ahora"
+done
 SIN_MARCA="scripts/lib/notify.js scripts/lib/office-event.js scripts/lib/signature-log.js scripts/lib/signature-sources.js skills/tycon-pipeline/scripts/lib/adhoc-list.js skills/tycon-pipeline/scripts/lib/open-runs.js skills/tycon-pipeline/scripts/lib/run-close.js skills/tycon-pipeline/scripts/lib/story-gate-io.js skills/tycon-pipeline/scripts/lib/story-gate.js skills/tycon-pipeline/scripts/lib/waiver-display.js"
 CARGAS="$(node -e '
 const fs=require("fs"),path=require("path");const raiz=process.argv[1];const out=new Set();
