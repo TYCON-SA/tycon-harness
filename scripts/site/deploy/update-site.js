@@ -20,7 +20,9 @@
  *
  * Plataformas: `azure` (Container Apps, con la sesión de `az` del nocturno: `containerapp show` y `update --image`),
  * `render` (el hook de redespliegue con `imgURL=<imagen>@<huella>`; el hook es un secreto y nunca sale en la salida) y
- * `local` (`docker compose pull` y `up -d` con `SITE_IMAGE=<imagen>@<huella>`).
+ * `local` (`docker compose pull` y `up -d` con `SITE_IMAGE=<imagen>@<huella>`). Otra plataforma la trae un conector con
+ * `sitePlatform` en su manifiesto (integrations/<n>/integration.json): su nombre, su guion y las opciones que pide, que
+ * se pasan como `--<opción> <valor>`. Si dice con qué registro corre (un espejo), se aplica con ése.
  *
  * El resultado se escribe en `<estadoDir>/site-update-<día>.json` (lo guarda el nocturno en los datos de operaciones y lo
  * lee el resumen de la mañana): sólo estado, versiones, hora y un motivo de la lista cerrada; ninguna dirección, grupo,
@@ -33,6 +35,8 @@
  *   node update-site.js --platform render --image <registro/repo> --operations-json <…> --state-dir <…>  (el hook, en
  *                       la variable SITE_RENDER_DEPLOY_HOOK; con SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, pregunta
  *                       a la API de Render qué imagen corre el servicio)
+ *   node update-site.js --platform <la de un conector> --<opción del conector> <valor> … --site-url <https://…> --image <…>
+ *                       --operations-json <…> --state-dir <…>
  *   node update-site.js --platform local --compose <compose.yaml> --site-url http://127.0.0.1:8080 --image <…> --mode auto
  *   SALIDA: 0 al_dia, aviso, actualizado o pedido · 1 no_pudo o vuelto_atras · 2 uso. `TYCON_AZ_CMD` y `TYCON_DOCKER_CMD`
  *   cambian los ejecutables y `TYCON_SITE_REGISTRY_URL` el registro (las pruebas usan dobles).
@@ -61,6 +65,7 @@ const MOTIVOS = Object.freeze([
   'la imagen que corre cambió durante la ejecución',
   'no se pudo leer el estado del actualizador',
   'instalado por etiqueta',
+  'el tráfico está fijado a una revisión',
 ]);
 const HUELLA = /^sha256:[0-9a-f]{64}$/;
 // la imagen que corre está fijada por una etiqueta, no por huella: la actualización no la puede comparar ni cambiar sin
@@ -177,7 +182,14 @@ function plataformaDe(o) {
       },
     };
   }
-  return null;
+  // otra plataforma la trae un conector (`sitePlatform` de su manifiesto): el núcleo no nombra su herramienta
+  let sp = null;
+  try { sp = require('../../lib/integrations.js').sitePlatforms().find((x) => x.name === o.plataforma) || null; } catch { sp = null; }
+  if (!sp) return null;
+  let mod;
+  try { mod = require(sp.file); } catch (e) { return { error: `plataforma desconocida (${o.plataforma}: su conector no carga, ${e.code || e.message})` }; }
+  const p = mod.plataforma({ ...(o.conector || {}), correr: o.correr }, { conRegistro, correrDe, huellaDe, sinHuella, breve });
+  return p && p.error ? { error: `plataforma desconocida (${o.plataforma}: ${p.error})` } : p;
 }
 
 /** El hook de Render: `imgURL` por huella. La dirección del hook no se escribe en ningún lado. */
@@ -272,6 +284,7 @@ async function actualizar(o) {
 
   const p = plataformaDe(o);
   if (!p) return fin('no_pudo', null, st.version, `plataforma desconocida (${plataforma})`);
+  if (p.error) return fin('no_pudo', null, st.version, p.error);
   const a = p.actual();
   if (a.error) return fin('no_pudo', null, st.version, a.error);
   const cv = await LR.consultar({ imagen, etiqueta: a.huella, urlBase: urlRegistro, fetch: f });
@@ -291,15 +304,17 @@ async function actualizar(o) {
   // dos corridas a la vez: si la imagen que corre cambió desde que se miró (otra la actualizó), ésta no toca nada
   const otraVez = p.actual();
   if (otraVez.error || otraVez.huella !== a.huella) return fin('no_pudo', desde, st.version, 'la imagen que corre cambió durante la ejecución');
-  const anterior = `${nombre}@${a.huella}`;
-  const cambio = p.aplicar(ref);
+  // una plataforma que dice con qué registro corre (un espejo del registro público) aplica con ése
+  const aplicado = a.nombre ? `${a.nombre}@${st.huella}` : ref;
+  const anterior = `${a.nombre || nombre}@${a.huella}`;
+  const cambio = p.aplicar(aplicado);
   if (cambio.error) {
     // un cambio a medias (en una máquina propia, el pull bien y el up mal) vuelve a la anterior y no se reintenta
     estado.fallidas[st.huella] = cambio.error;
     const atras = p.aplicar(anterior);
     return fin('no_pudo', desde, st.version, atras.error ? `${cambio.error}; y ${atras.error}` : cambio.error);
   }
-  const lista = p.esperar ? await p.esperar(ref) : { ok: true };
+  const lista = p.esperar ? await p.esperar(aplicado) : { ok: true };
   const prueba = lista.error ? { ok: false, motivo: `la prueba sin sesión falló (${lista.error})` } : await probar(p.url);
   if (prueba.ok) return fin('actualizado', desde, st.version);
   // la prueba falló: vuelve a la huella que corría y la prueba otra vez; la huella nueva no se reintenta
@@ -403,8 +418,11 @@ async function main(argv) {
     return 0;
   }
   const plataforma = op('--platform');
-  if (!['azure', 'render', 'local'].includes(plataforma) || !op('--image')) {
-    process.stderr.write('uso: update-site.js --platform azure|render|local --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] [--demo] …\n');
+  let deConector = [];
+  try { deConector = require('../../lib/integrations.js').sitePlatforms(); } catch { deConector = []; }
+  const sp = deConector.find((x) => x.name === plataforma);
+  if (!(['azure', 'render', 'local'].includes(plataforma) || sp) || !op('--image')) {
+    process.stderr.write(`uso: update-site.js --platform ${['azure', 'render', 'local', ...deConector.map((x) => x.name)].join('|')} --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] [--demo] …\n`);
     return 2;
   }
   const modo = op('--mode') ? (['auto', 'notice'].includes(op('--mode')) ? op('--mode') : null) : (op('--operations-json') ? modoDe(op('--operations-json')) : 'notice');
@@ -415,6 +433,7 @@ async function main(argv) {
     azure: { grupo: op('--resource-group'), app: op('--app'), suscripcion: op('--subscription'), url: op('--site-url') },
     render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url'), api: { clave: variableCargada('SITE_RENDER_API_KEY'), servicio: variableCargada('SITE_RENDER_SERVICE_ID') } },
     local: { compose: op('--compose'), url: op('--site-url') },
+    conector: sp ? { url: op('--site-url'), opciones: Object.fromEntries(sp.options.map((k) => [k, op(`--${k}`)])) } : null,
   });
   return ['no_pudo', 'vuelto_atras'].includes(r.resultado) ? 1 : 0;
 }

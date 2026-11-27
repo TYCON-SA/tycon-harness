@@ -125,6 +125,34 @@ pasada la corta: lo ya bajado queda y el objeto que dio el 401, no.
 Los informes `--overwrites-report` y `--harness-node-report` siguen leyendo sólo Azure: con una llave gcs salen 1 con
 `no_soportado`.
 
+## El sitio en Cloud Run, al día
+
+El conector trae también la plataforma `cloudrun` del actualizador del sitio (`update-site.js --platform cloudrun
+--service <servicio> --region <región> [--project <proyecto>]`, en `integrations/gcs/scripts/site-platform.js`). Con
+`site.update: "auto"`, el nocturno de GitHub (`site-update.yml`, con `SITE_PLATFORM=cloudrun`):
+
+- lee la imagen que corre el servicio (`gcloud run services describe`) y resuelve `stable` en el registro público;
+- cambia sólo la imagen, por huella (`gcloud run services update --image … --quiet`): conserva el plazo, las variables
+  y los secretos. Si el servicio corre desde un espejo (un repositorio remoto de Artifact Registry), aplica con ese
+  mismo espejo: la huella es la misma en los dos;
+- espera a que la última revisión creada sea la lista, esté Ready, tenga esa imagen y se lleve todo el tráfico; corre
+  la prueba sin sesión y, si falla, vuelve a la huella anterior;
+- no toca un servicio con el tráfico fijado a una revisión: sale `no_pudo` con «el tráfico está fijado a una revisión»;
+  `gcloud run services update-traffic <servicio> --to-latest` se lo devuelve a la última.
+
+Para darlo de alta:
+
+1. **Un pool de Workload Identity Federation** con un proveedor que confía en el repo de operaciones y su entorno
+   `site-update` (sin llave de cuenta de servicio guardada).
+2. **Una cuenta de servicio para el actualizador**, con un rol propio sobre el servicio del sitio
+   (`run.services.get` y `run.services.update`) e `iam.serviceAccounts.actAs` sobre la cuenta con la que corre el
+   sitio, y nada más.
+3. **Las variables del repo de operaciones**: `SITE_PLATFORM=cloudrun`, `SITE_GCP_WIF_PROVIDER`
+   (`projects/<número>/locations/global/workloadIdentityPools/<pool>/providers/<proveedor>`),
+   `SITE_GCP_SERVICE_ACCOUNT`, `SITE_GCP_PROJECT`, `SITE_GCP_REGION`, `SITE_SERVICE`, `SITE_IMAGE_NAME` (la imagen
+   pública, donde se lee `stable`) y `SITE_URL`. El nocturno entra con `google-github-actions/auth` (fijada por
+   huella) y usa la herramienta de Google Cloud que ya trae la máquina de GitHub.
+
 ## Lo que todavía no hace
 
 - Los procesos de la noche de Azure Pipelines leen sólo Azure: con `site.mailbox` de otro proveedor avisan que no está
