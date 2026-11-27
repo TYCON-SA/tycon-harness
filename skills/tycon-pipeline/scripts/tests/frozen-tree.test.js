@@ -380,7 +380,8 @@ test('T16b Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — snapshot-iter, el r
 test('T17 Sensitive_CoversDecisionFiles @story-8.161 @ac-17 — lo que decide qué cuenta es sensible', () => {
   const sig = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
   const so = require(path.join(SCRIPTS, 'lib', 'save-ok.js'));
-  for (const rel of ['skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js', 'skills/tycon-pipeline/scripts/smoke-run.sh']) {
+  for (const rel of ['skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js', 'skills/tycon-pipeline/scripts/smoke-run.sh',
+    'skills/tycon-pipeline/scripts/lib/reviewed-diff.js', 'skills/tycon-pipeline/scripts/lib/reloop-code.js']) {
     assert.ok(sig.SENSITIVE.includes(rel), `${rel} en SENSITIVE`);
     assert.ok(so.esSensible(rel), `${rel} pide save:sensible`);
   }
@@ -1497,6 +1498,70 @@ test('Tope_LoQueSeEjecuta_NoPasaComoVueltaSinCodigo', () => {
     const v = C.vuelta(2);
     assert.strictEqual(v.r.status, 3, `${rel}: ${salida(v.r).slice(0, 400)}`);
     assert.match(v.r.stderr, /tope de 1/, rel);
+  }
+});
+
+const carpetaDeLaCorridaDe = (C) => { const d = path.join(C.codigo.repo, '.advisors', 'pipeline-runs'); return path.join(d, fs.readdirSync(d)[0]); };
+const lanzarYa = (C, nombres) => { for (const a of nombres) fs.appendFileSync(path.join(C.estado(), 'advisor-runs', `${C.sid}.jsonl`), `${JSON.stringify({ ts: new Date().toISOString(), advisor: a })}\n`); };
+
+// Caso: la vuelta 2 se pidió (con un arreglo en el sello) y no se lanzó entera; el orquestador corrió `snapshot-iter 2`
+// como dice el flujo; después sólo cambió la historia. La vuelta 3 no se cierra sola: la ronda 2 no la vio entera nadie.
+// 🔴 Falla con: la vuelta 3 cerrada sola (pasado el tope, sin firma) sobre una ronda que nadie lanzó o lanzó a medias.
+test('SmartReloop_RondaIncompletaConFotoDeSiempre_NoSeCierraSola', () => {
+  for (const lanzados of [0, 1]) {
+    const C = corridaRevisada(`s-ft-incompleta-${lanzados}`, { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+    conTopeCommiteado(C, 2);
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+    dormirMs(1100);
+    editarConEvento(C, 'src/b.js', B_CODIGO);
+    dormirMs(50);
+    const v2 = C.vuelta(2);
+    assert.strictEqual(v2.r.status, 0, salida(v2.r));
+    dormirMs(50);
+    lanzarYa(C, (v2.json.rerun || []).slice(0, lanzados));
+    dormirMs(50);
+    C.correr('marker.js', ['snapshot-iter', '2']);
+    dormirMs(1100);
+    tocarLaHistoria(C, 'uno');
+    dormirMs(50);
+    const v3 = C.vuelta(3);
+    assert.ok(!v3.json.no_code_delta, `lanzados ${lanzados}: se cerró sola: ${salida(v3.r).slice(0, 300)}`);
+    assert.strictEqual(v3.r.status, 3, `lanzados ${lanzados}: pasado el tope, sin firma: ${salida(v3.r).slice(0, 300)}`);
+  }
+});
+
+// Pasado el tope, con nada abierto y algo cambiado después de la última vuelta revisada que «Preparar» cuenta, el tope
+// no dice «no hace falta otra vuelta»: frena con las salidas, y la vuelta extra del dueño se puede pedir.
+// 🔴 Falla con: el tope que sale 0 «sin nada abierto», o que niega --extra-round «porque no quedó nada abierto».
+test('Tope_NadaAbiertoConCambios_NoEsCallejonSinSalida', () => {
+  const C = corridaRevisada('s-ft-callejon', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'docs/notas.md', '# notas\n');
+  dormirMs(50);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 3, salida(v.r).slice(0, 400));
+  assert.doesNotMatch(v.r.stderr, /no hace falta otra vuelta/);
+  assert.match(v.r.stderr, /--extra-round/);
+  const x = C.correr('pipeline.js', ['smart-reloop', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', '--iter', '2', '--extra-round']);
+  assert.doesNotMatch(x.stderr, /no necesita la vuelta extra/, x.stderr.slice(0, 400));
+});
+
+// Adentro de una carpeta que la app compila, «Preparar» perdona sólo un archivo con nombre de prueba: una carpeta `test/`
+// o `specs/` ahí puede ser una ruta de la app, y `*Test.cs` fuera de un proyecto de pruebas es código.
+// 🔴 Falla con: `app/api/test/route.ts` (una ruta que la app sirve) perdonado como prueba.
+test('PrepareCommit_PruebaPorCarpetaEnLaApp_Frena', () => {
+  for (const [rel, frena] of [['app/api/test/route.ts', true], ['pages/test/index.tsx', true], ['src/Domain/LabTest.cs', true],
+    ['src/specs/build.ts', true], ['src/__tests__/a.test.ts', false], ['src/Proyecto.Tests/FooTests.cs', false]]) {
+    const C = corrida(`s-ft-n3-${rel.length}-${frena ? 1 : 0}`);
+    C.vuelta();
+    fs.mkdirSync(path.dirname(path.join(C.codigo.repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(C.codigo.repo, rel), 'export const x = 1;\n');
+    const r = prepararCommit(C);
+    if (frena) assert.match(salida(r), MISMATCH, `${rel}: ${salida(r).slice(0, 300)}`);
+    else assert.doesNotMatch(salida(r), MISMATCH, `${rel}: ${salida(r).slice(0, 300)}`);
   }
 });
 

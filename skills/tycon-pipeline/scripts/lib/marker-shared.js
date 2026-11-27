@@ -506,8 +506,6 @@ function vueltaCongeladaComprobada(tipo, quien) {
  * no se compara: se dice y queda en gates.log.
  */
 function comprobarLoRevisado(marker, quien) {
-  const ft = require('./frozen-tree.js');
-  const { isControlApproval } = require('./story-gate.js');
   const v = vueltaCongeladaComprobada('revisores', quien);
   if (!v || !(v.repos || []).length) {
     appendLog('gates.log', { name: 'reviewed-tree', status: 'no-medido', story: marker.storyId || null, quien, motivo: 'la vuelta no tiene sello' });
@@ -1141,16 +1139,8 @@ const esFecha = (t) => /^\d{4}-\d{2}-\d{2}$/.test(String(t || '')) && sumarDias(
  * su carpeta git común, la que comparten todas sus carpetas de trabajo). El aviso de la deuda vencida la busca ahí
  * cuando la carpeta de trabajo de la corrida ya se borró. Sin git, `{}`: el aviso dice que no pudo mirar.
  */
-function dondeViveLaHistoria(storyPath) {
-  try {
-    const dir = path.dirname(storyPath);
-    const [raiz, comun] = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim().split('\n');
-    return { storyRel: path.relative(fs.realpathSync(raiz), fs.realpathSync(storyPath)), repoCommon: path.resolve(dir, comun) };
-  } catch (_e) {
-    return {};
-  }
-}
+// dónde vive la historia (su ruta en su copia y la carpeta git común): una sola versión, en lib/reviewed-diff.js
+function dondeViveLaHistoria(storyPath) { return require('./reviewed-diff.js').dondeViveLaHistoria(storyPath); }
 
 function deudaDeLaMatriz(marker, matrix) {
   const er = (marker.expectedRed || {}).acmatrix;

@@ -427,7 +427,11 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // lo que cuenta siempre (una instrucción para un agente, una imagen de una prueba visual) no deja cerrar sola la vuelta
   const cuentaSiempre = require('./reloop-code.js').cuentaSiempre;
   // ni con la foto al lanzar de base: esa vuelta no completó su ronda, y lo sellado puede no haberlo visto nadie
-  if (delta.length && !fotoPrevia.alLanzar && !delta.some(pideVueltaAdentro) && !delta.some((f) => cuentaSiempre(f)) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+  // ni con una ronda de la base que el registro muestra sin terminar: un revisor que esperaba no consta lanzado (una foto
+  // tomada a mano sobre una ronda que nadie lanzó, o lanzada a medias, no cuenta como vista). Sin registro, la foto de
+  // siempre la toma el arnés al lanzar el último revisor, y vale como antes
+  const rondaVista = !vista.medible || deLaVuelta.every((a) => Number.isFinite(vista.lanzamientos.get(a)));
+  if (delta.length && rondaVista && !fotoPrevia.alLanzar && !delta.some(pideVueltaAdentro) && !delta.some((f) => cuentaSiempre(f)) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
     logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
     return {
       ...fullSet,
@@ -744,6 +748,15 @@ function cmdSmartReloop(cmd, args) {
   salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round', sinCodigo }));
   // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
   if (process.env[PRECHEQUEO] === '1') process.exit(0);
+  // una vuelta extra que firmó el dueño no sale sin revisores: si el set quedó vacío (lo cambiado no es código por su
+  // extensión: la configuración, un workflow), vuelve al menos el revisor de la vuelta chica
+  if (args.extraRound && !(result.rerun || []).length) {
+    const chicos = (result.all || []).filter((a) => require('./review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.includes(a));
+    result.rerun = chicos;
+    result.rerun_count = chicos.length;
+    result.no_code_delta = false;
+    result.rerun_reasons = chicos.map((name) => ({ name, reason: 'vuelta extra firmada por el dueño: alguien mira lo cambiado' }));
+  }
   // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
   const horaDelSello = new Date().toISOString();
   const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
@@ -780,7 +793,7 @@ function cmdSmartReloop(cmd, args) {
     for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
   }
   decirModelos(result, conModelos.orgModels, avisosModelos);
-  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, context_file: result.context_file, context_file_overrides: result.context_file_overrides });
+  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : null, context_file: result.context_file, context_file_overrides: result.context_file_overrides });
   salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
   return;
 }

@@ -6,7 +6,7 @@
  * Lo que cambia mientras corre (los avisos del portón, la sesión para la que se trabaja) y las rutas del despachador
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
-const { estadoPipeline, MODELOS, PROPIA, STORY_GOLD, esCodex, fs, os, ownerWindow, packsLib, path, readSessionMarker, readText, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
+const { estadoPipeline, MODELOS, PROPIA, STORY_GOLD, deriveStoryId, esCodex, fs, os, ownerWindow, packsLib, path, readSessionMarker, readText, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
 const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, tierDe, validateFilesExist, fotoAlLanzar } = require('./pipeline-advisor-context.js');
 const { MECH_NUNCA_SACA, aplicarDecisionValidador, computeAdvisorSet, computeBase, computeCompletitud, computeConditional, computeMechDiscount, detectStack, lanzadorCodex, paquetesActivos, paquetesInstalados, resumenPaquetes, revisoresPorConfirmar, salidaGrande, sumarPorConfirmar, unique } = require('./pipeline-advisor-set.js');
 const { conModelosDeLaCorrida, decirModelos, orgModels, pedidosDeModelos } = require('./pipeline-models.js');
@@ -445,7 +445,7 @@ function cmdAdvisors(cmd, args) {
   aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
   decirModelos(set, conModelos.orgModels, avisosModelos);
   // expected persistido (post-descuento); el contexto también, para que `reviewers-run` lance lo mismo
-  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
+  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : null, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
   salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
   return;
 }

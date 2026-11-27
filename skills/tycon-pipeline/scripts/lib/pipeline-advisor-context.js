@@ -554,7 +554,11 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   // una vuelta sin código no lanza revisores: se cierra sola, sin tope ni firma. Queda anotada
   // pasado el tope, sólo si «Preparar» pasaría: la misma comparación con lo revisado (lib/reviewed-diff.js). Lo que el
   // re-loop no revisa y se ejecuta (la configuración, un workflow), o código que el delta por horas no vio, frena acá
-  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLoRevisado({ storyId, repoAbs, args }) : null;
+  // lo cambiado desde la última vuelta sellada, con la regla de «Preparar»: se mira una vez y lo usan la vuelta sin código
+  // y el tope sin nada abierto
+  let cambiosMirados;
+  const cambiosDesdeLaVuelta = () => (cambiosMirados === undefined ? (cambiosMirados = cambiosDesdeLoRevisado({ storyId, repoAbs, args })) : cambiosMirados);
+  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLaVuelta() : null;
   if (sinCambiosRevisables && !sinCambiosRevisables.vacio) {
     process.stderr.write(`⚠️  La vuelta ${iter} no trae revisores, pero no se cierra sola pasado el tope: ${sinCambiosRevisables.motivo}.\n`);
   }
@@ -589,7 +593,12 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   // los dos frenan como siempre
   const porConfirmar = !ab.length ? revisoresPorConfirmar({ ...args, iter }) : null;
   const nadaPorConfirmar = !!porConfirmar && !porConfirmar.error && !porConfirmar.agregar.length && !porConfirmar.fuera.length;
-  if (!estadoPipeline.paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar) {
+  // con algo cambiado desde la última vuelta revisada que «Preparar» frena, «nada abierto» no es «no hace falta otra
+  // vuelta»: frena con las salidas, y la vuelta extra del dueño es una de ellas
+  const cambiosSinRevisar = !estadoPipeline.paraOtra && !ab.length && nadaPorConfirmar ? cambiosDesdeLaVuelta() : null;
+  // sólo lo que se encontró: sin poder comparar, el tope sin nada abierto sigue como siempre (la vuelta sin código, no)
+  const conCambios = !!cambiosSinRevisar && !cambiosSinRevisar.vacio && !cambiosSinRevisar.sinMedir;
+  if (!estadoPipeline.paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar && !conCambios) {
     if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: no quedó nada abierto. Pedí el set sin --extra-round.\n`;
     anotar({ name: 'review-cap-shown', status: 'ok', tope: tope.value, abiertos: [] });
     return { sinAbiertos: `ℹ️  Llegaste al tope de ${tope.value} vueltas de revisores (${de}) y no quedó nada abierto: no hace falta otra vuelta. Seguí con «Probar en vivo» y «Preparar el pull request».\n` };
@@ -629,6 +638,9 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
     for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
     renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
+  } else if (conCambios) {
+    renglones.push(`   No quedó nada abierto, pero ${cambiosSinRevisar.motivo}. «Preparar el pull request» lo frena: volvé a lo revisado (te da los`);
+    renglones.push('   comandos), llevalo a una historia de arreglo, o pedí la vuelta extra con --extra-round, que el dueño aprueba en la ventana de permiso.');
   } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el pull request».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
@@ -673,19 +685,19 @@ function cambiosDesdeLoRevisado({ storyId, repoAbs, args }) {
     const ft = require('./frozen-tree.js');
     const sid = sessionIdFileKey();
     const v = ft.ultimaVuelta(stateDirOf(os.homedir()), sid, 'revisores');
-    if (!v || !(v.repos || []).length) return { vacio: false, motivo: 'no hay una vuelta sellada con qué comparar' };
-    if (v.story !== undefined && v.story !== null && String(v.story) !== String(storyId)) return { vacio: false, motivo: 'la última vuelta sellada es de otra historia' };
+    if (!v || !(v.repos || []).length) return { vacio: false, sinMedir: true, motivo: 'no hay una vuelta sellada con qué comparar' };
+    if (v.story !== undefined && v.story !== null && String(v.story) !== String(storyId)) return { vacio: false, sinMedir: true, motivo: 'la última vuelta sellada es de otra historia' };
     const { marcador } = readSessionMarkerStrict();
     const marker = marcador || { storyId, repoPath: repoAbs };
     const storyArg = args.story || marker.storyPath || null;
     const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
     const { STEPS_TABLE } = require('./pipeline-shared.js');
     const c = require('./reviewed-diff.js').comparar({ marker, v, storyAbs, stateDir: stateDirOf(os.homedir()), cierre: STEPS_TABLE.reviewersClose(marker) });
-    if (c.error) return { vacio: false, motivo: c.error };
+    if (c.error) return { vacio: false, sinMedir: true, motivo: c.error };
     if (!c.distintos.length) return { vacio: true };
     const lista = c.distintos.map((d) => d.f);
     return { vacio: false, motivo: `cambió después de la última vuelta revisada ${lista.slice(0, 5).join(', ')}${lista.length > 5 ? '…' : ''}` };
-  } catch (e) { return { vacio: false, motivo: `no pude comparar con lo revisado (${(e && e.message) || e})` }; }
+  } catch (e) { return { vacio: false, sinMedir: true, motivo: `no pude comparar con lo revisado (${(e && e.message) || e})` }; }
 }
 
 // El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
@@ -767,7 +779,7 @@ function horaDe(file) {
 }
 
 // ¿Desde `desde` (ms) se lanzó algún revisor en esta sesión o cambió algún archivo de la corrida? Sin hora, no.
-function movidaDesde(desde, marcador) {
+function movidaDesde(desde, marcador, storyId) {
   if (!desde) return false;
   if (Object.values((marcador && marcador.filesTouchedAt) || {}).some((v) => v && Number(v.ts) > desde)) return true;
   let lineas = [];
@@ -776,10 +788,13 @@ function movidaDesde(desde, marcador) {
   const { esRevisor } = require('./late-snapshot.js');
   const catalogo = revisoresDelCatalogo();
   const parsed = lineas.map((l) => { if (!l.trim()) return null; try { return JSON.parse(l); } catch { return null; } });
-  // sólo lo anotado después del último pedido de vuelta (su `step5-start`): lo de antes es de vueltas anteriores, aunque
-  // su hora diga otra cosa
+  // sólo lo anotado después del último pedido de vuelta de esta historia (su `step5-start`): lo de antes es de vueltas
+  // anteriores, aunque su hora diga otra cosa, y el pedido de otra historia en la misma sesión no corta
   let desdeIdx = 0;
-  for (let i = parsed.length - 1; i >= 0; i -= 1) if (parsed[i] && parsed[i].event === 'step5-start') { desdeIdx = i + 1; break; }
+  for (let i = parsed.length - 1; i >= 0; i -= 1) {
+    const d = parsed[i];
+    if (d && d.event === 'step5-start' && (!d.story || !storyId || String(d.story) === String(storyId))) { desdeIdx = i + 1; break; }
+  }
   return parsed.slice(desdeIdx).some((d) => d && esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde);
 }
 
@@ -886,7 +901,7 @@ function rethinkGate(args, { vueltaChica = false, sinCodigo = false } = {}) {
   // pedido es una vuelta nueva, para que repetir no esquive la nota.
   const rr = require('./review-rounds.js');
   const servidaEn = espejo.last === ultima && espejo.ts ? espejo.ts : (runDir ? horaDe(rt.servedPath(runDir)) : null);
-  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador));
+  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador, storyId));
   const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
   const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica, sinCodigo });

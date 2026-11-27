@@ -26,6 +26,7 @@ const DE_LA_GUIA = new Set(['.html', '.htm', '.md', '.pdf', ...IMAGENES_SUELTAS]
 const QUE_SE_SIRVE = /(^|\/)(public|static|www|wwwroot|dist|build|out)\//i;
 // una carpeta que la app compila: una prueba ahí no se publica, otra cosa sí puede
 const QUE_SE_COMPILA = /(^|\/)(assets|src|app|pages|lib)\//i;
+const NOMBRE_DE_PRUEBA = /(\.(test|spec)\.[^/]+$)|((^|\/)__tests__\/)|((^|\/)[^/]+\.Tests?\/)/i;
 const CONFIGURACION = /^(package(-lock)?|npm-shrinkwrap|tsconfig[\w.-]*|jsconfig)\.json$/;
 
 /** Dónde vive la historia: `{ storyRel, repoCommon }` (su ruta en su copia y la carpeta git común), o `{}`. */
@@ -82,8 +83,10 @@ function sinCodigoParaLaVuelta(marker, storyAbs) {
       const raiz = rc.raizDelRepo(abs);
       const desdeLaRaiz = (raiz ? path.relative(raiz, abs) : rel).split(path.sep).join('/');
       if (QUE_SE_SIRVE.test(desdeLaRaiz)) return false;
+      // adentro de una carpeta que la app compila, sólo un archivo con nombre de prueba: una carpeta `test/` o `specs/` ahí
+      // puede ser una ruta de la app, y `*Test.cs` fuera de un proyecto de pruebas es código
+      if (QUE_SE_COMPILA.test(desdeLaRaiz)) return NOMBRE_DE_PRUEBA.test(desdeLaRaiz);
       if (require('./atdd-order.js').isTestPath(desdeLaRaiz)) return true;
-      if (QUE_SE_COMPILA.test(desdeLaRaiz)) return false;
       const ext = path.posix.extname(rel).toLowerCase();
       if (IMAGENES_SUELTAS.has(ext)) return true;
       const qa = storyAbs ? real(require('./qa-dir.js').qaDirFor(storyAbs)) : null;
