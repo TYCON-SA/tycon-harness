@@ -605,6 +605,39 @@ test('T33 EnvSplitString_LaOrdenDelValor_SeMiraComoAnidada', () => {
   pasa(c, 'env -S "echo hola" > /dev/null');
 });
 
+// T34 Find_CarpetaEsLaDelComando_Frena
+// 🔴 Falla con: la carpeta de un `find` escrita como `$PWD`, `${PWD}` o `$(pwd)` no se resuelve, y el `find` no alcanza
+//    ninguna historia.
+test('T34 Find_CarpetaEsLaDelComando_Frena', () => {
+  const c = corral();
+  for (const carpeta of ['$PWD', '${PWD}', '$(pwd)', '"$PWD"', '$PWD/specs']) {
+    frena(c, `find ${carpeta} -name 'story-*.md' -exec rm {} \\;`);
+    frena(c, `find ${carpeta} -name 'story-*.md' | xargs rm`);
+  }
+  pasa(c, "find $PWD -name 'story-*.md' -exec cat {} \\;");
+  pasa(c, "find $PWD -name 'README.md' -exec rm {} \\;");
+});
+
+// T35 Xargs_RutaEnUnaVariableDelComando_Frena
+// 🔴 Falla con: el `echo $f` que le da la entrada a un `xargs` llega con la variable sin resolver.
+test('T35 Xargs_RutaEnUnaVariableDelComando_Frena', () => {
+  const c = corral();
+  for (const cmd of [`f=${H}; echo $f | xargs rm`, `f=${H}; echo "$f" | xargs rm`, `f=${H}; echo \${f} | xargs -I{} rm {}`,
+    `f=${H}; printf '%s\\n' "$f" | xargs rm`]) frena(c, cmd);
+  pasa(c, `f=${H}; echo $f | xargs cat`);
+  pasa(c, 'f=README.md; echo $f | xargs rm');
+});
+
+// T36 FindName_ClasesPosixYEscapes_Frena
+// 🔴 Falla con: el patrón de `-name` traducido sin entender `[[:digit:]]` ni `\.`: no cumple con ningún nombre.
+test('T36 FindName_ClasesPosixYEscapes_Frena', () => {
+  const c = corral();
+  for (const nombre of ["'story-[[:digit:]].[[:digit:]].md'", "'story-1\\.1\\.md'", "'story-[[:digit:][:space:]].1.md'",
+    "'[[:alpha:]]tory-*.md'", "'story-[0-9].1.md'"]) frena(c, `find . -name ${nombre} -exec rm {} \\;`);
+  pasa(c, "find . -name 'story-[[:alpha:]].1.md' -exec rm {} \\;");
+  pasa(c, "find . -name 'story-1\\.1\\.txt' -exec rm {} \\;");
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {

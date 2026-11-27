@@ -23,7 +23,7 @@ const path = require('path');
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados, tok } = require('./bash-gate-words.js');
-const { CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
+const { conCarpetaDelComando, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citados, citarParaElShell, comodinDelShell, comodinSimple, alcanzadasPorFind, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 const { ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
 /**
@@ -1264,7 +1264,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
-  const absoluta = (raw) => [...new Set(bases.map((b) => resolver(raw, b)))];
+  const absoluta = (raw) => [...new Set(bases.map((b) => resolver(conCarpetaDelComando(raw, b), b)))];
   const out = [];
   for (const crudo of [s, ...anidadosHasta(s).leidos]) {
     // la continuación de renglón (`\` y salto) junta los dos renglones en una orden, como en el shell
@@ -1293,7 +1293,15 @@ function comandosPorOtroPrograma(cmd, cwd) {
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(previas[0]) || '';
-        const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
+        // una variable asignada en el comando vale lo asignado (`f=h.md; echo $f | xargs rm` borra `h.md`)
+        const asignados = asignacionesDe(texto);
+        const conValor = (w) => String(w).replace(EXPANSION_DE_VARIABLE, (m, a, b) => {
+          const v = asignados.get(a || b) || [];
+          return v.length ? v[v.length - 1] : m;
+        });
+        // un `find` le da a la entrada los archivos que alcanza, no sus palabras
+        const entrada = escritor === 'find' ? alcanzadasPorFind(previas, absoluta)
+          : (/^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas).map(conValor);
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
