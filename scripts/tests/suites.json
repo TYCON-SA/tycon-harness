@@ -4863,6 +4863,12 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que baja del buzón y se descomprime (el hilo de una conversación en reviewers-cost.js y run-change.js, los usos de nombres viejos en legacy-retire-check.js) tiene tope de salida: un .gz chico que se abre a GB no deja sin memoria al proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/decompress-limits.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/mirror-publishing.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p1.test.js",
