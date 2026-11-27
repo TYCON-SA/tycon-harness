@@ -11,7 +11,8 @@
  *                    tokens: { lectura, escritura, cache, medido: true, por_modelo: { <modelo>: { lectura, escritura, cache } } } }
  *
  * `por_modelo` reparte los mismos tokens por modelo, para el costo estimado del sitio; lo que llegó sin modelo va a
- * `sin_modelo`. La versión 1 es la misma sin `por_modelo`: un día ya armado antes que se rearma con sus tokens de entonces
+ * `sin_modelo`. Un modelo de Claude puede traer además `cache_escrita_5m` y `cache_escrita_1h`: la escritura de caché de
+ * cada plazo, que es parte de su lectura y tiene su propio precio. La versión 1 es la misma sin `por_modelo`: un día ya armado antes que se rearma con sus tokens de entonces
  * sale en la versión 2 sin `por_modelo` (no tiene el reparto y no se inventa).
  *
  * `arnes_segundos` es el tiempo con al menos una sesión trabajando (la unión de los tramos); `sesion_segundos`, la suma.

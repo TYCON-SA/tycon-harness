@@ -15,6 +15,10 @@ const fs = require('fs');
 
 const TOKEN_STEP_BYTES = 1024 * 1024;
 const PARTES = ['lectura', 'escritura', 'cache'];
+// la escritura de caché de Claude por plazo (5 minutos y 1 hora): una parte de la lectura, con su propio precio. Sólo
+// aparece en el reparto cuando no es cero, y sólo si la respuesta trae el desglose (`usage.cache_creation`): sin él, la
+// escritura queda en la lectura, sin plazo inventado
+const EXTRAS = ['cache_escrita_5m', 'cache_escrita_1h'];
 const SIN_MODELO = 'sin_modelo';
 // el nombre de un modelo que sube: letras, números, «.», «_», «:» y «-», hasta 100. Otro (con espacios, una ruta) va a
 // SIN_MODELO: el archivo del día no lleva rutas, y el sitio no entendería el día. La misma forma valida el sitio
@@ -27,10 +31,23 @@ const modeloDe = (m) => (typeof m === 'string' && MODELO.test(m.trim()) ? m.trim
 function sumarModelo(porModelo, modelo, delta, signo = 1) {
   const m = porModelo[modelo] || (porModelo[modelo] = { lectura: 0, escritura: 0, cache: 0 });
   for (const k of PARTES) m[k] += signo * (delta[k] || 0);
+  for (const k of EXTRAS) {
+    if (!delta[k]) continue;
+    m[k] = (m[k] || 0) + signo * delta[k];
+    if (!m[k]) delete m[k];
+  }
 }
 
 function addTurn(count, id, u, model) {
   const now = { lectura: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), escritura: u.output_tokens || 0, cache: u.cache_read_input_tokens || 0, modelo: modeloDe(model) };
+  const cc = u.cache_creation && typeof u.cache_creation === 'object' ? u.cache_creation : null;
+  if (cc) {
+    const n = (k) => (Number.isInteger(cc[k]) && cc[k] > 0 ? cc[k] : 0);
+    const e5 = n('ephemeral_5m_input_tokens');
+    const e1 = n('ephemeral_1h_input_tokens');
+    // un desglose que pasa de la escritura de caché declarada no cierra: no se anota (queda todo en la lectura)
+    if (e5 + e1 <= (u.cache_creation_input_tokens || 0)) { now.cache_escrita_5m = e5; now.cache_escrita_1h = e1; }
+  }
   const was = count.byMessage.get(id);
   for (const k of PARTES) count[k] += now[k] - (was ? was[k] : 0);
   if (!count.porModelo) count.porModelo = {};
@@ -132,4 +149,4 @@ function dayTokens(file, { days = [], isAgent = false } = {}) {
   return result;
 }
 
-module.exports = { dayTokens, newCount, addTurn, codexDiff, sumarModelo, SIN_MODELO, MODELO, TOKEN_STEP_BYTES };
+module.exports = { dayTokens, newCount, addTurn, codexDiff, sumarModelo, SIN_MODELO, MODELO, EXTRAS, TOKEN_STEP_BYTES };

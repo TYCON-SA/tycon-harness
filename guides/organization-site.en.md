@@ -480,8 +480,9 @@ as zero without knowing it:
 - If part of the week has a cost and part does not, the page shows the cost of what could be counted and, below it,
   what was not counted.
 
-The read tokens of a Claude model include cache writes, which cost more than input: the cost comes out somewhat below
-the real one.
+The read tokens of a Claude model include cache writes, which cost more than input and differ by whether they last 5
+minutes or 1 hour. They are priced on their own (`cache_escrita_5m` and `cache_escrita_1h` in `site.prices`). If the
+model has no such price, that part is not counted as input: the page says "no cache-write price for <model>".
 
 **The last 6 weeks.** Two bar charts, one per measure: the hours with the harness working per person, stacked by week,
 and the tokens without cache per week. A week not measured stays empty and says "not measured", never zero. Hovering

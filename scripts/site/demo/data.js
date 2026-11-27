@@ -153,7 +153,7 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
     ops.notify = { channel: 'teams' };
     // precios inventados de dos modelos inventados: el ejemplo del costo estimado de «Horas y tokens»
     ops.site.prices = {
-      'modelo-grande': { lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
+      'modelo-grande': { lectura: 4, escritura: 20, cache: 0.2, cache_escrita_1h: 8, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
       'modelo-chico': { lectura: 0.5, escritura: 2.5, cache: 0.05, fuente: 'https://precios.acme.example', fecha: '2026-11-01' },
     };
   }
@@ -541,7 +541,7 @@ function jornadasDeEjemplo(ahora = Date.now()) {
     const d = dia(n);
     // los días de maquina-a traen el reparto por modelo (la versión 2); los de maquina-b, no (la versión 1): el costo dice
     // «sin dato de modelo» para esos
-    const grande = { lectura: 100000 * n, escritura: 15000 * n, cache: 2000000 * n };
+    const grande = { lectura: 100000 * n, escritura: 15000 * n, cache: 2000000 * n, cache_escrita_1h: 60000 * n };
     const chico = { lectura: 20000 * n, escritura: 3000 * n, cache: 400000 * n };
     out['maquina-a'][d] = JSON.stringify({ v: 2, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
       tokens: { lectura: 120000 * n, escritura: 18000 * n, cache: 2400000 * n, medido: true, por_modelo: { 'modelo-grande': grande, 'modelo-chico': chico } } });
