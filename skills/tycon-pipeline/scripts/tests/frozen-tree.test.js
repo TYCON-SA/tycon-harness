@@ -1565,6 +1565,52 @@ test('PrepareCommit_PruebaPorCarpetaEnLaApp_Frena', () => {
   }
 });
 
+// Caso: la vuelta 2 se pidió (con un arreglo en el sello) y nadie la lanzó; se tomó a mano la foto de una vuelta 3 que
+// nunca se pidió; después sólo cambió la historia. La vuelta 4 no pasa el tope sola: la ronda base no consta vista.
+// 🔴 Falla con: la vuelta 4 cerrada sola pasado el tope, sin firma, sobre un arreglo que nadie revisó.
+test('Tope_FotoDeUnaVueltaQueNoExiste_NoPasaSola', () => {
+  const C = corridaRevisada('s-ft-n8a', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  dormirMs(50);
+  C.correr('marker.js', ['snapshot-iter', '3']);
+  dormirMs(1100);
+  tocarLaHistoria(C, 'uno');
+  dormirMs(50);
+  const v4 = C.vuelta(4);
+  assert.strictEqual(v4.r.status, 3, `la vuelta 4 pasó el tope sola: ${salida(v4.r).slice(0, 400)}`);
+});
+
+// Caso: pasado el tope, cambian una nota y la configuración; el dueño firma la vuelta extra, que sale con el revisor de
+// seguridad y sella lo cambiado. Pedir el set otra vez sin --extra-round no la cierra sola: lo cambiado sigue sin revisar
+// contra la última vuelta vista.
+// 🔴 Falla con: el pedido repetido que sale 0 sin revisores, o la vuelta firmada sin revisores.
+test('Tope_VueltaExtraFirmadaPedidaOtraVez_NoSeCierraSola', () => {
+  const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const C = corridaRevisada('s-ft-n8b', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'docs/notas.md', '# notas\n');
+  editarConEvento(C, 'package.json', '{ "scripts": { "postinstall": "node x.js" } }\n');
+  dormirMs(50);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  assert.strictEqual(C.vuelta(2).r.status, 3, 'el tope frena con las salidas');
+  const env = { ...process.env, HOME: C.home, USERPROFILE: C.home, CLAUDE_CODE_SESSION_ID: C.sid, TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off' };
+  for (const k of ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const f = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'smart-reloop', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', '--iter', '2', '--extra-round'],
+    { encoding: 'utf8', env: conVentana(env), input: '', cwd: C.codigo.repo });
+  assert.strictEqual(f.status, 0, f.stderr.slice(0, 400));
+  assert.ok(JSON.parse(f.stdout).rerun.length > 0, 'la vuelta firmada sale con revisores');
+  dormirMs(50);
+  const sin = C.vuelta(2);
+  assert.ok(!(sin.r.status === 0 && sin.json.no_code_delta && !(sin.json.rerun || []).length), `el pedido repetido se cerró solo: ${salida(sin.r).slice(0, 400)}`);
+});
+
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {
   const tercera = (C) => {
     const abs = ['src/a.js', 'src/b.js', 'src/m.js'].map((r) => path.join(C.codigo.repo, r));

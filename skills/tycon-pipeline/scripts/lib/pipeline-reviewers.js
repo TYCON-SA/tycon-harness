@@ -445,7 +445,7 @@ function cmdAdvisors(cmd, args) {
   aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
   decirModelos(set, conModelos.orgModels, avisosModelos);
   // expected persistido (post-descuento); el contexto también, para que `reviewers-run` lance lo mismo
-  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : null, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
+  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : ((readSessionMarker() || {}).storyId || null), context_file: set.context_file, context_file_overrides: set.context_file_overrides });
   salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
   return;
 }

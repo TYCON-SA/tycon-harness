@@ -534,7 +534,7 @@ const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide el dueño (una vuelta extra con su
 // firma, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
 // La vuelta extra no es firma de trámite ni la firma la coordinadora por delegación.
-function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false, sinCodigo = false }) {
+function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false, sinCodigo = false, baseIter = null }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
@@ -558,7 +558,10 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   // y el tope sin nada abierto
   let cambiosMirados;
   const cambiosDesdeLaVuelta = () => (cambiosMirados === undefined ? (cambiosMirados = cambiosDesdeLoRevisado({ storyId, repoAbs, args })) : cambiosMirados);
-  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLaVuelta() : null;
+  // la vuelta sin código se compara contra el sello de su ronda base, la última vista entera: lo sellado después (una
+  // vuelta pedida y no lanzada, una vuelta extra firmada) no lo vio nadie
+  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLoRevisado({ storyId, repoAbs, args, etiqueta: baseIter ? `rev-iter${baseIter}` : null }) : null;
+  if (sinCodigo && !baseIter) sinCambiosRevisables.vacio = false;
   if (sinCambiosRevisables && !sinCambiosRevisables.vacio) {
     process.stderr.write(`⚠️  La vuelta ${iter} no trae revisores, pero no se cierra sola pasado el tope: ${sinCambiosRevisables.motivo}.\n`);
   }
@@ -570,7 +573,10 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   }
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
     if (estadoPipeline.paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
-    return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+    if (args.extraRound) return `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n`;
+    // una vuelta extra que firmó el dueño no sale sin revisores (cmdSmartReloop)
+    estadoPipeline.vueltaExtraAutorizada = iter;
+    return null;
   }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
@@ -628,6 +634,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!estadoPipeline.paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
     if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
     anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via, ...(f.constancia.por ? { por: f.constancia.por } : {}) });
+    estadoPipeline.vueltaExtraAutorizada = iter;
     return null;
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
@@ -680,11 +687,13 @@ function fotoAlLanzar(iter, horaDelSello) {
 
 // ¿Cambió algo desde la última vuelta sellada de esta sesión que «Preparar» contaría? `{ vacio: true }` si nada, o
 // `{ vacio: false, motivo }` (lo cambiado, o por qué no se pudo mirar: ante la duda, no está vacío).
-function cambiosDesdeLoRevisado({ storyId, repoAbs, args }) {
+function cambiosDesdeLoRevisado({ storyId, repoAbs, args, etiqueta = null }) {
   try {
     const ft = require('./frozen-tree.js');
     const sid = sessionIdFileKey();
-    const v = ft.ultimaVuelta(stateDirOf(os.homedir()), sid, 'revisores');
+    // con `etiqueta`, la vuelta sellada de esa ronda; si no, la última sellada
+    const v = etiqueta ? ft.vueltas(stateDirOf(os.homedir()), sid).filter((x) => x.tipo === 'revisores' && x.etiqueta === etiqueta).pop() || null
+      : ft.ultimaVuelta(stateDirOf(os.homedir()), sid, 'revisores');
     if (!v || !(v.repos || []).length) return { vacio: false, sinMedir: true, motivo: 'no hay una vuelta sellada con qué comparar' };
     if (v.story !== undefined && v.story !== null && String(v.story) !== String(storyId)) return { vacio: false, sinMedir: true, motivo: 'la última vuelta sellada es de otra historia' };
     const { marcador } = readSessionMarkerStrict();
@@ -804,7 +813,7 @@ function movidaDesde(desde, marcador, storyId) {
 // `vueltaChica`: el re-loop ya calculó que desde la última vuelta sólo cambiaron textos. Esa vuelta pasa el tope sin firma
 // y no pide la nota de repensar: no es un arreglo que se repite. `sinCodigo`: la vuelta no trae código ni revisores que
 // lanzar; se cierra sola, sin tope, sin firma y sin nota.
-function rethinkGate(args, { vueltaChica = false, sinCodigo = false } = {}) {
+function rethinkGate(args, { vueltaChica = false, sinCodigo = false, baseIter = null } = {}) {
   const rt = require('./rethink.js');
   // La vuelta que vale es la MAYOR entre la que declara quien llama, la que cuenta el marcador (las fotos de iteración
   // guardadas: la última + 1, o el `iter` que lleve alguna) y la de la propia carpeta de la corrida: si ya se sirvió alguna
@@ -904,7 +913,7 @@ function rethinkGate(args, { vueltaChica = false, sinCodigo = false } = {}) {
   const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador, storyId));
   const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
-  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica, sinCodigo });
+  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica, sinCodigo, baseIter });
   if (bloqueoDelTope) return bloqueoDelTope;
   if (iter >= rt.FIRST_ITER && !vueltaChica && !sinCodigo) {
     const dice = [];

@@ -6,7 +6,7 @@
  * Lo que cambia mientras corre (los avisos del portón, la sesión para la que se trabaja) y las rutas del despachador
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
-const { STEPS_TABLE, at, companionLib, deriveStoryId, fs, logGate, os, path, readSessionMarker, resolveRunDir, sessionIdFileKey, stateDirOf } = require('./pipeline-shared.js');
+const { STEPS_TABLE, at, companionLib, deriveStoryId, estadoPipeline, fs, logGate, os, path, readSessionMarker, resolveRunDir, sessionIdFileKey, stateDirOf } = require('./pipeline-shared.js');
 const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, validateFilesExist, fotoAlLanzar } = require('./pipeline-advisor-context.js');
 const { MECH_NUNCA_SACA, advisorAffectedByDelta, aplicarDecisionValidador, computeAdvisorSet, computeMechDiscount, readSessionMarkerStrict, revisoresPorConfirmar, salidaGrande, sumarPorConfirmar } = require('./pipeline-advisor-set.js');
 const { conModelosDeLaCorrida, decirModelos } = require('./pipeline-models.js');
@@ -446,6 +446,10 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       delta_files: delta,
       delta_source: deltaSource,
       no_code_delta: true,
+      // para saltear el tope y la nota hace falta más: la ronda base consta vista entera (cada revisor lanzado), y se
+      // compara contra el sello de esa ronda (topeDeVueltas)
+      base_iter: prev,
+      ronda_base_vista: vista.medible && deLaVuelta.length > 0 && deLaVuelta.every((a) => Number.isFinite(vista.lanzamientos.get(a))),
     };
   }
 
@@ -744,14 +748,16 @@ function cmdSmartReloop(cmd, args) {
   }
   // El tope de vueltas, con el set ya decidido: una vuelta chica (sólo textos) lo pasa sin firma, y una vuelta sin código
   // (sin revisores que lanzar, ni uno que vuelva a confirmar un crítico) se cierra sola, sin tope, sin firma ni nota
-  const sinCodigo = !!result.no_code_delta && !(result.rerun || []).length;
-  salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round', sinCodigo }));
+  const sinCodigo = !!result.no_code_delta && !(result.rerun || []).length && result.ronda_base_vista === true;
+  salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round', sinCodigo, baseIter: result.base_iter }));
   // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
   if (process.env[PRECHEQUEO] === '1') process.exit(0);
   // una vuelta extra que firmó el dueño no sale sin revisores: si el set quedó vacío (lo cambiado no es código por su
   // extensión: la configuración, un workflow), vuelve al menos el revisor de la vuelta chica
-  if (args.extraRound && !(result.rerun || []).length) {
-    const chicos = (result.all || []).filter((a) => require('./review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.includes(a));
+  if ((args.extraRound || estadoPipeline.vueltaExtraAutorizada) && !(result.rerun || []).length) {
+    const deLaChica = (result.all || []).filter((a) => require('./review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.includes(a));
+    // sin el revisor de la vuelta chica en el set de la historia, vuelve el set entero
+    const chicos = deLaChica.length ? deLaChica : [...(result.all || [])];
     result.rerun = chicos;
     result.rerun_count = chicos.length;
     result.no_code_delta = false;
@@ -793,7 +799,7 @@ function cmdSmartReloop(cmd, args) {
     for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
   }
   decirModelos(result, conModelos.orgModels, avisosModelos);
-  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : null, context_file: result.context_file, context_file_overrides: result.context_file_overrides });
+  logStep5Start(result.rerun, { mode: result.mode, iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : ((readSessionMarker() || {}).storyId || null), context_file: result.context_file, context_file_overrides: result.context_file_overrides });
   salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
   return;
 }
