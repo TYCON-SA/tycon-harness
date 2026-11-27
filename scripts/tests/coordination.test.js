@@ -1674,6 +1674,24 @@ test('T12b CoordinationClose_CarpetaOMovidoSinGit_SonSuyos @story-8.235 @ac-12: 
   assert.doesNotMatch(r.message, /de antes de que arrancara|claude stop/);
 });
 
+test('T12c CoordinationClose_SoloCambioDeModo_EsSuyo @story-8.235 @ac-12: un archivo al que sólo se le cambió el modo conserva su fecha vieja y es suyo', { skip: process.platform === 'win32' && 'Windows no guarda el modo de ejecución' }, () => {
+  const t = closeLab();
+  // a tracked file with an old date whose only change is its mode: chmod does not touch the modification date
+  archivo(t.repo, 'guion.sh');
+  git(t.repo, 'add', '.');
+  git(t.repo, 'commit', '-qm', 'guion');
+  git(t.repo, 'push', '-q', 'origin', 'main');
+  fechar(t.repo, 'guion.sh', ARRANQUE - 3600000);
+  fs.chmodSync(path.join(t.repo, 'guion.sh'), 0o755);
+  // and one with an old date and a content change, which still counts as from before
+  archivo(t.repo, 'viejo.txt', ARRANQUE - 3600000);
+  bg(t, 'modo', t.repo, { startedAt: ARRANQUE });
+  const r = closeIt(t, 'modo');
+  assert.strictEqual(r.ok, false, r.message);
+  assert.match(r.message, new RegExp(`falta: 1 archivo\\(s\\) sin commitear en ${escapar(t.repo)}; 1 archivo\\(s\\) sin commitear de antes de que arrancara \\(no parecen suyos\\): viejo\\.txt`));
+  assert.deepStrictEqual(closed(t), []);
+});
+
 test('T13 CoordinationClose_ArchivosDeAntes_DaStopConId @story-8.235 @ac-13: con id da claude stop <id>; sin id, claude agents; interactiva, nada', () => {
   const t = closeLab();
   archivo(t.repo, 'viejo.txt', ARRANQUE - 3600000);

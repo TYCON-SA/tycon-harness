@@ -3464,7 +3464,8 @@ function soltoElPuesto(dir, startedAt, heirStartedAt) {
 // por su fecha. La fecha sólo cambia el texto, nunca el cierre: ante la duda (un archivo borrado, una fecha que no se
 // lee, una sesión sin hora de arranque) el archivo es suyo. Un renombre o una copia también: conservan la fecha del
 // archivo viejo. Lo mismo una carpeta (un submódulo, un repo adentro), que lleva la fecha de la carpeta y no la de lo que
-// cambió adentro, y un archivo sin seguir que es uno borrado movido sin git: tiene el contenido del borrado. Las rutas
+// cambió adentro, un archivo sin seguir que es uno borrado movido sin git (tiene el contenido del borrado) y un seguido
+// con el modo cambiado (`chmod` no toca la fecha). Las rutas
 // salen de `-z`, sin recortar: un renglón empieza con espacio y una ruta puede tener espacios.
 function uncommittedFiles(top, salida, startedAt) {
   const own = [];
@@ -3505,6 +3506,20 @@ function uncommittedFiles(top, salida, startedAt) {
     for (const c of candidatos) {
       const h = sinRespuesta ? null : gitIn(top, ['hash-object', '--', c]);
       if (!h || h.code !== 0 || delBorrado.has(h.out)) movidos.add(c);
+    }
+  }
+  // un cambio de modo (chmod) no toca la fecha del archivo: un seguido con el modo cambiado es suyo. Si git no contesta,
+  // también
+  const seguidos = before.filter((r) => !sinSeguir.has(r) && !movidos.has(r));
+  if (seguidos.length) {
+    const r = gitRaw(top, ['diff', 'HEAD', '--raw', '-z', '--no-renames']);
+    if (r.code !== 0) for (const s of seguidos) movidos.add(s);
+    else {
+      const raw = r.out.split('\0');
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        const [viejo, nuevo] = raw[i].replace(/^:/, '').split(' ');
+        if (viejo && nuevo && viejo !== nuevo && viejo !== '000000' && nuevo !== '000000') movidos.add(raw[i + 1]);
+      }
     }
   }
   return { own: [...own, ...before.filter((r) => movidos.has(r))], before: before.filter((r) => !movidos.has(r)) };

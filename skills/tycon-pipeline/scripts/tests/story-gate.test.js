@@ -1032,6 +1032,139 @@ test('T9 EscrituraDeLaunched_SeNiega @story-8.211 @ac-11', () => {
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
+// 🔴 Falla con: `git reset --hard`, el stash de git, `git clean -f` o `find -delete` deshacen o borran código del repo de
+// una corrida abierta y el freno no los ve: el control al cerrar no encuentra nada en el diff.
+// arma un repo de juguete con git: sin git (el instalador corre la suite rápida con un PATH sin git) no mide. Un git que
+// existe y no corre (una Mac sin las herramientas de línea de comandos) tampoco es git
+const GIT_T32B = require('child_process').spawnSync('git', ['--version'], { stdio: 'ignore' });
+const SIN_GIT_T32B = GIT_T32B.error || GIT_T32B.status !== 0 ? 'NO MEDIDO: sin git en esta máquina (arma un repo de juguete con git)' : false;
+test('T32b Freno_DeshacerEnBloque', { skip: SIN_GIT_T32B }, () => {
+  const stateDir = tmpState();
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-bloque-')));
+  const g = (...a) => {
+    const r = require('child_process').spawnSync('git', ['-C', repo, '-c', 'user.name=lab', '-c', 'user.email=lab@example.invalid', '-c', 'core.hooksPath=/dev/null', ...a], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `git ${a.join(' ')}: ${r.stderr}`);
+  };
+  g('init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(repo, 'notas.md'), 'notas\n');
+  g('add', '-A');
+  g('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(stateDir, 'active', 's1.json'), JSON.stringify({
+    storyId: '9.9', repoPath: repo, sessionId: 's1', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 6, 7, 8],
+  }));
+  const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
+  const frena = (cmd, cwd) => { const b = bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] }); assert.ok(b && INVISIBLE.test(b.block), `${cmd}: ${JSON.stringify(b)}`); return b.block; };
+  const pasa = (cmd, cwd) => assert.equal(bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] }), null, cmd);
+  // con las skills en un clon aparte (sin scripts/lib/clean-git-env.js) a git no se le pregunta: frena, del lado seguro
+  if (!fs.existsSync(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js'))) {
+    fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 2;\n');
+    conEnv(SIN_REGISTRO, () => { for (const c of ['git reset --hard', 'git stash', 'git clean -fd']) assert.match(frena(c), /no pude preguntarle a git/, c); });
+    fs.rmSync(repo, { recursive: true, force: true });
+    return;
+  }
+  conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
+    // sin cambios, o con cambios que no son código, no hay qué deshacer
+    pasa('git reset --hard');
+    fs.writeFileSync(path.join(repo, 'notas.md'), 'otra\n');
+    pasa('git reset --hard');
+    pasa('git stash');
+    // con código cambiado, deshacerlo en bloque frena y nombra el archivo
+    fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 2;\n');
+    assert.match(frena('git reset --hard'), /src[\\/]a\.ts/);
+    frena('git reset --hard HEAD');
+    frena('git reset --merge');
+    frena('git stash');
+    frena('git stash push -m guardado');
+    frena('git stash save guardado');
+    frena('git status && git reset --hard');
+    frena(`git -C ${repo} reset --hard`, os.tmpdir());
+    pasa('git reset --soft HEAD');
+    pasa('git stash list');
+    pasa('git stash show');
+    // las formas que encontró la revisión: opción abreviada, cambio de rama forzado, git-dir y work-tree aparte
+    // la opción abreviada se arma desde la entera: escrita suelta, el detector de nombres la toma por una palabra
+    frena(`git reset ${'--hard'.slice(0, 5)}`);
+    frena('git checkout -f');
+    frena('git switch --discard-changes main');
+    frena(`git --git-dir=${repo}/.git --work-tree=${repo} reset --hard`, os.tmpdir());
+    // un stash con rutas o sólo de lo preparado mira esas rutas
+    pasa('git stash push -- notas.md');
+    pasa('git stash push --staged');
+    // la segunda vuelta: rutas que el shell expande, rutas sin `--`, opciones más cortas o en grupo
+    frena('F=src/a.ts; git stash push -- "$F"');
+    frena('git stash push -- src/{a,b}.ts');
+    frena('git stash push src/a.ts');
+    pasa('git stash push notas.md');
+    frena('git reset --h');
+    frena('git checkout -qf');
+    frena('git checkout --f');
+    pasa('git checkout -f -- notas.md');
+    // la tercera vuelta: el mensaje dentro de un grupo, `--` sin rutas, la lista de rutas en un archivo
+    frena('git stash push -um wip');
+    frena('git stash push --mess wip');
+    frena('git checkout -f main --');
+    frena('git switch -f main --');
+    frena('git stash push --pathspec-from-file lista.txt');
+    // git clean borra sólo lo que git no sigue: como un `rm` de un archivo no seguido, pasa y queda anotado para el cierre
+    fs.writeFileSync(path.join(repo, 'src', 'nuevo.ts'), 'export const n = 1;\n');
+    pasa('git clean -n');
+    pasa('git clean -fd');
+    const anotados = () => fs.readFileSync(path.join(stateDir, 'console-writes', 's1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(anotados().some((l) => l.path === path.join(repo, 'src', 'nuevo.ts') && l.kind === 'delete'), JSON.stringify(anotados()));
+    // y lo que el stash con -u se lleva sin que git lo siga, también
+    fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(repo, 'src', 'otro.ts'), 'export const o = 1;\n');
+    pasa('git stash -u');
+    assert.ok(anotados().some((l) => l.path === path.join(repo, 'src', 'otro.ts') && l.kind === 'delete'), JSON.stringify(anotados()));
+    fs.unlinkSync(path.join(repo, 'src', 'otro.ts'));
+    // ensayar git clean no borra nada, aunque el comando traiga --no-dry-run y el repo no pida -f
+    fs.writeFileSync(path.join(repo, 'src', 'queda.ts'), 'x\n');
+    g('config', 'clean.requireForce', 'false');
+    pasa('git clean -fd --no-dry-run');
+    assert.ok(fs.existsSync(path.join(repo, 'src', 'queda.ts')), 'el freno borró al ensayar');
+    g('config', '--unset', 'clean.requireForce');
+    // un nombre con ñ se anota tal cual, no con la ruta entre comillas de git
+    fs.writeFileSync(path.join(repo, 'src', 'ñu.ts'), 'x\n');
+    pasa('git clean -f src');
+    assert.ok(anotados().some((l) => l.path === path.join(repo, 'src', 'ñu.ts')), JSON.stringify(anotados()));
+    fs.unlinkSync(path.join(repo, 'src', 'queda.ts'));
+    fs.unlinkSync(path.join(repo, 'src', 'ñu.ts'));
+    // find -delete sobre una carpeta con código que git sigue frena; fuera del repo, no
+    frena("find src -name '*.ts' -delete");
+    frena('find . -type f -delete');
+    frena("find -L src -name '*.ts' -delete");
+    frena("find -name '*.ts' -delete");
+    // -delete anula -prune; una acción que imprime no deja leer el ensayo; el repo detrás de un enlace es el mismo
+    frena("find . -path ./src -prune -o -type f -name '*.ts' -delete");
+    frena("find . -name 'a.ts' -print -delete");
+    const enlace = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'enlace-')), 'repo');
+    fs.symlinkSync(repo, enlace);
+    frena("find . -name '*.ts' -delete", enlace);
+    // el filtro de find decide: lo que no borra código pasa
+    pasa("find . -name '*.pyc' -delete");
+    pasa('find . -name .DS_Store -delete');
+    pasa('find . -type d -empty -delete');
+    // sin poder ensayarlo (una acción más), cuenta la carpeta entera
+    frena("find src -name '*.log' -exec true {} \\; -delete");
+    pasa(`find ${os.tmpdir()}/fuera-bloque -delete`);
+    pasa("find src -name '*.ts'");
+  });
+  // sin poder preguntarle a git, del lado seguro: frena
+  const { stateDir: st2, repo: sinGit } = corridaAbierta();
+  conEnv(SIN_REGISTRO, () => {
+    const b = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: sinGit, tool_input: { command: 'git reset --hard' } }, { stateDir: st2, installedRoots: [] });
+    assert.ok(b && INVISIBLE.test(b.block) && /no pude preguntarle a git/.test(b.block), JSON.stringify(b));
+  });
+  // con la corrida cerrada, pasa como hoy
+  fs.writeFileSync(path.join(stateDir, 'active', 's1.json'), JSON.stringify({
+    storyId: '9.9', repoPath: repo, sessionId: 's1', stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7, 8], stepsPending: [],
+  }));
+  conEnv(SIN_REGISTRO, () => pasa('git reset --hard'));
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
 test('T33 Freno_PowerShell_FormasNuevas', () => {
   const { stateDir, repo } = corridaAbierta();
   const ev = (command) => ({ tool_name: 'PowerShell', session_id: 's1', cwd: repo, tool_input: { command } });
