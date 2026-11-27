@@ -1295,8 +1295,13 @@ PY
   # (e2) 🔴 la versión numerada por su etiqueta: al bajarla, el instalador reescribe version.json con el número de la
   # etiqueta (release.js, stampVersion) y anota en el manifiesto el blob del texto nuevo, con el árbol del commit. El
   # árbol se recalcula con el version.json de git de ese commit, y lo del disco tiene que ser el estampado de ése.
-  cp "$AQUI/version.json" "$SRC30/version.json"; G30 add -A >/dev/null; G30 commit -q -m "con version.json numerado por etiqueta" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1
-  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  # el version.json numerado por etiqueta: el del árbol que se prueba; el árbol armado de la noche (lo privado con el
+  # público encima) no trae version.json en la raíz, y sin él no hay nada que estampar: ahí va uno mínimo de la misma forma
+  VJ30="$TMP/version-30.json"
+  if [ -f "$AQUI/version.json" ]; then cp "$AQUI/version.json" "$VJ30"
+  else printf '{\n  "version": "2026.10.15.48",\n  "numbering": "merge-tag"\n}\n' > "$VJ30"; fi
+  cp "$VJ30" "$SRC30/version.json"; G30 add -A >/dev/null; G30 commit -q -m "con version.json numerado por etiqueta" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1
+  cp "$VJ30" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   estampa30(){ node -e '
 const fs = require("fs"), path = require("path");
 const [release, dir, version] = process.argv.slice(1);
@@ -1320,7 +1325,7 @@ fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
   if ! instala30 && grep -q 'version.json' "$TMP/inst-30" && ! grep -q 'recalculado desde el disco' "$TMP/inst-30"; then ok "T30w · un version.json que no es el estampado del de git frena y lo nombra"
   else no "T30w · el version.json retocado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30w · …y dejó algo en /opt/tycon" || ok "T30x · …sin dejar nada en /opt"
-  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  cp "$VJ30" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). Con más de 30
   # publicaciones por día, una cada ~10 min, exigir la punta exacta haría casi imposible instalar el freno. Vale un commit
   # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.

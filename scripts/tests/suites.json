@@ -939,6 +939,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/pipelines-pending.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/production-notice-root.test.js",
       "requiere": []
     },
@@ -3065,6 +3070,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/clean-machine-startup-log.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.7 (tanda C): la máquina limpia — instala el arnés en un contenedor que trae sólo lo que la portada pública declara, con el bloque de instalación de la portada tal cual, y corre el esqueleto del pipeline sobre un repo de ejemplo y sobre el plugin de ejemplo. Mide en el nocturno, en la CI pública (public-ci.sh --clean-machine) o con TYCON_CLEAN_MACHINE=1; en la máquina de un dev y en el control de cada cambio corre sólo lo que no usa docker (T34 y la lectura de la portada, segundos) y sale NO MEDIDO con su motivo. Sola: construye imágenes y levanta contenedores.",
       "raiz": "arnes",
       "ruta": "tests/clean-machine.test.sh",
@@ -3476,6 +3486,11 @@
       "__nota": "story 2.23: las fuentes del sitio — el repo de operaciones por HTTP con la credencial en una cabecera (nunca en el disco), el buzón sólo con una SAS de lectura o la identidad administrada, el refresco que conserva el último bueno, y la regla de las 24 horas de operations.json guardada en SITE_DATA_DIR. Repo git local con git http-backend (si falta, se saltea con constancia).",
       "raiz": "arnes",
       "ruta": "tests/site-sources.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/site-temp-names.test.js",
       "requiere": []
     },
     {
@@ -5185,6 +5200,11 @@
       "__nota": "story 8.331 (T1 a T8): .github/workflows/code-scanning.yml, el análisis de CodeQL que corre también en los pedidos desde un fork, leído por texto con check-public-workflow.js --code-scanning: disparadores (pedido, cola, push a main; no en borrador), sin pull_request_target ni secretos, permisos exactos (contents y actions de lectura, security-events de escritura), acciones por sha, checkout sin la credencial guardada, los tres lenguajes sin compilar con su categoría, la forma exacta y los cinco workflows. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/code-scanning-workflow.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/new-quality-findings.test.js",
       "requiere": []
     },
     {
