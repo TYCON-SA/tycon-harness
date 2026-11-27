@@ -44,7 +44,9 @@ núcleo del arnés no lo nombra. Azure Blob Storage sigue igual.
 - Un campo que falta o tiene otra forma es `config_ilegible`, con el campo nombrado. Ningún mensaje repite un valor de la
   llave: el secreto no sale nunca.
 - Antes de cada tanda la subida intenta **listar** el bucket y sólo sigue si la respuesta es 403 `AccessDenied`: una llave
-  que puede listar no es la del buzón (sale 2, `llave_con_lectura`, sin subir nada).
+  que puede listar no es la del buzón (sale 2, `llave_con_lectura`, sin subir nada). Después pide por su nombre un
+  objeto que no existe: la cuenta que sólo crea contesta 403 `AccessDenied`; una que lee objetos sin poder listarlos
+  contesta 404 `NoSuchKey`, y también sale 2. `--check-create-only` pasa por las mismas dos pruebas.
 
 ## El perfil del equipo
 
@@ -80,6 +82,8 @@ Medidos en un bucket de laboratorio (`acme-buzon-lab` en los ejemplos) con la AP
 | El objeto ya está (`x-goog-if-generation-match: 0`) | 412 `PreconditionFailed` | `ya_existe`: un reintento con una versión nueva |
 | La cuenta no puede crear | 403 `AccessDenied` | `llave_sin_permiso` |
 | Listar con la cuenta que sólo crea | 403 `AccessDenied` | la prueba de antes de la tanda pasa |
+| Leer por su nombre un objeto que no existe, con la cuenta que sólo crea | 403 `AccessDenied` | la prueba de antes de la tanda pasa |
+| Lo mismo con una cuenta que lee objetos | 404 `NoSuchKey` | `llave_con_lectura`: sale 2, sin subir nada |
 | La firma no casa (secreto equivocado) | 403 `SignatureDoesNotMatch` | `llave_invalida` |
 | La clave HMAC desactivada | 401 `KeyInactive` | `llave_invalida` |
 | El bucket no existe | 404 `NoSuchBucket` | `llave_invalida`, con el bucket en el motivo |
@@ -92,6 +96,10 @@ Ninguna respuesta que no sea 200 marca el archivo como subido, y la salida es di
 Del lado del sitio (API JSON, con el token de su identidad): 401 es `credencial_rechazada` (el token venció o no vale),
 403 es `sin_permiso` (la identidad no tiene el rol de lector) y 404 es `sin_contenedor`. En los tres la pasada no es
 completa y el sitio sigue mostrando lo último que leyó entero.
+
+Ningún objeto se lee más allá del tamaño que dio el listado. Cloud Storage sirve descomprimido un objeto guardado con
+`Content-Encoding: gzip`, así que pocos bytes subidos pueden ser muchos al bajar: la bajada corta en el tamaño listado
+y ese objeto cuenta como «llegó distinto». Los demás se bajan igual.
 
 ## La bajada desde una máquina
 

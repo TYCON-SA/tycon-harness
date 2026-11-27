@@ -1849,11 +1849,32 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/story-reader-parity.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**",
+        "skills/tycon-pipeline/scripts/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/download-runs-index-writes.test.js",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/metrics/**",
         "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/download-runs-size-cap.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
+        "scripts/site/**",
+        "integrations/gcs/**",
+        "scripts/nightly/dashboard/**"
       ]
     },
     {

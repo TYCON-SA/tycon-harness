@@ -215,7 +215,10 @@ function loadList(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
     const extra = validateList({ hooks });
     if (extra.length) throw new ApplyError(`${integrationsDir}: los hooks de las integraciones no pasan la validación de la lista — no escribo nada:\n  · ${extra.join('\n  · ')}`);
   }
-  return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy: list.legacy_fragments || [], warnings, unreadIntegrationScripts: unread };
+  // `{claude-dir}` en una forma vieja: el nombre de la carpeta de Claude Code, el de tycon-home.js
+  const claudeName = path.basename(require('./harness/tycon-home.js').claudeDir(os.homedir()));
+  const legacy = (list.legacy_fragments || []).map((f) => String(f).split('{claude-dir}').join(claudeName));
+  return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy, warnings, unreadIntegrationScripts: unread };
 }
 
 /**

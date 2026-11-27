@@ -40,7 +40,7 @@
  *
  * DÓNDE VIVE, Y ADÓNDE VIAJA
  * --------------------------
- * Todo va a `~/.claude/.tycon-pipeline/timing-history/`, fuera de todo repositorio: el hilo contiene
+ * Todo va a `~/.tycon/state/timing-history/`, fuera de todo repositorio: el hilo contiene
  * prompts, rutas del disco y código de cliente, y no va a ningún repo. La copia del volcado que `marker.js`
  * deja en `.advisors/pipeline-runs/` la ignora git (verificado: `.gitignore:14`). Desde ahí SÍ viaja al
  * buzón de corridas de la organización: lo sube `upload-runs.js` (el volcado, el hilo y el cambio de git), a un contenedor que leen sólo quienes tienen el rol de lectura, y se

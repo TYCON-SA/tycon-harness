@@ -34,9 +34,15 @@ PARENT="$(dirname "$REPO")"
 # Repos del harness: no se worktree-an (safety-guard matchea por path literal;
 # el SessionStart los auto-pullea solo en su ruta fija). Ver guides/git-worktrees.md §1.
 # (los dos nombres del arnés —el repo interno y el público, que se clona con el nombre del lugar— como
-# segmento de ruta: una carpeta que sólo EMPIEZA igual no es el arnés)
+# segmento de ruta: una carpeta que sólo EMPIEZA igual no es el arnés). Las skills instaladas, por cómo termina su ruta
+# bajo cualquier casa: la carpeta la dice scripts/lib/state-dir.sh, como tycon-home.js.
+SKILLS_TAIL=""
+_sd="$(cd "$(dirname "$0")/.." && pwd)/lib/state-dir.sh"
+if [ -f "$_sd" ] && . "$_sd"; then SKILLS_TAIL="$(tycon_skills_dir)"; SKILLS_TAIL="${SKILLS_TAIL#"${HOME:-}"}"; fi
+unset _sd
+if [ -n "$SKILLS_TAIL" ] && [[ "$REPO" == *"$SKILLS_TAIL"* ]]; then die "no crear worktrees de $NAME — ver guides/git-worktrees.md §1"; fi
 case "$REPO" in
-  *"/.claude/agent-skills"*|*"/tycon-claude-guides"|*"/tycon-claude-guides/"*|*"/tycon-harness"|*"/tycon-harness/"*)
+  *"/tycon-claude-guides"|*"/tycon-claude-guides/"*|*"/tycon-harness"|*"/tycon-harness/"*)
     die "no crear worktrees de $NAME — ver guides/git-worktrees.md §1" ;;
 esac
 

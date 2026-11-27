@@ -66,7 +66,7 @@ const ROOT = path.resolve(__dirname, '..');
 function loadEq(root) { try { return JSON.parse(fs.readFileSync(path.join(root, 'build', 'equivalences.json'), 'utf8')); } catch (e) { return { __error: e.message }; } }
 const EQ = loadEq(ROOT);
 // La carpeta de agentes: TYCON_AGENTS_DIR, o la de agent-skills que resuelve el arnés (scripts/lib/skills-dir.js:
-// TYCON_SKILLS_DIR o ~/.claude/agent-skills). Si ignorara TYCON_SKILLS_DIR, compararía las traducciones contra el
+// TYCON_SKILLS_DIR o las skills instaladas). Si ignorara TYCON_SKILLS_DIR, compararía las traducciones contra el
 // checkout compartido aunque las suites corrieran sobre un clon.
 const AGENTS_DIR = process.env.TYCON_AGENTS_DIR
   || path.join(require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).repo, 'agents');

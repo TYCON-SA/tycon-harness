@@ -17,7 +17,7 @@
  *     una tiene que existir;
  *   · `windows` de cada hook es lo que registra HOY `$HooksCanonical` del `.ps1`, y el de cada tarea del instalador, si
  *     el `.ps1` la nombra (`source.ps1_pattern`);
- *   · `stores` de cada hook dice la carpeta que su script nombra bajo `~/.claude/`, y `uninstall` la lista en «deja»;
+ *   · `stores` de cada hook dice el registro que su script guarda en la carpeta de los registros sueltos, y `uninstall` lo lista en «deja»;
  *   · cada cosa que la lista de piezas declara como «excluida» está mirada: o tiene su entrada, o tiene su motivo;
  *   · (T31) cada entrada dice en `profiles` en qué perfil existe, con las reglas de la
  *     clasificación (lo que frena, lo que cambia cómo contesta, los ajustes y los hooks de git, sólo en full; lo de una
@@ -141,6 +141,9 @@ const EXCLUDED = [
 ];
 
 // Las carpetas de ~/.claude que un hook puede nombrar y NO son «algo que guarda»: lo que lee o lo que es del arnés.
+// cómo dice `stores` que un registro va en la carpeta de los registros sueltos (scripts/lib/loose-logs.js: la del estado
+// del arnés en la casa propia, la de Claude Code en una máquina de siempre)
+const LOOSE_PHRASE = 'la carpeta de los registros sueltos';
 const NOT_A_STORE = ['.tycon-pipeline', 'settings.json', 'settings.local.json', 'tycon-claude-guides', 'agent-skills', 'CLAUDE.md', 'projects',
   'skills', 'agents', 'tycon.json', 'plugins', 'channels', 'commands'];
 /** El archivo del script de un hook, por su id: `@tcg:x` vive en scripts/hooks/, lo demás en skills/. */
@@ -242,16 +245,17 @@ function crossProblems(root, effects) {
     if (t.windows !== does) out.push(`${t.id}: windows dice ${t.windows} y el .ps1 ${does ? 'la corre' : 'no la nombra'} («${t.source.ps1_pattern}»)`);
   }
 
-  // `stores` de cada hook: la carpeta que su script nombra bajo ~/.claude, y `uninstall` la conoce
+  // `stores` de cada hook: el registro que su script guarda en la carpeta de los registros sueltos, y `uninstall` lo conoce
   const kept = new Set(uninstall.HOOK_STORES.map((s) => s.name));
   for (const e of byKind('hook')) {
     const named = namedStores(hookScript(root, e.id));
     if (named === null) continue;   // el script no está en este árbol (un hook de una integración que no viaja): no se mide
     for (const n of named) {
-      if (!(typeof e.stores === 'string' && e.stores.includes(`~/.claude/${n}`))) out.push(`${e.id}: su script nombra ~/.claude/${n} y «stores» dice ${JSON.stringify(e.stores)}`);
+      const says = typeof e.stores === 'string' && new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/? en ${LOOSE_PHRASE}$`).test(e.stores);
+      if (!says) out.push(`${e.id}: su script guarda ${n} en la carpeta de los registros sueltos y «stores» dice ${JSON.stringify(e.stores)} (se espera «${n}${n.includes('.') && !n.startsWith('.') ? '' : '/'} en ${LOOSE_PHRASE}»)`);
     }
-    const own = typeof e.stores === 'string' ? (e.stores.match(/^~\/\.claude\/([^/]+)/) || [])[1] : null;
-    if (own && own !== '.tycon-pipeline' && !kept.has(own)) out.push(`${e.id}: guarda en ~/.claude/${own} y uninstall no lo nombra en «deja» (HOOK_STORES de scripts/setup/harness/uninstall.js)`);
+    const own = typeof e.stores === 'string' ? (e.stores.match(new RegExp(`^([^\\s/]+)/? en ${LOOSE_PHRASE}$`)) || [])[1] : null;
+    if (own && !kept.has(own)) out.push(`${e.id}: guarda ${own} en la carpeta de los registros sueltos y uninstall no lo nombra en «deja» (HOOK_STORES de scripts/setup/harness/uninstall.js)`);
   }
   return out;
 }
@@ -357,10 +361,10 @@ test('Effects_Check_CatchesMissingStaleAndUndeclaredLaunch', () => {
   const sameLog = undeclaredIn(`${real}\nnohup node "$SCRIPT_DIR/lib/another.js" > "$HOME/thread-rescue.log" 2>&1 &\n`);
   assert.ok(sameLog.some((m) => m.includes('task:thread-rescue') && m.includes('ya es del lanzamiento')), `un segundo lanzamiento sobre un registro declarado tenía que dar rojo: ${sameLog.join(' · ') || '(ninguno)'}`);
 
-  // `stores`: un hook que guarda bajo ~/.claude y no lo dice, y uno que guarda donde uninstall no mira
+  // `stores`: un hook que guarda en la carpeta de los registros sueltos y no lo dice, y uno que guarda donde uninstall no mira
   const noStore = crossProblems(ROOT, withChange('Stop:@tcg:blocking-meter.js', { stores: null }));
-  assert.ok(noStore.some((m) => m.includes('Stop:@tcg:blocking-meter.js') && m.includes('~/.claude/blocking-meter')), `un hook que guarda y no lo declara tenía que dar rojo: ${noStore.join(' · ') || '(ninguno)'}`);
-  const strayStore = crossProblems(ROOT, withChange('SessionStart:@tcg:bench-notice.js', { stores: '~/.claude/somewhere-new/' }));
+  assert.ok(noStore.some((m) => m.includes('Stop:@tcg:blocking-meter.js') && m.includes('blocking-meter')), `un hook que guarda y no lo declara tenía que dar rojo: ${noStore.join(' · ') || '(ninguno)'}`);
+  const strayStore = crossProblems(ROOT, withChange('SessionStart:@tcg:bench-notice.js', { stores: `somewhere-new/ en ${LOOSE_PHRASE}` }));
   assert.ok(strayStore.some((m) => m.includes('somewhere-new') && m.includes('uninstall')), `una carpeta que uninstall no nombra tenía que dar rojo: ${strayStore.join(' · ') || '(ninguno)'}`);
   // `windows` de una tarea del instalador
   const wrongTask = crossProblems(ROOT, withChange('task:ado-projects-refresh', { windows: false }));

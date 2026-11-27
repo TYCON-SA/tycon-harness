@@ -10,7 +10,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //
 // QUÉ HACE (un script, tres eventos — el modo se deduce del payload o se fuerza con --mode):
 //   record (PostToolUse Bash): un `git push` que toca main/master en un repo bajo el arnés deja
-//           constancia en ~/.claude/.tycon-pipeline/retro-pending.jsonl {ts, sessionId, repoPath, sha}.
+//           constancia en ~/.tycon/state/retro-pending.jsonl {ts, sessionId, repoPath, sha}.
 //   gate   (Stop): cada merge anotado tiene que tener SU ARCHIVO de métricas (repo + merge_commit, el
 //           mismo criterio de «cubierto» que el aviso) → si alguno no lo tiene, bloquea el cierre del
 //           turno con el comando del latido (scripts/metrics/retro-heartbeat.js, un segundo, sin modelo).
@@ -46,7 +46,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 // dentro). Un `bash -c "…"` (o `sh`, `zsh`) sí se lee: lo citado ahí es un comando. Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
 // string con forma de push dispararía el aviso de "no pude resolver" sin que hubiera ningún push—; el
 // de un `bash <<EOF` se conserva y su push se anota. Lo demás lo cubre retro-staleness-notice.js, por días.
-// "Cubierto" es MECÁNICO: el capturer escribe en ~/.claude/tycon-harness/.dashboard/metrics-*.json
+// "Cubierto" es MECÁNICO: el capturer escribe en el .dashboard del arnés (en la casa propia, ~/.tycon/state/dashboard), metrics-*.json
 // `repo` + `merge_commit`; una entry pendiente se da por cubierta cuando existe un JSON con ese repo
 // y ese commit (prefijo). Límite honesto: un push hecho desde una terminal sin Claude/Codex no pasa
 // por este hook — ese caso lo cubre retro-staleness-notice.js (por días).
@@ -149,7 +149,7 @@ const az = (() => {
 })();
 // Resolutor COMPARTIDO de "a qué repo apunta este git".
 // El repo se calcula con el `cd` y el `-C` del propio comando, no con el cwd de la SESIÓN: con el cwd,
-// `cd ~/.claude/agent-skills && git push origin main` se anotaría contra el repo de la sesión con la sha
+// `cd ~/.tycon/harness && git push origin main` se anotaría contra el repo de la sesión con la sha
 // `origin/main` STALE de ese otro checkout, la exclusión de los repos del arnés (unas líneas más abajo) nunca
 // se activaría y quedaría un pendiente que ninguna retrospectiva puede cerrar, reclamado en cada sesión de
 // un repo del equipo para siempre. El criterio es el de session-collision-guard.js ("el repo DESTINO

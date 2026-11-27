@@ -170,6 +170,8 @@ lab_mapa() {   # $1=dir [$2=sin-mapa] — un repo con el pre-commit real y el c�
   cp "$hook" "$L/repo/.githooks/pre-commit" && chmod +x "$L/repo/.githooks/pre-commit"
   cp -R "$RAIZ/scripts/lib" "$L/repo/scripts/"
   cp "$RAIZ/$HMAP/"*.js "$L/repo/$HMAP/"
+  # el censo le pide a tycon-home.js las carpetas de la máquina
+  mkdir -p "$L/repo/scripts/setup/harness" && cp "$RAIZ/scripts/setup/harness/tycon-home.js" "$L/repo/scripts/setup/harness/"
   if [ "${2:-}" != sin-mapa ]; then
     mkdir -p "$L/repo/artifacts" "$L/repo/$PUBDIR/i18n"
     cp "$FPRIV" "$L/repo/artifacts/mapa-arnes.html"

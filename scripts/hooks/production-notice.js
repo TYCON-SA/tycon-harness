@@ -478,7 +478,7 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
     const log = fs.readFileSync(path.join(stateDirOf(HOME), 'hook-errors.log'), 'utf8');
     const hoy = new Date().toISOString().slice(0, 10);
     const propias = log.split('\n\n').filter((l) => l.includes('prod-access-guard') && l.includes(hoy));
-    if (propias.length) avisos.push(`🟠 el freno de producción no pudo decidir ${propias.length} vez(ces) hoy (frenó igual). Motivo en ~/.claude/.tycon-pipeline/hook-errors.log`);
+    if (propias.length) avisos.push(`🟠 el freno de producción no pudo decidir ${propias.length} vez(ces) hoy (frenó igual). Motivo en ~/.tycon/state/hook-errors.log`);
   } catch { /* no hay registro: bien */ }
 
   // ── 6. el pie: qué raíz de repos se usó y cuántos catálogos entraron ────────────────────────

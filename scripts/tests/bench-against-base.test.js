@@ -90,7 +90,8 @@ function makeLab(opts = {}) {
   const dir = path.join(SCRATCH, `lab-${++labs}`);
   fs.mkdirSync(dir);
   git(dir, ['init', '-q']);
-  for (const rel of [RUNNER, 'scripts/controls-bench/report-name.js', 'scripts/lib/clean-git-env.js', 'scripts/lib/git-bash.js']) copyFromHere(dir, rel);
+  // el corredor y lo que carga (tycon-home.js le dice las carpetas de la casa del laboratorio)
+  for (const rel of [RUNNER, 'scripts/controls-bench/report-name.js', 'scripts/lib/clean-git-env.js', 'scripts/lib/git-bash.js', 'scripts/setup/harness/tycon-home.js']) copyFromHere(dir, rel);
   write(dir, HOOK, HOOK_TEXT);
   write(dir, LIB, LIB_TEXT);
   write(dir, CASES, opts.cases || caseFile('must-block', opts.caseExtra));

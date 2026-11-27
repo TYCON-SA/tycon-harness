@@ -3,7 +3,7 @@
  * context-budget.js — audit de consumo de tokens del harness TYCON.
  *
  * Escanea lo que se carga en CADA sesión nueva de Claude Code:
- *   - Skills: ~/.claude/agent-skills/skills/<n>/SKILL.md (descripciones cargadas)
+ *   - Skills: ~/.tycon/harness/skills/<n>/SKILL.md (descripciones cargadas)
  *   - Agents: ~/.claude/agents/*.md (descripciones cargadas)
  *   - MCPs: ~/.claude/settings.json + <cwd>/.mcp.json (schemas de tools)
  *   - CLAUDE.md: user-global + cwd chain
@@ -12,10 +12,10 @@
  * Output: reporte con totales por categoría + top heavy hitters + recomendaciones.
  *
  * Uso:
- *   node ~/.claude/tycon-harness/scripts/tools/context-budget.js          # reporte default
- *   node ~/.claude/tycon-harness/scripts/tools/context-budget.js --verbose # con per-file breakdown
- *   node ~/.claude/tycon-harness/scripts/tools/context-budget.js --json   # output JSON
- *   node ~/.claude/tycon-harness/scripts/tools/context-budget.js --measured [--days N]   # el piso real de los lanzamientos
+ *   node ~/.tycon/harness/scripts/tools/context-budget.js          # reporte default
+ *   node ~/.tycon/harness/scripts/tools/context-budget.js --verbose # con per-file breakdown
+ *   node ~/.tycon/harness/scripts/tools/context-budget.js --json   # output JSON
+ *   node ~/.tycon/harness/scripts/tools/context-budget.js --measured [--days N]   # el piso real de los lanzamientos
  *
  * Inspirado en ECC skills/context-budget/SKILL.md, adaptado al stack TYCON.
  */
@@ -32,6 +32,10 @@ const { homeCommand } = require(path.join(__dirname, '..', '..', 'skills', 'tyco
 if (require.main === module) require('../lib/legacy-names.js').aliasArgv('scripts/tools/context-budget.js');
 
 const HOME = os.homedir();
+// las carpetas de la máquina (la de Claude Code, las skills instaladas, el lugar del arnés) las dice tycon-home.js
+const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// un comando bajo el lugar del arnés, relativo a la carpeta de la persona
+const harnessCommand = (r) => homeCommand(`${path.relative(HOME, TH.placePath(HOME)).split(path.sep).join('/')}/${r}`);
 const VERBOSE = process.argv.includes('--verbose');
 const JSON_OUT = process.argv.includes('--json');
 // `--measured [--days N]`: el piso REAL de los lanzamientos, al lado del estimado.
@@ -60,7 +64,7 @@ const tokensFor = (s) => Math.round(s.length / 4);
 const TOKENS_PER_MCP_TOOL = 500;
 // 🔴 Un servidor que la cuenta NO tiene autorizado no carga sus esquemas: cobrarlo a 500/tool
 // inflaría la cuenta a 48.500, puntuaría 0/10 y recomendaría desconectar conectores. Claude Code escribe la lista
-// de los que piden autorización en `~/.claude/mcp-needs-auth-cache.json`; ésos se cobran un
+// de los que piden autorización en `mcp-needs-auth-cache.json`, en su carpeta; ésos se cobran un
 // MÍNIMO (el nombre, no el esquema). Cuánto cuesta exactamente un nombre diferido NO se midió: el
 // número de abajo es un piso declarado, no una medición — y el reporte lo dice.
 // 🔴 Esta cuenta está COPIADA en scripts/lib/harness-audit.js (su categoría «Context Efficiency»): quien
@@ -69,7 +73,7 @@ const TOKENS_PER_MCP_TOOL = 500;
 const TOKENS_PER_UNLOADED_TOOL = 12;
 function serversSinAutorizar() {
   try {
-    const cache = JSON.parse(fs.readFileSync(path.join(HOME, '.claude/mcp-needs-auth-cache.json'), 'utf8'));
+    const cache = JSON.parse(fs.readFileSync(path.join(TH.claudeDir(HOME), 'mcp-needs-auth-cache.json'), 'utf8'));
     return new Set(Object.keys(cache).filter((k) => k.startsWith('claude.ai ')).map((k) => k.slice('claude.ai '.length)));
   } catch { return new Set(); }
 }
@@ -175,7 +179,7 @@ function isIrrelevantSkill(name) {
 // ============================================================
 
 function inventorySkills() {
-  const skillsDir = path.join(HOME, '.claude/agent-skills/skills');
+  const skillsDir = path.join(TH.installedSkillsDir(HOME), 'skills');
   if (!exists(skillsDir)) return { items: [], totalTokens: 0, count: 0 };
 
   const items = [];
@@ -742,7 +746,7 @@ function cerrarReporte(lines, { skills, agents }) {
   lines.push('  • Esto mide LO QUE SE CARGA SIEMPRE (descripciones, schemas). El body de');
   lines.push('    las skills solo se carga si el agente las invoca activamente.');
   lines.push('  • Engram observations cargadas en SessionStart no están incluidas (rotan).');
-  lines.push(`  • Re-correr post-cambio: ${homeCommand('.claude/tycon-harness/scripts/tools/context-budget.js')}`);
+  lines.push(`  • Re-correr post-cambio: ${harnessCommand('scripts/tools/context-budget.js')}`);
   lines.push('');
 
   return lines.join('\n');

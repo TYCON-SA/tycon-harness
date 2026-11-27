@@ -1107,3 +1107,16 @@ test('T45 Nightly_PromptCutEqualsFilterCut — la consigna al modelo dice el mis
   const cortes = [...consigna.matchAll(/Confidence < ([\d.]+)/g)].map((m) => Number(m[1]));
   assert.deepStrictEqual(cortes, [O.MIN_CONFIDENCE], `la consigna nombra un solo corte, el mismo: ${cortes}`);
 });
+
+test('T41a Nightly_DayThatOpensPastTheCap_IsUnreadableNotRead', () => {
+  // A41 · 🔴 rojo: el día de instintos del espejo se abría sin tope; uno de unos KB que abre a más de 64 MB (subido con la
+  //    llave de sólo crear) se juntaba entero en memoria. Ahora sale «día ilegible», como uno que no es gzip.
+  const b = base('t41a');
+  const d = diaMenos(1);
+  const dir = path.join(b.espejo, 'pc-aaaaaaaa', 'instincts');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${d}.jsonl.gz`), zlib.gzipSync(Buffer.alloc(65 * 1024 * 1024, 0x20)));
+  const e = N.leerEspejo(b.espejo, HOY);
+  assert.strictEqual(e.dias_ilegibles, 1);
+  assert.strictEqual(e.lineas.length, 0);
+});

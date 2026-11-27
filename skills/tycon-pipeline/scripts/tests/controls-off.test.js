@@ -338,7 +338,7 @@ test('T25 ControlsOff_SkillsEnUnClonAparte_LeeLaListaDelLugar', () => {
   const h = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctl-off-skills-')));
   const lib = path.join(h, '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'lib');
   fs.mkdirSync(lib, { recursive: true });
-  for (const f of ['controls-off.js', 'harness-path.js']) fs.copyFileSync(path.join(SCRIPTS, 'lib', f), path.join(lib, f));
+  for (const f of ['controls-off.js', 'harness-path.js', 'state-dir.js']) fs.copyFileSync(path.join(SCRIPTS, 'lib', f), path.join(lib, f));
   const apagaCero = (env) => {
     const codigo = `const co = require(${JSON.stringify(path.join(lib, 'controls-off.js'))}); process.stdout.write(String(co.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '0')) + ' ' + String(co.apaga('TYCON_RUNTIME_MATRIX_LEGACY', '1')));`;
     const r = spawnSync(process.execPath, ['-e', codigo], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: h, USERPROFILE: h, ...env } });

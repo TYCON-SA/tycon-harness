@@ -23,9 +23,9 @@
  * los principios formalizados como rule IDs, así que el LLM es overkill.
  *
  * Uso:
- *   node ~/.claude/tycon-harness/scripts/tools/rules-distill.js          # reporte
- *   node ~/.claude/tycon-harness/scripts/tools/rules-distill.js --json   # output JSON
- *   node ~/.claude/tycon-harness/scripts/tools/rules-distill.js --verbose # extra detail
+ *   node ~/.tycon/harness/scripts/tools/rules-distill.js          # reporte
+ *   node ~/.tycon/harness/scripts/tools/rules-distill.js --json   # output JSON
+ *   node ~/.tycon/harness/scripts/tools/rules-distill.js --verbose # extra detail
  */
 
 'use strict';
@@ -36,6 +36,10 @@ const os = require('os');
 const { homeCommand } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'));
 
 const HOME = os.homedir();
+// las skills instaladas y el lugar del arnés los dice tycon-home.js
+const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// un comando bajo el lugar del arnés, relativo a la carpeta de la persona
+const harnessCommand = (r) => homeCommand(`${path.relative(HOME, TH.placePath(HOME)).split(path.sep).join('/')}/${r}`);
 const JSON_OUT = process.argv.includes('--json');
 const VERBOSE = process.argv.includes('--verbose');
 
@@ -60,12 +64,12 @@ const packAgentDirs = () => (fs.existsSync(PACKS_DIR) ? fs.readdirSync(PACKS_DIR
     return false;
   })
   .map((p) => path.join(PACKS_DIR, p, 'agents')).filter((d) => fs.existsSync(d)) : []);
-const SKILLS_DIR = path.join(HOME, '.claude/agent-skills/skills');
+const SKILLS_DIR = path.join(TH.installedSkillsDir(HOME), 'skills');
 const TCG_SCRIPTS_DIR = path.join(GUIDES_DIR, 'scripts');
 
 // Tipos de owner detectables. Determinan si una sección del catalog enforcea
-// vía advisor (~/.claude/agents/), skill (~/.claude/agent-skills/skills/),
-// hook (script .sh/.js/.ps1 en ~/.claude/tycon-harness/scripts/), o desconocido.
+// vía advisor (~/.claude/agents/), skill (~/.tycon/harness/skills/),
+// hook (script .sh/.js/.ps1 en ~/.tycon/harness/scripts/), o desconocido.
 function classifyOwner(ownerStr) {
   // Quitar prefijo opcional "tycon-" no afecta el lookup.
   const o = ownerStr.trim();
@@ -511,7 +515,7 @@ function render(result) {
   lines.push('    cuenta como cita. Filtrá manualmente si el orphan es claramente meta.');
   lines.push('  - Retired IDs (~~SEC-W4~~) NO se reportan como zombies — están retirados a propósito.');
   lines.push('  - Multi-owner es WARNING informativo, no error. Vale la pena si la regla es compartida.');
-  lines.push(`  - Re-correr post-cambio: ${homeCommand('.claude/tycon-harness/scripts/tools/rules-distill.js')}`);
+  lines.push(`  - Re-correr post-cambio: ${harnessCommand('scripts/tools/rules-distill.js')}`);
   lines.push('');
 
   return lines.join('\n');
