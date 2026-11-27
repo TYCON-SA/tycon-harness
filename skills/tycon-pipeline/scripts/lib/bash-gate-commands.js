@@ -23,7 +23,7 @@ const path = require('path');
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
-const { CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
+const { CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
 const { ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
 /**
@@ -1285,7 +1285,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
-  const absoluta = (raw) => [...new Set(bases.map((b) => resolver(raw, b)))];
+  const absoluta = (raw) => [...new Set(bases.map((b) => resolver(conCarpetaDelComando(raw, b), b)))];
   const out = [];
   for (const crudo of [s, ...anidadosHasta(s).leidos]) {
     // la continuación de renglón (`\` y salto) junta los dos renglones en una orden, como en el shell
@@ -1319,6 +1319,12 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(fuente[0]) || '';
         const escribe = /^(?:echo|printf|print)$/.test(escritor);
+        // una variable asignada en el comando vale lo asignado (`f=h.md; echo $f | xargs rm` borra `h.md`)
+        const asignados = asignacionesDe(texto);
+        const conValor = (w) => String(w).replace(EXPANSION_DE_VARIABLE, (m, a, b) => {
+          const v = asignados.get(a || b) || [];
+          return v.length ? v[v.length - 1] : m;
+        });
         // Lo que llega de un programa (`ls specs`, `find`, `git ls-files`) o de un archivo no se ve. Se prueba con cada
         // carpeta de la fuente que existe en el disco (`git ls-files specs` da `specs/…`) y con sus comodines
         // (`ls -d specs/*`). El comodín suelto (cualquier archivo de donde corre) va cuando el marcador o el argumento del
@@ -1341,8 +1347,16 @@ function comandosPorOtroPrograma(cmd, cwd) {
         // ahí: el comodín suelto no va, como no va en un `cd` así seguido de un editor
         const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
         const cdNunca = bases.length > 1 && path.relative(cwd, bases[bases.length - 1]).split(/[\\/]+/).some((seg) => NEVER_CODE_SEGMENTS.has(seg));
-        const entrada = escribe ? fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w))
-          : [...previas, ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
+        // la lista no guarda qué separa los tramos: un `echo` de otro comando (`echo ok && rg -l x specs | xargs rm`) puede
+        // quedar como fuente, y entonces las palabras de todos los tramos saltados también cuentan
+        const saltadas = lista.slice(j + 1, k).flatMap((t) => palabras(t).filter((w) => w !== ''));
+        const base = escribe ? [...fuente.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)), ...saltadas].map(conValor)
+          : [...previas.map(conValor), ...((pegado || !acotada) && !cdNunca ? ['*'] : []), ...comoCarpeta];
+        // un `find` le suma a la entrada los archivos que alcanza (sus palabras siguen: si la lectura del `find` queda
+        // corta, frenan como antes). No se recorre si lo que corre el `xargs` sólo lee: el recorrido cuesta y no cambia nada
+        const programa = nombreDeComando(marcaDeXargs(crudas).orden[0] || '') || '';
+        const entrada = escritor === 'find' && !LECTORES_DE_XARGS.has(programa)
+          ? [...new Set([...base, ...alcanzadasPorFind(fuente, absoluta)])] : base;
         out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
