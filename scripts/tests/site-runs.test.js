@@ -2353,8 +2353,9 @@ test('Cambios_ConsolaLargaEnTiempoLineal — un comando con «sed -i» repetido 
   // 🔴 rojo: `destinosDeConsola` buscaba el archivo de cada `sed -i` hasta el fin del renglón: con el comando repetido,
   //    el tiempo crecía al cuadrado (70 KB, 1,7 s; unos MB pasaban los 10 minutos del hilo del resumen)
   const ch = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
-  // ~560 KB de cada forma: sin el tope, `sed -i` repetido tardaba más de un minuto y `open(` repetido casi otro tanto
-  for (const cmd of ['sed -i x '.repeat(64000), 'python - <<x\nopen( '.repeat(1) + 'open( '.repeat(90000)]) {
+  // ~280 KB de cada forma: sin el tope, `sed -i` repetido tardaba unos 16 s y `open(` repetido unos 7 s; con el tope,
+  // menos de medio segundo cada una, así que los 3 s dejan margen para una máquina lenta de la CI
+  for (const cmd of ['sed -i x '.repeat(32000), 'python - <<x\nopen( '.repeat(1) + 'open( '.repeat(45000)]) {
     // stable-data: el reloj mide cuánto tarda la lectura; no compara fechas
     const t = Date.now();
     ch.destinosDeConsola(cmd);
