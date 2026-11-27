@@ -1395,7 +1395,7 @@ function isOwnPiece(ctx, p) {
 }
 function ownPieces(ctx, state) {
   const M = mod('managed'), SL = mod('startup-line');
-  return ownCandidates(ctx, state).filter((p) => M.present(p, { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew }) === true);
+  return ownCandidates(ctx, state).filter((p) => M.present(p, { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) }) === true);
 }
 
 /**
@@ -1406,7 +1406,7 @@ function ownPieces(ctx, state) {
  */
 function recordPieces(ctx, state, report, shared = []) {
   const M = mod('managed'), SL = mod('startup-line');
-  const opts = { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew };
+  const opts = { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
   const version = state.version && state.version.number;
   const reported = shared && shared.length ? mod('shared').union(report, shared) : (report || []);
   const pieces = [...reported, ...ownPieces(ctx, state)];
@@ -4149,7 +4149,7 @@ function cmdDoctor(ctx) {
   // las piezas: lo registrado contra la máquina — sólo lectura
   const M = mod('managed'), SL = mod('startup-line');
   const managed = Array.isArray(state.managed) ? state.managed : [];
-  const pieceOpts = { home: ctx.home, env, isStartupLine: SL.isNew };
+  const pieceOpts = { home: ctx.home, env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
   const gone = M.missing(managed, pieceOpts);
   const skillsDir = path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills');
   const roots = [...new Set([tree, real(tree), linkPath(ctx.home), PLACE.legacyPlacePath(ctx.home), skillsDir, real(skillsDir)].filter(Boolean))];
@@ -4329,7 +4329,7 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
     if (!eff.ok) { add('warn', `controles que frenan: no pude leer la lista de efectos (${eff.reason})`); return; }
     for (const p of eff.problems) add('warn', `controles que frenan: ${p}: sus hooks no se cuentan`);
     const { effectFor } = mod('plan');
-    const opts = { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew };
+    const opts = { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
     const registered = (Array.isArray(state.managed) ? state.managed : [])
       .filter((p) => p && p.kind === 'hook' && M.present(p, opts) === true)
       .map((p) => ({ p, e: effectFor(p, eff.effects) }))
