@@ -143,6 +143,16 @@ frena "T4n · la palabra server en otra posición no apaga el -s" "az sql db lis
 frena "6.3 T11 · borrar el servidor de producción por -n" "az sql server delete -n acme-sql --yes"
 frena "6.3 T11 · borrar una base del servidor de producción por --server" "az sql db delete --server $PROD -n base --yes"
 pasa  "6.3 T11 · borrar un servidor declarado no-producción pasa" "az sql server delete -n acme-sql-staging --yes"
+# A56: el shell saca la barra de escape antes de llamar a az (`acme\-sql` llega como `acme-sql`), y un valor que empieza
+# con @ az lo lee de un archivo. Las dos formas escondían el servidor de producción, también en un borrado.
+frena "A56 · borrar el servidor con una barra en el nombre" "az sql server delete -n acme\-sql -g ACME --yes"
+frena "A56 · abrir el servidor a la red con una barra en el nombre" "az sql server update -n acme\-sql -g ACME --enable-public-network true"
+frena "A56 · borrar una base con una barra en el servidor" "az sql db delete -n midb --server acme\-sql -g ACME --yes"
+frena "A56 · -s con una barra" "az sql db list -s acme\-sql -g ACME"
+frena "A56 · el id del recurso con una barra" "az sql server delete --ids /subscriptions/x/resourceGroups/ACME/providers/Microsoft.Sql/servers\\/acme-sql --yes"
+frena "A56 · el nombre del servidor leído de un archivo" "az sql server delete -n @/tmp/srv.txt -g ACME --yes"
+frena "A56 · --server leído de un archivo" "az sql db list --server @/tmp/srv.txt -g ACME"
+pasa  "A56 · con la barra, un servidor de no-producción sigue pasando" "az sql server delete -n acme\-sql-staging -g ACME --yes"
 BORRA="DR""OP DATA""BASE"
 for forma in "$BORRA" "$(printf '%s' "$BORRA" | tr '[:upper:]' '[:lower:]')" "Drop DataBase"; do
   frena "6.3 T12 · la sentencia de borrado de base contra producción (${forma%% *})" "sqlcmd -S $PROD -Q \"$forma base\""

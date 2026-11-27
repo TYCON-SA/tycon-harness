@@ -3610,15 +3610,25 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       // pero `az sql server <verbo>` no lo tiene: ahí el servidor es `-n`, y lo que sigue a `-s` (en la práctica, el id
       // de una suscripción) leído como servidor frenaba una consulta de configuración
       const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
+      // El valor como lo recibe az (A56). El shell saca la barra de escape de una palabra sin comillas (`acme\-sql` llega
+      // como `acme-sql`), y el freno tomaba por archivo todo valor con una barra: se mira también sin las barras. Y az lee
+      // de un archivo el valor que empieza con @ (`-n @srv.txt`): lo que ahí dice no se ve, y es un servidor desconocido.
+      // Sólo en az: en sqlcmd la barra separa la instancia del servidor (`host\INST`)
+      const agregarAz = (valor, via) => {
+        const v = String(valor);
+        if (v.startsWith('@')) { out.push({ host: null, crudo: v, via }); return; }
+        agregar(crudoDe(texto, v), via);
+        if (v.includes('\\')) agregar(v.replace(/\\(.)/g, '$1'), via);
+      };
       for (let i = 1; i < t.length; i++) {
         // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
         const esSqlServer = t.includes('sql') && t.includes('server');
         const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
                                 (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
-        if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
+        if (esFlagServidor && t[i + 1] !== undefined) agregarAz(t[i + 1], 'az');
         const igual = /^--server[=:](.+)$/.exec(t[i]);
-        if (igual) agregar(crudoDe(texto, igual[1]), 'az');
-        const rec = RECURSO_SQL.exec(t[i]);
+        if (igual) agregarAz(igual[1], 'az');
+        const rec = RECURSO_SQL.exec(t[i]) || RECURSO_SQL.exec(String(t[i]).replace(/\\(.)/g, '$1'));
         if (rec) agregar(rec[1], 'recurso');
       }
       // `az resource delete -n <s> --resource-type Microsoft.Sql/servers` y `--parent servers/<s>`: el servidor sale del
