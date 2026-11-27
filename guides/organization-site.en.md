@@ -1952,6 +1952,15 @@ connection is cut each time it runs out (with 60 s, every minute). When creating
 a machine connected there is always an open request. On an existing one:
 `gcloud run services update <service> --region <region> --timeout=3600`.
 
+**Up to date on Cloud Run**: with `site.update: "auto"`, the GitHub nightly (`site-update.yml`, with
+`SITE_PLATFORM=cloudrun`) reads the image the service runs, resolves `stable` in the public registry and changes only the
+image, by digest (`gcloud run services update --image`): it keeps the timeout, the variables and the secrets. If the
+service runs from an Artifact Registry mirror, it applies with that same mirror. It waits until the new revision is ready
+with all the traffic, runs the sessionless check and, if it fails, goes back to the previous digest. A service with its
+traffic pinned to a revision is not touched: it says so (`gcloud run services update-traffic --to-latest` gives it back
+to the latest). It signs in with Workload Identity Federation, with no stored key; the permissions and variables are in
+the README of the GitHub nightlies.
+
 ### A closed network
 
 Without internet access, the site cannot look at the last published version and says so. The update is by hand: on a

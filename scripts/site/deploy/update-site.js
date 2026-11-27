@@ -20,7 +20,9 @@
  *
  * Plataformas: `azure` (Container Apps, con la sesión de `az` del nocturno: `containerapp show` y `update --image`),
  * `render` (el hook de redespliegue con `imgURL=<imagen>@<huella>`; el hook es un secreto y nunca sale en la salida) y
- * `local` (`docker compose pull` y `up -d` con `SITE_IMAGE=<imagen>@<huella>`).
+ * `local` (`docker compose pull` y `up -d` con `SITE_IMAGE=<imagen>@<huella>`) y `cloudrun` (Google Cloud Run, con la sesión
+ * de `gcloud` del nocturno: `run services describe` y `run services update --image`; conserva el registro con el que corre
+ * el servicio, como un espejo de Artifact Registry, y no toca un servicio con el tráfico fijado a una revisión).
  *
  * El resultado se escribe en `<estadoDir>/site-update-<día>.json` (lo guarda el nocturno en los datos de operaciones y lo
  * lee el resumen de la mañana): sólo estado, versiones, hora y un motivo de la lista cerrada; ninguna dirección, grupo,
@@ -33,8 +35,10 @@
  *   node update-site.js --platform render --image <registro/repo> --operations-json <…> --state-dir <…>  (el hook, en
  *                       la variable SITE_RENDER_DEPLOY_HOOK; con SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, pregunta
  *                       a la API de Render qué imagen corre el servicio)
+ *   node update-site.js --platform cloudrun --service <s> --region <r> [--project <p>] --site-url <https://…> --image <…>
+ *                       --operations-json <…> --state-dir <…>
  *   node update-site.js --platform local --compose <compose.yaml> --site-url http://127.0.0.1:8080 --image <…> --mode auto
- *   SALIDA: 0 al_dia, aviso, actualizado o pedido · 1 no_pudo o vuelto_atras · 2 uso. `TYCON_AZ_CMD` y `TYCON_DOCKER_CMD`
+ *   SALIDA: 0 al_dia, aviso, actualizado o pedido · 1 no_pudo o vuelto_atras · 2 uso. `TYCON_AZ_CMD`, `TYCON_GCLOUD_CMD` y `TYCON_DOCKER_CMD`
  *   cambian los ejecutables y `TYCON_SITE_REGISTRY_URL` el registro (las pruebas usan dobles).
  */
 const fs = require('fs');
@@ -61,6 +65,7 @@ const MOTIVOS = Object.freeze([
   'la imagen que corre cambió durante la ejecución',
   'no se pudo leer el estado del actualizador',
   'instalado por etiqueta',
+  'el tráfico está fijado a una revisión',
 ]);
 const HUELLA = /^sha256:[0-9a-f]{64}$/;
 // la imagen que corre está fijada por una etiqueta, no por huella: la actualización no la puede comparar ni cambiar sin
@@ -147,6 +152,57 @@ function plataformaDe(o) {
             let d = null;
             try { d = rv && rv.status === 0 ? JSON.parse(rv.stdout) : null; } catch { d = null; }
             if (d && String(d.imagen).trim() === ref) return { ok: true };
+          }
+          if (Date.now() >= hasta) return { error: 'la revisión nueva no quedó lista con todo el tráfico' };
+          await dormir(cadaMs);
+        }
+      },
+    };
+  }
+  if (o.plataforma === 'cloudrun') {
+    const c = o.cloudrun || {};
+    const donde = ['--region', c.region, ...(c.proyecto ? ['--project', c.proyecto] : [])];
+    const correr = conRegistro(o.correr || correrDe(process.env.TYCON_GCLOUD_CMD || 'gcloud'));
+    const describir = () => {
+      const r = correr(['run', 'services', 'describe', c.servicio, ...donde, '--format', 'json']);
+      let d = null;
+      try { d = r && r.status === 0 ? JSON.parse(r.stdout) : null; } catch { d = null; }
+      return { r, d };
+    };
+    const imagenDe = (d) => String((d && d.spec && d.spec.template && d.spec.template.spec && Array.isArray(d.spec.template.spec.containers) && d.spec.template.spec.containers[0] && d.spec.template.spec.containers[0].image) || '').trim();
+    // todo el tráfico a la última revisión: lo que hace `services update` por defecto. Fijado a una revisión, el cambio de
+    // imagen crearía una revisión sin tráfico y la prueba le pegaría a la vieja
+    const alUltimo = (t) => Array.isArray(t) && t.length === 1 && Number(t[0].percent) === 100 && t[0].latestRevision === true;
+    return {
+      url: c.url,
+      actual() {
+        const { r, d } = describir();
+        if (!d) return { error: `no se pudo leer la imagen que corre (${r && r.status === 0 ? 'la respuesta no es JSON' : breve(r)})` };
+        const img = imagenDe(d);
+        const h = huellaDe(img);
+        if (!h) return { error: sinHuella({ stdout: img }) };
+        if (!alUltimo(d.spec.traffic)) return { error: 'el tráfico está fijado a una revisión: devolvéselo a la última (gcloud run services update-traffic --to-latest) para que se actualice solo' };
+        // lo que se aplica conserva el registro con el que corre (un espejo de Artifact Registry, por ejemplo): `stable` se
+        // resuelve en el registro público y la huella es la misma en los dos
+        return { huella: h, nombre: img.slice(0, img.lastIndexOf('@')) };
+      },
+      aplicar(ref) {
+        const r = correr(['run', 'services', 'update', c.servicio, '--image', ref, ...donde, '--quiet']);
+        return r && r.status === 0 ? { ok: true } : { error: `no se pudo cambiar la imagen (${breve(r)})` };
+      },
+      // `update` vuelve con la revisión lista; igual se confirma, como en Azure: la última creada es la lista, se lleva
+      // todo el tráfico, está Ready y tiene la imagen pedida
+      async esperar(ref) {
+        const { cadaMs = 10000, plazoMs = 600000, dormir = (ms) => new Promise((ok) => setTimeout(ok, ms)) } = c.espera || {};
+        const hasta = Date.now() + plazoMs;
+        for (;;) {
+          const { d } = describir();
+          const st = d && d.status;
+          if (st && st.latestCreatedRevisionName && st.latestCreatedRevisionName === st.latestReadyRevisionName && imagenDe(d) === ref) {
+            const t = Array.isArray(st.traffic) ? st.traffic : [];
+            const todo = t.length === 1 && Number(t[0].percent) === 100 && t[0].revisionName === st.latestReadyRevisionName;
+            const lista = Array.isArray(st.conditions) && st.conditions.some((x) => x && x.type === 'Ready' && x.status === 'True');
+            if (todo && lista) return { ok: true };
           }
           if (Date.now() >= hasta) return { error: 'la revisión nueva no quedó lista con todo el tráfico' };
           await dormir(cadaMs);
@@ -291,15 +347,17 @@ async function actualizar(o) {
   // dos corridas a la vez: si la imagen que corre cambió desde que se miró (otra la actualizó), ésta no toca nada
   const otraVez = p.actual();
   if (otraVez.error || otraVez.huella !== a.huella) return fin('no_pudo', desde, st.version, 'la imagen que corre cambió durante la ejecución');
-  const anterior = `${nombre}@${a.huella}`;
-  const cambio = p.aplicar(ref);
+  // una plataforma que dice con qué registro corre (Cloud Run, con un espejo) aplica con ése
+  const aplicado = a.nombre ? `${a.nombre}@${st.huella}` : ref;
+  const anterior = `${a.nombre || nombre}@${a.huella}`;
+  const cambio = p.aplicar(aplicado);
   if (cambio.error) {
     // un cambio a medias (en una máquina propia, el pull bien y el up mal) vuelve a la anterior y no se reintenta
     estado.fallidas[st.huella] = cambio.error;
     const atras = p.aplicar(anterior);
     return fin('no_pudo', desde, st.version, atras.error ? `${cambio.error}; y ${atras.error}` : cambio.error);
   }
-  const lista = p.esperar ? await p.esperar(ref) : { ok: true };
+  const lista = p.esperar ? await p.esperar(aplicado) : { ok: true };
   const prueba = lista.error ? { ok: false, motivo: `la prueba sin sesión falló (${lista.error})` } : await probar(p.url);
   if (prueba.ok) return fin('actualizado', desde, st.version);
   // la prueba falló: vuelve a la huella que corría y la prueba otra vez; la huella nueva no se reintenta
@@ -403,8 +461,8 @@ async function main(argv) {
     return 0;
   }
   const plataforma = op('--platform');
-  if (!['azure', 'render', 'local'].includes(plataforma) || !op('--image')) {
-    process.stderr.write('uso: update-site.js --platform azure|render|local --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] [--demo] …\n');
+  if (!['azure', 'render', 'local', 'cloudrun'].includes(plataforma) || !op('--image') || (plataforma === 'cloudrun' && !(op('--service') && op('--region')))) {
+    process.stderr.write('uso: update-site.js --platform azure|render|local|cloudrun --image <registro/repo> [--operations-json <archivo> | --mode auto|notice] [--state-dir <carpeta>] [--demo] …\n');
     return 2;
   }
   const modo = op('--mode') ? (['auto', 'notice'].includes(op('--mode')) ? op('--mode') : null) : (op('--operations-json') ? modoDe(op('--operations-json')) : 'notice');
@@ -415,6 +473,7 @@ async function main(argv) {
     azure: { grupo: op('--resource-group'), app: op('--app'), suscripcion: op('--subscription'), url: op('--site-url') },
     render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url'), api: { clave: variableCargada('SITE_RENDER_API_KEY'), servicio: variableCargada('SITE_RENDER_SERVICE_ID') } },
     local: { compose: op('--compose'), url: op('--site-url') },
+    cloudrun: { servicio: op('--service'), region: op('--region'), proyecto: op('--project'), url: op('--site-url') },
   });
   return ['no_pudo', 'vuelto_atras'].includes(r.resultado) ? 1 : 0;
 }

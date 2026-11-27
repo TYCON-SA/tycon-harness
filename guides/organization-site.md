@@ -1913,6 +1913,14 @@ pedido al vencer el plazo del servicio (`--timeout`): con un plazo corto, la con
 que vence (con 60 s, cada minuto). Al crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
 abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
+**Al día en Cloud Run**: con `site.update: "auto"`, el nocturno de GitHub (`site-update.yml`, con `SITE_PLATFORM=cloudrun`)
+lee la imagen que corre el servicio, resuelve `stable` en el registro público y cambia sólo la imagen, por huella
+(`gcloud run services update --image`): conserva el plazo, las variables y los secretos. Si el servicio corre desde un
+espejo de Artifact Registry, aplica con ese mismo espejo. Espera a que la revisión nueva esté lista con todo el tráfico,
+corre la prueba sin sesión y, si falla, vuelve a la huella anterior. Un servicio con el tráfico fijado a una revisión no se
+toca: lo dice (`gcloud run services update-traffic --to-latest` lo devuelve a la última). Entra con Workload Identity
+Federation, sin llave guardada; los permisos y las variables, en el README de los nocturnos de GitHub.
+
 ### Una red cerrada
 
 Sin salida a internet, el sitio no puede mirar la última publicada y lo dice. La actualización es a mano: en una máquina

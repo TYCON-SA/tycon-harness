@@ -62,10 +62,10 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida»; y el secreto
 // SITE_PRODUCTS_WRITE_TOKEN de los repos de producto, en la tabla de secretos y en «El permiso para Proponer»; y la
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
-// de los botones entre paréntesis.
+// de los botones entre paréntesis; y, en Cloud Run, su párrafo «Al día» (la plataforma cloudrun del actualizador).
 const HUELLA_INSTALACION = {
-  es: '07e398b6fb50c7b1c1d4378cc6d8614c33e37152bee87c7704b0f8036efdca98',
-  en: '83181743ce9082255d1105f5d4344edf0edc4b345bd02fc3a2d72ef21d5a0842',
+  es: '03310232cab99a29e9aaf413d1fa8909932deeddf3cbc9cd9fe756eab953be40',
+  en: 'd520eda32803e75fdb740fdcfa129b79ea730823f3ce6e038ddc530fe09b7974',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
