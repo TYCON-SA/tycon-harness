@@ -4,7 +4,7 @@
     {
       "script": "on-bash-write-after.js",
       "date": "2026-11-21",
-      "reason": "La pieza que mira lo que un comando escribió todavía no está registrada en Claude Code ni en Codex: la historia que la crea la deja sin registrar hasta su última tanda. Sus casos corren en bash-write-after.test.js con el gancho real; sale de acá con su registro, cuando el banco la pueda disparar y la paridad con Codex se pueda medir."
+      "reason": "Está registrada sólo en Claude Code, en el modo que anota (compara y deja el renglón en gates.log, sin deshacer ni frenar); en Codex no se registra, y la asimetría está declarada en adapters/codex/hooks.json. Sus casos corren en bash-write-after.test.js con el gancho real. Sale de acá con los casos del banco, que piden armar en la casa de laboratorio la foto y el estado de la sesión."
     },
     {
       "script": "office-message-rule.js",
