@@ -78,9 +78,10 @@ pasa(){ local etiqueta="$1" cmd="$2"; shift 2
 }
 
 # Con el freno INSTALADO las costuras de prueba no existen (a propósito), así que estos casos no se
-# pueden fabricar ahí. La suite no corre, y lo dice.
+# pueden fabricar ahí. La suite no corre, y lo dice con la marca de los corredores de suites («⏭ <suite>: NO MEDIDO —
+# <motivo>», exit 0): sin la marca, un exit 0 cuenta como verde.
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-guard: esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
+  echo "⏭ prod-guard: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
   exit 0
 fi
 if [ ! -f "$HOOK" ] || [ ! -f "$INDICE" ]; then

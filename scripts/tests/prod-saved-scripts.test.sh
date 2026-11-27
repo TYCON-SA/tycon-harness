@@ -34,7 +34,7 @@ ok(){ echo "✅ prod-saved: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ prod-saved: $1"; fallos=$((fallos+1)); }
 
 if [ -d /opt/tycon ]; then
-  echo "⏭ prod-saved: esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
+  echo "⏭ prod-saved: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
   exit 0
 fi
 

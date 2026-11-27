@@ -679,7 +679,7 @@ hook_order() { # <settings>: una línea por hook, en el orden del archivo (event
 MISSING_CONTROLS=(
   "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
   "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js"
-  "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-bash-write-gate.js" "PostToolUse|Skill|tycon-pipeline/scripts/on-skill-invoke.js"
+  "PreToolUse|Bash|PowerShell|Monitor|tycon-pipeline/scripts/on-bash-write-gate.js" "PostToolUse|Skill|tycon-pipeline/scripts/on-skill-invoke.js"
   "PostToolUse|Artifact|artifact-archive.js" "UserPromptSubmit||rebuild-before-verify.js" "Stop||large-read-meter.js"
   "SessionStart||dependencies-notice.js" "SessionStart||lane-llm-notice.js"
 )
@@ -779,7 +779,7 @@ for rel in safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh; do
   same_cmd "$ST" PreToolUse "$(shell_m "$rel")" "$rel" "$SH_PREFIX\"$CLONE/scripts/hooks/$rel\"" || BAD="$BAD $rel(«$(hook_cmd "$ST" PreToolUse "$(shell_m "$rel")" "$rel")»)"
 done
 same_cmd "$ST" Stop '' large-read-meter.js "node \"$CLONE/scripts/hooks/large-read-meter.js\"" || BAD="$BAD large-read-meter.js(«$(hook_cmd "$ST" Stop '' large-read-meter.js)»)"
-same_cmd "$ST" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js "node \"$HT/.claude/agent-skills/skills/tycon-pipeline/scripts/on-bash-write-gate.js\"" || BAD="$BAD on-bash-write-gate.js(«$(hook_cmd "$ST" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js)»)"
+same_cmd "$ST" PreToolUse 'Bash|PowerShell|Monitor' tycon-pipeline/scripts/on-bash-write-gate.js "node \"$HT/.claude/agent-skills/skills/tycon-pipeline/scripts/on-bash-write-gate.js\"" || BAD="$BAD on-bash-write-gate.js(«$(hook_cmd "$ST" PreToolUse 'Bash|PowerShell|Monitor' tycon-pipeline/scripts/on-bash-write-gate.js)»)"
 if [ -z "$BAD" ]; then ok "(o) T91 el intérprete sale de la extensión: un .sh queda como bash \"<ruta>\" y un .js como node \"<ruta>\""
 else no "(o) T91 el comando no es <intérprete> \"<ruta>\":$BAD"; fi
 cp "$ST" "$T/t.settings.json"
@@ -1040,7 +1040,7 @@ cp -R "$CLONE" "$DOLLAR_DIR/clone"
 HPC="$(new_home dollar-clone)"; SPC="$HPC/.claude/settings.json"
 LAB_INSTALLER="$DOLLAR_DIR/clone/scripts/install-tycon-hooks.ps1" installer "$HPC" "${HELD[@]}" "${TEAM[@]}" > "$T/pc.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SPC")" = "0 de $SKILL_HOOKS" ] && [ "$(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' engram-pre-commit.sh)" = 000 ] \
-   && [ "$(unsafe_notice "$T/pc.out" '«\$»')" = "$CLONE_HOOKS" ] && [ "$(unsafe_notice "$T/pc.out" 'safety-guard-pre\.sh (PreToolUse)')" = 1 ] && [ "$(hook_n "$SPC" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js)" = 1 ]; then
+   && [ "$(unsafe_notice "$T/pc.out" '«\$»')" = "$CLONE_HOOKS" ] && [ "$(unsafe_notice "$T/pc.out" 'safety-guard-pre\.sh (PreToolUse)')" = 1 ] && [ "$(hook_n "$SPC" PreToolUse 'Bash|PowerShell|Monitor' tycon-pipeline/scripts/on-bash-write-gate.js)" = 1 ]; then
   ok "(t) con \$ en la ruta del clon: sus $CLONE_HOOKS guiones —los tres .sh entre ellos— no se registran y cada uno se nombra; los $SKILL_HOOKS de las skills (ruta sin \$) quedan"
 else no "(t) con \$ en la ruta del clon (rc $RC): comandos inseguros «$(unsafe_cmds "$SPC")» (esperaba «0 de ${SKILL_HOOKS}»), $(unsafe_notice "$T/pc.out" '«\$»') línea(s) (esperaba $CLONE_HOOKS), safety-guard $(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh) · $(brief "$T/pc.out" 200)"; fi
 
@@ -1193,7 +1193,7 @@ else no "(u) -Check lanzado por un harness.js de antes (rc $RC): $(grep -c '+ Pr
 SHELL_ROWS=(
   "PreToolUse|Bash|PowerShell|Monitor|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
   "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js" "PreToolUse|Bash|PowerShell|session-cap-guard.js" "PreToolUse|Bash|PowerShell|public-push-guard.js"
-  "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-pre-commit.js" "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-bash-write-gate.js"
+  "PreToolUse|Bash|PowerShell|tycon-pipeline/scripts/on-pre-commit.js" "PreToolUse|Bash|PowerShell|Monitor|tycon-pipeline/scripts/on-bash-write-gate.js"
   "PostToolUse|Bash|PowerShell|retro-pending.js" "PostToolUse|Bash|PowerShell|unpushed-work-notice.js" "PostToolUse|Bash|PowerShell|failed-query-notice.js"
 )
 cat > "$T/widen.js" <<'JS'

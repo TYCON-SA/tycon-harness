@@ -10,6 +10,12 @@
  * vuelve a lo que tenía la foto, o se borra si no existía; queda un renglón `escritura-vista-despues` en gates.log
  * (sesión, ruta, programa; nunca el contenido) y el aviso le llega al agente.
  *
+ * Viene en el modo que anota: compara y deja en gates.log lo que deshacería (`status: would-undo`, con la forma del
+ * comando), sin deshacer, sin frenar y sin avisarle al agente; una mirada que no se pudo hacer queda como
+ * `mirada-fallida`. Lo de abajo es el modo que deshace, que se prende con TYCON_WRITE_AFTER_MODE=undo. Un comando que
+ * sólo lee (soloLee) no saca foto en ningún modo. En Codex no se registra (asimetría declarada en
+ * adapters/codex/hooks.json): sus ediciones llegan como apply_patch, con el parche en tool_input.command.
+ *
  * Qué protege y cómo se compara: lib/protected-photo.js. Los repos que se miran: el de la carpeta de la sesión y el de
  * cada `cd` escrito en el comando.
  *
@@ -31,7 +37,7 @@
  * trampa (agrega una llamada falsa a la conversación, o hace que otra sesión se vea viva) no se ve: lo que cambie el
  * comando siguiente queda sin deshacer, o como dudoso, anotado y avisado. Para eso queda la red del commit.
  *
- * Límites conocidos: un proceso que el comando deja vivo (`&`, `nohup`) y escribe cuando el comando ya terminó, un
+ * Límites conocidos: un proceso que el comando deja vivo (`&`, `nohup`, un comando de Bash con run_in_background) y escribe cuando el comando ya terminó, un
  * comando cortado por tiempo que no llega al evento de después, un guion que escribe en otro repo sin nombrarlo con
  * `cd`, una historia nueva en una carpeta donde no había ninguna, y un guion hecho para falsificar la foto y su huella
  * (la carpeta de las fotos la protege el freno de antes, leyendo el comando). Monitor corre su comando de fondo: su
@@ -76,11 +82,29 @@ const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..');
 const EVENTOS_DE_DESPUES = ['PostToolUse', 'PostToolUseFailure'];
 const SIN_ESCRIBIR = new Set(['cd', 'echo', 'true', 'pwd', 'test', '[', ':']);
 
+/**
+ * El modo: «anota» (el de la instalación) compara y deja el renglón en gates.log, sin deshacer, sin frenar y sin avisar
+ * al agente; «deshace» (TYCON_WRITE_AFTER_MODE=undo) es el de la historia entera. Se prende primero el que anota para
+ * medir con gates.log cuánto deshacería, antes de dejarlo deshacer: deshacer de entrada pisa trabajo legítimo que
+ * todavía no se sabe distinguir.
+ */
+const modo = () => (String(process.env.TYCON_WRITE_AFTER_MODE || '').toLowerCase() === 'undo' ? 'deshace' : 'anota');
+
+/** Un renglón en gates.log; si no se puede escribir, a hook-errors.log. */
+function anotarEnGates(stateDir, obj) {
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify(obj)}\n`);
+  } catch (e) { logHookError(stateDir, e); }
+}
+
 function logHookError(stateDir, e) {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
     fs.appendFileSync(path.join(stateDir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-after FAILED OPEN: ${(e && e.stack) || e}\n\n`, 'utf8');
+      // en el modo que anota no hay nada que reparar: la marca FAILED OPEN la cuenta el aviso de fallas del arranque, que
+      // le llega al agente
+      `[${new Date().toISOString()}] on-bash-write-after ${modo() === 'anota' ? 'anotó (modo que anota, no frena)' : 'FAILED OPEN'}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch (_) { /* nada */ }
 }
 
@@ -118,7 +142,8 @@ function redirigeAArchivo(comando) {
     let j = i + 1;
     if (s[j] === '>' || s[j] === '|') j++;
     if (s[j] === '&') {
-      if (/[\d-]/.test(s[j + 1] || '')) { i = j + 1; continue; }
+      // `>&2` o `>&-` duplica o cierra un descriptor; `>&2archivo` escribe un archivo
+      if (/[\d-]/.test(s[j + 1] || '') && /^(?:$|[\s;&|)<>])/.test(s.slice(j + 2))) { i = j + 1; continue; }
       return true;
     }
     while (s[j] === ' ' || s[j] === '\t') j++;
@@ -161,11 +186,13 @@ function programas(comando, cwd, { powershell = false } = {}) {
   let reconocidos = 0;
   let otros = 0;
   let gits = 0;
+  const nombres = [];
   for (const seg of segmentos(String(comando || ''), { powershell })) {
     let i = 0;
     while (seg[i] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto)) i++;
     const p = seg[i];
     if (!p) continue;
+    if (nombres.length < 12) nombres.push(path.basename(p.texto).slice(0, 40));
     if (!p.esBandera) { otros++; continue; }
     if (SIN_ESCRIBIR.has(p.texto) && i === 0) continue;
     if (p.texto === 'git' && i === 0) { gits++; continue; }
@@ -184,6 +211,8 @@ function programas(comando, cwd, { powershell = false } = {}) {
     todosReconocidos: limpio && reconocidos > 0 && otros === 0 && gits === 0,
     algunoReconocido: reconocidos > 0,
     soloGit: limpio && gits > 0 && otros === 0 && reconocidos === 0,
+    hayGit: gits > 0,
+    nombres,
   };
 }
 
@@ -257,18 +286,51 @@ function llamadasDeLaConversacion(transcriptPath, ids, hasta) {
  * deshacer no encuentra nada) en vez de confiar en una marca de «ya mirado», que el comando podría escribir. Un `fin`
  * fabricado sólo adelanta el borrado, y sin foto el evento de después frena.
  */
-function borrarFotosMiradas(stateDir, input) {
+function borrarFotosMiradas(stateDir, input, ahora = Date.now()) { // stable-data: la edad del fin de cada comando
   const propia = path.basename(archivoDeLaFoto(stateDir, input));
-  const prefijo = `${path.basename(propia).split('-')[0]}-`;
+  const sesion = input.session_id || null;
   let nombres = [];
   try { nombres = fs.readdirSync(photo.photosDir(stateDir)); } catch (_) { return; }
   for (const n of nombres) {
-    if (n === propia || !n.startsWith(prefijo) || !n.endsWith('.json')) continue;
+    if (n === propia || !n.endsWith('.json')) continue;
     let r = null;
     try { r = JSON.parse(fs.readFileSync(path.join(dirEnCurso(stateDir), n), 'utf8')); } catch (_) { continue; }
-    if (r && typeof r.fin === 'number') { try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ } }
+    // de esta sesión por el registro, no por el nombre (dos ids pueden empezar igual), y terminado hace más de un minuto:
+    // un evento de después repetido llega enseguida y todavía la encuentra
+    if (r && r.sesion === sesion && typeof r.fin === 'number' && ahora - r.fin > ESPERA_DEL_REPETIDO_MS) {
+      // el registro queda: aLaVez lo lee para ver un marker.js que corrió a la vez; lo borra el barrido
+      try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ }
+    }
   }
 }
+
+// cada cuánto se barren los registros de inicio viejos desde el evento de antes: hay uno por comando y por edición, y
+// el evento de después de un comando con diferencias los lee todos
+const BARRIDO_CADA_MS = 10 * 60 * 1000;
+
+/** Borra los registros de inicio de más de VIDA_DEL_REGISTRO_MS, a lo sumo una vez cada BARRIDO_CADA_MS. */
+function barrerRegistrosViejos(stateDir, ahora = Date.now()) { // stable-data: la edad de cada registro y del último barrido
+  const dir = dirEnCurso(stateDir);
+  const sello = path.join(dir, '.barrido');
+  try { if (ahora - Number(fs.readFileSync(sello, 'utf8')) < BARRIDO_CADA_MS) return; } catch (_) { /* nunca se barrió */ }
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir); } catch (_) { return; }
+  for (const n of nombres) {
+    if (!n.endsWith('.json')) continue;
+    const f = path.join(dir, n);
+    let r = null;
+    try { r = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { r = null; }
+    const t = r && (r.fin || r.inicio);
+    if (r && typeof t === 'number' && ahora - t <= VIDA_DEL_REGISTRO_MS) continue;
+    try { fs.rmSync(f, { force: true }); } catch (_) { /* otra lo borró */ }
+    // la foto de un comando terminado se va con su registro; la de uno sin terminar (espera su permiso) queda para la
+    // limpieza de los 7 días
+    if (r && typeof r.fin === 'number') { try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ } }
+  }
+  try { photo.writeWhole(sello, String(ahora)); } catch (_) { /* el próximo vuelve a barrer */ }
+}
+// cuánto queda la foto de un comando terminado, para un evento de después repetido
+const ESPERA_DEL_REPETIDO_MS = 60 * 1000;
 
 function anotarFin(stateDir, input) {
   const f = archivoEnCurso(stateDir, input);
@@ -429,6 +491,12 @@ function frenar(stateDir, input, motivo) {
  */
 function noSePudoMirar(input, stateDir, motivo) {
   logHookError(stateDir, new Error(`no se pudo mirar: ${motivo}`));
+  if (modo() === 'anota') {
+    // stable-data: la hora del renglón del registro
+    anotarEnGates(stateDir, { ts: new Date().toISOString(), name: 'mirada-fallida', status: 'logged', modo: 'anota', sesion: input.session_id || null, motivo,
+      programa: String((input.tool_input || {}).command || '').replace(/\s+/g, ' ').slice(0, 160) });
+    return;
+  }
   const frenada = frenar(stateDir, input, motivo);
   const texto = [`⛔ tycon-pipeline — no pude mirar qué escribió el comando en las historias y las constancias (${motivo}).`,
     frenada, COMO_SE_LIBERA(input.session_id)].join('\n');
@@ -437,9 +505,10 @@ function noSePudoMirar(input, stateDir, motivo) {
 
 // lo que se puede correr con la sesión frenada: programas que sólo leen, sin redirecciones a archivos ni sustituciones.
 // Ninguno ejecuta otro programa por una opción ni escribe un archivo que nombra (por eso no están `rg` ni `git grep`,
-// que corren otro con `--pre` y `-O`; ni `less`, que corre el de LESSOPEN; ni `uniq`, que escribe su segundo archivo)
+// que corren otro con `--pre` y `-O`; ni `less`, que corre el de LESSOPEN; ni `uniq`, que escribe su segundo archivo;
+// ni `file`, que con `-C` compila un archivo)
 const LECTORES = new Set(['cat', 'head', 'tail', 'ls', 'grep', 'egrep', 'fgrep', 'wc', 'pwd', 'echo', 'printf', 'true', 'false',
-  'test', '[', 'stat', 'file', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
+  'test', '[', 'stat', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
   'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd']);
 // `sort` sólo como filtro de una tubería: sin archivos y con estas opciones. `--compress-program` corre un programa,
 // `-o` escribe, y en PowerShell un bloque `{ … }` es código
@@ -511,15 +580,26 @@ function despues(input, stateDir) {
   }
   const { deshacer, dudosas } = separar(foto, diferencias, input, stateDir);
   if (!deshacer.length && !dudosas.length) return;
-  const { hechas, fallas } = photo.undo(foto, deshacer, { stateDir });
   const ts = new Date().toISOString(); // stable-data: la hora del renglón del registro
   const programa = comando.replace(/\s+/g, ' ').slice(0, 160);
-  const renglon = (name, status, d) => `${JSON.stringify({ ts, name, status, sesion: input.session_id || null, archivo: d.abs, que: d.que, programa, ...(d.porque ? { porque: d.porque } : {}) })}\n`;
-  try {
-    fs.mkdirSync(stateDir, { recursive: true });
-    for (const d of hechas) fs.appendFileSync(path.join(stateDir, 'gates.log'), renglon('escritura-vista-despues', 'undone', d));
-    for (const d of dudosas) fs.appendFileSync(path.join(stateDir, 'gates.log'), renglon('escritura-dudosa', 'kept', d));
-  } catch (e) { logHookError(stateDir, e); }
+  // la forma del comando, para medir en el modo que anota qué deshacería y por qué: git solo, git con otro programa, un
+  // guion del arnés con otro programa, u otra cosa
+  const forma = prog.soloGit ? 'solo-git' : prog.hayGit ? 'git-mezclado' : prog.algunoReconocido ? 'arnes-mezclado' : 'otro';
+  // con git en el comando, si lo que quedó es lo commiteado: es lo que separa lo que trajo git de lo que escribió otro
+  const igualesAHead = prog.hayGit ? new Set(photo.gitBrought(foto, [...deshacer, ...dudosas]).map((d) => d.abs)) : null;
+  const m = modo();
+  const renglon = (name, status, d) => ({ ts, name, status, modo: m, forma, id: input.tool_use_id || null, sesion: input.session_id || null,
+    archivo: d.abs, kind: d.kind, que: d.que, deshacer: d.deshacer, programas: prog.nombres, programa,
+    ...(igualesAHead ? { igualAHead: igualesAHead.has(d.abs) } : {}), ...(d.porque ? { porque: d.porque } : {}) });
+  if (m === 'anota') {
+    // compara y anota: no deshace, no frena y no le dice nada al agente
+    for (const d of deshacer) anotarEnGates(stateDir, renglon('escritura-vista-despues', 'would-undo', d));
+    for (const d of dudosas) anotarEnGates(stateDir, renglon('escritura-dudosa', 'kept', d));
+    return;
+  }
+  const { hechas, fallas } = photo.undo(foto, deshacer, { stateDir });
+  for (const d of hechas) anotarEnGates(stateDir, renglon('escritura-vista-despues', 'undone', d));
+  for (const d of dudosas) anotarEnGates(stateDir, renglon('escritura-dudosa', 'kept', d));
   for (const f of fallas) logHookError(stateDir, new Error(`no se pudo deshacer ${f.abs}: ${f.motivo}`));
   // lo que no se pudo deshacer quedó escrito: la sesión se frena hasta que alguien lo mire
   const frenada = fallas.length ? frenar(stateDir, input, `no se pudo deshacer ${fallas.map((f) => f.abs).join(', ')}`) : '';
@@ -559,8 +639,10 @@ function main() {
     if (input.hook_event_name === 'PreToolUse') {
       const powershell = input.tool_name === 'PowerShell';
       // una sesión frenada por una mirada fallida sólo corre lo que lee
-      const freno = photo.readBrake(stateDir, input.session_id);
       const lee = soloLee(comando, { powershell });
+      // el modo que anota no frena: un freno que dejó el modo que deshace no cuenta
+      const freno = modo() === 'deshace' ? photo.readBrake(stateDir, input.session_id) : null;
+      try { barrerRegistrosViejos(stateDir); } catch (e) { logHookError(stateDir, e); }
       if (freno && !lee) {
         // una carpeta del estado donde no se puede escribir no se libera con una firma: se arregla la carpeta
         const comoSale = freno.carpeta
@@ -572,6 +654,8 @@ function main() {
         process.exitCode = 2;
         return;
       }
+      // lo que sólo lee no escribe nada que mirar: ni foto ni registro (el evento de después lo deja pasar sin foto)
+      if (lee) { try { borrarFotosMiradas(stateDir, input); } catch (e) { logHookError(stateDir, e); } return; }
       let foto;
       try {
         const roots = reposDelComando(cwd, comando);
@@ -591,8 +675,12 @@ function main() {
         photo.writeWhole(archivoDeLaFoto(stateDir, input), JSON.stringify(foto));
       } catch (e) {
         logHookError(stateDir, e);
-        // lo que sólo lee no necesita foto: no escribe nada que mirar
-        if (lee) return;
+        // el modo que anota no frena: lo deja anotado y el comando corre
+        if (modo() === 'anota') {
+          // stable-data: la hora del renglón del registro
+          anotarEnGates(stateDir, { ts: new Date().toISOString(), name: 'mirada-fallida', status: 'logged', modo: 'anota', sesion: input.session_id || null, motivo: `no pude guardar la foto (${e.code || e.message})` });
+          return;
+        }
         process.stderr.write(`⛔ tycon-pipeline — no puedo guardar la foto de antes del comando (${e.code || e.message}): sin ella no se mira lo que escriba, y no lo dejo correr.\n` +
           `La carpeta es ${photo.photosDir(stateDir)}: decíselo a la persona.\n`);
         process.exitCode = 2;
