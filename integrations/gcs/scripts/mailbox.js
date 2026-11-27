@@ -210,7 +210,9 @@ function almacenDeSubida(cfg, { urlBase = null } = {}) {
     const codigo = codigoXml(r.cuerpo);
     const visto = `${r.status}${codigo ? ` ${codigo}` : ''}`;
     if (r.status === 403 && codigo === 'AccessDenied') return { ok: true };
-    if (r.status === 404 || r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: `la llave del buzón puede leer ${esConocido ? 'lo que esta máquina ya subió' : 'objetos del bucket'} ${cfg.bucket} por su nombre (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
+    if (r.status === 404 || r.status === 200) return { codigo: 2, estado: 'llave_con_lectura', motivo: esConocido
+      ? `la llave del buzón puede leer lo que esta máquina ya subió al bucket ${cfg.bucket} (${visto}): con permisos por objeto leería también las ejecuciones de las demás máquinas. Prendé el acceso uniforme del bucket (guides/integrations/gcs-mailbox.md). No se sube nada`
+      : `la llave del buzón puede leer objetos del bucket ${cfg.bucket} por su nombre (${visto}): sólo se acepta una cuenta con storage.objects.create. No se sube nada` };
     if (esDelServicio(r.status)) return { codigo: 1, estado: 'servicio_fallo', motivo: `el servicio del buzón falló al probar la llave (${visto}): se reintenta en el próximo arranque` };
     return { codigo: 1, estado: 'otro', motivo: `el buzón contestó ${visto} al probar si la llave lee: no se sube nada` };
   }

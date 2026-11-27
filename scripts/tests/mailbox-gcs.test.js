@@ -957,6 +957,7 @@ test('UploadGcs_KeyThatReadsByObjectOrPrefix_IsRejected (A35) — la sonda ve ta
     const s = await subir(m);
     assert.strictEqual(s.codigo, 2, s.salida);
     assert.strictEqual(s.res.estado, 'llave_con_lectura', s.res.motivo);
+    assert.match(s.res.motivo, /acceso uniforme/, 'dice cómo se arregla');
     assert.strictEqual(puts(fake).length, 0, 'la segunda tanda no manda nada');
     // y --check-create-only tampoco la da por buena
     const c = await subir(m, ['--check-create-only']);
