@@ -24,7 +24,7 @@
   ],
   "pieces": [
     { "kind": "link", "id": "tycon-harness", "where_pattern": "/\\.claude/tycon-harness$", "when": "always", "windows": true, "source": "install-tycon-hooks.sh (canonical-path.js --ensure-link y --place-pieces): el lugar del arnés, si es un enlace (story 8.19; una carpeta real —quien clonó ahí— no es pieza)" },
-    { "kind": "link", "id": "tycon-claude-guides", "where_pattern": "/\\.claude/tycon-claude-guides$", "when": "legacy-place", "windows": true, "source": "install-tycon-hooks.sh (canonical-path.js --ensure-link y --place-pieces): el nombre viejo del lugar, si es un enlace (story 8.19; desde la tanda C sólo en una máquina que ya lo tenía)" },
+    { "kind": "link", "id": "tycon-claude-guides", "where_pattern": "/\\.claude/tycon-claude-guides$", "when": "legacy-place", "windows": true, "source": "install-tycon-hooks.sh (canonical-path.js --ensure-link y --place-pieces): el nombre viejo del lugar, si es un enlace: ya no se crea ni se repara; se retira si lleva al lugar y sólo lo usan permisos" },
     { "kind": "link", "id_pattern": "^(agent-skills|agents|skills)(/[^/]+)?$", "where_pattern": "/\\.claude/(agent-skills|agents|skills)(/[^/]+)?$", "when": "single-repo", "windows": true },
     { "kind": "third-party", "id_pattern": "^[A-Za-z0-9._-]+$", "where_pattern": "/\\.claude/agent-skills/.+", "when": "always", "windows": true, "source": "publishing/install-third-party.js (third-party-state.json: entradas completas cuyo destino existe)" },
 

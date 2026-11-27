@@ -906,6 +906,21 @@ PY
   case "$LAST" in *"no resuelve"*|*"$VIEJO"*) bad "T5c el respaldo no encontró el árbol: $LAST" ;; *) ok "T5c …y encontró el árbol sin el nombre viejo" ;; esac
   gone "$OLDN" && ok "T5c el arranque no vuelve a crear el nombre viejo" || bad "T5c el arranque creó el nombre viejo"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+
+  # la mudanza de una máquina que TIENE el nombre viejo (un enlace al lugar, con un permiso): no lo retira a mitad de
+  # camino —así deshacerla no tiene que reponerlo—; lo deja llevando a ~/.tycon/harness y lo retira la corrida siguiente
+  echo "T5 · la mudanza con el nombre viejo: no lo retira durante; lo retira la corrida siguiente"
+  clone_machine "$BASE/lab5m"
+  OLDN="$LAB_HOME/.claude/$VIEJO"; PLACEN="$LAB_HOME/.claude/$PLACE"
+  ln -s "$PLACEN" "$OLDN"
+  perms "Bash(node ~/.claude/$VIEJO/scripts/x.js)"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(m) la mudanza sale 0" || bad "(m) la mudanza: rc $RC: $OUT"
+  [ -L "$OLDN" ] && [ "$(cd "$OLDN" && pwd -P)" = "$(cd "$(NEW_TREE)" && pwd -P)" ] && ok "(m) la mudanza no lo retira: queda llevando a ~/.tycon/harness" || bad "(m) el nombre viejo tras la mudanza: $(ls -la "$OLDN" 2>&1)"
+  [ "$(settings_has "/$VIEJO/")" -ge 1 ] && ok "(m) …y su permiso sigue como estaba" || bad "(m) la mudanza tocó el permiso: $(allow_list | tr '\n' ' ')"
+  OUT="$(place_rule)"
+  gone "$OLDN" && [ "$(settings_has "/$VIEJO/")" = 0 ] && ok "(m) la corrida siguiente lo retira, con su permiso" || bad "(m) la corrida siguiente no lo retiró: $(ls -la "$OLDN" 2>&1) — $OUT"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
 suite_parts_end

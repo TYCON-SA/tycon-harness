@@ -21,6 +21,8 @@
  *       una carpeta real (cae al respaldo y lo anota en startup.log);
  *   T9  los lectores en Node y en shell: primero el lugar, después el viejo, el viejo sin decir nada, y bajo USERPROFILE
  *       cuando difiere de HOME.
+ *   T42 una máquina que recibe el retiro tarde lo hace igual, sea cual sea su forma (mudada o no, con o sin el lugar);
+ *   T43 no se retira el nombre por el que corre quien llama, ni uno por el que pasa el lugar, ni en la mudanza.
  * 🔴 Nunca la HOME real: el laboratorio fija HOME y USERPROFILE a su carpeta y se niega a seguir si os.homedir() da otra.
  */
 const fs = require('fs');
@@ -41,6 +43,8 @@ if (path.resolve(os.homedir()) !== path.resolve(LAB)) {
   try { fs.rmdirSync(LAB); } catch (_) { /* nada */ }
   process.exit(3);
 }
+// las rutas que el retiro del nombre viejo toma del ambiente: las de quien corre la prueba no valen en sus casas
+for (const k of ['TYCON_SETTINGS_PATH', 'CLAUDE_MD_PATH', 'CODEX_HOME', 'TYCON_GIT_HOOKS_DIR', 'TYCON_LAUNCHAGENTS_DIR']) delete process.env[k];
 if (process.argv.includes('--guard-only')) { process.stdout.write('guarda: ok\n'); fs.rmdirSync(LAB); process.exit(0); }
 
 const test = require('node:test');
@@ -48,6 +52,8 @@ const assert = require('node:assert');
 const PLACE = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'place.js'));
 const CP_FILE = path.join(ROOT, 'scripts', 'lib', 'canonical-path.js');
 const CP = require(CP_FILE);
+// la carpeta del estado de siempre de una casa (en una máquina mudada, un enlace a la nueva)
+const PLACE_STATE_OF = (h) => require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).legacyStateDir(h);
 test.after(() => { try { fs.rmSync(LAB, { recursive: true, force: true }); } catch (_) { /* un proceso de fondo todavía la usa */ } });
 
 let seq = 0;
@@ -262,6 +268,103 @@ test('T41 FreshMachine_NoLegacyAfterTandaC_OnboardingAgain', () => {
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.ok(isLink(placeOf(fresh2)) && !exists(legacyOf(fresh2)), `por la línea de comandos: ${r.stdout}`);
   assert.ok(!r.stdout.includes(legacyOf(fresh2)), `el mensaje nombra el viejo en una máquina que no lo tiene: ${r.stdout}`);
+});
+
+// ── T42 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Una máquina que recibe la versión con el retiro semanas después, desde cualquiera de las formas en que pudo quedar,
+// retira el viejo en esa misma corrida, sin depender de un orden: sin mudar o mudada, con o sin el lugar, con el viejo
+// al lugar o directo al clon, y con la carpeta del estado de siempre o la nueva. Los permisos con el nombre viejo pasan al
+// lugar en el mismo paso, queda anotado y la corrida siguiente no escribe. Con un hook registrado por el viejo, en
+// cualquiera de esas formas, el viejo queda.
+test('T42 LateMachine_RetiresLegacyWhateverItsShape_NoOrderDependency', () => {
+  const moved = (h, K) => {
+    const own = path.join(h, '.tycon', 'harness');
+    fs.mkdirSync(path.dirname(own), { recursive: true });
+    link(K, own); link(own, placeOf(h)); link(own, legacyOf(h));
+    fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true });
+    link(path.join(h, '.tycon', 'state'), PLACE_STATE_OF(h));
+  };
+  const shapes = [
+    { name: 'sin-mudar-sin-lugar', build: (h, K) => { link(K, legacyOf(h)); } },
+    { name: 'sin-mudar-viejo-al-lugar', build: (h, K) => { link(K, placeOf(h)); link(placeOf(h), legacyOf(h)); } },
+    { name: 'sin-mudar-viejo-al-clon', build: (h, K) => { link(K, placeOf(h)); link(K, legacyOf(h)); } },
+    { name: 'mudada', build: moved },
+  ];
+  const old = PLACE.LEGACY_PLACE_NAME; const neu = PLACE.PLACE_NAME;
+  const settingsOf = (h) => path.join(h, '.claude', 'settings.json');
+  const write = (h, extra = {}) => fs.writeFileSync(settingsOf(h), JSON.stringify({ permissions: { allow: [`Bash(node ~/.claude/${old}/scripts/x.js)`], additionalDirectories: [`~/.claude/${old}`] }, ...extra }, null, 2) + '\n');
+  for (const shape of shapes) {
+    for (const withHook of [false, true]) {
+      const K = clone(`tarde-${shape.name}`); const h = home(`tarde-${shape.name}${withHook ? '-hook' : ''}`);
+      shape.build(h, K);
+      write(h, withHook ? { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `node "$HOME/.claude/${old}/scripts/hooks/x.js"` }] }] } } : {});
+      const before = fs.readFileSync(settingsOf(h), 'utf8');
+      const label = `${shape.name}${withHook ? ' con un hook por el viejo' : ''}`;
+      const r = CP.ensurePlace({ clon: K, home: h });
+      assert.ok(real(placeOf(h)) === K, `${label}: el lugar no lleva al clon (${r.mensaje})`);
+      if (withHook) {
+        assert.ok(isLink(legacyOf(h)), `${label}: el viejo se retiró con un hook registrado`);
+        assert.strictEqual(fs.readFileSync(settingsOf(h), 'utf8'), before, `${label}: settings.json cambió`);
+        continue;
+      }
+      assert.ok(!exists(legacyOf(h)), `${label}: el viejo no se retiró (${r.mensaje})`);
+      const s = JSON.parse(fs.readFileSync(settingsOf(h), 'utf8'));
+      assert.deepStrictEqual(s.permissions.allow, [`Bash(node ~/.claude/${neu}/scripts/x.js)`], `${label}: el permiso`);
+      assert.deepStrictEqual(s.permissions.additionalDirectories, [`~/.claude/${neu}`], `${label}: la carpeta adicional`);
+      assert.ok(fs.existsSync(path.join(PLACE_STATE_OF(h), 'legacy-place-retired.json')), `${label}: el retiro no quedó anotado`);
+      assert.ok(fs.existsSync(path.join(K, 'testigo.txt')), `${label}: el clon se tocó`);
+      const again = observeWrites(() => CP.ensurePlace({ clon: K, home: h }));
+      assert.deepStrictEqual(again.order, [], `${label}: la corrida siguiente escribió (${again.result.mensaje})`);
+    }
+  }
+  // un settings.json que es un enlace (a un repo de configuración) sigue siendo un enlace, y un permiso anidado también
+  // deja de nombrar el viejo
+  const K = clone('tarde-enlace'); const h = home('tarde-settings-enlace'); link(K, legacyOf(h));
+  const cfg = dir('config-repo', `c-${++seq}`); const realSettings = path.join(cfg, 'settings.json');
+  fs.writeFileSync(realSettings, JSON.stringify({ permissions: { allow: [`Read(~/.claude/${old}/**)`], extra: { deep: [`~/.claude/${old}/x`] } } }, null, 2) + '\n');
+  link(realSettings, settingsOf(h));
+  CP.ensurePlace({ clon: K, home: h });
+  assert.ok(!exists(legacyOf(h)), 'con settings.json enlazado, el viejo no se retiró');
+  assert.ok(isLink(settingsOf(h)), 'settings.json dejó de ser un enlace');
+  const s = JSON.parse(fs.readFileSync(realSettings, 'utf8'));
+  assert.deepStrictEqual([s.permissions.allow, s.permissions.extra.deep], [[`Read(~/.claude/${neu}/**)`], [`~/.claude/${neu}/x`]], 'los permisos del settings.json enlazado');
+});
+
+// ── T43 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Lo que no se retira aunque el viejo sea un enlace al lugar con sólo permisos: (1) cuando quien llama corre POR el nombre
+// viejo (el instalador lanzado por ~/.claude/<viejo>/scripts/… se quedaría sin su carpeta a mitad de camino): se retira
+// en la corrida siguiente, por otro camino; (2) cuando el lugar llega al clon pasando por el viejo (quedaría colgado), y
+// un --link pedido por el viejo deja el lugar apuntando a lo que el viejo lleva, nunca a ese nombre; (3) con
+// `keepLegacy` (la mudanza), que lo deja para el arranque siguiente.
+test('T43 Retirement_NotThroughItself_NotUnderThePlace_KeepLegacyForTheMove', () => {
+  const perm = (h) => fs.writeFileSync(path.join(h, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: [`Read(~/.claude/${PLACE.LEGACY_PLACE_NAME}/**)`] } }, null, 2) + '\n');
+  // (1) por el nombre viejo, con --clone y con --link
+  for (const how of ['clone', 'link']) {
+    const K = clone(`via-${how}`); const h = home(`via-viejo-${how}`); link(K, placeOf(h)); link(placeOf(h), legacyOf(h)); perm(h);
+    const r = CP.ensurePlace(how === 'clone' ? { clon: legacyOf(h), home: h } : { clon: K, home: h, forzar: legacyOf(h) });
+    assert.ok(isLink(legacyOf(h)) && real(legacyOf(h)) === K, `(1 ${how}) se retiró el nombre por el que corre quien llama (${r.mensaje})`);
+    assert.ok(real(placeOf(h)) === K, `(1 ${how}) el lugar se movió`);
+    CP.ensurePlace({ clon: K, home: h });
+    assert.ok(!exists(legacyOf(h)), `(1 ${how}) por otro camino, la corrida siguiente no lo retiró`);
+  }
+  // (2) el lugar pasa por el viejo
+  const K2 = clone('por-el-viejo'); const h2 = home('lugar-por-el-viejo'); link(K2, legacyOf(h2)); link(legacyOf(h2), placeOf(h2)); perm(h2);
+  const r2 = CP.ensurePlace({ clon: K2, home: h2 });
+  assert.ok(isLink(legacyOf(h2)) && real(placeOf(h2)) === K2, `(2) el retiro dejó el lugar colgado (${r2.mensaje})`);
+  // …y un --link pedido por el viejo, en una máquina sin el lugar: el lugar va al clon, no al nombre viejo
+  const K3 = clone('link-viejo'); const h3 = home('link-por-el-viejo'); link(K3, legacyOf(h3)); perm(h3);
+  const r3 = CP.ensurePlace({ clon: K3, home: h3, forzar: legacyOf(h3) });
+  assert.ok(real(placeOf(h3)) === K3 && !PLACE.samePath(direct(placeOf(h3)), legacyOf(h3)), `(2) --link por el viejo dejó el lugar apuntando al viejo (${direct(placeOf(h3))}; ${r3.mensaje})`);
+  CP.ensurePlace({ clon: K3, home: h3 });
+  assert.ok(real(placeOf(h3)) === K3 && !exists(legacyOf(h3)), '(2) después del --link por el viejo, el viejo no se retiró o el lugar quedó colgado');
+  // (3) keepLegacy, por la API y por la línea de comandos
+  const K4 = clone('mudanza'); const h4 = home('mudanza-keep'); link(K4, placeOf(h4)); link(placeOf(h4), legacyOf(h4)); perm(h4);
+  CP.ensurePlace({ clon: K4, home: h4, forzar: K4, keepLegacy: true });
+  assert.ok(isLink(legacyOf(h4)), '(3) keepLegacy: el viejo se retiró');
+  const c = cli(['--ensure-link', '--clone', K4, '--home', h4, '--link', K4, '--keep-legacy']);
+  assert.strictEqual(c.status, 0); assert.ok(isLink(legacyOf(h4)), `(3) --keep-legacy: el viejo se retiró (${c.stdout})`);
+  CP.ensurePlace({ clon: K4, home: h4 });
+  assert.ok(!exists(legacyOf(h4)), '(3) sin keepLegacy, la corrida siguiente no lo retiró');
 });
 
 // ── T7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

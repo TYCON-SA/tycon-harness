@@ -296,13 +296,14 @@ function skillsPresent(ctx, tree) {
 }
 
 /** El enlace estable, con la biblioteca del árbol (crea / repara / re-apunta con --link; nunca pisa una carpeta real). */
-function ensureLink(ctx, tree, { link = null, check = false, prefer = null } = {}) {
+function ensureLink(ctx, tree, { link = null, check = false, prefer = null, keepLegacy = false } = {}) {
   const lib = path.join(tree, 'scripts', 'lib', 'canonical-path.js');
   if (!fs.existsSync(lib)) return { ok: false, out: `sin ${lib}: no puedo asegurar el enlace` };
   const args = [lib, '--ensure-link', '--clone', tree, '--home', ctx.home];
   if (link) args.push('--link', link);
   if (prefer && !link) args.push('--prefer', prefer);   // el destino de nacimiento que dice el estado
   if (check) args.push('--check');
+  if (keepLegacy) args.push('--keep-legacy');   // el nombre viejo no se retira en esta corrida (la mudanza)
   const r = spawnSync(process.execPath, args, { windowsHide: true, encoding: 'utf8', env: ctx.env, timeout: 30000 });
   return { ok: r.status === 0, out: String(r.stdout || '').trim(), err: String(r.stderr || '').trim() };
 }
@@ -3793,9 +3794,9 @@ function legacyItems(ctx, f, add) {
     if (L.kind === 'dangling') add('warn', `el nombre viejo ${name} está colgado: ya no se repara (se retira); borralo si nada lo usa`);
     else if (L.kind === 'file') add('ok', `el nombre viejo ${name} es un archivo: no lo toco; los lectores usan el lugar`);
     else if (!L.clone) add('ok', `el nombre viejo ${name} es ${L.kind === 'link' ? `un enlace a ${L.target}` : 'una carpeta'}, que no es un clon del arnés: no lo toco; los lectores usan el lugar`);
-    else if (L.to_place) add('ok', `el nombre viejo ${name} sigue andando y apunta al lugar${onlyPermissions ? ' — se retira solo la próxima vez que se instale o llegue una versión' : ' — queda mientras algo registrado lo use'}`);
+    else if (L.to_place) add('ok', `el nombre viejo ${name} sigue andando y apunta al lugar${onlyPermissions ? ' — se retira solo la próxima vez que se instale o llegue una versión, si nada más lo usa' : ' — queda mientras algo registrado lo use'}`);
     else if (L.kind === 'folder') add('ok', `el nombre viejo ${name} es una carpeta real (tu clon): no la toco`);
-    else add('ok', `el nombre viejo ${name} sigue andando (apunta directo a ${L.target})`);
+    else add('ok', `el nombre viejo ${name} sigue andando (apunta directo a ${L.target}) — se retira solo si lleva al mismo clon que el lugar y nada registrado lo usa`);
   } else if (f.retired) {
     add('ok', `el nombre viejo ${tildePath(ctx, PLACE.legacyPlacePath(ctx.home))} se retiró (${f.retired.at.slice(0, 10)}${f.retired.permissions ? `; ${f.retired.permissions} permiso(s) quedaron con el lugar` : ''})`);
   }
@@ -4102,7 +4103,7 @@ function cmdDoctor(ctx) {
   const legacyReal = real(PLACE.legacyPlacePath(ctx.home));
   const placeReal = real(linkPath(ctx.home));
   if (placeReal && legacyReal && isHarnessClone(placeReal) && isHarnessClone(legacyReal) && !PLACE.samePath(placeReal, legacyReal, ctx.platform)) {
-    add('fail', `el lugar ${linkPath(ctx.home)} (→ ${placeReal}) y el nombre viejo ${PLACE.legacyPlacePath(ctx.home)} (→ ${legacyReal}) son clones distintos: elegí uno con install-tycon-hooks.sh --link <ruta>`);
+    add('fail', `el lugar ${linkPath(ctx.home)} (→ ${placeReal}) y el nombre viejo ${PLACE.legacyPlacePath(ctx.home)} (→ ${legacyReal}) son clones distintos. El nombre viejo ya no se mantiene: si nada registrado lo usa (abajo), sacá ese enlace (sólo el enlace, no la carpeta); si querés ese clon, install-tycon-hooks.sh --link ${legacyReal}`);
   } else if (!linkResolvesTo(ctx, tree)) add('fail', `el enlace ${linkPath(ctx.home)} no apunta al árbol ${tree} (${where.dir || 'colgado o ausente'}): harness.js install, o link --local`);
   facts = placeFacts(ctx, tree);
   placeItems(ctx, facts, add);
@@ -4171,7 +4172,8 @@ function cmdDoctor(ctx) {
   const M = mod('managed'), SL = mod('startup-line');
   const managed = Array.isArray(state.managed) ? state.managed : [];
   const pieceOpts = { home: ctx.home, env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
-  const gone = M.missing(managed, pieceOpts);
+  // el nombre viejo del lugar que se retiró no es una pieza que falta: la próxima aplicación lo saca del registro
+  const gone = M.missing(managed, pieceOpts).filter((p) => !(p.kind === 'link' && p.id === PLACE.LEGACY_PLACE_NAME));
   const skillsDir = path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills');
   const roots = [...new Set([tree, real(tree), linkPath(ctx.home), PLACE.legacyPlacePath(ctx.home), skillsDir, real(skillsDir)].filter(Boolean))];
   const loose = M.unregistered(managed, Object.assign({ roots, tree }, pieceOpts));
