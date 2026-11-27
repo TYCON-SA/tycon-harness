@@ -265,10 +265,16 @@ function revisarNuevas({ antes, despues, renglones, todoAntes = '', todoDespues 
   // una aprobación firmada del último commit no se borra: el registro de firmas guarda su renglón, y sin ella en el
   // último commit, volver a ponerla en otro commit la haría pasar por nueva. La base sí se achica, y una línea que no
   // vale se puede sacar
+  // en un merge, también las de los otros padres: el merge que deja caer una que traía la otra rama la borra igual
   const quedan = new Set(leerRegistro(despues).lineas.map(claveDeLinea));
-  for (const x of leerRegistro(antes).lineas) {
-    if (motivoDe(x.valor) || x.valor.via === 'base' || quedan.has(claveDeLinea(x))) continue;
-    malas.push({ id: x.valor.id, motivo: 'borra una aprobación firmada ya commiteada: una aprobación no se borra (volverla a poner la haría valer de nuevo)' });
+  const borradas = new Set();
+  for (const reg of [antes, ...otrosPadres.map((o) => o.registro || '')]) {
+    for (const x of leerRegistro(reg).lineas) {
+      const k = claveDeLinea(x);
+      if (motivoDe(x.valor) || x.valor.via === 'base' || quedan.has(k) || borradas.has(k)) continue;
+      borradas.add(k);
+      malas.push({ id: x.valor.id, motivo: 'borra una aprobación firmada ya commiteada: una aprobación no se borra (volverla a poner la haría valer de nuevo)' });
+    }
   }
   return malas;
 }

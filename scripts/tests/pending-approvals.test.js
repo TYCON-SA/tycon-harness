@@ -591,3 +591,35 @@ test('T34 approve-pending con una aprobación que ya vale dice contra qué compa
   assert.match(r.stderr, /git fetch origin/);
   assert.strictEqual(fs.readFileSync(path.join(d, PA.RECORD), 'utf8'), BASE, 'no escribió nada');
 });
+
+test('T35 un merge que deja caer una aprobación firmada que traía la otra rama también frena', () => {
+  const l = firmada('DEF-hecho');
+  const malas = PA.revisarNuevas({ antes: BASE, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA, otrosPadres: [{ registro: `${BASE}${JSON.stringify(l)}\n`, todo: LISTA }] });
+  assert.deepStrictEqual(malas.map((x) => x.id), ['DEF-hecho']);
+  assert.match(malas[0].motivo, /no se borra/);
+  // sacar una línea que no vale (sin vía ni quién, o con la huella cambiada) no frena
+  const rota = JSON.stringify({ ...l, huella: '0000000000000000' });
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: `${BASE}${rota}\n${JSON.stringify({ id: 'DEF-x' })}\n`, despues: BASE, renglones: [], todoAntes: LISTA, todoDespues: LISTA }), []);
+  // si el merge la deja, nada
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: BASE, despues: `${BASE}${JSON.stringify(l)}\n`, renglones: [], todoAntes: LISTA, todoDespues: LISTA, otrosPadres: [{ registro: `${BASE}${JSON.stringify(l)}\n`, todo: LISTA }] }), []);
+});
+
+test('T36 un commit que saca la lista de pendientes no deja pasar el borrado de una aprobación', (t) => {
+  const l = firmada('DEF-hecho');
+  const { d, git } = repo(LISTA, BASE);
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(d, PA.RECORD_DIR));
+  fs.writeFileSync(path.join(d, PA.archivoDe(l)), `${JSON.stringify(l)}\n`);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'aprobada');
+  git('rm', '-q', PA.TODO, PA.archivoDe(l));
+  for (const modo of [[], ['--no-local-signature']]) {
+    const r = check(d, '--staged', ...modo);
+    assert.strictEqual(r.status, 1, `${modo.join(' ') || 'local'}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /no se borra/);
+  }
+  // sacar la lista sin tocar el registro no pide nada
+  git('reset', '-q', 'HEAD', '--', PA.archivoDe(l));
+  git('checkout', '-q', '--', PA.archivoDe(l));
+  assert.strictEqual(check(d, '--staged').status, 0);
+});
