@@ -121,6 +121,7 @@ jobs:
           SITE_GCP_PROJECT: ${{ vars.SITE_GCP_PROJECT }}
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá (un no_pudo se guarda igual)
           node scripts/site/deploy/update-site.js --platform "$SITE_PLATFORM" --image "$SITE_IMAGE_NAME" \
             --resource-group "$SITE_RESOURCE_GROUP" --app "$SITE_APP" --site-url "$SITE_URL" \
             --service "$SITE_SERVICE" --region "$SITE_GCP_REGION" --project "$SITE_GCP_PROJECT" \

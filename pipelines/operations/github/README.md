@@ -358,7 +358,10 @@ mantiene al día»).
    `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`.
 2. **Render**: `SITE_PLATFORM=render`, `SITE_IMAGE_NAME` y el secreto `SITE_RENDER_DEPLOY_HOOK`, el único secreto.
 3. **Google Cloud Run**: `SITE_PLATFORM=cloudrun`, con Workload Identity Federation y sin llave guardada. Qué crear, los
-   permisos y las variables: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»).
+   permisos y las variables: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»). Los permisos
+   mínimos de la cuenta del actualizador: `run.services.get`, `run.services.update` e `iam.serviceAccounts.actAs`
+   sobre la cuenta del sitio; si el servicio corre desde un espejo de Artifact Registry, también
+   `roles/artifactregistry.reader` sobre ese repositorio (sin él, cambiar la imagen falla con `PERMISSION_DENIED`).
 4. **El workflow**: copiá `site-update.yml` a `.github/workflows/` y creá el entorno `site-update`.
 
 ## Diferencias con los pipelines de Azure DevOps
