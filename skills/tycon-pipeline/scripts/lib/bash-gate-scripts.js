@@ -97,6 +97,27 @@ function comienzoDe(real, bytes) {
 const SUITES_DEL_COMODIN = 5000;
 // una variable dentro de una ruta: `$f`, `${f}`
 const VARIABLE_EN_RUTA = /\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g;
+const FOR_CON_LISTA = /(?:^|[\s;&|(])for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in[ \t]+([^;\n]*?)[ \t]*(?:;|\n)[ \t\n]*do(?=[\s;])/g;
+
+/**
+ * Lo que puede valer la variable de un guion en una ruta (`t/$f.test.js`): con la lista de su `for` a la vista, la
+ * ruta con cada palabra de la lista; si no (un `while read`, una lista con `$(…)`, varias variables, un `${f%x}`), la
+ * ruta con un comodín en lugar de la variable. Las comillas del medio (`t/"$f"`) no cuentan.
+ */
+function valoresDeLaVariable(cmd, valor) {
+  const v = String(valor).replace(/["']/g, '');
+  const usadas = [...v.matchAll(VARIABLE_EN_RUTA)].map((m) => m[0]);
+  const nombre = usadas.length === 1 ? (/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/.exec(usadas[0]) || [])[1] : null;
+  if (nombre) {
+    const listas = [...String(cmd).matchAll(FOR_CON_LISTA)].filter((m) => m[1] === nombre).map((m) => m[2]);
+    const lista = listas.length === 1 ? palabras(listas[0]).map(sinGrupo).filter(Boolean) : null;
+    if (lista && lista.length && lista.length <= 200 && lista.every((w) => !/[$`]/.test(w))) {
+      return lista.map((w) => v.replace(usadas[0], w.replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b))));
+    }
+  }
+  const conComodin = v.replace(VARIABLE_EN_RUTA, '*');
+  return /[^*]/.test(conComodin) ? [conComodin] : [];
+}
 function suitesDelComodin(patron, base) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   const dir = path.dirname(absoluto);
@@ -178,15 +199,26 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
       }
     }
   };
+  // lo anotado de cada guion: si vuelve a correr con otros argumentos (`node t.js; node t.js <historia>`, o abierto
+  // antes sin argumentos como candidato de un bucle), se anota otra vez con ellos para la prueba de los argumentos
+  const anotados = new Map();
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
-    if (vistos.has(real)) return;
+    if (vistos.has(real)) {
+      const antes = anotados.get(real);
+      if (hondo === 0 && antes && argv.length && argv.join('\0') !== antes.argv.join('\0')) out.push({ ...antes, interprete, argv });
+      return;
+    }
     const cuenta = exento ? 'exentos' : 'revisados';
     if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     // uno grande de otra copia del arnés con los mismos bytes que main en la misma ruta es lo revisado: no frena por
     // tamaño, pero sigue la prueba de las historias entre sus argumentos, y lo que importa se mira igual
     const revisado = !exento && leido.grande && igualAMainDelArbolPropio(real, memo);
-    if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande && !revisado, revisado });
+    if (!exento) {
+      const entrada = { interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande && !revisado, revisado };
+      out.push(entrada);
+      anotados.set(real, entrada);
+    }
     if (leido.grande && !exento && !revisado) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
@@ -292,7 +324,11 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
         const w = lista[j];
         if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) { if (op.pruebas) continue; break; }
         const valor = palabraExpandida(cmd, w);
-        if (expandirRuta(cmd, w).sinResolver.length) porVariable.push(String(valor));
+        if (expandirRuta(cmd, w).sinResolver.length) {
+          porVariable.push(String(valor));
+          // `t/"$f"` llega partido en `t/` y `$f`: la ruta es la de las dos juntas
+          if (j > op.desde && /\/$/.test(lista[j - 1])) porVariable.push(`${palabraExpandida(cmd, lista[j - 1])}${valor}`);
+        }
         if (!op.pruebas) { hallado = abrir(interprete, valor, argumentos(words.slice(j + 1))); continue; }
         for (const x of expandirLlaves(String(valor))) {
           // también la ruta tal cual: un `[id]` puede ser parte del nombre
@@ -305,11 +341,13 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
         }
       }
       // el guion en una variable que no se resuelve (la de un `for f in …`, la de un `while read f`, también de fondo):
-      // cuenta cada archivo del comando con la extensión del intérprete, y lo que nombra la ruta con la variable
-      // cambiada por un comodín (`scripts/tests/$f`)
+      // cuenta cada archivo del comando con la extensión del intérprete, y la ruta con la variable cambiada por cada
+      // palabra de la lista de su `for` (se abre aunque no tenga extensión: el intérprete la corre igual) o, si la
+      // lista no se ve, por un comodín (`scripts/tests/$f`)
       if (porVariable.length) {
-        const conComodin = porVariable.map((v) => v.replace(VARIABLE_EN_RUTA, '*')).filter((v) => /[^*]/.test(v))
-          .map((v) => (EXTENSION_DE[familia].test(v) ? v : `${v}*`));
+        const valores = porVariable.flatMap((v) => valoresDeLaVariable(cmd, v));
+        for (const v of valores) if (!/[*?[]/.test(v)) abrir(interprete, v, []);
+        const conComodin = valores.filter((v) => /\*/.test(v)).map((v) => (EXTENSION_DE[familia].test(v) ? v : `${v}*`));
         const candidatos = [...todasLasPalabras().map((x) => palabraExpandida(cmd, x)), ...conComodin];
         for (const c of candidatos) for (const x of expandirLlaves(String(c))) {
           if (!/[*?[]/.test(x)) { if (EXTENSION_DE[familia].test(x)) abrir(interprete, x, []); continue; }

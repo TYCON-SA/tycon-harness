@@ -188,3 +188,20 @@ test('T5 NodeTest_EnUnBucle_MiraCadaArchivo', () => {
   ]) assert.equal(e.freno(c), FRENO, c);
   assert.equal(e.freno(`for f in ${chica}; do node --test "$f"; done`), '', 'un bucle sobre una suite inocua pasa');
 });
+
+// T6 Bucle_NoTapaLoQueSigue_YUsaSuLista
+// 🔴 Falla con: que el guion abierto como candidato de un bucle (sin argumentos) tape la historia que recibe cuando
+//    corre después; cambiar la variable por un comodín cuando la lista del `for` se ve (abre todas las suites de la
+//    carpeta), o no ver la carpeta dentro de la variable ni las comillas del medio.
+test('T6 Bucle_NoTapaLoQueSigue_YUsaSuLista', () => {
+  const e = escena();
+  const chica = path.join(e.copia, 'scripts', 'tests', 'chica.test.js');
+  fs.writeFileSync(path.join(e.repo, 'tool.js'), "console.log(process.argv[2]);\n");
+  assert.equal(e.freno(`for f in ${chica} tool.js; do node --test "$f"; done; node tool.js specs/story-1.1.md`), HISTORIA, 'el bucle delante no tapa la historia del que sigue');
+  assert.equal(e.freno('node "$NADA"; node tool.js specs/story-1.1.md'), HISTORIA, 'una variable sin valor delante tampoco');
+  fs.mkdirSync(path.join(e.repo, 't'));
+  fs.writeFileSync(path.join(e.repo, 't', 'w.test.js'), grande('// carpeta\n'));
+  assert.equal(e.freno('for f in t/w; do node --test "$f.test.js"; done'), FRENO, 'la carpeta dentro de la variable');
+  assert.equal(e.freno('ls t | while read f; do node --test t/"$f"; done'), FRENO, 'las comillas del medio');
+  assert.equal(e.freno('for f in chica otra; do node --test "t/$f.test.js"; done'), '', 'con la lista a la vista, sólo sus palabras');
+});
