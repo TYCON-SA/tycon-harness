@@ -395,7 +395,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 
 **En Ejecuciones:**
 
-- **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
+- **Veces que el registro de controles anotó un bloqueo** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo, en todo el registro de controles de las máquinas (también los del commit): no es la columna Controles de Ejecuciones, que cuenta sólo los de cada ejecución.
 - **Una ejecución del pipeline, de punta a punta (mediana, horas)**. Cuánto dura una ejecución completa.
 - **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 

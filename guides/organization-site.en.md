@@ -394,7 +394,7 @@ their tabs as before.
 
 **In Runs:**
 
-- **Times a pipeline control blocked an action** (`bloqueos`). How many times a control actually stopped something.
+- **Times the controls log recorded a block** (`bloqueos`). How many times a control actually stopped something, across the machines' whole controls log (including the commit ones): not the Controls column in Runs, which counts only each run's own.
 - **A pipeline run, end to end (median, hours)**. How long a full run lasts.
 - **Model responses per pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
 

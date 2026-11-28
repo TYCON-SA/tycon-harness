@@ -2237,7 +2237,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return '<div class="mini"><h4>' + T('consumoTitulo', { n: miles(tokensDe(c)) }) + '</h4>'
       + '<p class="kv">' + T('consumoDetalle', { o: miles(k.tokens.out), n: miles(k.tokens.cache_new), l: miles(k.tokens.cache_read), r: k.respuestas == null ? '?' : k.respuestas }) + '</p>'
       + '<p class="kv">' + T('modelos') + ': ' + Object.keys(k.por_modelo).map(function (m) { return esc(m) + ' ' + k.por_modelo[m].respuestas; }).join(' · ') + '</p>'
-      + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(i) + ' ' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[RAMPA.length - 1]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
+      + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[RAMPA.length - 1]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
       + (k.fuera_de_ventana ? '<p class="kv">' + T('fueraDeTodoPaso', { n: miles(k.fuera_de_ventana) }) + '</p>' : '')
       + '</div>';
   }
@@ -2311,7 +2311,14 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var partes = [];
     if (t.estado === 'estimada') partes.push(' <b>' + T('durEstimadas') + '</b>' + T('durEstimadasTexto'));
     else if (t.estado === 'parcial') partes.push(' <b>' + T('durAlgunas') + '</b> (' + T(t.estimados.length === 1 ? 'pasoUno' : 'pasosVarios', { p: esc(t.estimados.join(', ')) }) + '): ' + T('durNoAnotaron'));
-    if (t.trabajo_ms !== null) partes.push(' ' + T('tTrabajo', { d: dt(t.trabajo_ms / 60000) }) + (t.espera_humana_ms !== null ? ' · ' + T('tEspera', { d: dt(t.espera_humana_ms / 60000) }) : ' · ' + T('tEsperaSinMedir')) + (t.entre_pasos_ms !== null ? ' · ' + T('tEntrePasos', { d: dt(t.entre_pasos_ms / 60000) }) : '') + '.');
+    // lo que «duró» y no cae en ninguna de las tres cuentas (lo que no se pudo partir, antes del primer paso anotado o
+    // después del último) se dice, para que sumen; con la espera sin medir no se sabe cuánto es, y no se inventa
+    var fuera = null;
+    if (t.trabajo_ms !== null && t.espera_humana_ms !== null && t.entre_pasos_ms !== null && c.dur_ms) {
+      var resto = c.dur_ms - t.trabajo_ms - t.espera_humana_ms - t.entre_pasos_ms;
+      if (resto >= 60000) fuera = resto;
+    }
+    if (t.trabajo_ms !== null) partes.push(' ' + T('tTrabajo', { d: dt(t.trabajo_ms / 60000) }) + (t.espera_humana_ms !== null ? ' · ' + T('tEspera', { d: dt(t.espera_humana_ms / 60000) }) : ' · ' + T('tEsperaSinMedir')) + (t.entre_pasos_ms !== null ? ' · ' + T('tEntrePasos', { d: dt(t.entre_pasos_ms / 60000) }) : '') + (fuera !== null ? ' · <span title="' + esc(T('tFueraNota')) + '">' + T('tFuera', { d: dt(fuera / 60000) }) + '</span>' : '') + '.');
     return partes.join('');
   }
 
@@ -2745,7 +2752,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
       ficha(T('fTrabajo'), tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), T('nEqDeEjecuciones', { n: tMed.length, t: N }), { detalle: T('trabajoDetalle') + (M.sin_hilos ? ' (' + T('incluyeEsperas') + ' ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
       ficha(T('fEspera'), eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), T('nEqDeEjecuciones', { n: eMed.length, t: N }), { detalle: T('esperaDefinicion') + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha(T('fPasos'), pa.length ? med(String(Math.round(mediana(pa))), T('nEqDeEjecuciones', { n: pa.length, t: N }), { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> ' + T('pasosSinMedir') + ' ' : '') + T('tokensConsecuencia') + (LB ? ' ' + T('lineaBaseDelFicha', { f: esc(LB.fecha) }) + ' <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris(T('sinPasosFiltro'))),
-      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: N - tk.length === 0 ? '' : N - tk.length === 1 ? T('deOtra') + ' ' + T('sinConsumoDetalle') : T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle') }) : gris(T('sinConsumoFiltro')))
+      // la mediana es de la conversación principal: los revisores consumen aparte (a veces más del doble) y la ficha lo dice
+      ficha(T('fTokens'), tk.length ? med(miles(Math.round(mediana(tk))), T('nEqDeEjecuciones', { n: tk.length, t: N }), { detalle: T('tokensSinRevisores') + (N - tk.length === 0 ? '' : ' ' + (N - tk.length === 1 ? T('deOtra') + ' ' + T('sinConsumoDetalle') : T('deOtras') + ' <b>' + (N - tk.length) + '</b> ' + T('sinConsumoDetalle'))) }) : gris(T('sinConsumoFiltro')))
     ].join('');
   }
 
