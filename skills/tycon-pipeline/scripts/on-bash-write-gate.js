@@ -396,7 +396,15 @@ function handleCarrilEHistoria(event, opts = {}) {
     const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
     const P = process.platform === 'win32' ? path.win32 : path;
     // un `..` después del comodín sube desde donde el comodín cayó (un enlace: `l?/../x` sube desde el destino del enlace)
-    const fijo = partes.slice(i).some((p) => nombraPadre(p) || p === '..') ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
+    // llaves con una barra adentro (`{x,l1/active}`) o anidadas más hondo de lo que se convierte: nombran tramos que no se
+    // pueden contar, como si subieran hasta la raíz
+    let hondo = 0;
+    let llaveRara = false;
+    for (const ch of String(abs)) {
+      if (ch === '{') { hondo++; if (hondo > 4) llaveRara = true; } else if (ch === '}') hondo = Math.max(0, hondo - 1);
+      else if (hondo > 0 && (ch === '/' || ch === '\\')) llaveRara = true;
+    }
+    const fijo = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..') ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
     for (const z of zonas()) if (isInside(z, fijo) || isInside(fijo, z)) return z;
     // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)
     let enDisco = String(abs);

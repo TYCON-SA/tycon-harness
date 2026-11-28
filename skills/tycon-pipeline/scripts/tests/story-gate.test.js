@@ -2013,7 +2013,10 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
       `echo x | tee ${repo}/l{1..1}/plan-review/s1/s1.resultado.json`, `echo x >> ${repo}/(l1|x)/plan-review/s1/s1.resultado.json`,
       `echo x >> ${repo}/l(1)/plan-review/s1/s1.resultado.json`,
       // quinta vuelta: un `..` después del comodín (sube desde el destino del enlace) y llaves anidadas
-      `echo x | tee ${repo}/l?/../${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}}/plan-review/s1/s1.resultado.json`]) {
+      `echo x | tee ${repo}/l?/../${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}}/plan-review/s1/s1.resultado.json`,
+      // sexta vuelta: una barra o un `..` adentro de las llaves, y llaves muy anidadas
+      `echo x | tee ${repo}/{x,l{1..1}/plan-review}/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}/..}/${path.basename(E)}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${repo}/${'{x,'.repeat(9)}l{1..1}${'}'.repeat(9)}/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
