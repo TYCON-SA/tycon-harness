@@ -127,7 +127,7 @@ function buildCtx(plugged = pluggedTools()) {
   return ctx;
 }
 
-// ── Las 11 superficies ────────────────────────────────────────────────────────────────────────
+// ── Las 12 superficies ────────────────────────────────────────────────────────────────────────
 
 function sAdvisors(ctx) {
   if (!ctx.pol.gen) return { name: 'advisors', ok: false, detail: 'política de generate.js no cargada' };
@@ -402,6 +402,21 @@ function sTrust(ctx) {
   return { name: 'trust', ok, detail: ok ? `${cubiertas.size}/${total} aprobados` : `${cubiertas.size}/${total} hooks aprobados para el hooks.json actual — los no aprobados NO corren en sesiones interactivas y no dan error. Correr /hooks en una sesión de codex y aprobar` };
 }
 
+// las reglas que le prohíben a Codex borrar la raíz o la carpeta personal: el archivo tiene que ser el que escribiría
+// build/deploy-codex-rules.js desde la lista de las deny de Claude Code (la política vive en quien escribe)
+function sDenyRules() {
+  const lib = path.join(TCG, 'build', 'deploy-codex-rules.js');
+  if (!fs.existsSync(lib)) return { name: 'deny-rules', ok: false, detail: 'build/deploy-codex-rules.js ausente' };
+  const R = require(lib);
+  if (!R.wanted(process.env)) return { name: 'deny-rules', ok: true, detail: 'apagadas a propósito (TYCON_NO_DENY_RULES=1) — sin reglas que auditar' };
+  const file = R.rulesFile(CODEX());
+  const actual = rds(file);
+  if (actual === null || actual === undefined) return { name: 'deny-rules', ok: false, detail: `${file} no está: Codex puede borrar la raíz o la carpeta personal entera. Corré node build/deploy-codex-rules.js` };
+  if (!R.isOurs(actual)) return { name: 'deny-rules', ok: false, detail: `${file} existe y no es del arnés: las reglas que prohíben borrar la raíz o la carpeta personal no están. Renombralo y corré node build/deploy-codex-rules.js` };
+  const ok = actual === R.rulesText();
+  return { name: 'deny-rules', ok, detail: ok ? `${R.patterns().length} reglas al día` : `${file} quedó viejo frente a la lista de las deny de Claude Code — corré node build/deploy-codex-rules.js` };
+}
+
 function sDeployersCubiertos() {
   // valor = superficies que lo miden ('+'-separadas), validadas contra las REALES; 'exento'
   // sólo para el orquestador, con su razón. Un mapa de prosa libre se satisface agregando una
@@ -411,7 +426,8 @@ function sDeployersCubiertos() {
     'deploy-codex-hooks.js': 'hooks',
     'deploy-codex-mcp.js': 'mcp+writable-roots',
     'deploy-shared-skills.js': 'skills',
-    'deploy-codex-all.js': 'exento:orquestador — sus pasos son los 4 de arriba',
+    'deploy-codex-rules.js': 'deny-rules',
+    'deploy-codex-all.js': 'exento:orquestador — sus pasos son los 5 de arriba',
   };
   const nombresReales = new Set(SURFACES.map((f) => NOMBRES[f.name] || f.name));
   const problemas = [];
@@ -430,9 +446,9 @@ function sDeployersCubiertos() {
 // ── Orquestación ──────────────────────────────────────────────────────────────────────────────
 
 const SURFACES = [sAdvisors, sHooks, sSkills, sMcp, sAgentsMd, sTablaVsRealidad,
-  sCodexCli, sLlaveEnRc, sWritableRoots, sTrust, sDeployersCubiertos];
+  sCodexCli, sLlaveEnRc, sWritableRoots, sTrust, sDenyRules, sDeployersCubiertos];
 /** nombre de función → nombre de superficie (para validar el mapa de deployers) */
-const NOMBRES = { sAdvisors: 'advisors', sHooks: 'hooks', sSkills: 'skills', sMcp: 'mcp', sAgentsMd: 'agents-md', sTablaVsRealidad: 'tabla-vs-realidad', sCodexCli: 'codex-cli', sLlaveEnRc: 'llave-en-rc', sWritableRoots: 'writable-roots', sTrust: 'trust', sDeployersCubiertos: 'deployers-cubiertos' };
+const NOMBRES = { sAdvisors: 'advisors', sHooks: 'hooks', sSkills: 'skills', sMcp: 'mcp', sAgentsMd: 'agents-md', sTablaVsRealidad: 'tabla-vs-realidad', sCodexCli: 'codex-cli', sLlaveEnRc: 'llave-en-rc', sWritableRoots: 'writable-roots', sTrust: 'trust', sDenyRules: 'deny-rules', sDeployersCubiertos: 'deployers-cubiertos' };
 
 function collect(ctx) {
   return SURFACES.map((fn) => {
@@ -511,7 +527,7 @@ function selftest() {
       ['con hooks.json → desplegado', siDeploy === true],
       ['trust sin hooks → verde con detalle honesto', trustVacio.ok === true],
       ['una superficie que crashea → ROJO con la causa, no auditoría muerta', Boolean(crashRojo) && crashRojo.ok === false && /CRASHE/.test(crashRojo.detail)],
-      ['son 11 superficies', SURFACES.length === 11],
+      ['son 12 superficies', SURFACES.length === 12],
       ['el mapa de deployers se valida contra superficies reales', sDeployersCubiertos().ok === true],
       ['el reporte lleva kind y respeta TYCON_PARITY_BENCH_DIR', escrito.kind === 'harness-parity'],
     ];
