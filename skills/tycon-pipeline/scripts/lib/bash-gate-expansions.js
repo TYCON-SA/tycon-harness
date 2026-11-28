@@ -1147,74 +1147,6 @@ function renglonesDelShell(texto) {
  */
 const conCarpetaDelComando = (palabra, carpeta) => String(palabra).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(\s*pwd\s*(?:\)|$)|`pwd`/g, () => carpeta);
 
-/**
- * El comando con las formas que nombran la carpeta desde donde corre escritas como esa carpeta (A50): `$PWD` y `${PWD}`
- * (también con `:-`, `:=` o un recorte), `$(pwd)` con o sin `-P`/`-L` y por `command`, `builtin` o `/bin/pwd`, `` `pwd` ``,
- * `~+`, `$(realpath .)` y `$OLDPWD` (con `carpetaAnterior`). La raíz del repo (`$(git rev-parse --show-toplevel)`), con
- * `raiz`. Lo que no se nombra queda igual. Sirve para leer el comando una vez más: un `rm $PWD/specs/h.md` borra la
- * historia igual que `rm specs/h.md`.
- */
-function conCarpetasNombradas(cmd, carpeta, { raiz = null, carpetaAnterior = null } = {}) {
-  let s = String(cmd)
-    // la forma sola entre comillas dobles y pegada a lo que sigue (`"$PWD"/docs`): sin las comillas, para que la palabra no
-    // se parta en dos (la carpeta sola quedaría como la raíz de un `find`)
-    .replace(/"(\$\{?PWD\}?|\$\(\s*(?:command\s+|builtin\s+)?(?:\/bin\/)?pwd(?:\s+-[LP])?\s*\))"(?=[^\s;&|)])/g, () => (/[\s'"$`\\]/.test(carpeta) ? `"${carpeta}"` : carpeta))
-    .replace(/\$\{PWD(?:(?::?[-=])[^}]*|%%?[^}]*)?\}|\$PWD(?!\w)/g, () => carpeta)
-    .replace(/\$\(\s*(?:command\s+|builtin\s+)?(?:\/bin\/)?pwd(?:\s+-[LP])?\s*\)|`\s*(?:\/bin\/)?pwd(?:\s+-[LP])?\s*`/g, () => carpeta)
-    .replace(/\$\(\s*realpath\s+\.\s*\)/g, () => carpeta)
-    .replace(/(^|[\s=:"'(])~\+(?=[\/\s"';&|)]|$)/g, (m, a) => `${a}${carpeta}`);
-  if (carpetaAnterior) s = s.replace(/\$\{OLDPWD\}|\$OLDPWD(?!\w)/g, () => carpetaAnterior);
-  if (raiz) s = s.replace(/\$\(\s*git\s+(?:-C\s+\.\s+)?rev-parse\s+--show-toplevel(?:\s+2>\s*\/dev\/null)?\s*\)/g, () => raiz);
-  return s;
-}
-
-/**
- * Como `conCarpetasNombradas`, tramo por tramo: después de cada `cd <carpeta>`, la carpeta del comando es ésa y
- * `$OLDPWD` la de antes (`cd /tmp && echo x >> $PWD/h.md` escribe en /tmp). La carpeta del `cd` se lee con la de antes.
- * Un `cd` que no se resuelve (una variable, un comodín) deja la carpeta como estaba.
- */
-// un `cd` o un `pushd` con sus opciones (`-P`, `-L`, `-e`, `-@`, `--`) y la carpeta adonde va
-const CD_DEL_TRAMO = /(?:^|[\s;&|('"])(?:cd|pushd)\s+(?:(?:-[LPe@]+|--)\s+)*(['"]?)([^\s'";&|)`]+)\1/g;
-
-function conCarpetasPorTramo(cmd, carpeta, { raiz = null } = {}) {
-  const texto = String(cmd);
-  // los lugares donde cambia la carpeta: cada `cd`, cada paréntesis que abre (guarda la carpeta) y el que cierra (la
-  // devuelve: `(cd /tmp && ls); rm $PWD/h.md` borra en la carpeta de antes). Los paréntesis entre comillas no cuentan
-  const cambios = [...texto.matchAll(CD_DEL_TRAMO)].map((m) => ({ at: m.index + m[0].length, cd: m[2] }));
-  // sólo los paréntesis de un grupo: los de una sustitución (`$(…)`) no mueven la carpeta de afuera, y cortar en ellos
-  // partiría la sustitución que se escribe
-  let q = null;
-  const abiertos = [];
-  for (let i = 0; i < texto.length; i++) {
-    const ch = texto[i];
-    if (q) { if (ch === q && (q === "'" || texto[i - 1] !== '\\')) q = null; continue; }
-    if (ch === "'" || ch === '"') { q = ch; continue; }
-    if (ch === '(') {
-      const grupo = texto[i - 1] !== '$';
-      abiertos.push(grupo);
-      if (grupo) cambios.push({ at: i + 1, abre: true });
-    } else if (ch === ')' && abiertos.length && abiertos.pop()) cambios.push({ at: i, cierra: true });
-  }
-  cambios.sort((a, b) => a.at - b.at || (a.cierra ? -1 : 1));
-  let actual = carpeta;
-  let anterior = carpeta;
-  const guardadas = [];
-  let desde = 0;
-  let out = '';
-  for (const c of cambios) {
-    out += conCarpetasNombradas(texto.slice(desde, c.at), actual, { raiz, carpetaAnterior: anterior });
-    desde = c.at;
-    if (c.abre) { guardadas.push([actual, anterior]); continue; }
-    if (c.cierra) { if (guardadas.length) [actual, anterior] = guardadas.pop(); continue; }
-    const destino = conCarpetasNombradas(c.cd, actual, { raiz, carpetaAnterior: anterior });
-    if (/[$*?[{`]/.test(destino)) continue;
-    const previa = actual;
-    actual = destino === '-' ? anterior : path.resolve(actual, destino.replace(/^~(?=\/|$)/, os.homedir()));
-    anterior = previa;
-  }
-  return out + conCarpetasNombradas(texto.slice(desde), actual, { raiz, carpetaAnterior: anterior });
-}
-
 const FIN_DE_EXEC = new Set([';', '\\;', '+', '\\']);
 const citarParaElShell = (w) => (/^[\w@%+=:,./~*?[\]{}-]+$/.test(w) ? w : `'${w.replace(/'/g, "'\\''")}'`);
 
@@ -1223,14 +1155,26 @@ const citarParaElShell = (w) => (/^[\w@%+=:,./~*?[\]{}-]+$/.test(w) ? w : `'${w.
  * comparador de los comodines; un patrón que no se entiende cumple: se mira de más.
  */
 function cumplePatronDeFind(patron, sinMayusculas) {
+  let crudo = String(patron);
+  // un patrón con una variable o una sustitución (`"$p"`, `"$(echo …)"`) no se sabe: cumple, se mira de más (A50)
+  if (/\$(?!')|`/.test(crudo)) return () => true;
+  // `$'…'` es el citado ANSI-C del shell: se lee su contenido
+  const ansi = /^\$'((?:\\.|[^'\\])*)'$/.exec(crudo);
+  if (ansi) crudo = ansiC(ansi[1]);
+  // sin comillas, el shell saca la barra antes de pasárselo a find (`\*.md` llega como `*.md`): se prueban las dos lecturas
+  const formas = [...new Set([crudo, crudo.replace(/\\(.)/g, '$1')])];
   try {
-    const c = comodinDelShell(sinMayusculas ? String(patron).toLowerCase() : patron);
-    return (nombre) => c.test(sinMayusculas ? String(nombre).toLowerCase() : nombre);
+    const cs = formas.map((f) => comodinDelShell(sinMayusculas ? f.toLowerCase() : f));
+    return (nombre) => cs.some((c) => c.test(sinMayusculas ? String(nombre).toLowerCase() : nombre));
   } catch { return () => true; }
 }
 
-/** Las historias que alcanza un `find`: sus carpetas de partida (resueltas con `absoluta`) filtradas por sus `-name`. */
-function alcanzadasPorFind(words, absoluta) {
+/**
+ * Las historias que alcanza un `find`: sus carpetas de partida (resueltas con `absoluta`) filtradas por sus `-name`. Con
+ * `recursivo` (lo que corre borra carpetas enteras: `-exec rm -rf {}`, `-delete`), también las historias de adentro de
+ * cada carpeta que cumple el `-name` (`find . -name specs -exec rm -rf {} +`).
+ */
+function alcanzadasPorFind(words, absoluta, { recursivo = false } = {}) {
   const carpetas = [];
   for (let i = 1; i < words.length && !/^[-!(]/.test(words[i]); i++) {
     // `"$PWD"/docs` llega partido en dos palabras: la carpeta es una sola
@@ -1249,21 +1193,62 @@ function alcanzadasPorFind(words, absoluta) {
   // ser el final de un `.md`, o terminar en `.md`
   const puedeSerMd = (crudo) => {
     const p = String(crudo).replace(/^['"]|['"]$/g, '').toLowerCase();
-    if (/[[\\]/.test(p)) return true;
+    // con un corchete, una barra, una variable o una sustitución, puede ser cualquier cosa
+    if (/[[\\$`]/.test(p)) return true;
     const cola = p.slice(Math.max(p.lastIndexOf('*'), p.lastIndexOf('?')) + 1);
     return '.md'.endsWith(cola) || cola.endsWith('.md') || (p.lastIndexOf('?') === p.length - 1);
   };
-  if (patrones.length && !patrones.some(puedeSerMd)) return [];
   const cumple = filtros.length ? (nombre) => filtros.some((f) => f(nombre)) : () => true;
-  return carpetas.flatMap(absoluta).flatMap((abs) => {
+  // las carpetas que cumplen el `-name` (hasta cuatro niveles), con todas las historias de adentro
+  // hasta cuatro niveles (o los de `-maxdepth`) y dos mil carpetas: una limpieza grande no recorre el disco entero
+  const md = Number(words[words.indexOf('-maxdepth') + 1]);
+  const niveles = words.includes('-maxdepth') && Number.isFinite(md) ? Math.min(4, md - 1) : 4;
+  // Se recorre por niveles; al pasar el tope no se sabe qué carpeta cumple, y se miran todas las historias de la carpeta
+  // de partida (lo mismo que sin filtro), que dejar de mirar dejaría pasar
+  const deCarpetas = (abs) => {
+    const out = [];
+    let visitadas = 0;
+    let cumplidas = 0;
+    if (cumple(path.basename(abs))) return mdAdentro(abs, () => true);
+    let nivel = [abs];
+    for (let n = 0; n <= niveles && nivel.length; n++) {
+      const siguiente = [];
+      for (const d of nivel) {
+        if (++visitadas > 2000) return mdAdentro(abs, () => true);
+        let hijos = [];
+        try { hijos = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+        for (const h of hijos) {
+          if (!h.isDirectory() || h.name === '.git' || h.name === 'node_modules') continue;
+          const sub = path.join(d, h.name);
+          if (!cumple(h.name)) { siguiente.push(sub); continue; }
+          if (++cumplidas > 200) return mdAdentro(abs, () => true);
+          out.push(...mdAdentro(sub, () => true));
+        }
+      }
+      nivel = siguiente;
+    }
+    return out;
+  };
+  const soloArchivos = words[words.indexOf('-type') + 1] === 'f' && words.includes('-type');
+  const porCarpeta = recursivo && filtros.length && !soloArchivos ? carpetas.flatMap(absoluta).flatMap(deCarpetas) : [];
+  if (patrones.length && !patrones.some(puedeSerMd)) return porCarpeta;
+  return [...new Set([...porCarpeta, ...carpetas.flatMap(absoluta).flatMap((abs) => {
     try { if (fs.statSync(abs).isFile()) return cumple(path.basename(abs)) ? [abs] : []; } catch { return []; }
     return mdAdentro(abs, cumple);
-  });
+  })])];
 }
 
 /** Lo que corre cada `-exec`, `-execdir`, `-ok` y `-okdir` de un `find`, con `{}` reemplazado por las historias que alcanza. */
 function ordenesDeFind(words, absoluta) {
-  const alcanzadas = () => alcanzadasPorFind(words, absoluta);
+  // lo que corre borra carpetas enteras (`rm -r`, `-delete`): una carpeta que cumple el `-name` trae sus historias
+  // (el `-r` se busca sólo dentro de ese `-exec`; `-delete` solo no borra una carpeta con cosas)
+  const recursivo = words.some((w, k) => {
+    if (!/^-(?:exec|execdir|ok|okdir)$/.test(w) || !/^rm$/.test(nombreDeComando(words[k + 1] || ''))) return false;
+    let fin = k + 2;
+    while (fin < words.length && !FIN_DE_EXEC.has(words[fin])) fin++;
+    return words.slice(k + 2, fin).some((x) => /^-[a-zA-Z]*[rR]/.test(x) || x === '--recursive');
+  });
+  const alcanzadas = () => alcanzadasPorFind(words, absoluta, { recursivo });
   const out = [];
   for (let k = 0; k < words.length; k++) {
     if (!/^-(?:exec|execdir|ok|okdir)$/.test(words[k])) continue;
@@ -1473,4 +1458,4 @@ function entradasAlternativas(words, asignados) {
   return { alternativas, pasado: vs.some((v) => v.pasado) };
 }
 
-module.exports = { TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, conCarpetasNombradas, conCarpetasPorTramo, CD_DEL_TRAMO, alcanzadasPorFind };
+module.exports = { TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };

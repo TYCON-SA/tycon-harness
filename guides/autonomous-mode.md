@@ -45,7 +45,6 @@ marca sólo adelanta lo que pasaría solo.
 | **Sin cuadro de opciones.** Con la marca puesta, nadie abre un cuadro de preguntas: la decisión queda escrita, con su recomendación, y la sesión sigue con lo demás. | Un cuadro abierto de madrugada dejaba una sesión parada horas, esperando a alguien que no estaba. |
 | **Las firmas se juntan para la vuelta.** Lo que pide la firma del dueño queda en su lista; cuando vuelve, la coordinadora se lo pasa de a uno, por click. Las firmas que tocan los mismos archivos van en un solo pedido. | El dueño firma todo junto, en un rato, y una firma no vence a otra. |
 | **La coordinadora da lo que puede.** Lo de rutina que la organización le delegó (por ejemplo, aprobar un plan común cuando la revisión automática dio «aprobado») lo firma ella. | Lo que se deshace no espera al dueño. |
-| **Nada a mano en la carpeta de Claude.** Con el dueño ausente, no se escribe a mano dentro de la carpeta de configuración de Claude Code: se usan los guiones del arnés, o se deja para la vuelta. | Claude Code pide confirmación para escribir ahí aun sin permisos, y con el dueño ausente nadie la da: la sesión quedaba parada. |
 | **Avisos según el perfil.** Con el dueño ausente, la organización elige qué le llega por los canales de aviso (Telegram, Slack, Teams o correo): ver abajo. | Cada organización decide si quiere enterarse de noche o recién a la mañana. |
 
 ### Los avisos con el dueño ausente
@@ -59,6 +58,19 @@ La opción `coordination.away_notify` del perfil del equipo dice qué le llega a
 | `never` | Nada. Todo lo espera en su lista para cuando vuelva. |
 
 Se cambia desde el perfil del equipo, como cualquier otra opción de la coordinadora.
+
+## Qué hace la coordinadora durante la noche
+
+Las reglas dicen qué no se hace con el dueño ausente. Esto es lo que la coordinadora sí hace para que la noche rinda:
+
+- **No se queda esperando.** Mira sus sesiones cada 20 a 30 minutos con un despertador propio (en Claude Code, `/loop`
+  sin intervalo). Esperar a que una sesión le escriba deja horas muertas: una sesión trabada no siempre avisa.
+- **Le da otra fila a la sesión que termina.** Una sesión libre es tiempo perdido. Lo que pide firma queda listo y en la
+  lista del dueño, y la sesión sigue con otra cosa.
+- **Si se acaban las filas asignadas, toma otras.** Elige las que no tienen dueño, no piden firma y no están bloqueadas.
+  Primero las que rompen algo, después las de frenos y seguridad.
+- **Deja el resumen antes de la mañana.** Qué entró a `main`, qué espera la firma del dueño (de a uno, con su archivo) y
+  qué quedó trabado y por qué. El dueño lo lee en un minuto y sabe por dónde empezar.
 
 ## Qué NO hace
 

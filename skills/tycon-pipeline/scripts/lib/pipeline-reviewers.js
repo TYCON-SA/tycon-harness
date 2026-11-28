@@ -6,8 +6,8 @@
  * Lo que cambia mientras corre (los avisos del portón, la sesión para la que se trabaja) y las rutas del despachador
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
-const { estadoPipeline, MODELOS, PROPIA, STORY_GOLD, esCodex, fs, os, ownerWindow, packsLib, path, readSessionMarker, readText, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
-const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, tierDe, validateFilesExist } = require('./pipeline-advisor-context.js');
+const { estadoPipeline, MODELOS, PROPIA, STORY_GOLD, deriveStoryId, esCodex, fs, os, ownerWindow, packsLib, path, readSessionMarker, readText, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
+const { PRECHEQUEO, aplicarModelosDeRevisores, buildAdvisorContext, conLanzadorCodex, congelarVuelta, contextoConLaCopia, emptyWorkGate, logStep5Start, reglasRevisores, reloopHintsFor, resumenReglas, rethinkGate, salidaDelFreno, tierDe, validateFilesExist, fotoAlLanzar } = require('./pipeline-advisor-context.js');
 const { MECH_NUNCA_SACA, aplicarDecisionValidador, computeAdvisorSet, computeBase, computeCompletitud, computeConditional, computeMechDiscount, detectStack, lanzadorCodex, paquetesActivos, paquetesInstalados, resumenPaquetes, revisoresPorConfirmar, salidaGrande, sumarPorConfirmar, unique } = require('./pipeline-advisor-set.js');
 const { conModelosDeLaCorrida, decirModelos, orgModels, pedidosDeModelos } = require('./pipeline-models.js');
 const { computeRiskClass, computeRunSize, parseFrontmatterList, runSizeDelMarcador } = require('./pipeline-risk.js');
@@ -405,6 +405,7 @@ function cmdAdvisors(cmd, args) {
   // digest de story + file list + hunks. Los advisors lo reciben como input
   // primario en vez de re-leer story completa + re-correr git diff cada uno.
   // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
+  const horaDelSello = new Date().toISOString();
   const congelada = congelarVuelta({ story: args.story, repo: args.repo, iter: args.iter });
   if (congelada.error) {
     process.stderr.write(`🛑 pipeline.js advisors: la vuelta no se lanza — ${congelada.error}. Los revisores no leen la carpeta viva.\n`);
@@ -413,6 +414,7 @@ function cmdAdvisors(cmd, args) {
   }
   if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js advisors: ${congelada.aviso}.\n`);
   set.frozen = congelada.repos;
+  fotoAlLanzar(args.iter, horaDelSello);
   const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
   contextoConLaCopia(ctx, congelada.repos);
   // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
@@ -443,7 +445,7 @@ function cmdAdvisors(cmd, args) {
   aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
   decirModelos(set, conModelos.orgModels, avisosModelos);
   // expected persistido (post-descuento); el contexto también, para que `reviewers-run` lance lo mismo
-  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, context_file: set.context_file, context_file_overrides: set.context_file_overrides });
+  logStep5Start(set.all, { mode: 'advisors', iter: args.iter, story: args.story ? deriveStoryId(path.resolve(args.repo || '.', args.story)) : ((readSessionMarker() || {}).storyId || null), repo: path.resolve(args.repo || '.'), context_file: set.context_file, context_file_overrides: set.context_file_overrides });
   salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
   return;
 }

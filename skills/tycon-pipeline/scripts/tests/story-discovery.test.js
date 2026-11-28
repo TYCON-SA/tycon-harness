@@ -24,6 +24,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const { fakeHomeEnv } = require('./lib/fake-home.js');
 
 const SCRIPTS = path.join(__dirname, '..');
 const { computeNextStory } = require(path.join(SCRIPTS, 'pipeline.js'));
@@ -852,7 +853,9 @@ test('next-story: informa con qué criterio de id escaneó', () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('story-discovery: cada .md que se abre se CIERRA (si no, el escaneo se trunca solo)', () => {
+// En Windows no hay `ulimit` (sin bash en el PATH da ENOENT; con el bash de WSL, adentro no está este node): el límite
+// de descriptores no se puede bajar desde acá. El cierre de cada archivo lo mide esta misma prueba en Mac y Linux (A80).
+test('story-discovery: cada .md que se abre se CIERRA (si no, el escaneo se trunca solo)', { skip: process.platform === 'win32' && 'NO MEDIDO en Windows: no hay ulimit para bajar el límite de descriptores' }, () => {
   // 🔴 El probe abre un descriptor por
   // archivo; si no lo cierra, con el límite por defecto de 1M no se nota nada — pero el límite
   // habitual de macOS para procesos de escritorio es 256, y ahí un escaneo de 1300 `.md` se queda
@@ -934,8 +937,7 @@ const HARNESS_HERE = path.resolve(SCRIPTS, '..', '..', '..');
 function adoEnv(extra = {}) {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^TYCON_ADO|^AZURE_DEVOPS/.test(k)) env[k] = v;
-  env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-home-'));
-  env.USERPROFILE = env.HOME;
+  Object.assign(env, fakeHomeEnv(fs.mkdtempSync(path.join(os.tmpdir(), 'sd-home-'))));
   env.TYCON_PROFILE = '0';
   env.TYCON_TREE = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-tree-'));
   if (fs.existsSync(path.join(HARNESS_HERE, 'scripts', 'lib', 'tycon-config.js'))) env.TYCON_GUIDES_DIR = HARNESS_HERE;
