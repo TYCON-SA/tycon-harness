@@ -94,7 +94,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'hilos', titulo: 'Conversaciones de las ejecuciones', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.mailbox.threads']), idCorto: 'operations', necesita: ['site'] }),
   // el interruptor de la organización: con `true`, «Proponer» aprueba y completa el pedido con la identidad del sitio si
   // las políticas de main lo dejan. Cuenta el valor de main, nunca el del cambio que se propone (scripts/site/tabs/config.js)
-  Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
+  Object.freeze({ id: 'aplicar', titulo: 'Los cambios de quien mantiene el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
   // las fichas del tablero nocturno que el sitio no muestra (la lista es la de scripts/site/tabs/cards.js)
   Object.freeze({ id: 'fichas', titulo: 'Fichas que muestra el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.hidden_cards']), idCorto: 'operations', necesita: ['site'] }),
   // el pedido de trabajo de una vulnerabilidad: su tipo, los campos fijos y los de cada gravedad. Un lector
@@ -3146,7 +3146,7 @@ ${trabajandoJs}
   function dondeSeCambia(f) {
     var pestana = function (idSeccion) { var t = PESTANAS.filter(function (p) { return p[2].indexOf(idSeccion) >= 0; })[0]; return t ? t[1] + ' → ' : ''; };
     var base = f.default === 'off' ? T('pantalla.vieneApagado') : String(f.when || '').indexOf('integration:') === 0 ? T('pantalla.vieneConSuIntegracion') : T('pantalla.vienePrendido');
-    if (f.site_section) return base + T('pantalla.seCambiaEnConfiguracion') + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].corto : f.site_section) + '.';
+    if (f.site_section) return base + T('pantalla.seCambiaEnConfiguracion') + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].t : f.site_section) + '.';
     var resto = f.switch ? T('pantalla.soloEnTuMaquinaCon') + dePieza(f, 'switch') + '.' : T('pantalla.esParteDelArnesNo');
     var pend = f.site_pending ? T('pantalla.pendienteQueSePuedaCambiar') + ((PESTANAS.filter(function (p) { return p[0] === f.site_pending; })[0] || [])[1] || f.site_pending) + '.' : '';
     return base + resto + pend;
@@ -3224,7 +3224,8 @@ ${trabajandoJs}
         c.checked = ocultas.indexOf(f.id) < 0;
         // el nombre en llano; al lado, cómo se llama en el tablero, para encontrarla ahí
         var llano = Object.prototype.hasOwnProperty.call(TX, 'fichaLlana.' + f.id) ? TX['fichaLlana.' + f.id] : f.titulo;
-        grupo.appendChild(el('label', {}, c, el('span', { text: ' ' + llano }), llano !== f.titulo ? el('span', { class: 'muted', text: ' — ' + T('pantalla.fichaEnElTablero', { titulo: f.titulo }) }) : el('span', { class: 'muted', text: ' — ' + f.paraQue })));
+        // cada ficha en su renglón: un <label> solo no corta, y seguidas se leían como un párrafo
+        grupo.appendChild(el('div', { class: 'ficha-renglon' }, el('label', {}, c, el('span', { text: ' ' + llano }), llano !== f.titulo ? el('span', { class: 'muted', text: ' — ' + T('pantalla.fichaEnElTablero', { titulo: f.titulo }) }) : el('span', { class: 'muted', text: ' — ' + f.paraQue }))));
       });
     });
     var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });

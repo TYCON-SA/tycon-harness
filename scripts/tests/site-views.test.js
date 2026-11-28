@@ -465,9 +465,9 @@ test('T9 Producto_SinStoriesDelArnes', () => {
   const zeta = views.filasProyectos(m).filas.find((f) => f.producto === 'Zeta');
   assert.strictEqual(zeta.medido, false);
   assert.strictEqual(zeta.sin_stories, true);
-  assert.strictEqual(zeta.motivo, 'sus repos no usan stories del arnés');
+  assert.strictEqual(zeta.motivo, 'sus repos no usan historias del arnés');
   const pagina = views.paginaProyectos({ modelo: m, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
-  assert.match(pagina, /sus repos no usan stories del arnés/);
+  assert.match(pagina, /sus repos no usan historias del arnés/);
   assert.doesNotMatch(pagina, /no medido: sus repos no usan/, 'no se presenta como «no medido»');
 });
 
@@ -480,7 +480,7 @@ test('T10 Producto_SinFotoDeAnoche_SigueNoMedido', () => {
   // sin ninguna foto (la fuente no medida): la frase de la fuente, sin cambios
   const nada = views.filasProyectos(modeloSinStories({ estado: 'no_medido', codigo: 'sin_foto', motivo: null, fecha: null, lista: [] })).filas.find((f) => f.producto === 'Zeta');
   assert.ok(!nada.sin_stories);
-  assert.notStrictEqual(nada.motivo, 'sus repos no usan stories del arnés');
+  assert.notStrictEqual(nada.motivo, 'sus repos no usan historias del arnés');
 });
 
 test('8.101-Retrospectivas_SinFotoComoHoy_ConFotoSeVe', () => {
