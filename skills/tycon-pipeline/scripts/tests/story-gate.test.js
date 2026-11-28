@@ -1603,8 +1603,8 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
     visto(`nohup$(:/ ) cp ${S} '${res}'`);
     visto(`tee$(:/ ) '${res}' < ${S}`);
     // un destino escrito con el citado ANSI-C, con o sin escapes
-    visto(`echo x > $'${res}'`);
-    visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
+    visto(`echo x > $'${conBarras(res)}'`);
+    visto(`cp ${S} $'${conBarras(res).slice(0, -1)}\\x6e'`);
   }
   // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
   for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
