@@ -23,7 +23,8 @@ function estaMaquina(nombre) {
   const n = String(nombre).toLowerCase().replace(/^\[|\]$/g, '');
   let propio = '';
   try { propio = require('os').hostname().toLowerCase(); } catch (_) { /* sin nombre de equipo */ }
-  return ['localhost', '127.0.0.1', '::1', '.'].includes(n) || (propio && n === propio);
+  // toda 127.x.x.x es la propia máquina, no sólo 127.0.0.1
+  return ['localhost', '::1', '.'].includes(n) || /^(?:::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(n) || (propio && n === propio);
 }
 
 /**
@@ -36,15 +37,22 @@ function estaMaquina(nombre) {
 function nativePath(p, platform = process.platform) {
   if (platform !== 'win32' || typeof p !== 'string' || !p) return p;
   let s = p;
-  // el prefijo largo: `\\?\C:\…` y `\\.\C:\…` son `C:\…`; `\\?\UNC\servidor\x` es `\\servidor\x`
-  const largo = /^[\\/]{2}[?.][\\/](?:([A-Za-z]:)(.*)|UNC[\\/](.*))$/i.exec(s);
+  // el prefijo largo: `\\?\C:\…`, `\\.\C:\…` y `\??\C:\…` son `C:\…`; `\\?\UNC\servidor\x` es `\\servidor\x`
+  const largo = /^(?:[\\/]{2}[?.]|[\\/]\?\?)[\\/](?:([A-Za-z]:)(.*)|UNC[\\/](.*))$/i.exec(s);
   if (largo) s = largo[1] ? `${largo[1]}${largo[2] || '\\'}` : `\\\\${largo[3]}`;
-  // el recurso administrativo de la propia máquina: `\\localhost\c$\x` es `C:\x`
-  const adm = /^[\\/]{2}([^\\/]+)[\\/]([A-Za-z])\$(?:[\\/](.*))?$/.exec(s);
-  if (adm && estaMaquina(adm[1])) s = `${adm[2]}:\\${adm[3] || ''}`;
+  // el recurso administrativo de la propia máquina: `\\localhost\c$\x` es `C:\x`, también con barras repetidas, `.` y `..`
+  const red = /^[\\/]{2}([^\\/]+)((?:[\\/].*)?)$/.exec(s);
+  if (red && estaMaquina(red[1])) {
+    const adm = /^\/([A-Za-z])\$(?:\/(.*))?$/.exec(require('path').posix.normalize(`/${red[2].split('\\').join('/')}`));
+    if (adm) s = `${adm[1]}:\\${adm[2] || ''}`;
+  }
   // la forma de Git Bash: una barra al principio (o tres o más: dos exactas son una ruta de red), con `.`, `..` y barras
   // repetidas colapsadas como las colapsa bash
-  if (/^\//.test(s) && !/^\/\/[^/]/.test(s)) s = require('path').posix.normalize(s.replace(/^\/+/, '/'));
+  if (/^\//.test(s) && !/^\/\/[^/]/.test(s)) {
+    s = require('path').posix.normalize(s.replace(/^\/+/, '/'));
+    // `/proc/self/root` (o el de un proceso) es la raíz de Git Bash
+    while (/^\/proc\/(?:self|\d+)\/root(?:\/|$)/.test(s)) s = require('path').posix.normalize(`/${s.replace(/^\/proc\/(?:self|\d+)\/root\/?/, '')}`);
+  }
   // `/c/a/b`, `/cygdrive/c/a/b` y `/proc/cygdrive/c/a/b`: una barra, UNA letra, y otra barra o el final. `//servidor/x`
   // (red) no entra.
   const drive = /^[\\/](?:(?:proc[\\/])?cygdrive[\\/])?([A-Za-z])(?:[\\/](.*))?$/.exec(s);

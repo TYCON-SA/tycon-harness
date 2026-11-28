@@ -46,7 +46,9 @@ test('nativePath: las otras formas de Git Bash y de Windows para la misma unidad
   const W = 'C:\\Windows\\Temp\\a.txt';
   for (const p of ['/./c/Windows/Temp/a.txt', '///c/Windows/Temp/a.txt', '/c/../c/Windows/Temp/a.txt', '/tmp/../c/Windows/Temp/a.txt',
     '/proc/cygdrive/c/Windows/Temp/a.txt', '\\\\?\\C:\\Windows\\Temp\\a.txt', '//?/C:/Windows/Temp/a.txt', '\\\\.\\C:\\Windows\\Temp\\a.txt',
-    '//localhost/c$/Windows/Temp/a.txt', '\\\\127.0.0.1\\c$\\Windows\\Temp\\a.txt', '//[::1]/c$/Windows/Temp/a.txt']) {
+    '//localhost/c$/Windows/Temp/a.txt', '\\\\127.0.0.1\\c$\\Windows\\Temp\\a.txt', '//[::1]/c$/Windows/Temp/a.txt',
+    '//localhost//c$/Windows/Temp/a.txt', '//localhost/./c$/Windows/Temp/a.txt', '//127.0.0.2/c$/Windows/Temp/a.txt',
+    '\\??\\C:\\Windows\\Temp\\a.txt', '/proc/self/root/c/Windows/Temp/a.txt', '/proc/self/root/cygdrive/c/Windows/Temp/a.txt']) {
     assert.strictEqual(nativePath(p, 'win32'), W, p);
   }
   assert.strictEqual(nativePath('\\\\?\\UNC\\servidor\\compartida\\x.md', 'win32'), '\\\\servidor\\compartida\\x.md', 'el prefijo largo de una ruta de red');
@@ -57,7 +59,10 @@ test('nativePath: las otras formas de Git Bash y de Windows para la misma unidad
 // como la resuelve Node (`C:\c\…`) y no como bash (medido: las dos escriben en `C:\Windows\Temp`)
 test('resolveTarget: las relativas en Windows, como las resuelve Git Bash', () => {
   assert.strictEqual(gate.resolveTarget('../../../../../c/Windows/Temp/a.txt', 'C:\\lab', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'subir más allá de la unidad');
-  assert.strictEqual(gate.resolveTarget('c/Windows/Temp/a.txt', 'C:\\', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'desde la raíz, la letra es la unidad');
+  assert.strictEqual(gate.resolveTarget('c/Windows/Temp/a.txt', '\\', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'desde la raíz de Git Bash (`cd /`), la letra es la unidad');
+  assert.strictEqual(gate.resolveTarget('../c/Windows/Temp/a.txt', '\\tmp', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'desde una carpeta de Git Bash sin unidad (`cd /tmp`)');
+  assert.strictEqual(gate.resolveTarget('../proc/self/root/cygdrive/c/Windows/Temp/a.txt', '\\tmp', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'y subiendo a otra forma de la unidad');
+  assert.strictEqual(gate.resolveTarget('s/repo/a.md', 'C:\\', 'win32'), 'C:\\s\\repo\\a.md', 'parado en `C:\\` (= /c), una carpeta de una letra no es otra unidad');
   assert.strictEqual(gate.resolveTarget('../x/a.txt', 'C:\\lab\\fixture', 'win32'), 'C:\\lab\\x\\a.txt', 'una relativa común, igual que antes');
 });
 

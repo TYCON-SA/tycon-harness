@@ -2004,12 +2004,19 @@ test('EscrituraAlEstado_OtrasFormasDeWindows_Frena', { skip: process.platform !=
     return c && c !== path.join(E, 'plan-review') ? c : null;
   })();
   const formas = [`/.${bashDe(res)}`, `//${bashDe(res)}`, `/tmp/..${bashDe(res)}`, `${subir}${bashDe(res).slice(1)}`,
-    `'\\\\?\\${res}'`, `//localhost/${res[0].toLowerCase()}$/${resto}`, `//127.0.0.1/${res[0].toLowerCase()}$/${resto}`];
+    `'\\\\?\\${res}'`, `//localhost/${res[0].toLowerCase()}$/${resto}`, `//127.0.0.1/${res[0].toLowerCase()}$/${resto}`,
+    `//localhost//${res[0].toLowerCase()}$/${resto}`, `//127.0.0.2/${res[0].toLowerCase()}$/${resto}`, `/proc/self/root${bashDe(res)}`,
+    `'\\??\\${res}'`];
   if (corto) formas.push(`'${path.join(corto, 's1', 's1.resultado.json')}'`);
   conEnv(SIN_REGISTRO, () => {
     for (const f of formas) {
       const r = bash.handle(ev(`echo x > ${f}`), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(f));
+    }
+    // desde una carpeta de Git Bash sin unidad, una relativa que llega a la unidad
+    for (const c of [`cd / && echo x > ${bashDe(res).slice(1)}`, `cd /tmp && echo x > ..${bashDe(res)}`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
     }
   });
 });

@@ -1429,15 +1429,20 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
  */
 function relativaDeGitBash(rel, cwd) {
   const unidad = /^([A-Za-z]):[\\/]?(.*)$/.exec(cwd);
-  if (!unidad) return path.win32.resolve(cwd, rel);
+  // una carpeta de Git Bash sin unidad (`cd /` da `\`, `cd /tmp` da `\tmp`): bash resuelve desde ella con barras
+  const deBash = !unidad && /^[\\/](?![\\/])/.test(cwd);
+  if (!unidad && !deBash) return path.win32.resolve(cwd, rel);
   const relPosix = rel.split('\\').join('/');
   // `/c/a/b` → `C:\a\b`, sin depender de la lib de rutas (un skill instalado a medias corre sin ella)
   const nativa = (r) => {
     const m = /^\/([A-Za-z])(?:\/(.*))?$/.exec(r);
-    return m ? path.win32.normalize(`${m[1].toUpperCase()}:\\${m[2] || ''}`) : path.win32.resolve(cwd, rel);
+    if (m) return path.win32.normalize(`${m[1].toUpperCase()}:\\${m[2] || ''}`);
+    // `/cygdrive/c/…`, `/proc/self/root/c/…`: las conoce la lib de rutas, si está
+    const n = nativePath(r, 'win32');
+    return /^[A-Za-z]:/.test(n) ? n : path.win32.resolve(cwd, rel);
   };
-  if (!unidad[2] && /^[A-Za-z](?:\/|$)/.test(relPosix)) return nativa(path.posix.normalize(`/${relPosix}`));
-  const carpeta = `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;
+  const carpeta = deBash ? cwd.split('\\').join('/')
+    : `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;
   return nativa(path.posix.resolve(carpeta, relPosix));
 }
 
