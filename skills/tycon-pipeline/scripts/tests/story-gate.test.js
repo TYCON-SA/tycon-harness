@@ -2038,7 +2038,10 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
       `echo x | tee ${repo}/l?/../${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}}/plan-review/s1/s1.resultado.json`,
       // sexta vuelta: una barra o un `..` adentro de las llaves, y llaves muy anidadas
       `echo x | tee ${repo}/{x,l{1..1}/plan-review}/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}/..}/${path.basename(E)}/plan-review/s1/s1.resultado.json`,
-      `echo x | tee ${repo}/${'{x,'.repeat(9)}l{1..1}${'}'.repeat(9)}/plan-review/s1/s1.resultado.json`]) {
+      `echo x | tee ${repo}/${'{x,'.repeat(9)}l{1..1}${'}'.repeat(9)}/plan-review/s1/s1.resultado.json`,
+      // vuelta sobre el comodín por tramos: un `$(…)` o una variable sin resolver pegados al comodín, y llaves anidadas
+      `echo x >> ${conComodin('?')}$(true)/plan-review/s1/s1.resultado.json`, `echo x >> ${conComodin('?')}$NOSE/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${path.dirname(E)}/{x,${path.basename(E).slice(0, 1)}{${path.basename(E).slice(1, 2)}..${path.basename(E).slice(1, 2)}}}${path.basename(E).slice(2)}/plan-review/s1/nuevo.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }

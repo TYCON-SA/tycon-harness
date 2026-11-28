@@ -390,10 +390,18 @@ function handleCarrilEHistoria(event, opts = {}) {
   // por ruta real (un enlace al estado). Frena de más un comodín escrito en la casa o en la carpeta del arnés.
   const zonas = () => [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
   const zonaQueAlcanzaElComodin = (abs) => {
-    // un `$(…)` o comillas invertidas no es un comodín: es un destino sin resolver, que juzga la opción B (y el lector
-    // lo corta en el primer blanco: `$(date +%F).log` llega como `$(date`)
-    if (/\$\(|`/.test(String(abs))) return null;
-    const partes = String(abs).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
+    // lo que no se sabe (un `$(…)`, comillas invertidas, una variable sin resolver) puede ser cualquier texto: cuenta como
+    // `*`. Un `$(…)` sin cerrar es una palabra que el lector cortó en un blanco (`$(date +%F).log` llega como `$(date`):
+    // se juzga con la palabra entera, más abajo
+    let texto = String(abs);
+    if ((texto.match(/\$\(/g) || []).length > (texto.match(/\)/g) || []).length || (texto.match(/`/g) || []).length % 2) return null;
+    // lo desconocido cuenta como `*` sólo en un tramo que ya tiene un comodín (`est?do$(true)`); solo (`$R/src/x.cs`) es un
+    // destino sin resolver, que juzga la opción B
+    const DESCONOCIDO = '\u0001';
+    for (let v = 0; v < 8 && /\$\(/.test(texto); v++) texto = texto.replace(/\$\([^()]*\)/g, DESCONOCIDO);
+    texto = texto.replace(/`[^`]*`/g, DESCONOCIDO).replace(/\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g, DESCONOCIDO);
+    texto = texto.split(/(?=[\\/])|(?<=[\\/])/).map((p) => (/[*?[{(]/.test(p) ? p.split(DESCONOCIDO).join('*') : p)).join('');
+    const partes = texto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
     const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
@@ -415,17 +423,47 @@ function handleCarrilEHistoria(event, opts = {}) {
     }
     if (hondo > 0 && barraEnGrupo && anidado) llaveRara = true;
     const sube = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..');
-    const fijo = sube ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
+    const fijo = sube ? P.parse(texto).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
     const resto = partes.slice(i).filter(Boolean);
     // `**` y `(a|b)` de zsh (o un `(` sin cerrar: el `|` corta la palabra) llegan a cualquier profundidad
     const anda = resto.some((p) => p.includes('**') || /\([^)]*(?:\||$)/.test(p));
     const sinMay = process.platform === 'darwin' || process.platform === 'win32';
     const igual = (a1, b1) => (sinMay ? String(a1).toLowerCase() === String(b1).toLowerCase() : a1 === b1);
     // un tramo del patrón puede nombrar ese tramo de la zona: llaves y paréntesis cuentan como `*` (de más, nunca de menos)
-    const puedeNombrar = (seg, comp) => {
-      const patron = seg.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*\)?/g, '*').replace(/[{}]/g, '*');
+    // las llaves con coma se abren en sus alternativas (`{repo,muchos}` no nombra `estado`); las de secuencia, como `*`
+    const puedeNombrar = (seg, comp) => (/\{[^{}]*,[^{}]*\}/.test(seg) ? expandirLlaves(seg) : [seg]).some((alt) => puedeNombrarUno(alt, comp));
+    const puedeNombrarUno = (seg, comp) => {
+      let patron = seg;
+      for (let v = 0; v < 8 && /[{(]/.test(patron); v++) patron = patron.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*\)?/g, '*');
+      patron = patron.replace(/[{}()]/g, '*');
       if (!/[*?[]/.test(patron)) return igual(seg, comp);
-      try { const re = comodinDelShell(sinMay ? patron.toLowerCase() : patron); return re.test(sinMay ? comp.toLowerCase() : comp); } catch { return true; }
+      // el comodín del shell compara con los nombres del disco tal cual (`[!E]stado` nombra `estado`); lo que dan las
+      // llaves es texto literal, que en Mac y Windows llega igual con otras mayúsculas (`ESTAD{O..O}`)
+      try {
+        if (comodinDelShell(patron).test(comp)) return true;
+        if (!sinMay) return false;
+        // en Mac y Windows, además, sin distinguir mayúsculas y de más: una clase negada (`[!E]`) cuenta como cualquier
+        // carácter, así ninguna lectura sin mayúsculas nombra de menos
+        let re = '';
+        for (let k = 0; k < patron.length; k++) {
+          const ch = patron[k];
+          if (ch === '*') { re += '.*'; continue; }
+          if (ch === '?') { re += '.'; continue; }
+          if (ch === '\\' && k + 1 < patron.length) { re += patron[++k].replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); continue; }
+          if (ch === '[') {
+            const cierre = patron.indexOf(']', k + 2);
+            if (cierre > 0) {
+              const cuerpo = patron.slice(k + 1, cierre);
+              k = cierre;
+              if (/^[!^]/.test(cuerpo) || cuerpo.includes('[:')) { re += '.'; continue; }
+              re += `[${cuerpo.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')}]`;
+              continue;
+            }
+          }
+          re += ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+        }
+        return new RegExp(`^${re}$`, 'i').test(comp);
+      } catch { return true; }
     };
     for (const z of zonas()) {
       if (!z) continue;
@@ -438,7 +476,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       if (resto.length >= rel.length && rel.every((comp, k) => puedeNombrar(resto[k], comp))) return z;
     }
     // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)
-    let enDisco = String(abs);
+    let enDisco = texto;
     // de adentro hacia afuera (`{x,l{1..1}}`), con tope: cada vuelta saca un nivel
     for (let v = 0; v < 8 && /[{(]/.test(enDisco); v++) enDisco = enDisco.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*(?:\)|$)/g, '*');
     enDisco = enDisco.replace(/\*{2,}/g, '*');
@@ -802,6 +840,30 @@ function handleCarrilEHistoria(event, opts = {}) {
     }
     if (d.sinResolver.length) continue;
     for (const x of conLlaves(expandirRuta(cmdDestinos, d.raw).valor)) if (!absTargets.includes(x)) absTargets.push(x);
+  }
+  // un destino que el lector cortó en un blanco de un `$(…)`: el comodín se juzga con la palabra entera del shell
+  for (const d of resueltos) {
+    const raw = String(d.raw);
+    if ((raw.match(/\$\(/g) || []).length <= (raw.match(/\)/g) || []).length) continue;
+    const textoCmd = String(cmdDestinos);
+    for (let k = textoCmd.indexOf(raw), n = 0; k >= 0 && n < 20; k = textoCmd.indexOf(raw, k + 1), n++) {
+      let modo = '';
+      let hondo = 0;
+      let fin = k;
+      for (; fin < textoCmd.length && fin < k + 20000; fin++) {
+        const ch = textoCmd[fin];
+        if (modo === "'") { if (ch === "'") modo = ''; continue; }
+        if (ch === '\\') { fin++; continue; }
+        if (modo === '"') { if (ch === '"') modo = ''; continue; }
+        if (ch === "'" || ch === '"') { modo = ch; continue; }
+        if (ch === '(') { hondo++; continue; }
+        if (ch === ')') { if (!hondo) break; hondo--; continue; }
+        if (!hondo && /[\s;&|<>]/.test(ch)) break;
+      }
+      const palabra = textoCmd.slice(k, fin).replace(/["']/g, '');
+      const zona = zonaQueAlcanzaElComodin(resolveTarget(palabra, cwd, process.platform, { homeVariable: true }));
+      if (zona && !absTargets.includes(path.join(zona, 'comodin'))) absTargets.push(path.join(zona, 'comodin'));
+    }
   }
   for (const abs of [...absTargets]) {
     const zona = zonaQueAlcanzaElComodin(abs);
