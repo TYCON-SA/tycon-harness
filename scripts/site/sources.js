@@ -601,10 +601,11 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       sin_medir: (Array.isArray(asig.doc.proyectos_no_medidos) ? asig.doc.proyectos_no_medidos : []).filter(isObject).map((x) => texto(x.proyecto)).filter(Boolean).map(decodificar) });
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
-  // las retrospectivas pendientes: la foto de HOY, sólo la cuenta por repo. Sin ella, el Inicio dice lo de siempre
+  // las retrospectivas pendientes: la foto de HOY, el repo, los días y el merge (sólo si es un sha: va al HTML). Sin
+  // ella, el Inicio dice lo de siempre
   const ret = foto('retros', 'retros-*.json');
   if (ret.ok && ret.fecha === hoy && ret.doc.estado === 'medido' && Array.isArray(ret.doc.pendientes)) {
-    m.retros = fuente('medido', null, ret.fecha, { pendientes: ret.doc.pendientes.filter(isObject).map((x) => ({ repo: texto(x.repo, 200), dias: num(x.dias) })) });
+    m.retros = fuente('medido', null, ret.fecha, { pendientes: ret.doc.pendientes.filter(isObject).map((x) => ({ repo: texto(x.repo, 200), dias: num(x.dias), merge: typeof x.merge === 'string' && /^[0-9a-f]{7,40}$/.test(x.merge) ? x.merge : null })) });
   } else if (ret.ok && ret.doc.estado === 'medido' && !Array.isArray(ret.doc.pendientes)) { m.retros = noMedida('ilegible', ret.fecha); log(`la foto de retrospectivas del ${ret.fecha} dice medido y no trae la lista`); }
   else m.retros = ret.ok ? noMedida('no_medido_noche', ret.fecha) : ret.fuente;
 

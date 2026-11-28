@@ -129,8 +129,9 @@ A la izquierda está el menú, con las pestañas numeradas. Cada pestaña contes
 
 **«No medido».** Una ficha rayada y gris dice **no medido** y el motivo, por ejemplo «no hay foto de esta fuente».
 «No medido» no es cero ni es verde: quiere decir que hoy ese dato no se pudo saber. Si una ficha sigue así más de un
-día, avisale a quien mantiene: el motivo dice qué falta. Algunas no se pueden medir desde el sitio y lo dicen siempre
-(por ejemplo, «Retrospectivas pendientes»: viven en la máquina de quien mergeó); ésas no hace falta avisarlas.
+día, avisale a quien mantiene: el motivo dice qué falta. «Retrospectivas pendientes» es la excepción: viven en la
+máquina de quien mergeó, y sólo hay cuenta el día que la noche dejó su foto. Ese día la ficha lleva a la lista de
+abajo, con el repo, el merge y cómo se hace; sin la foto, sale gris y no hace falta avisarlo.
 
 ### Inicio
 
@@ -149,7 +150,7 @@ deciden en el repo de operaciones, donde la noche dejó su foto. Las fichas son:
 - **Suites rojas** y **casos del banco rojos esta noche:** las pruebas del arnés y los controles del arnés que se
   pusieron rojos anoche.
 - **Datos declarados que vencen:** números que alguien anotó a mano con una fecha para revisarlos.
-- **Máquinas sin confirmar con ejecuciones** y **retrospectivas pendientes**.
+- **Máquinas sin confirmar con ejecuciones** y **retrospectivas pendientes** (ésta lleva a su lista de abajo).
 
 ![Inicio de quien mantiene: «Qué decidir hoy», con fichas en Decidir, Nada y No medido](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
@@ -400,7 +401,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 
 **En Ejecuciones:**
 
-- **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
+- **Veces que el registro de controles anotó un bloqueo** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo, en todo el registro de controles de las máquinas (también los del commit): no es la columna Controles de Ejecuciones, que cuenta sólo los de cada ejecución.
 - **Una ejecución del pipeline, de punta a punta (mediana, horas)**. Cuánto dura una ejecución completa.
 - **Respuestas del modelo por ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
@@ -736,9 +737,9 @@ Las secciones, en el orden de la pantalla:
 - **Azure DevOps**: la organización de Azure DevOps del equipo. Llega a cada máquina. Queda en `team-profile.json`, en
   el repo del perfil. Lo revisa quien mantiene el arnés.
 
-Debajo están **Productos** (los que revisa la noche) y **Lo que trae la organización** (las skills, los revisores,
-las guías del alta y los paquetes del repo del perfil, cada uno con su enlace). Son para mirar: se cambian con un pedido
-en su repo.
+Debajo está **Productos** (los que revisa la noche). **Lo que trae la organización** (las skills, los revisores, las
+guías del alta y los paquetes del repo del perfil, cada uno con su enlace) está en la pestaña Instalación y
+actualización. Los dos son para mirar: se cambian con un pedido en su repo.
 
 **La configuración de cada repo** muestra, por cada repo de producto, lo que dice el `.tycon/advisors.yaml` de su rama
 principal. Los repos son los de la revisión de dependencias y los de `team-repos.json`, sin el público, el del perfil ni
@@ -1146,7 +1147,7 @@ base se saltean y las de navegador salen en rojo, y el portón lo cuenta como c�
 De fábrica, las dos opciones nuevas están en lo más seguro: la firma delegada apagada y el freno con la contraseña.
 
 Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una en su última subida diaria, con o sin ejecuciones. Es para mirar:
-las máquinas se actualizan solas al arrancar.
+cómo se actualizan lo dice la opción de arriba (de fábrica, al arrancar cada máquina le pregunta a su dev).
 
 ![Instalación y actualización](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
 

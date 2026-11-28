@@ -131,9 +131,10 @@ On the left is the menu, with the numbered tabs. Each tab answers a question.
 
 **"Not measured"**. A gray, striped card says **not measured** and the reason, for example "there is no
 snapshot of this source". "Not measured" is not zero and not green: it means that today that piece of data could not be
-known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. Some cannot
-be measured from the site and always say so (for example, "Pending retrospectives": they live on the machine of whoever
-merged); those do not need a notice.
+known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. "Pending
+retrospectives" is the exception: they live on the machine of whoever merged, and there is a count only on a day the
+night left its snapshot. That day the card leads to the list below, with the repo, the merge and how to do it; without
+the snapshot it is gray and needs no notice.
 
 ### Home
 
@@ -153,7 +154,7 @@ The cards are:
 - **Red suites** and **red bench cases tonight:** the harness tests and the harness controls that turned red last
   night.
 - **Declared data about to expire:** numbers someone wrote down by hand with a date to review them.
-- **Unconfirmed machines with runs** and **pending retrospectives**.
+- **Unconfirmed machines with runs** and **pending retrospectives** (this one leads to its list below).
 
 ![A maintainer's Home: "What to decide today", with cards in Decide, Nothing and Not measured](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
@@ -399,7 +400,7 @@ their tabs as before.
 
 **In Runs:**
 
-- **Times a pipeline control blocked an action** (`bloqueos`). How many times a control actually stopped something.
+- **Times the controls log recorded a block** (`bloqueos`). How many times a control actually stopped something, across the machines' whole controls log (including the commit ones): not the Controls column in Runs, which counts only each run's own.
 - **A pipeline run, end to end (median, hours)**. How long a full run lasts.
 - **Model responses per pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
 
@@ -743,8 +744,9 @@ The sections, in the order of the screen:
 - **Azure DevOps**: the team's Azure DevOps organization. It reaches each machine. It lives in `team-profile.json`, in
   the profile repo. Whoever maintains the harness reviews it.
 
-Below are **Products** (the ones the night checks) and **What the organization provides** (the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
-only: they are changed with a request in their repo.
+Below is **Products** (the ones the night checks). **What the organization provides** (the skills, reviewers,
+onboarding guides and packs of the profile repo, each with its link) is in the Installation and updates tab. Both are
+view only: they are changed with a request in their repo.
 
 **The configuration of each repo** shows, for each product repo, what the
 `.tycon/advisors.yaml` of its main branch says. The repos are those of the dependency review and of `team-repos.json`,
@@ -1174,7 +1176,7 @@ tests fail, and the test gate counts that as broken code. Every story rediscover
 By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
 Below is **Which harness version each machine has**, the one each machine
-reported in its latest daily upload, with or without runs. It is view only: the machines update themselves on start.
+reported in its latest daily upload, with or without runs. It is view only: how they update is set by the option above (by default, on startup each machine asks its dev).
 
 ![Installation and updates](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
 

@@ -2082,7 +2082,7 @@ ${trabajandoJs}
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
     // sin valor escrito vale el de fábrica: elegirlo saca la clave, no la escribe
     lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.quienVeLasOficinas') }),
-      selector(T('pantalla.quienVeLasOficinas'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
+      selector(T('pantalla.oficinasLasVen'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
         if (v === 'maintainers') delete site.offices; else site.offices = { visibility: v };
       }, 'site.offices.visibility', pr)));
     // lo que no hace falta tocar: plegado, con su motivo en el título
@@ -2487,10 +2487,13 @@ ${trabajandoJs}
     var conAlgo = (v.productos || []).filter(function (p) { return (p.faltan || []).length || (p.tiene || []).length || (p.vencidas || []).length; });
     var enOrden = (v.productos || []).length - conAlgo.length;
     var porRepo = v.unidad === 'repos';
-    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + T(porRepo ? 'pantalla.repo3' : 'pantalla.producto3') + (conAlgo.length === 1 ? '' : 's') + T('pantalla.conAlgoParaMirar') + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T(porRepo ? 'pantalla.reposCoincidenConLosDemas' : 'pantalla.productosCoincidenConLosDemas') })));
+    // una diferencia vista desde los dos lados (a uno le falta, otro la tiene) es una sola: se cuentan los rasgos
+    var difs = {}; conAlgo.forEach(function (p) { (p.faltan || []).concat(p.tiene || [], p.vencidas || []).forEach(function (x) { if (x && x.rasgo) difs[x.rasgo] = true; }); });
+    var nDif = Object.keys(difs).length || conAlgo.length;
+    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? T(nDif === 1 ? 'pantalla.paridadUnaDif' : 'pantalla.paridadNDif', { n: nDif, m: conAlgo.length, unidad: T(porRepo ? (conAlgo.length === 1 ? 'pantalla.paridadRepo' : 'pantalla.paridadRepos') : (conAlgo.length === 1 ? 'pantalla.paridadProducto' : 'pantalla.paridadProductos')) }) + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T(porRepo ? 'pantalla.reposCoincidenConLosDemas' : 'pantalla.productosCoincidenConLosDemas') })));
     var prods = el('ul', { class: 'renglones' });
     conAlgo.forEach(function (p) {
-      prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
+      prods.appendChild(el('li', {}, el('span', { class: 'quien', text: T('pantalla.paridadQuien', { producto: p.producto, grupos: p.grupos.join(', ') }) }),
         el('span', { class: 'dato', text: T('pantalla.leFalta') + lista(p.faltan, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.haceAlgoQueLosDemas') + lista(p.tiene, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.aceptadas') + lista(p.declaradas, function (x) { return queDe(x.rasgo) + T('pantalla.hasta') + x.revision + ')'; }, T('pantalla.ninguna2')) + T('pantalla.vencidas') + lista(p.vencidas, function (x) { return queDe(x.rasgo) + ' (' + x.revision + ')'; }, T('pantalla.ninguna2')) })));
     });
     if (conAlgo.length) box.appendChild(prods);
@@ -2839,8 +2842,13 @@ ${trabajandoJs}
       var cubiertos = [];
       grupos.forEach(function (g) { g.clave.split(',').forEach(function (c) { cubiertos.push(c); }); });
       NIVELES.forEach(function (l) { if (cubiertos.indexOf(l.id) < 0) grupos.push({ clave: l.id, suelto: true, formas: [], nivel: efectivo(l.id) }); });
+      // las firmas retiradas (ya no apagan nada) van juntas en un renglón al final; una con un valor guardado conserva su
+      // fila, para poder quitarlo
+      var esRetirada = function (f) { return /\(retirada/.test(String(f.approves || '')); };
+      var guardada = function (f) { return soloDueno.indexOf(f.id) >= 0 || delegadas.indexOf(f.id) >= 0; };
+      var retiradas = grupos.filter(function (g) { return !g.suelto && g.formas.length && g.formas.every(esRetirada) && !g.formas.some(guardada); });
       var bloque = 0;
-      grupos.slice().sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
+      grupos.filter(function (g) { return retiradas.indexOf(g) < 0; }).sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
         if (g.nivel !== bloque) {
           bloque = g.nivel;
           t.appendChild(el('div', { class: 'r nivel-cab', role: 'row', 'data-nivel-bloque': String(bloque) }, el('div', { class: 'nivel-t', role: 'cell' }, el('b', { text: T('pantalla.firmasNivel' + bloque) }), el('span', { class: 'muted', text: T('pantalla.firmasNivel' + bloque + 'Frase') }))));
@@ -2862,6 +2870,9 @@ ${trabajandoJs}
           var delegable = rutina && (estado === 'delegada' || (estado === '' && f.otherSession === 'yes'));
           var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
           var como = T(f.kind === 'freno' ? 'pantalla.firmaComoFrase' : 'pantalla.firmaComoGuion');
+          // dos formas del mismo tipo en la misma firma se distinguen por lo que aprueba cada una, sin el paréntesis del
+          // final, que a veces nombra otra firma por su id (nunca un id a la vista)
+          if (f !== cabeza && g.formas.filter(function (o) { return o.kind === f.kind; }).length > 1 && queDe(f) !== queDe(cabeza)) como = String(queDe(f)).replace(/\s*\([^)]*\)\s*$/, '') + ' — ' + como;
           var c = corto(queDe(f) + ' · ' + como, estado, opciones, function (x) {
             if ((x === 'delegada') !== (estado === 'delegada')) ponerDelegada(f.id, x === 'delegada');
             if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
@@ -2878,6 +2889,10 @@ ${trabajandoJs}
         fila.setAttribute('data-firma-grupo', g.clave);
         t.appendChild(fila);
       });
+      if (retiradas.length) {
+        var nombres = retiradas.map(function (g) { return String(queDe(g.formas[0])).replace(/\s*\([^)]*\)\s*$/, ''); }).join(' · ');
+        t.appendChild(el('div', { class: 'r', role: 'row', 'data-firma-retiradas': String(retiradas.length) }, el('div', { class: 'que', role: 'cell' }, el('b', { text: T('pantalla.firmasRetiradas') })), el('div', { class: 'muted', role: 'cell', text: nombres })));
+      }
       // lo guardado que el lector rechaza en su lista (su veredicto, que manda el servidor): su fila, con el error y cómo
       // quitarlo. «off» o un grupo valen en las delegadas y no en sólo del dueño, donde tumban la lista entera
       var rech = ex.rechazadas || {};
@@ -3542,7 +3557,7 @@ ${trabajandoJs}
           var origen = m.reviewers ? T('pantalla.origenVueltaOrg') : deFabrica ? T('pantalla.origenFabricaPropio') : r.ilegible ? T('pantalla.origenIlegible') : T('pantalla.origenVuelta');
           var opciones = [['', T(!m.reviewers && deFabrica ? 'pantalla.elSuyoSinCambiar' : 'pantalla.igualQueSuVuelta', { nivel: nombreNivel(base) })]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
           var que = [el('span', { text: nombre })];
-          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T(g.propios || g.sueltos ? 'pantalla.revisorSinNombre' : 'pantalla.revisorDelArnesSinNombre') }));
+          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T(g.propios || g.sueltos ? 'pantalla.revisorSinNombre' : g.paquete ? 'pantalla.revisorDelPaqueteSinNombre' : 'pantalla.revisorDelArnesSinNombre') }));
           if ((g.dobles || []).indexOf(id) >= 0) que.push(el('small', { class: 'glosa', text: T('pantalla.revisorNombradoDosVeces') }));
           var f = fila(t, que, nombre, 'reviewer', id, opciones, propio || base, null, true, base, propio ? T('pantalla.origenOrg') : origen);
           if (propio) f.setAttribute('class', (f.getAttribute ? f.getAttribute('class') : f.attrs.class) + ' cambiado');
@@ -3598,6 +3613,8 @@ ${trabajandoJs}
       var nombreP = T('pantalla.proveedor.' + p);
       var t = tabla('modelos proveedores', nombreP, [T('pantalla.columnaNivel'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
       t.setAttribute('data-proveedor', p);
+      // el nombre del proveedor arriba de su tabla: sin él, sólo la primera quedaba asociada a uno
+      box.appendChild(el('p', { class: 'sub-t prov-t', text: nombreP }));
       var permitidos = permitidosDe(p);
       var listaId = 'permitidos-' + p;
       NIVELES.forEach(function (n) {
@@ -3932,7 +3949,7 @@ ${trabajandoJs}
       if (v === '') { if (esObjeto(d.coverage)) { delete d.coverage.min_touched_lines_pct; if (!Object.keys(d.coverage).length) delete d.coverage; } return; }
       if (!esObjeto(d.coverage)) d.coverage = {};
       d.coverage.min_touched_lines_pct = numOTexto(v);
-    }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
+    }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric', placeholder: T('pantalla.coberturaDeFabrica') }));
   }
   // las vueltas de revisores: el tope (entero de 1 a 6; vacío, el de fábrica, 2) y los prefijos que la organización suma
   // a los de fábrica como «seguridad o datos». Una clave que queda vacía se saca: no se propone un «{}»
@@ -4684,6 +4701,12 @@ ${trabajandoJs}
     });
     return sec;
   }
+  // las que no están al día y tampoco piden arreglo (sólo para mirar, sin configurar, por crear): se nombran con su
+  // estado, para que la ficha de las al día no haga creer que les falta guardar algo
+  function otrasQueNoEstanAlDia() {
+    var otras = S.secciones.filter(function (s) { return estadoDe(s)[0] === 'nm'; });
+    return otras.length ? ' · ' + otras.map(function (s) { return plano(s).corto + ' (' + estadoDe(s)[1] + ')'; }).join(', ') : '';
+  }
   function render() {
     var ex = S.extras || {};
     var porId = {}; S.secciones.forEach(function (s) { porId[s.id] = s; });
@@ -4697,12 +4720,14 @@ ${trabajandoJs}
     partes.push(el('div', { class: 'grid' },
       kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', T('pantalla.maquinasPorConfirmar'), porConfirmar, porConfirmar ? T('pantalla.pidenQueDigasDeQuienSon') : T('pantalla.todasANombreDeAlguien')),
       kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, T('pantalla.seccionesConAlgoParaArreglar'), aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : T('pantalla.ninguna2')),
-      kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente')),
+      kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente') + otrasQueNoEstanAlDia()),
       kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.deN') + (ex.versiones || []).length + T('pantalla.queInforman'))));
     var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), ruta: p.ruta || '—', repo: p.repo ? (p.producto ? p.producto + ' · ' : '') + String(p.repo).split('/').pop() : p.ruta, estado: (p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo')) + (p.repetida ? ' · ' + T('pantalla.entradaRepetida') : ''), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['ruta', T('pantalla.rutaDeLaEntrada')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
     if (ex.productosMotivo) prod.appendChild(aviso('bad', T('pantalla.laListaDeProductosNo'), ex.productosMotivo));
     if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: T('pantalla.abrirLaListaDeLa') })));
-    var ver = tablaDeMirar(T('pantalla.queVersionDelArnesTiene'), T('pantalla.laQueInformoCadaUna'), (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || T('pantalla.sinConfirmar'), version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', T('pantalla.maquina')], ['persona', T('pantalla.persona2')], ['version', T('pantalla.version2')], ['dia', T('pantalla.ultimaNoticia2')], ['texto', T('pantalla.estado')]], 'versiones');
+    // cómo se actualizan depende de la opción: «solas» sólo con update.apply auto; de fábrica, cada máquina pregunta
+    var act = porId.actualizacion && esObjeto(porId.actualizacion.borrador) && esObjeto(porId.actualizacion.borrador.update) ? porId.actualizacion.borrador.update.apply : null;
+    var ver = tablaDeMirar(T('pantalla.queVersionDelArnesTiene'), T(act === 'auto' ? 'pantalla.laQueInformoCadaUna' : 'pantalla.laQueInformoCadaUnaPregunta'), (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || T('pantalla.sinConfirmar'), version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', T('pantalla.maquina')], ['persona', T('pantalla.persona2')], ['version', T('pantalla.version2')], ['dia', T('pantalla.ultimaNoticia2')], ['texto', T('pantalla.estado')]], 'versiones');
     if (ex.versionesMotivo) ver.appendChild(aviso('bad', T('pantalla.noSePudoLeerLo'), ex.versionesMotivo));
     var tablas = { productos: prod, versiones: ver };
     if (ex.contenido !== undefined) tablas.contenido = tablaDeContenido(ex.contenido);
