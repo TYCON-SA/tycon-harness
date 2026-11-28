@@ -963,7 +963,10 @@ function lastTouched(sdir, sid, home, nowMs, unreadable, maxAgeMs = IDLE_MS) {
   try {
     const fd = fs.openSync(file, 'r');
     try {
-      const size = fs.fstatSync(fd).size;
+      const st = fs.fstatSync(fd);
+      // en Windows una carpeta se abre como un archivo vacío: sin esto, lo que no se puede leer pasaría por «sin actividad»
+      if (!st.isFile()) throw Object.assign(new Error('no es un archivo'), { code: 'EISDIR' });
+      const size = st.size;
       const len = Math.min(size, TOUCHED_TAIL_BYTES);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, size - len);
