@@ -299,9 +299,13 @@ function leerCitados(t, hondo) {
     if (fin === -1) { agregar(t.slice(i)); break; }
     if (fin > i) {
       // en el texto de afuera, lo de adentro vaciado como antes: un pedazo roto adentro (una comilla o un `$(` sin
-      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte
+      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte. Una cuenta que no corre nada queda como
+      // está, en una sola palabra y sin sus `<` `>` `|` `&` (comparan, no redirigen): es parte de la palabra de afuera
+      // (`cp a specs/story-1.$((0+1)).md` escribe esa historia)
       const abre = c === '`' ? 1 : 2;
-      agregar(t.slice(i, i + abre) + vaciarConExpresion(sustitucion(i + abre, fin)) + t[fin]);
+      const adentro = vaciarConExpresion(sustitucion(i + abre, fin));
+      const cuenta = adentroDeUnaCuenta(t, i, fin) !== null;
+      agregar(cuenta ? t.slice(i, fin + 1).replace(/[\s<>|&;]/g, '_') : t.slice(i, i + abre) + adentro + t[fin]);
       i = fin;
       continue;
     }

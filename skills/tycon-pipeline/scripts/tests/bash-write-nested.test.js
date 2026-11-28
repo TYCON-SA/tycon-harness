@@ -967,4 +967,15 @@ test('T47 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compa
     `echo $((cp README.md ${H} && : \`: \\(\`))`, `echo "$((cat README.md > ${H} && : \`: \\(\`))"`,
     `x=$((cp README.md ${H} && : \`: \\(\`))`, `echo "$(( \${x:-$(cp README.md ${H})} ))"`,
   ]) frena(c, cmd);
+  // una cuenta adentro de la ruta destino es parte de esa palabra (revisión de Fable de la A216): frena como una
+  // historia nueva escrita por consola
+  for (const cmd of [
+    'cp README.md specs/story-1.$((0+1)).md', 'mv README.md specs/story-1.$((0+1)).md', 'echo x > specs/story-1.$((0+1)).md',
+    'echo x >> specs/story-$((0+1)).1.md', 'echo x | tee specs/story-1.$((0+1)).md', 'cp README.md specs/story-1.$(( 0 + 1 )).md',
+    'echo x > "specs/story-1.$(( 0 + 1 )).md"', 'echo x > specs/story-1.$(( 2 > 1 )).md', 'echo "$(( a > b ))" > specs/story-1.$((0+1)).md',
+  ]) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `frena: ${JSON.stringify(cmd)}\n${r.stderr}`);
+    assert.match(r.stderr, /story-[\d.]*\$\(\(/, `nombra la ruta con la cuenta: ${JSON.stringify(cmd)}`);
+  }
 });
