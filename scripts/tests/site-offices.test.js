@@ -35,7 +35,7 @@ function decisiones() {
   const desde = code.indexOf('// la pestaña del sitio: lo que se decide sin tocar la pantalla');
   const hasta_ = code.indexOf('// fin de lo que se decide sin tocar la pantalla');
   assert.ok(desde >= 0 && hasta_ > desde, 'page.js marca la parte que decide');
-  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma, conexionMuerta, SIN_NOVEDAD_MS, REVISAR_CONEXION_MS, AVISO_SIN_NOVEDAD };`)();
+  return new Function(`${code.slice(desde, hasta_)}; return { resumenDeOficina, nombreDeOficina, textoDeContador, alCerrarLaConexion, oficinaDelHash, oficinaAMostrar, aplicarOficinas, salasVivas, TOPE_DE_SALAS, pedidoDeCharla, sobresDeOficina, charlaSegunRespuesta, charlaConForma, conexionMuerta, SIN_NOVEDAD_MS, REVISAR_CONEXION_MS, AVISO_SIN_NOVEDAD };`)();
 }
 
 // ── La pestaña ──────────────────────────────────────────────────────────────────────────────
@@ -463,4 +463,25 @@ test('A105 Pestana_SinConexion_NadieSeCuentaDisponible', () => {
   const sin = P.resumenDeOficina(foto, { sinConexion: true });
   assert.strictEqual(sin.esperanOLibres, null, 'sin conexión no se sabe quién está libre');
   assert.strictEqual(sin.sesiones, 3, 'las sesiones que se vieron por última vez se siguen contando');
+});
+
+// 🔴 Falla con (A122, recorrido F21): en el dibujo de la oficina la insignia del estado («z») tapaba el final del nombre
+//    («Gae» por «Gael»), y el título de trabajo de las tarjetas se cortaba en un renglón con «…».
+test('A122 Oficina_LaInsigniaNoTapaElNombreYElTituloUsaDosRenglones', () => {
+  const html = fs.readFileSync(path.join(OFFICE_DIR, 'page.html'), 'utf8');
+  assert.match(html, /\.tag:has\(\.fx:not\(:empty\)\)\{[^}]*padding-right:\s*2\dpx/, 'con insignia, la etiqueta deja lugar a la derecha');
+  assert.match(html, /\.item\.abre b\.una-linea\{[^}]*-webkit-line-clamp:\s*2/, 'el título de la tarjeta, hasta dos renglones');
+});
+
+// 🔴 Falla con (A114, A119; recorrido F21): la misma oficina se llamaba «mac-ana» para la persona y «ana@acme.example»
+//    para quien mantiene; y los contadores decían «1esperan tu firma» (pegado y en plural).
+test('A114-A119 Pestana_LaOficinaSeLlamaIgualYLosContadoresConcuerdan', () => {
+  const P = decisiones();
+  assert.strictEqual(P.nombreDeOficina({ id: 'mac-ana', person: 'ana@acme.example' }), 'mac-ana', 'quien mantiene la ve con el nombre de la máquina');
+  assert.strictEqual(P.nombreDeOficina({ id: 'mac-ana' }), 'mac-ana', 'la persona, con el mismo');
+  assert.strictEqual(P.textoDeContador(1, 'firma'), 'espera tu firma');
+  assert.strictEqual(P.textoDeContador(2, 'firma'), 'esperan tu firma');
+  assert.strictEqual(P.textoDeContador(1, 'libres'), 'espera o está libre');
+  assert.strictEqual(P.textoDeContador(3, 'libres'), 'esperan o libres');
+  assert.strictEqual(P.textoDeContador(1, 'sesiones'), 'sesión');
 });

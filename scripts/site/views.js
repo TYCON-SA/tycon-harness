@@ -142,6 +142,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   DONDE.maquinas_sin_confirmar = '/configuracion';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
+  // las retrospectivas, en su lista de abajo: sólo hay lista con la foto de hoy
+  const fRet = filas.find((f) => f.clave === 'retrospectivas');
+  if (fRet && fRet.estado === 'medido') fRet.enlace = '#retros-pendientes';
   return filas;
 }
 
@@ -321,7 +324,8 @@ function tile(f, idioma) {
   const pie = f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T(f.enlace.startsWith('#') ? 'vista.verLaLista' : f.enlace === '/arnes' ? 'vista.verEnArnes' : 'vista.dondeSeDecide'))}</a></div>` : '';
   if (f.estado === 'cargando') return `<div class="tile cargando">${chip('', T('vista.cargando'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-den">${esc(f.motivo)}</div>${pie}</div>`;
   if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div>${pie}</div>`;
-  const est = f.valor > 0 ? 'warn' : 'ok';
+  // lo que sólo se sigue no lleva el rombo ni el amarillo de lo que hay que decidir: el estado neutro, con su propia marca
+  const est = f.valor > 0 ? (f.seguimiento ? 'neutro' : 'warn') : 'ok';
   // de cuándo es la cuenta: al momento (la de Mantenimiento), leída recién (las máquinas) o de la noche
   const cuando = f.alMomento ? T('vista.alMomento') : Number.isFinite(f.leido) ? T('vista.leido', { hora: horaCorta(f.leido) }) : f.fecha ? T('vista.deLaNocheDel', { fecha: f.fecha }) : null;
   return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${cuando ? `<div class="t-den">${esc(cuando)}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${pie}</div>`;
@@ -453,6 +457,19 @@ function prsTrabados(prs, idioma) {
 }
 
 /**
+ * La lista de las retrospectivas pendientes de la foto de hoy, a donde lleva su ficha: cada una con su repo, su merge y
+ * sus días, y cómo se hace (en la máquina de quien mergeó). Sin la foto de hoy, nada: la ficha ya dice por qué.
+ */
+function retrosPendientes(ret, idioma) {
+  if (!medida(ret) || !Array.isArray(ret.pendientes)) return '';
+  const T = (k, v) => t(idioma, k, v);
+  const lista = [...ret.pendientes].sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
+  const fila = (r) => renglonDeLista(null, [esc(r.repo), r.merge ? `merge ${esc(r.merge)}` : null, Number.isFinite(r.dias) ? esc(dias(r.dias, idioma)) : null].filter(Boolean).join(' · '));
+  const cuerpo = `<p class="q-note">${esc(T('inicio.retrosComo'))}</p>` + (lista.length ? `<ul class="lista dos">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  return seccion(T('inicio.retrospectivas'), cuerpo, T('vista.deLaNocheDel', { fecha: ret.fecha }), 'retros-pendientes');
+}
+
+/**
  * Las listas a las que llevan las tarjetas de «Qué decidir hoy»: una sección por tarjeta (`#decidir-<clave>`), una
  * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
  * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
@@ -504,7 +521,7 @@ function paginaInicio(ctx) {
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan });
     // mientras alguna ficha carga, la página se recarga sola
-    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
+    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + retrosPendientes(m.retros, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');

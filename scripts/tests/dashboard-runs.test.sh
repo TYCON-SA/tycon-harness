@@ -2033,7 +2033,7 @@ assert kn is None or (kn.get('4')==10 and kn.get('5')==20 and kn.get('8')==5), k
 assert kv is not None or kn is not None, 'ninguna ejecución trajo su consumo'
 " "${J}" && ok "7.23-T15 cada ejecución con su esquema; el 4 viejo en una fila, el nuevo partido" || mal "7.23-T15 vista con los dos esquemas: $(echo "${J}" | head -c 300)"
 generar "${T}/r" "${T}/o.html" "${T}/log"
-grep -q 'Desde el 2026-08-20, «Implementar» y «Correr las pruebas» son dos pasos' "${T}/o.html" && ok "7.23-T15 la página dice desde qué día están partidos" || mal "7.23-T15 la página no dice desde cuándo están partidos"
+grep -q 'Desde el 2026-08-20, el arnés anota «Implementar» y «Correr las pruebas» como dos pasos' "${T}/o.html" && ok "7.23-T15 la página dice desde qué día están partidos" || mal "7.23-T15 la página no dice desde cuándo están partidos"
 rm -rf "${T}"
 # una ejecución nueva que sólo anotó el Arranque y trabajó se marca «no anotó sus pasos», como una vieja con el 0
 T=$(mktemp -d)
@@ -2315,7 +2315,7 @@ fi
 # ── 2.79-T56 · 2.79-Corridas_RampaDistinguible @story-2.79 @ac-45 ──
 # 🔴 Falla con: la rampa de un solo tono (dos vecinos a menos de 15 de distancia), las dos copias distintas, o un
 #    rótulo de barra que no se lee sobre su color.
-python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" <<'PY' 2>"${FX}.err" && ok "2.79-T56 la rampa: diez colores en cuatro familias, vecinos distinguibles, las dos copias iguales y el rótulo legible" || mal "2.79-T56 $(tail -1 "${FX}.err")"
+python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" <<'PY' 2>"${FX}.err" && ok "2.79-T56 la rampa: diez colores en cuatro familias (Correr las pruebas con su propio tono), vecinos distinguibles, las dos copias iguales y el rótulo legible" || mal "2.79-T56 $(tail -1 "${FX}.err")"
 import re, sys, math
 src = open(sys.argv[1]).read()
 rampas = [re.findall(r"#[0-9A-Fa-f]{6}", m) for m in re.findall(r"(?:const|var) RAMPA = \[([^\]]*)\]", src)]
@@ -2337,7 +2337,10 @@ for i in range(9):
     assert d >= 15, 'los pasos %d y %d están a %.1f (menos de 15)' % (i, i+1, d)
 tono = lambda l: math.degrees(math.atan2(l[2], l[1])) % 360
 dif = lambda a, b: min(abs(a - b), 360 - abs(a - b))
-FAM = [[0, 1, 2, 3], [4, 5, 6], [7, 8], [9]]
+# construir: Implementar e Implementar + pruebas (que nunca están en la misma ejecución) son una familia; Correr las
+# pruebas, entre los dos Implementar, va con otro tono: con tres verdes azulados no se distinguían (A147)
+FAM = [[0, 1, 2, 3], [4, 6], [7, 8], [9]]
+assert dif(tono(L[5]), tono(L[4])) >= 60 and dif(tono(L[5]), tono(L[6])) >= 60, 'Correr las pruebas no se distingue de Implementar: %s' % [round(tono(L[i])) for i in (4, 5, 6)]
 medio = []
 for f in FAM:
     t = [tono(L[i]) for i in f]
@@ -2574,6 +2577,46 @@ if (!l || Array.from(l.razon).length !== 300) { console.error("la razón larga n
 if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(l.razon)) { console.error("quedó medio emoji"); process.exit(1); }
 ' "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/r" 2>"${T}/err" \
   && ok "2.78-T10 la razón larga se corta por letra, sin partir un emoji" || mal "2.78-T10 el corte: $(cat "${T}/err")"
+rm -rf "${T}"
+
+# ── A137-A139 · la tabla y el detalle a 1280 px y en el celular (recorrido F21) ─────────────────
+# 🔴 Sale rojo con el estilo de antes: a 1280 px la columna Controles quedaba afuera de la caja y el detalle medía el
+#    ancho de la ventana (cortado a la derecha); en el celular, las reglas de la tabla de ejecuciones desarmaban también
+#    la tabla de controles del detalle, y la línea de tiempo se achicaba hasta no leerse. Se mide con un navegador; acá
+#    se cuida la regla que lo resuelve.
+CSS_RUNS="${RAIZ}/scripts/nightly/dashboard/runs.js"
+CSS_SITIO="${RAIZ}/scripts/site/static/site.css"
+grep -qF '.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:sticky;right:0' "${CSS_RUNS}" \
+  && ok "A137 la columna Controles queda a la vista mientras la tabla se desplaza" || mal "A137 Controles no queda fija a la derecha"
+grep -qF 'container-type:inline-size' "${CSS_RUNS}" && grep -qF '.det{position:sticky;left:0;width:min(1124px,100cqw)' "${CSS_RUNS}" \
+  && ok "A138 el detalle mide lo que se ve de la caja de la tabla" || mal "A138 el detalle sigue midiendo la ventana"
+grep -qF '@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block' "${CSS_RUNS}" && ! grep -qF '.tabla table{display:block' "${CSS_RUNS}" \
+  && ok "A139 en el celular, las reglas de la tabla no desarman la del detalle" || mal "A139 las reglas del celular alcanzan a las tablas del detalle"
+grep -qF '.shell .corridas .tl svg{min-width:600px !important;max-width:none}' "${CSS_SITIO}" \
+  && ok "A139 la línea de tiempo no se achica en el celular" || mal "A139 la línea de tiempo se achica al ancho del celular"
+# A147-A148: en el sitio, --good y --warn son colores de relleno (claros sobre blanco): el texto de la columna Pasos va con
+# su color de texto; los rótulos de las semanas no van en letra de 9,5.
+grep -qF '.ok9{color:var(--good-ink,var(--good))}.parcial{color:var(--warn-ink,var(--warn))}' "${CSS_RUNS}" \
+  && ok "A148 la columna Pasos con el color de texto de cada estado" || mal "A148 la columna Pasos sigue con el color de relleno"
+! grep -qF 'font-size="9.5" fill="var(--ink-3)">'"'"' + semanaVisib' "${CSS_RUNS}" \
+  && ok "A147 los rótulos de las semanas no van en letra de 9,5" || mal "A147 los rótulos de las semanas siguen en 9,5"
+
+# ── A157 · el filtro de Ejecuciones bajo el grupo de un producto ─────────────────────────────────
+T=$(mktemp -d)
+# El filtro: bajo el grupo de un producto, el repo cuya carpeta repite el nombre del producto escrito de otra manera
+# («Producto-X/FrontEnd» bajo «Producto X») va con su nombre solo: el mismo producto no se escribe de dos formas.
+# 🔴 Falla con la etiqueta de antes: «Producto-X · FrontEnd» dentro de «Producto X».
+volcado "${T}/r" "88888888-8888-4888-8888-888888888888" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/Producto-X/FrontEnd"}}' h.json
+volcado "${T}/r" "99999999-9999-4999-8999-999999999999" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/ClienteA/Backend"}}' i.json
+node -e "
+const r=require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const M=r.modelo('${T}/r',{repos:[{producto:'Producto X',ruta:'Producto-X/FrontEnd'},{producto:'Ventas',ruta:'ClienteA/Backend'}]});
+require('fs').writeFileSync('${T}/p.html', r.render(M));" 2>"${T}/err"
+R="$(cliente "${T}/p.html" container f-repo | grep -o '<optgroup label="[^"]*"\|>[^<]*([0-9]*)</option>' | tr '\n' ' ')"
+BAJO_PRODUCTO='<optgroup label="Producto X" >FrontEnd (1)</option>'
+ENTERO='>ClienteA · Backend (1)</option>'
+[[ "${R}" == *"${BAJO_PRODUCTO}"* ]] && ok "A157 bajo «Producto X», el repo dice «FrontEnd», no «Producto-X · FrontEnd»" || mal "A157 el filtro salió: ${R} $(cat "${T}/err")"
+[[ "${R}" == *"${ENTERO}"* ]] && ok "A157 un repo cuya carpeta no repite el producto sigue con su carpeta entera" || mal "A157 ClienteA/Backend perdió su carpeta: ${R}"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────

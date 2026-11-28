@@ -506,6 +506,29 @@ test('8.101-Retrospectivas_SinFotoComoHoy_ConFotoSeVe', () => {
   assert.strictEqual(r.valor, 2);
 });
 
+// Inicio_Retrospectivas_LlevanASuLista
+// 🔴 Falla con: la ficha de retrospectivas pendientes que pide decidir sin adónde ir (sin enlace ni lista abajo), una
+// lista sin el merge de cada una, o un merge que no es un sha que entra al HTML.
+test('Inicio_Retrospectivas_LlevanASuLista — la ficha lleva a la lista de abajo, con el repo, el merge y cómo se hace', () => {
+  const RETROS = `.dashboard/retros/retros-${HOY}.json`;
+  const pendientes = [{ repo: 'Producto-X/FrontEnd', merge: 'abc1234', dias: 2 }, { repo: 'Producto-Y/Backend', merge: '<b>x</b>', dias: 1 }];
+  const modelo = modeloDesde({ [RETROS]: { v: 1, fecha: HOY, estado: 'medido', pendientes } });
+  assert.strictEqual(fila(filasDe(modelo), 'retrospectivas').enlace, '#retros-pendientes', 'la ficha lleva a su lista');
+  const html = views.paginaInicio({ modelo: deMantenedor(modelo), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(tarjetaDe(html, 'Retrospectivas pendientes'), /href="#retros-pendientes"/);
+  const seccionRetros = (html.split('id="retros-pendientes"')[1] || '').split('</section>')[0];
+  assert.ok(seccionRetros, 'la lista está en la página');
+  const texto = sinEtiquetas(seccionRetros);
+  assert.match(texto, /Producto-X\/FrontEnd · merge abc1234 · 2 días/);
+  assert.match(texto, /Producto-Y\/Backend · 1 día/, 'un merge que no es un sha no se muestra');
+  assert.doesNotMatch(seccionRetros, /<b>x<\/b>/);
+  assert.match(texto, /máquina de quien mergeó/, 'dice dónde se hace');
+  // sin la foto de hoy no hay lista ni enlace: la ficha sigue gris con su motivo
+  const sin = modeloDesde({});
+  assert.strictEqual(fila(filasDe(sin), 'retrospectivas').enlace, null);
+  assert.doesNotMatch(views.paginaInicio({ modelo: deMantenedor(sin), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA }), /id="retros-pendientes"/);
+});
+
 // Inicio_Vulnerabilidades_DicenSeguimiento
 // 🔴 Falla con: un recuadro de lo que sólo se sigue (las rechazadas sin deuda, que cada equipo sigue en su tarea) que diga
 // «decidir», o las dependencias por decidir, que se deciden en Mantenimiento, diciendo «seguimiento».
@@ -827,4 +850,20 @@ test('A156 Arnes_LaUltimaPublicadaSeLeeSinAdivinar', () => {
   const en = fila({ ...ultima, mirado: undefined }, 'en');
   assert.doesNotMatch(en, /no time|checked/, en);
   assert.match(fila(ultima, 'en'), /^2026\.10\.15\.48 · image built on 2026-11-28 · the newest in the stable channel \(checked at 09:41 UTC\)$/);
+});
+
+// 🔴 Falla con: la ficha de «seguimiento» llevaba el mismo rombo y el mismo amarillo que «decidir»: no se distinguía lo que
+//    hay que decidir de lo que sólo se sigue (A120, recorrido F21).
+test('A120 Inicio_SeguimientoNoSeVeComoDecidir', () => {
+  const m = modeloCompleto({ dependencias: leida({ rubros: { nuevos: 3, aceptadas_sin_resolver: 1, rechazadas_sin_deuda: 2, pedidos_cerrados_con_vivas: 0 }, vivas_por_proyecto: {} }) });
+  const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const fichaDe = (texto) => (html.match(new RegExp(`<div class="tile [^"]*"><span class="chip [^"]*"><span class="g">[^<]*</span>${texto}</span>`, 'g')) || []);
+  const seguimiento = fichaDe('seguimiento');
+  const decidir = fichaDe('decidir');
+  assert.ok(seguimiento.length && decidir.length, 'hay de las dos');
+  for (const s of seguimiento) {
+    assert.doesNotMatch(s, /chip warn|◆/, `seguimiento sin el rombo ni el amarillo de decidir: ${s}`);
+    assert.doesNotMatch(s, /tile warn/);
+  }
+  for (const d of decidir) assert.match(d, /chip warn/, 'decidir sigue igual');
 });

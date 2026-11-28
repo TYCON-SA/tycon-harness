@@ -1,12 +1,16 @@
+<!-- maintainers-only -->
 # The organization site: what it is, how to use it and how to install it
 
 This guide is for whoever has never seen the site. It serves those who use it every day and whoever installs it for the
 first time. First it tells what it is and how to use it; then, how to install it.
+<!-- /maintainers-only -->
 
 - **[Using the site](#what-it-is-and-what-it-is-for):** what it is, signing in for the first time, each tab, the
   configuration, what each person sees and the common problems.
+<!-- maintainers-only -->
 - **[The demo site](#the-demo-site):** the same site with example data, open and without an account, to show it.
 - **[Installing it](#what-you-need-first):** what you need, how to try it on your machine and how to get it running.
+<!-- /maintainers-only -->
 
 Every step in this guide comes from the code or from a real run. What has not been tested for real yet says so on the
 same line.
@@ -127,9 +131,10 @@ On the left is the menu, with the numbered tabs. Each tab answers a question.
 
 **"Not measured"**. A gray, striped card says **not measured** and the reason, for example "there is no
 snapshot of this source". "Not measured" is not zero and not green: it means that today that piece of data could not be
-known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. Some cannot
-be measured from the site and always say so (for example, "Pending retrospectives": they live on the machine of whoever
-merged); those do not need a notice.
+known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. "Pending
+retrospectives" is the exception: they live on the machine of whoever merged, and there is a count only on a day the
+night left its snapshot. That day the card leads to the list below, with the repo, the merge and how to do it; without
+the snapshot it is gray and needs no notice.
 
 ### Home
 
@@ -149,7 +154,7 @@ The cards are:
 - **Red suites** and **red bench cases tonight:** the harness tests and the harness controls that turned red last
   night.
 - **Declared data about to expire:** numbers someone wrote down by hand with a date to review them.
-- **Unconfirmed machines with runs** and **pending retrospectives**.
+- **Unconfirmed machines with runs** and **pending retrospectives** (this one leads to its list below).
 
 ![A maintainer's Home: "What to decide today", with cards in Decide, Nothing and Not measured](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
@@ -307,10 +312,12 @@ is closed (both would change the same block); rejecting still works. If the prof
 one failed, sending again does not open another profile request. If a proposal changed since you saw it, the page asks
 you to reload and overwrites nothing. With `site.auto_apply`, the button says **Send** and waits for no one.
 
+<!-- maintainers-only -->
 **What it needs.** Both site write identities: the operations one to reject and the profile one to approve (how to set
 them, in "What «Learnings» needs", in the installation). Without one, the tab is shown in full, read-only, and each
 button says what it is missing. The proposals live in the operations repo: that repo has to be readable only for the
 maintainers, not for the whole team.
+<!-- /maintainers-only -->
 
 ### Projects
 
@@ -457,6 +464,7 @@ done by hand in the profile repo.
 **What to do:** if a piece is unclear or something is missing, "Suggest an improvement". If a pack of your organization
 says it cannot be used, it is fixed by hand in the profile repo: until then the harness does not load it either.
 
+<!-- maintainers-only -->
 ### Hours and tokens
 
 **What it answers:** how long did each machine's agent sessions work, and how many tokens did they use, day by day?
@@ -527,6 +535,8 @@ updates**. A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+<!-- /maintainers-only -->
+
 ## The «Offices» tab
 
 Each team machine's office, live: the same one `/office` draws on the machine, with one room per machine. Tapping one
@@ -556,6 +566,7 @@ without the home folder or the keys that are recognized. The conversation travel
 that understands it, and the site keeps it only in memory: nothing from the office stays on its disk. So maintainers see
 live what each dev is doing; each dev knows it from the fingerprint line.
 
+<!-- maintainers-only -->
 **What the owner decided.**
 - **D1** — The network: each machine opens an outgoing connection to the site (`wss://`, port 443). Nothing comes in.
 - **D1b** — A single copy of the site: each machine's last snapshot lives in its memory, and each recipe pins one replica.
@@ -566,9 +577,12 @@ live what each dev is doing; each dev knows it from the fingerprint line.
 - **D5** — One process per machine, in the background, that reports each change and lives while there are sessions.
 - **D7** — The machine routes, `/live/machine` and `/live/enroll`, stay outside the platform lock.
 
+<!-- /maintainers-only -->
+
 The back channel is closed: the site cannot send orders to the machine. A message the machine does not expect is
 dropped and cuts the connection.
 
+<!-- maintainers-only -->
 **An already installed site: the one-time step.** `/live/machine` and `/live/enroll` are in `RUTAS_SIN_SESION`, but the
 platform lock of an already installed site does not learn it by itself. In Azure, run once the recipe's
 `--excluded-paths` command, which already names them; in the local recipe with a tunnel, leave them free in the tunnel's
@@ -579,6 +593,7 @@ lock. The sessionless check confirms it: `node scripts/site/check-deploy.js --ur
 closes each machine connection asking it to reconnect (code 1012), and the machine comes back right away. If a machine
 reconnects at a fixed pace, for example every minute, the site's log says so once an hour ("reconecta cada ~61 s"):
 something in between cuts long connections. On Cloud Run it is the service timeout (see its recipe).
+<!-- /maintainers-only -->
 
 ## Configuration, section by section
 
@@ -826,7 +841,8 @@ be, to copy it and open the request by hand.
   level», which blocks proposing (at night there is no dev, so «the dev's» does not apply). Switching from Ollama to
   Haiku is choosing Anthropic in that row. The row also names the secret variable the nightly pipeline needs
   (`OLLAMA_API_KEY` or `ANTHROPIC_API_KEY`); the key is created in the pipeline and never goes through the profile.
-  Without the row, the nightly run does not run.
+  Without the row, the nightly run still runs, but does not write with a model: no learnings, no finding proposals and
+  no office topics.
 - **Where the full tests run on merge**: on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.

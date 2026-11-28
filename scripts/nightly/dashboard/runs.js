@@ -1492,10 +1492,11 @@ function textosDe(c) {
 
 // ───────────────────────────── la página ─────────────────────────────
 
-// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4-6,
-// verde azulado), revisar (7-8, ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
+// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4 y 6,
+// verde azulado; Correr las pruebas, el 5, en terracota: con tres verdes azulados no se distinguía), revisar (7-8,
+// ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
 // de CIELAB): con una sola tonalidad, dos pasos seguidos no se distinguían. La copia del navegador es la misma.
-const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#3D9799', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
+const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#D98C5F', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
 // la coma decimal es del castellano: en inglés va el punto
 // (sólo en un idioma que la tabla tiene: uno desconocido sale entero en castellano, y con coma)
 const decimal = (x, idioma) => (TX && TX.IDIOMAS.includes(idioma) && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
@@ -1799,7 +1800,7 @@ section{margin-top:40px}h2{font-size:clamp(18px,2.3vw,24px);letter-spacing:-.018
 .leyenda{display:flex;flex-wrap:wrap;gap:5px 14px;margin:12px 0 2px;font-size:11.5px;color:var(--ink-2);font-family:"IBM Plex Mono",monospace}
 .lg{display:inline-flex;align-items:center;gap:5px}.lg i{width:11px;height:11px;display:inline-block;border-radius:2px}
 .lg i.falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
-.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface);container-type:inline-size}
 /* entre 641 y 1439 px la tabla se desplaza de costado: la sombra del borde derecho avisa que sigue */
 .tabla-caja{position:relative}.tabla-caja::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--ink) 18%,transparent));opacity:0}.tabla-caja.sigue::after{opacity:1}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:940px}
@@ -1809,27 +1810,34 @@ th small{display:block;font-size:9px;letter-spacing:.02em;text-transform:none;co
 td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}tr:hover td{background:var(--surface-2)}
 td.fecha{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2);white-space:nowrap}td.fecha small{display:block;color:var(--ink-3);font-size:10.5px}
 td.story{min-width:150px}td.story .desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px;line-height:1.3;color:var(--ink-2);margin:1px 0}td.story b{font-weight:600}td.story small{display:block;color:var(--ink-3);font-size:11px;overflow-wrap:anywhere;min-width:12ch}
-td.barra{width:9%;min-width:80px}
+td.barra{width:11%;min-width:110px}
 .bar{display:flex;height:13px;border-radius:2px;overflow:hidden;min-width:8px}.bar i{display:block;height:100%}.bar .entre{background:repeating-linear-gradient(90deg,var(--line-strong) 0 1px,transparent 1px 3px)}.bar .falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
 .nobar{font-size:11px;color:var(--ink-3);font-style:italic}
 td.ar small{display:block;font-size:9.5px;font-style:italic}td.dur,td.ag,td.vu,td.tk,td.ar{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-td.pasos-n{font-family:"IBM Plex Mono",monospace;font-size:11.5px;white-space:nowrap}.ok9{color:var(--good)}.parcial{color:var(--warn)}
+td.pasos-n{font-family:"IBM Plex Mono",monospace;font-size:11.5px;white-space:nowrap}/* el color de texto de cada estado (en el sitio, --good y --warn son colores de relleno: claros sobre blanco) */
+.ok9{color:var(--good-ink,var(--good))}.parcial{color:var(--warn-ink,var(--warn))}
 td.frenos{white-space:normal;min-width:150px}.f{display:inline-block;margin-bottom:2px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;border:1px solid var(--line-strong);color:var(--ink-3);padding:1px 5px;margin-right:3px;border-radius:2px}
+/* los controles, lo que se mira primero, quedan contra el borde derecho mientras la tabla se desplaza de costado */
+.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:sticky;right:0;background:var(--surface);box-shadow:-6px 0 6px -6px color-mix(in srgb,var(--ink) 30%,transparent)}
+.tabla>table>thead>tr>th:last-child{background:var(--surface-2);z-index:3}.tabla>table>tbody>tr[data-i]:hover>td.frenos,.tabla>table>tbody>tr.abierta>td.frenos{background:var(--surface-2)}
 .f.f-error{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
 .f.f-freno{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .f.f-sin{color:var(--ink-3);border-style:dashed}.f b{font-weight:600;white-space:nowrap}
 .nd{color:var(--ink-3);font-style:italic;font-size:11.5px}
 tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}tbody tr[data-i]{cursor:pointer}
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
-.det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
+/* el detalle mide lo que se ve de la caja de la tabla (no la ventana): no queda cortado a la derecha */
+.det{position:sticky;left:0;width:min(1124px,100cqw);box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
 /* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
-@media (max-width:640px){.tabla{overflow-x:visible}.tabla table{display:block;min-width:0}.tabla thead{display:none}.tabla tbody{display:block}
-.tabla tbody tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
-.tabla tbody tr[data-i] td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
-.tabla tbody tr[data-i] td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
-.tabla tbody tr[data-i] td.story,.tabla tbody tr[data-i] td.barra,.tabla tbody tr[data-i] td.frenos{grid-column:1/-1}
-.tabla .fila-det{display:block}.tabla .fila-det td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
+@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block;min-width:0}.tabla>table>thead{display:none}.tabla>table>tbody{display:block}
+.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:static;box-shadow:none}
+
+.tabla>table>tbody>tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
+.tabla>table>tbody>tr[data-i]>td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
+.tabla>table>tbody>tr[data-i]>td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+.tabla>table>tbody>tr[data-i]>td.story,.tabla>table>tbody>tr[data-i]>td.barra,.tabla>table>tbody>tr[data-i]>td.frenos{grid-column:1/-1}
+.tabla>table>tbody>.fila-det{display:block}.tabla>table>tbody>.fila-det>td{display:block}.tabla>table>tbody>tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
 .det-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .det-head b{font-size:16px}.det-head .mono{font-size:12.5px;color:var(--ink-2)}.det-head .sub{color:var(--ink-3);font-size:11.5px;margin-top:3px}
 .det-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -1889,6 +1897,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line-strong)}
 .cambios .ruta{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink);overflow-wrap:anywhere}
 .cambios .mas{color:var(--good);font-family:"IBM Plex Mono",monospace;font-size:11px}.cambios .menos{color:var(--crit);font-family:"IBM Plex Mono",monospace;font-size:11px}
 table.mt.arch{margin-bottom:10px}table.mt.arch td.num{text-align:right;white-space:nowrap}
+/* en el celular, las tablas del detalle entran en su caja: «Controles» sin columnas fijas (cinco de números suman más
+   que la pantalla y el nombre quedaba en 0) y el nombre o la ruta se corta. Va después de las reglas de base: si no, le
+   ganan */
+@media (max-width:640px){table.mt.ctls{table-layout:auto}table.mt.ctls col[class]{width:auto}table.mt th,table.mt td{padding-left:3px;padding-right:3px}table.mt td:first-child{overflow-wrap:anywhere}}
 ol.cz{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
 ol.cz summary{cursor:pointer;font-size:11.5px}.cz-t{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-3)}.cz-p{font-size:10.5px;color:var(--ink-3)}
 .cz-sin{font-size:11.5px;padding-left:14px}.cz-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3);margin:6px 0 2px}
@@ -1991,7 +2003,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     if (antes) partes.push(T('pasosSinMarca', { n: antes }));
     return partes.join('; ');
   };
-  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#3D9799','#14555C','#F2C46D','#B07A12','#6B4C9A'];
+  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#D98C5F','#14555C','#F2C46D','#B07A12','#6B4C9A'];
   // el rótulo de cada barra, oscuro o blanco según su color: se lee sobre los diez
   var TINTA = ['#0b0b0b','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
@@ -2775,13 +2787,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var Y = function (v) { return base - (v / max) * (base - top); };
     var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="' + T('ariaSemanas') + '">';
     [0, Math.round(max / 2), max].forEach(function (t) {
-      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">' + t + '</text>';
+      s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="11.5" fill="var(--ink-3)">' + t + '</text>';
     });
     ks.forEach(function (k, i) {
       var n = porSem[k] || 0, cx = x0 + paso * i + paso / 2, bw = Math.min(30, paso * 0.62);
       s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + semanaVisible(k) + ': ' + T('nEjecuciones', { n: n }) + '</title></rect>'
-        + '<text x="' + cx.toFixed(1) + '" y="' + (Y(n) - 5).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + n + '</text>'
-        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + semanaVisible(k).slice(5) + '</text>' : '');
+        + '<text x="' + cx.toFixed(1) + '" y="' + (Y(n) - 5).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11.5" fill="var(--ink)">' + n + '</text>'
+        + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="var(--ink-3)">' + semanaVisible(k).slice(5) + '</text>' : '');
     });
     return s2 + '<text x="' + x0 + '" y="182" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + T('semanaIso') + ' · ' + ks[0].slice(0, 4) + ' → ' + ks[ks.length - 1].slice(0, 4) + '</text></svg>';
   }
@@ -2855,8 +2867,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   function rotularDesplegables(enFechas) {
     var nRepo = {}, nMaq = {};
     enFechas.forEach(function (c) { var k = claveRepo(c); nRepo[k] = (nRepo[k] || 0) + 1; if (elMaq) nMaq[maqDe(c)] = (nMaq[maqDe(c)] || 0) + 1; });
+    // dentro del grupo de un producto, el repo va con su nombre solo cuando la carpeta repite el del producto escrito de
+    // otra manera («Producto-X/FrontEnd» bajo «Producto X»): el mismo producto no se escribe de dos formas
+    var mismoNombre = function (a, b) { return String(a).toLowerCase().replace(/[\s_-]+/g, '') === String(b).toLowerCase().replace(/[\s_-]+/g, ''); };
     var opcion = function (k) {
-      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')' : rotulo(k);
+      var g = grupoRepo[k], barra = k.indexOf('/');
+      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')'
+        : g && g !== 'laboratorio' && barra > 0 && mismoNombre(k.slice(0, barra), g) ? k.slice(barra + 1) : rotulo(k);
       return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + (nRepo[k] || 0) + ')</option>';
     };
     var elegido = elRepo.value;

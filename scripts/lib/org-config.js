@@ -3645,7 +3645,7 @@ ${trabajandoJs}
       lineaNoche.textContent = hoyN + (secretos[n0.provider] ? ' · ' + T('pantalla.nocheLlave', { variable: secretos[n0.provider] }) : '');
     }
     var noche = esObjeto(m.nightly) ? m.nightly : null;
-    var deNoche = [['', T('pantalla.nocheSinConfigurar')]].concat((prov.noche || ['anthropic', 'ollama']).map(function (x) { return [x, T('pantalla.proveedor.' + x)]; }));
+    var deNoche = [['', T('pantalla.nocheSinProveedor')]].concat((prov.noche || ['anthropic', 'ollama']).map(function (x) { return [x, T('pantalla.proveedor.' + x)]; }));
     var selP = corto(T('pantalla.nocheProveedor'), noche ? noche.provider : '', deNoche, function (v) {
       if (!v) delete m.nightly;
       else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
