@@ -18,19 +18,10 @@
  */
 const path = require('path');
 
-/** Los nombres con que una ruta de red nombra a la propia máquina (su recurso administrativo `c$` es la unidad). */
-function estaMaquina(nombre) {
-  const n = String(nombre).toLowerCase().replace(/^\[|\]$/g, '');
-  let propio = '';
-  try { propio = require('os').hostname().toLowerCase(); } catch (_) { /* sin nombre de equipo */ }
-  // toda 127.x.x.x es la propia máquina, no sólo 127.0.0.1
-  return ['localhost', '::1', '.'].includes(n) || /^(?:::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(n) || (propio && n === propio);
-}
-
 /**
  * La ruta en su forma nativa. Fuera de Windows, o si no es un texto con algo, la devuelve tal cual.
  * En Windows, además de `C:\…`, `C:/…` y `/c/…`, las otras formas que llegan a la misma unidad (medido con Git Bash):
- * el prefijo largo (`\\?\C:\…`, `\\.\C:\…`), el recurso administrativo de la propia máquina (`\\localhost\c$\…`,
+ * el prefijo largo (`\\?\C:\…`, `\\.\C:\…`), el recurso administrativo de cualquier equipo (`\\localhost\c$\…`,
  * `//127.0.0.1/c$/…`) y la forma de Git Bash con `.`, `..` o barras repetidas (`/./c/…`, `///c/…`, `/tmp/../c/…`), que
  * bash colapsa antes de escribir.
  */
@@ -38,12 +29,13 @@ function nativePath(p, platform = process.platform) {
   if (platform !== 'win32' || typeof p !== 'string' || !p) return p;
   let s = p;
   // el prefijo largo: `\\?\C:\…`, `\\.\C:\…` y `\??\C:\…` son `C:\…`; `\\?\UNC\servidor\x` es `\\servidor\x`
-  const largo = /^(?:[\\/]{2}[?.]|[\\/]\?\?)[\\/](?:([A-Za-z]:)(.*)|UNC[\\/](.*))$/i.exec(s);
+  const largo = /^(?:[\\/]{2}[?.]|[\\/]\?\?)[\\/](?:([A-Za-z]:)([\s\S]*)|UNC[\\/]([\s\S]*))$/i.exec(s);
   if (largo) s = largo[1] ? `${largo[1]}${largo[2] || '\\'}` : `\\\\${largo[3]}`;
-  // el recurso administrativo de la propia máquina: `\\localhost\c$\x` es `C:\x`, también con barras repetidas, `.` y `..`
-  const red = /^[\\/]{2}([^\\/]+)((?:[\\/].*)?)$/.exec(s);
-  if (red && estaMaquina(red[1])) {
-    const adm = /^\/([A-Za-z])\$(?:\/(.*))?$/.exec(require('path').posix.normalize(`/${red[2].split('\\').join('/')}`));
+  // el recurso administrativo `\\equipo\c$\x` se lee como `C:\x`, también con barras repetidas, `.` y `..`: ninguna
+  // lista de nombres alcanza para saber si `equipo` es esta máquina (su IP, `localhost.`, el nombre completo, 127.x)
+  const red = /^[\\/]{2}([^\\/]+)((?:[\\/][\s\S]*)?)$/.exec(s);
+  if (red) {
+    const adm = /^\/([A-Za-z])\$(?:\/([\s\S]*))?$/.exec(require('path').posix.normalize(`/${red[2].split('\\').join('/')}`));
     if (adm) s = `${adm[1]}:\\${adm[2] || ''}`;
   }
   // la forma de Git Bash: una barra al principio (o tres o más: dos exactas son una ruta de red), con `.`, `..` y barras
@@ -51,11 +43,12 @@ function nativePath(p, platform = process.platform) {
   if (/^\//.test(s) && !/^\/\/[^/]/.test(s)) {
     s = require('path').posix.normalize(s.replace(/^\/+/, '/'));
     // `/proc/self/root` (o el de un proceso) es la raíz de Git Bash
-    while (/^\/proc\/(?:self|\d+)\/root(?:\/|$)/.test(s)) s = require('path').posix.normalize(`/${s.replace(/^\/proc\/(?:self|\d+)\/root\/?/, '')}`);
+    // (ya normalizada, sacar todos los prefijos de una pasada deja una ruta sin `.` ni `..`)
+    s = s.replace(/^(?:\/proc\/(?:self|\d+)\/root)+(?=\/|$)/, '') || '/';
   }
   // `/c/a/b`, `/cygdrive/c/a/b` y `/proc/cygdrive/c/a/b`: una barra, UNA letra, y otra barra o el final. `//servidor/x`
   // (red) no entra.
-  const drive = /^[\\/](?:(?:proc[\\/])?cygdrive[\\/])?([A-Za-z])(?:[\\/](.*))?$/.exec(s);
+  const drive = /^[\\/](?:(?:proc[\\/])?cygdrive[\\/])?([A-Za-z])(?:[\\/]([\s\S]*))?$/.exec(s);
   const native = path.win32.normalize(drive ? `${drive[1]}:\\${drive[2] || ''}` : s);
   // la letra de la unidad, siempre en mayúscula: `c:/a/b` y `/c/a/b` son el mismo archivo y tienen que dar el mismo texto
   return native.replace(/^[a-z]:/, (unit) => unit.toUpperCase());

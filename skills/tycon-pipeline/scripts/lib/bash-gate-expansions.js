@@ -1428,18 +1428,20 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
  * `C:\Windows\x`.
  */
 function relativaDeGitBash(rel, cwd) {
-  const unidad = /^([A-Za-z]):[\\/]?(.*)$/.exec(cwd);
+  const unidad = /^([A-Za-z]):[\\/]?([\s\S]*)$/.exec(cwd);
   // una carpeta de Git Bash sin unidad (`cd /` da `\`, `cd /tmp` da `\tmp`): bash resuelve desde ella con barras
   const deBash = !unidad && /^[\\/](?![\\/])/.test(cwd);
   if (!unidad && !deBash) return path.win32.resolve(cwd, rel);
   const relPosix = rel.split('\\').join('/');
   // `/c/a/b` → `C:\a\b`, sin depender de la lib de rutas (un skill instalado a medias corre sin ella)
   const nativa = (r) => {
-    const m = /^\/([A-Za-z])(?:\/(.*))?$/.exec(r);
+    const m = /^\/([A-Za-z])(?:\/([\s\S]*))?$/.exec(r);
     if (m) return path.win32.normalize(`${m[1].toUpperCase()}:\\${m[2] || ''}`);
     // `/cygdrive/c/…`, `/proc/self/root/c/…`: las conoce la lib de rutas, si está
     const n = nativePath(r, 'win32');
-    return /^[A-Za-z]:/.test(n) ? n : path.win32.resolve(cwd, rel);
+    // fuera de toda unidad (`/`, `/tmp/x`: subió más allá de ella o arrancó sin una) queda la forma de Git Bash, que una
+    // relativa posterior sigue resolviendo como bash
+    return /^[A-Za-z]:/.test(n) ? n : path.win32.normalize(r);
   };
   const carpeta = deBash ? cwd.split('\\').join('/')
     : `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;

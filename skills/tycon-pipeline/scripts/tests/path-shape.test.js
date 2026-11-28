@@ -52,7 +52,16 @@ test('nativePath: las otras formas de Git Bash y de Windows para la misma unidad
     assert.strictEqual(nativePath(p, 'win32'), W, p);
   }
   assert.strictEqual(nativePath('\\\\?\\UNC\\servidor\\compartida\\x.md', 'win32'), '\\\\servidor\\compartida\\x.md', 'el prefijo largo de una ruta de red');
-  assert.strictEqual(nativePath('//servidor/c$/x.md', 'win32'), '\\\\servidor\\c$\\x.md', 'el recurso de otra máquina sigue siendo de red');
+  for (const p of ['//192.168.1.10/c$/Windows/Temp/a.txt', '//localhost./c$/Windows/Temp/a.txt', '//localhost/c$/Windows/Temp/\n/../a.txt']) {
+    assert.strictEqual(nativePath(p, 'win32'), W, `el recurso c$ de cualquier nombre de equipo, y con saltos de línea: ${JSON.stringify(p)}`);
+  }
+  assert.strictEqual(nativePath('//servidor/compartida/c$/x.md', 'win32'), '\\\\servidor\\compartida\\c$\\x.md', 'una carpeta «c$» dentro de un recurso común no es la unidad');
+  // muchos prefijos repetidos: lineal (antes, cada vuelta renormalizaba todo el texto)
+  const largo = '/proc/self/root'.repeat(40000) + '/c/Windows/Temp/a.txt';
+  const t0 = process.hrtime.bigint();
+  assert.strictEqual(nativePath(largo, 'win32'), W);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 2000, `tardó ${ms} ms`);
 });
 
 // 🔴 Falla con (A212): una relativa que sube más allá de la unidad, o una letra suelta desde la raíz de Git Bash, resuelta
@@ -62,6 +71,8 @@ test('resolveTarget: las relativas en Windows, como las resuelve Git Bash', () =
   assert.strictEqual(gate.resolveTarget('c/Windows/Temp/a.txt', '\\', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'desde la raíz de Git Bash (`cd /`), la letra es la unidad');
   assert.strictEqual(gate.resolveTarget('../c/Windows/Temp/a.txt', '\\tmp', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'desde una carpeta de Git Bash sin unidad (`cd /tmp`)');
   assert.strictEqual(gate.resolveTarget('../proc/self/root/cygdrive/c/Windows/Temp/a.txt', '\\tmp', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'y subiendo a otra forma de la unidad');
+  assert.strictEqual(gate.resolveTarget('../..', 'C:\\lab', 'win32'), '\\', 'un `cd` que sube más allá de la unidad queda en la raíz de Git Bash');
+  assert.strictEqual(gate.resolveTarget('c/Windows/Temp/a.txt', gate.resolveTarget('../..', 'C:\\lab', 'win32'), 'win32'), 'C:\\Windows\\Temp\\a.txt', 'y desde ahí la letra es la unidad');
   assert.strictEqual(gate.resolveTarget('s/repo/a.md', 'C:\\', 'win32'), 'C:\\s\\repo\\a.md', 'parado en `C:\\` (= /c), una carpeta de una letra no es otra unidad');
   assert.strictEqual(gate.resolveTarget('../x/a.txt', 'C:\\lab\\fixture', 'win32'), 'C:\\lab\\x\\a.txt', 'una relativa común, igual que antes');
 });
