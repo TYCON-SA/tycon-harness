@@ -118,7 +118,9 @@ SAFE=(TYCON_PROFILE=0 TYCON_NO_GIT_HOOKS=1 TYCON_CODEX=0 TYCON_THIRD_PARTY=0 TYC
   TYCON_MAILBOX=0
   # y la subida de corridas, apagada: con el buzón prendido sale DE FONDO y escribe su registro después de que el
   # instalador terminó, así que una foto de la HOME tomada enseguida cambiaría sola ((v) T26). T4b la prende y la mide.
-  TYCON_NO_UPLOAD_RUNS=1)
+  TYCON_NO_UPLOAD_RUNS=1
+  # y la recolección de hallazgos, por lo mismo: sale de fondo y escribe su registro después. (x4d) la prende y la mide.
+  TYCON_NO_COLLECT_FINDINGS=1)
 lab_env() { # <home> [VAR=val ...] -- <comando…>: el comando, con la HOME de laboratorio y sin el ambiente de quien corre
   local h="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ $# -gt 0 ] && shift
@@ -1623,6 +1625,58 @@ w4_defects_section() {
   if [ "$rc" -eq 0 ] && grep -q 'sin_config' "$up" 2>/dev/null && grep -qF "upload-runs.js --budget-ms 90000 --log $up" "$NODE_CALLS"; then
     ok "(x) la subida de ejecuciones al buzón: el arranque de Windows la lanza de fondo, con la ruta entera, y deja su registro"
   else no "(x) la subida de ejecuciones al buzón (rc $rc): $([ -f "$up" ] && echo "registro: $(head -c 160 "$up")" || echo 'no quedó registro') · $(grep -F 'upload-runs' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4b.out" 200)"; fi
+  # (x4c) con Claude Code, en una máquina que ya vive en la casa propia (~/.tycon/state), el registro de la subida y la
+  # lista de proyectos de Azure van a la carpeta del estado, donde los leen los guiones (la regla de tycon-home.js), como
+  # en el .sh. 🔴 Si el .ps1 fija el estado en la carpeta de Claude Code, quedan donde nadie los lee.
+  h="$(new_home 'w4 casa propia')"; mkdir -p "$h/.claude" "$h/.tycon/state"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
+  printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
+  PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" "PATH=$W/bin-az:$T/bin:$PATH" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_MAILBOX_JSON="$W/no-esta.json" TYCON_NO_AZ_PROJECTS_REFRESH=0 TYCON_ADO_ORG=https://dev.azure.com/acme -- > "$W/x4c.out" 2>&1; rc=$?
+  up="$h/.tycon/state/upload-runs.log"; cache="$h/.tycon/state/az-projects.json"; i=0
+  while { ! grep -q 'sin_config' "$up" 2>/dev/null || [ ! -s "$cache" ]; } && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
+  if [ "$rc" -eq 0 ] && grep -q 'sin_config' "$up" 2>/dev/null && grep -q '"Lab"' "$cache" 2>/dev/null && [ ! -e "$h/.claude/.tycon-pipeline/upload-runs.log" ] && [ ! -e "$h/.claude/.tycon-pipeline/az-projects.json" ]; then
+    ok "(x) con Claude Code y la casa propia, la subida y la lista de proyectos de Azure van a la carpeta del estado"
+  else no "(x) casa propia con Claude Code (rc $rc): en el estado $(ls -A "$h/.tycon/state" 2>/dev/null | tr '\n' ' ') · en la de Claude Code $(ls -A "$h/.claude/.tycon-pipeline" 2>/dev/null | tr '\n' ' ') · $(brief "$W/x4c.out" 200)"; fi
+  # (x4d) la recolección de hallazgos, como en el .sh: de fondo, en la misma tanda que la subida y ANTES que ella (lo de
+  # hoy sube hoy), con su registro agregado. Sin repos bajo la raíz, la recolección lo dice en su registro: ésa es la
+  # prueba de que corrió. 🔴 Sin la recolección en el .ps1, no queda collect-findings.log.
+  h="$(new_home 'w4 hallazgos')"; mkdir -p "$h/.claude" "$h/repos"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
+  printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
+  : > "$NODE_CALLS"
+  PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_NO_COLLECT_FINDINGS=0 TYCON_REPOS_ROOT="$h/repos" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > "$W/x4d.out" 2>&1; rc=$?
+  local cf="$h/.claude/.tycon-pipeline/collect-findings.log"; up="$h/.claude/.tycon-pipeline/upload-runs.log"; i=0
+  while { ! grep -q 'repo' "$cf" 2>/dev/null || ! grep -q 'sin_config' "$up" 2>/dev/null; } && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
+  local ncf nup
+  ncf="$(grep -n 'collect-findings.js --budget-ms 60000 --log' "$NODE_CALLS" | grep -v 'run-in-order' | head -1 | cut -d: -f1)"
+  nup="$(grep -n 'upload-runs.js --budget-ms 90000 --log' "$NODE_CALLS" | grep -v 'run-in-order' | head -1 | cut -d: -f1)"
+  if [ "$rc" -eq 0 ] && grep -q 'repo' "$cf" 2>/dev/null && grep -q 'sin_config' "$up" 2>/dev/null && [ -n "$ncf" ] && [ -n "$nup" ] && [ "$ncf" -lt "$nup" ]; then
+    ok "(x) la recolección de hallazgos: de fondo, antes de la subida, con su registro"
+  else no "(x) la recolección de hallazgos (rc $rc): registro $([ -f "$cf" ] && head -c 160 "$cf" || echo 'no quedó') · orden recolección ${ncf:-?} / subida ${nup:-?} · $(brief "$W/x4d.out" 200)"; fi
+  # (x4e) las suites rápidas de las skills, como en el .sh: con una rota en las skills que da la regla para quien lee,
+  # el arranque lo dice con su línea y de qué raíz salieron; con las seis sanas, calla. 🔴 Sin las suites en el .ps1,
+  # la rota no se ve.
+  local qs="$W/clone-qs" t
+  cp -R "$CLONE" "$qs"; mkdir -p "$qs/skills/tycon-pipeline/scripts/tests"
+  for t in story-discovery story-gate advisor-ledger config-lint navigation-drift ledger-honesty; do
+    printf "'use strict';\nrequire('node:test')('sana', () => {});\n" > "$qs/skills/tycon-pipeline/scripts/tests/$t.test.js"
+  done
+  h="$(new_home w4-rapidas-sanas)"
+  LAB_INSTALLER="$qs/scripts/install-tycon-hooks.ps1" installer "$h" > "$W/x4e-sanas.out" 2>&1; rc=$?
+  local sanas_rc="$rc"
+  printf "'use strict';\nrequire('node:test')('canario: rota a propósito (installer-ps1)', () => { throw new Error('canario'); });\n" > "$qs/skills/tycon-pipeline/scripts/tests/ledger-honesty.test.js"
+  h="$(new_home w4-rapidas-rota)"
+  LAB_INSTALLER="$qs/scripts/install-tycon-hooks.ps1" installer "$h" > "$W/x4e-rota.out" 2>&1; rc=$?
+  if [ "$sanas_rc" -eq 0 ] && ! grep -q 'capa determinista' "$W/x4e-sanas.out" && [ "$rc" -eq 0 ] \
+     && grep -q "la suite de la capa determinista FALLÓ tras el pull (skills: $qs/skills · salió de: " "$W/x4e-rota.out" && grep -q 'Diagnóstico: node --test .*ledger-honesty.test.js' "$W/x4e-rota.out"; then
+    ok "(x) las suites rápidas de las skills: con una rota el arranque lo dice y de dónde salieron; sanas, calla"
+  else no "(x) las suites rápidas (sanas rc $sanas_rc, rota rc $rc): sanas $(grep 'capa determinista' "$W/x4e-sanas.out" | head -1 | cut -c1-160) · rota $(grep -A1 'capa determinista' "$W/x4e-rota.out" | head -2 | tr '\n' ' ' | cut -c1-240) · $(brief "$W/x4e-rota.out" 160)"; fi
+  # (x4f) el chequeo de sqlite3 corre con el PowerShell 7 de la misma consola, también fuera de Windows: con engram
+  # prendido, sin sqlite3 y sin instalar, deja su sello. 🔴 Lanzado con `pwsh.exe`, fuera de Windows no corría.
+  h="$(new_home w4-sqlite)"; mkdir -p "$W/bin-sqlite"
+  printf '#!/bin/sh\nexit 1\n' > "$W/bin-sqlite/sqlite3"; chmod +x "$W/bin-sqlite/sqlite3"
+  installer "$h" "PATH=$W/bin-sqlite:$T/bin:$PATH" TYCON_ENGRAM=1 TYCON_NO_SQLITE_CHECK=0 TYCON_SQLITE_AUTO_INSTALL=0 -- > "$W/x4f.out" 2>&1; rc=$?
+  local sello; sello="$(find "$h" -name 'sqlite3-install-last-try' 2>/dev/null | head -1)"
+  if [ "$rc" -eq 0 ] && [ -n "$sello" ]; then ok "(x) el chequeo de sqlite3 corre con el PowerShell de la misma consola (deja su sello en ${sello#"$h"/})"
+  else no "(x) el chequeo de sqlite3 no corrió (rc $rc): sin sello · $(grep -i sqlite "$W/x4f.out" | head -2 | tr '\n' ' ' | cut -c1-200) · $(brief "$W/x4f.out" 160)"; fi
   # …y no se lanza con la llave de apagado, con -Check, dentro de un agente de CI ni con el buzón apagado
   local variante lanzadas=""
   for variante in apagada check ci sin-buzon; do

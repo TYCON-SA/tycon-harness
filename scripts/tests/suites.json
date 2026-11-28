@@ -5081,6 +5081,12 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que el arranque de Windows corre como el del .sh: el lanzador en orden (scripts/lib/run-in-order.js) corre la recolección de hallazgos antes de la subida y uno que falla no corta el otro; la recolección con --log agrega su salida al registro y no escribe en la consola; el .ps1 corre las mismas suites rápidas de las skills que el .sh. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-startup-batch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.18 (deuda lectores-que-tragan): quien le pregunta a scripts/lib/skills-dir.js dónde están las skills no se traga su error. Con la biblioteca vecina rota, integrations-off.test.sh dice «no pude resolver la carpeta de skills: <causa>» y third-party-origin.test.sh sale 2 antes de preguntarle nada a la red; la carpeta que de verdad no está se sigue diciendo «no está». Y las suites del renombre (c4, d1, d2, f) ubican agent-skills por la regla común. Clones y HOME de juguete, sin red.",
       "raiz": "arnes",
       "ruta": "tests/skills-dir-readers.test.js",

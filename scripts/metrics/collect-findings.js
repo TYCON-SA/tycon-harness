@@ -72,7 +72,7 @@
  * escribir el actual se le pasa su contenido, y el otro queda intacto.
  *
  * USO
- *   node scripts/metrics/collect-findings.js [--json] [--dry-run] [--budget-ms N]
+ *   node scripts/metrics/collect-findings.js [--json] [--dry-run] [--budget-ms N] [--log <archivo>]
  *        [--root <dir>] [--output <archivo>] [--catalog <md>] [--reviewers <dir>]
  *        [--sources <json>] [--today AAAA-MM-DD] [--history <dir>]
  *
@@ -695,6 +695,8 @@ function valor(flag, def) {
 }
 
 function main() {
+  // lanzada de fondo por el arranque de Windows, su salida va al registro (scripts/lib/output-to-log.js)
+  if (valor('--log', null)) require('../lib/output-to-log.js').toLog(valor('--log', null));
   const budget = valor('--budget-ms', undefined);
   const res = recolectar({
     raiz: valor('--root', null),
