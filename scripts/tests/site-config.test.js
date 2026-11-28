@@ -7334,3 +7334,34 @@ test('A188 Campos_DicenSuValorDeFabrica — cobertura «75 (de fábrica)», camb
   assert.ok(campo('deep_review.small_max_files'), 'el del cambio chico está');
   assert.strictEqual(campo('deep_review.small_max_files').attrs.placeholder, '6 (de fábrica)');
 });
+
+// 🔴 mutación: la Ayuda que pone «Lo que trae la organización» debajo de Repos y productos, cuando está en la pestaña
+// Instalación y actualización (A189).
+test('A189 Ayuda_LoQueTraeLaOrganizacion_EnSuPestana — la guía la manda a Instalación y actualización', () => {
+  for (const [archivo, bloque, pestana] of [['organization-site.md', 'Lo que trae la organización', 'Instalación y actualización'], ['organization-site.en.md', 'What the organization provides', 'Installation and updates']]) {
+    const texto = fs.readFileSync(path.join(ROOT, 'guides', archivo), 'utf8');
+    const parrafo = (texto.split(/\n\s*\n/).find((p) => p.includes(`**${bloque}**`)) || '').replace(/\s+/g, ' ');
+    assert.ok(parrafo, `${archivo}: el párrafo está`);
+    assert.ok(parrafo.includes(pestana), `${archivo}: dice que está en ${pestana}`);
+  }
+});
+
+// 🔴 mutación: «Qué versión del arnés tiene cada máquina» diciendo siempre «se actualizan solas al arrancar», también con
+// la opción de fábrica, que pregunta a cada dev (A190).
+test('A190 Versiones_DiceComoSeActualizanSegunLaOpcion — «solas» sólo con update.apply auto', async () => {
+  const texto = async (apply) => {
+    const secs = TODAS.map((id) => SEC(id, id === 'actualizacion' ? { borrador: apply ? { update: { apply } } : {} } : {}));
+    const r = await pantallaConPestanas({ secciones: secs, hash: '#tab-instalacion' });
+    const todos = [];
+    const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+    walk(r.app);
+    return (todos.find((n) => /La que informó cada una/.test(n.textContent || '')) || {}).textContent || '';
+  };
+  assert.match(await texto('auto'), /Se actualizan solas al arrancar/);
+  for (const apply of [null, 'ask']) {
+    const t = await texto(apply);
+    assert.ok(t, `${apply}: el texto está`);
+    assert.doesNotMatch(t, /solas/, `${apply}: no dice que se actualizan solas`);
+    assert.match(t, /le pregunta a su dev/);
+  }
+});

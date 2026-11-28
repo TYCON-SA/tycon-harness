@@ -2310,6 +2310,7 @@ const TEXTOS = {
   'pantalla.laListaDeProductosNo': { es: 'La lista de productos no se pudo leer: los de la revisión de dependencias no se muestran.', en: 'The product list could not be read: the ones from the dependency review are not shown.' },
   'pantalla.abrirLaListaDeLa': { es: 'Abrir la lista de la revisión de dependencias →', en: 'Open the dependency review list →' },
   'pantalla.queVersionDelArnesTiene': { es: 'Qué versión del arnés tiene cada máquina', en: 'Which harness version each machine has' },
+  'pantalla.laQueInformoCadaUnaPregunta': { es: 'La que informó cada una en su última subida diaria, con o sin ejecuciones. Al arrancar, cada máquina le pregunta a su dev si se actualiza.', en: 'As reported by each one in its latest daily upload, with or without runs. On startup, each machine asks its dev whether to update.' },
   'pantalla.laQueInformoCadaUna': { es: 'La que informó cada una en su última subida diaria, con o sin ejecuciones. Se actualizan solas al arrancar.', en: 'As reported by each one in its latest daily upload, with or without runs. They update automatically on startup.' },
   'pantalla.sinConfirmar': { es: 'sin confirmar', en: 'not confirmed' },
   'pantalla.maquina': { es: 'Máquina', en: 'Machine' },

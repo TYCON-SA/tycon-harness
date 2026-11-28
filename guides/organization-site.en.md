@@ -724,8 +724,9 @@ The sections, in the order of the screen:
 - **Azure DevOps**: the team's Azure DevOps organization. It reaches each machine. It lives in `team-profile.json`, in
   the profile repo. Whoever maintains the harness reviews it.
 
-Below are **Products** (the ones the night checks) and **What the organization provides** (the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
-only: they are changed with a request in their repo.
+Below is **Products** (the ones the night checks). **What the organization provides** (the skills, reviewers,
+onboarding guides and packs of the profile repo, each with its link) is in the Installation and updates tab. Both are
+view only: they are changed with a request in their repo.
 
 **The configuration of each repo** shows, for each product repo, what the
 `.tycon/advisors.yaml` of its main branch says. The repos are those of the dependency review and of `team-repos.json`,
@@ -1153,7 +1154,7 @@ tests fail, and the test gate counts that as broken code. Every story rediscover
 By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
 Below is **Which harness version each machine has**, the one each machine
-reported in its latest daily upload, with or without runs. It is view only: the machines update themselves on start.
+reported in its latest daily upload, with or without runs. It is view only: how they update is set by the option above (by default, on startup each machine asks its dev).
 
 ![Installation and updates](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
 
