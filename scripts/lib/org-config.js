@@ -3230,7 +3230,8 @@ ${trabajandoJs}
         c.checked = ocultas.indexOf(f.id) < 0;
         // el nombre en llano; al lado, cómo se llama en el tablero, para encontrarla ahí
         var llano = Object.prototype.hasOwnProperty.call(TX, 'fichaLlana.' + f.id) ? TX['fichaLlana.' + f.id] : f.titulo;
-        grupo.appendChild(el('label', {}, c, el('span', { text: ' ' + llano }), llano !== f.titulo ? el('span', { class: 'muted', text: ' — ' + T('pantalla.fichaEnElTablero', { titulo: f.titulo }) }) : el('span', { class: 'muted', text: ' — ' + f.paraQue })));
+        // la casilla y, al lado, su texto en un solo bloque: una ficha por renglón (site.css, .fichas-grupo > label)
+        grupo.appendChild(el('label', {}, c, el('span', {}, el('span', { text: llano }), llano !== f.titulo ? el('span', { class: 'muted', text: ' — ' + T('pantalla.fichaEnElTablero', { titulo: f.titulo }) }) : el('span', { class: 'muted', text: ' — ' + f.paraQue }))));
       });
     });
     var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });

@@ -138,6 +138,8 @@ a.kpi:hover{background:var(--wash)}
 .pestanas a.activa{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
 .pestanas .cuenta{min-width:18px;height:18px;padding:0 5px;border-radius:99px;font-size:11.5px;font-weight:600;line-height:18px;text-align:center;color:#fff;background:var(--warn)}
 .pestanas .cuenta.bad{background:var(--bad)}
+/* las casillas de las fichas que muestra el sitio: una por renglón, con la casilla al principio (en un párrafo corrido cada ☑ caía al final del renglón anterior) */
+.fichas-grupo > label{display:flex;gap:8px;align-items:flex-start;padding:4px 0}.fichas-grupo > label input{margin-top:3px;flex:none}
 /* en el celular, las partes de Configuración bajan de renglón: deslizadas de costado, dos quedaban fuera de la vista sin aviso */
 @media (max-width:640px){.pestanas{flex-wrap:wrap;overflow-x:visible}}
 .pestana-panel[hidden]{display:none!important}
@@ -585,7 +587,7 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .paquete-t{margin:14px 0 4px;font-weight:600}
 .tabla2.revisores select.corto{width:20em}
 .tabla2.revisores .equiv{white-space:normal;overflow-wrap:anywhere}
-@media (max-width:640px){.tabla2.revisores select.corto{width:100%}}
+@media (max-width:640px){.tabla2.revisores select.corto{width:100%}.tabla2.revisores .r > .acc{grid-column:1/-1}}
 
 /* ── el sitio demo (SITE_DEMO=1): la franja fija «Datos de ejemplo» y el selector «Ver como» ── */
 .franja-demo{position:sticky;top:0;z-index:60;box-sizing:border-box;height:36px;display:flex;align-items:center;gap:6px 14px;padding:0 24px;background:var(--warn);color:#1a1100;font-size:13px;white-space:nowrap;overflow:hidden}

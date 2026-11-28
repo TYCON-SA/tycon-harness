@@ -7407,3 +7407,19 @@ test('A179b Celular_UmbralesConSusTitulos — la cabecera no se esconde en panta
   assert.doesNotMatch(angosta, /\.tabla2\.modelos select\.corto\{width:12em\}/);
   assert.match(angosta, /\.tabla2\.modelos select\.corto\{[^}]*max-width:100%/);
 });
+
+// 🔴 mutación: en el celular, el desplegable del modelo de cada revisor en una columna angosta que corta lo elegido («el
+// suyo, sin ca») (A206): baja a su propio renglón, con todo el ancho.
+test('A206 Celular_RevisoresConElDesplegableEntero — el desplegable de cada revisor ocupa el renglón', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.match(angosta, /\.tabla2\.revisores \.r > \.acc\{[^}]*grid-column:1\/-1/);
+});
+
+// 🔴 mutación: las casillas de «Fichas que muestra el sitio» en un párrafo corrido, con cada ☑ al final del renglón del
+// ítem anterior: es fácil destildar la equivocada (A199). Cada ficha va en su renglón, con la casilla al principio.
+test('A199 FichasDelSitio_UnaCasillaPorRenglon — cada ficha en su renglón, con la casilla al principio', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  assert.match(css, /\.fichas-grupo > label\{[^}]*display:flex/, 'un renglón por ficha');
+  assert.match(css, /\.fichas-grupo > label\{[^}]*align-items:flex-start/, 'la casilla arriba, al principio de su texto');
+});
