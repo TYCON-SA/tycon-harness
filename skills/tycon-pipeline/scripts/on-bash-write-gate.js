@@ -394,9 +394,12 @@ function handleCarrilEHistoria(event, opts = {}) {
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
     const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
-    const fijo = partes.slice(i).some(nombraPadre) ? path.parse(String(abs)).root || path.sep : partes.slice(0, i).join(path.sep) || path.sep;
+    const P = process.platform === 'win32' ? path.win32 : path;
+    const fijo = partes.slice(i).some(nombraPadre) ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
     for (const z of zonas()) if (isInside(z, fijo) || isInside(fijo, z)) return z;
-    try { for (const m of expandirComodin(abs, cwd, {}, { ocultos: true })) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
+    // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)
+    const enDisco = String(abs).replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*(?:\)|$)/g, '*').replace(/\*{2,}/g, '*');
+    try { for (const m of expandirComodin(enDisco, cwd, {}, { ocultos: true })) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
     return null;
   };
   // Las rutas de un destino con llaves (`{a,b}`, `{..,x}`, `{<estado>,x}`): cada alternativa, resuelta por su cuenta

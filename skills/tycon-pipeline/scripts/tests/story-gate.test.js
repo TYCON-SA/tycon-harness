@@ -2007,7 +2007,11 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
       `cp -R ${repo}/falso ${conComodin('?')}`,
       // tercera vuelta: llaves de secuencia, llaves con una variable sin resolver, `(o)` de zsh, enlace oculto con dotglob
       `echo x >> ${conComodin(`{${E.slice(-1)}..${E.slice(-1)}}`)}/plan-review/s1/s1.resultado.json`, `echo x | tee {${E},$NOSE}/plan-review/s1/s1.resultado.json`,
-      `echo x >> ${conComodin(`(${E.slice(-1)})`)}/plan-review/s1/s1.resultado.json`, `shopt -s dotglob; echo x >> ${repo}/?l1/plan-review/s1/s1.resultado.json`]) {
+      `echo x >> ${conComodin(`(${E.slice(-1)})`)}/plan-review/s1/s1.resultado.json`, `shopt -s dotglob; echo x >> ${repo}/?l1/plan-review/s1/s1.resultado.json`,
+      // cuarta vuelta: llaves con coma y de secuencia juntas, y un enlace con llaves o paréntesis de zsh
+      `echo x | tee ${repo}/{..,x}/${path.basename(E).slice(0, -1)}{${E.slice(-1)}..${E.slice(-1)}}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${repo}/l{1..1}/plan-review/s1/s1.resultado.json`, `echo x >> ${repo}/(l1|x)/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${repo}/l(1)/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
