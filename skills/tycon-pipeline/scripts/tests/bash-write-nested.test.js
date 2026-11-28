@@ -966,7 +966,28 @@ test('T47 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compa
     // zsh corre como comandos una cuenta que no puede leer y que tiene una sustitución adentro (revisión de Fable)
     `echo $((cp README.md ${H} && : \`: \\(\`))`, `echo "$((cat README.md > ${H} && : \`: \\(\`))"`,
     `x=$((cp README.md ${H} && : \`: \\(\`))`, `echo "$(( \${x:-$(cp README.md ${H})} ))"`,
+    // el valor de una variable adentro de una cuenta se lee como otra cuenta, y puede correr un comando (vuelta 3 de Fable)
+    `x='a[$(cp README.md ${H})]'; echo $(( $x ))`, `x='a[$(cp README.md ${H})]'; echo "$(( \${x} + 1 ))"`,
   ]) frena(c, cmd);
+  // la barra de una cuenta en la ruta destino divide, no es una carpeta (vuelta 3 de Fable): una historia por su contenido
+  fs.writeFileSync(path.join(c.dir, 'specs', 'hist.md'), '---\nstory: "1.3"\nepic: "1"\ntitle: "z"\nstatus: in-progress\n---\n\n# z\n');
+  fs.mkdirSync(path.join(c.dir, '1'));
+  for (const cmd of ['cp README.md $(( 2 / 2 ))/../specs/hist.md', 'echo x | tee $(( 2 / 2 ))/../specs/hist.md',
+    'echo x > $((2/2))/../specs/hist.md']) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `frena: ${JSON.stringify(cmd)}\n${r.stderr}`);
+  }
+  // una cuenta adentro de la ruta destino es parte de esa palabra (revisión de Fable de la A216): frena como una
+  // historia nueva escrita por consola
+  for (const cmd of [
+    'cp README.md specs/story-1.$((0+1)).md', 'mv README.md specs/story-1.$((0+1)).md', 'echo x > specs/story-1.$((0+1)).md',
+    'echo x >> specs/story-$((0+1)).1.md', 'echo x | tee specs/story-1.$((0+1)).md', 'cp README.md specs/story-1.$(( 0 + 1 )).md',
+    'echo x > "specs/story-1.$(( 0 + 1 )).md"', 'echo x > specs/story-1.$(( 2 > 1 )).md', 'echo "$(( a > b ))" > specs/story-1.$((0+1)).md',
+  ]) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `frena: ${JSON.stringify(cmd)}\n${r.stderr}`);
+    assert.match(r.stderr, /story-[\d.]*\$\(\(/, `nombra la ruta con la cuenta: ${JSON.stringify(cmd)}`);
+  }
 });
 
 // T48 CuentaSinPesos_NoEsUnDestino @A213
