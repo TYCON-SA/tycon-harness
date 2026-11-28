@@ -34,10 +34,11 @@ test('W1 EnOrden_UnoDespuesDelOtro_YUnoQueFallaNoCortaLosDemas', (t) => {
   const marca = path.join(d, 'orden.txt');
   const a = path.join(d, 'a.js');
   const b = path.join(d, 'b.js');
-  // el primero tarda y falla; el segundo tiene que correr después, y correr igual
-  fs.writeFileSync(a, `setTimeout(() => { require('fs').appendFileSync(${JSON.stringify(marca)}, 'a\\n'); process.exit(3); }, 300);`);
-  fs.writeFileSync(b, `require('fs').appendFileSync(${JSON.stringify(marca)}, 'b\\n');`);
-  const r = spawnSync(process.execPath, [ORDEN, process.execPath, '--', a, '--', b], { encoding: 'utf8', env: env(d) });
+  // el primero tarda y falla; el segundo tiene que correr después, y correr igual. Guiones fijos: la marca les llega
+  // como argumento
+  fs.writeFileSync(a, "setTimeout(() => { require('fs').appendFileSync(process.argv[2], 'a\\n'); process.exit(3); }, 300);");
+  fs.writeFileSync(b, "require('fs').appendFileSync(process.argv[2], 'b\\n');");
+  const r = spawnSync(process.execPath, [ORDEN, process.execPath, '--', a, marca, '--', b, marca], { encoding: 'utf8', env: env(d) });
   assert.strictEqual(fs.readFileSync(marca, 'utf8'), 'a\nb\n');
   assert.strictEqual(r.status, 1, 'uno falló: sale 1');
   const mal = spawnSync(process.execPath, [ORDEN, process.execPath, a], { encoding: 'utf8', env: env(d) });
@@ -65,8 +66,8 @@ test('W3 EnOrden_ProgramaQueNoSeEncuentra_UsaElNodeDeEsteProceso', (t) => {
   const d = carpeta(t);
   const marca = path.join(d, 'corrio.txt');
   const a = path.join(d, 'a.js');
-  fs.writeFileSync(a, `require('fs').writeFileSync(${JSON.stringify(marca)}, 'si');`);
-  const r = spawnSync(process.execPath, [ORDEN, path.join(d, 'no-existe-node'), '--', a], { encoding: 'utf8', env: env(d) });
+  fs.writeFileSync(a, "require('fs').writeFileSync(process.argv[2], 'si');");
+  const r = spawnSync(process.execPath, [ORDEN, path.join(d, 'no-existe-node'), '--', a, marca], { encoding: 'utf8', env: env(d) });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(fs.readFileSync(marca, 'utf8'), 'si');
 });
