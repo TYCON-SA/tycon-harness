@@ -4978,8 +4978,9 @@ function restoreLegacyIfUsed(ctx, tree, state = null) {
   const target = real(place);
   if (!target || !isHarnessClone(target)) return null;
   const R = placeFacts(ctx, tree).registered;
-  const sinTocar = (motivo) => `lo restaurado puede nombrar el nombre viejo ${tildePath(ctx, lp)} y no lo repuse (${motivo}): harness.js relocate lo muda al lugar`;
-  if (!R || R.problem) return sinTocar(`no pude contar lo registrado${R && R.problem ? `: ${R.problem}` : ''}`);
+  const sinTocar = (motivo, siguiente = 'harness.js relocate lo muda al lugar') => `lo restaurado puede nombrar el nombre viejo ${tildePath(ctx, lp)} y no lo repuse (${motivo}): ${siguiente}`;
+  // sin poder contar, relocate tampoco puede: lo que sigue es mirar el árbol
+  if (!R || R.problem) return sinTocar(`no pude contar lo registrado${R && R.problem ? `: ${R.problem}` : ''}`, 'harness.js doctor dice qué le falta al árbol');
   if (!R.total || R.files.every((x) => x.count === x.permissions)) return null;
   const list = R.files.filter((x) => x.count > x.permissions).map((x) => x.file).join(', ');
   if (colgado) return sinTocar(`es un enlace colgado y lo usa ${list}`);

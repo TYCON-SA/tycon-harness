@@ -266,7 +266,7 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   assert.match(rb.all, new RegExp(`repuse el nombre viejo`), `la vuelta atrás no dice que lo repuso: ${rb.all}`);
   // …queda anotado como pieza, como lo anota el aplicador: un uninstall enseguida lo saca y no queda colgado
   const managed = readJson(stateFile(v.h)).managed || [];
-  assert.ok(managed.some((p) => p.kind === 'link' && PLACE.samePath(p.where, legacyOf(v.h))), `el enlace repuesto no quedó anotado: ${JSON.stringify(managed.filter((p) => p.kind === 'link'))}`);
+  assert.ok(managed.some((p) => p.kind === 'link' && p.id === PLACE.LEGACY_PLACE_NAME && PLACE.samePath(p.where, legacyOf(v.h))), `el enlace repuesto no quedó anotado: ${JSON.stringify(managed.filter((p) => p.kind === 'link'))}`);
   // …la regla del lugar ya no lo retira (lo usa la línea de CLAUDE.md) y doctor lo cuenta, sin rojo
   retire(v);
   assert.ok(exists(legacyOf(v.h)), 'la regla del lugar retiró el viejo con la línea de CLAUDE.md por él');
@@ -274,6 +274,9 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   let j = null;
   try { j = JSON.parse(doc.out); } catch (_) { j = null; }
   assert.ok(j && j.registered_by_legacy && j.registered_by_legacy.total > 0 && !(j.fail || []).length, `doctor: ${doc.out.slice(0, 400)}`);
+  // …y un uninstall lo saca: no queda el nombre viejo colgado
+  const un = harness(v.h, v.C, ['uninstall', '--yes']);
+  assert.ok(!exists(legacyOf(v.h)), `uninstall dejó el nombre viejo repuesto: ${un.all.slice(-600)}`);
   // (2) uno que la persona borró a mano (sin la nota del retiro) no vuelve, aunque lo restaurado lo nombre
   const y = installed('vuelta-borrado-a-mano');
   assert.strictEqual(harness(y.h, y.C, ['relocate']).rc, 0);
