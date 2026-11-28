@@ -1993,6 +1993,7 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
   const conComodin = (c) => `${E.slice(0, -1)}${c}`;
   fs.mkdirSync(path.join(repo, 'falso', 'plan-review'), { recursive: true });
   fs.symlinkSync(E, path.join(repo, 'l1'));
+  fs.symlinkSync(E, path.join(repo, '.l1'));
   conEnv(SIN_REGISTRO, () => {
     for (const c of [`F=${conComodin('?')}/plan-review/s1/s1.resultado.json; echo x >> $F`, `echo x >> ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
       `echo x >> ${E}/plan-revie?/s1/s1.resultado.json`, `echo x >> ${E}/plan-revie[w]/s1/s1.resultado.json`, `echo x >> ${E}/plan-*/s1/s1.resultado.json`,
@@ -2003,7 +2004,10 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
       // segunda vuelta: llaves que salen del tramo fijo, `.?` que nombra `..`, un enlace con comodín, cp adentro de la carpeta
       `echo x | tee {${E},x}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{..,x}/${path.basename(E)}/plan-review/s1/s1.resultado.json`,
       `echo x >> ${repo}/.?/${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x >> ${repo}/l?/plan-review/s1/s1.resultado.json`,
-      `cp -R ${repo}/falso ${conComodin('?')}`]) {
+      `cp -R ${repo}/falso ${conComodin('?')}`,
+      // tercera vuelta: llaves de secuencia, llaves con una variable sin resolver, `(o)` de zsh, enlace oculto con dotglob
+      `echo x >> ${conComodin(`{${E.slice(-1)}..${E.slice(-1)}}`)}/plan-review/s1/s1.resultado.json`, `echo x | tee {${E},$NOSE}/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${conComodin(`(${E.slice(-1)})`)}/plan-review/s1/s1.resultado.json`, `shopt -s dotglob; echo x >> ${repo}/?l1/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
@@ -2022,8 +2026,7 @@ test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
     assert.ok(r && r.block, '~+ es la carpeta actual');
     // un comodín que no puede llegar al estado no frena por eso
     fs.mkdirSync(path.join(repo, 'logs'), { recursive: true });
-    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt', `echo x > "${path.dirname(E)}/notas (1).txt"`,
-      `echo x | tee ${repo}/{a,b}/notas.txt`]) {
+    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt', `echo x | tee ${repo}/{a,b}/notas.txt`]) {
       const p = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(!(p && p.block && /estado|state/i.test(p.block)), `${c}: ${p && p.block}`);
     }

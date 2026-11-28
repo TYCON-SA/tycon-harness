@@ -383,31 +383,20 @@ function handleCarrilEHistoria(event, opts = {}) {
     return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true })
       || signedRecordKind(abs) !== null || signedRecordKind(real) !== null;
   };
-  // La zona protegida (el estado o el árbol instalado) adonde puede llegar un destino con comodín, o null. Un patrón de k
-  // tramos desde su primer comodín sólo nombra rutas a esa profundidad; `**`, `(a|b)` (zsh) y un tramo que nombra `..`
-  // (`.?`, `.*`) llegan a cualquiera. Llega si el tramo fijo ya está adentro de la zona, si la zona queda a k tramos o
-  // menos debajo de él, o si lo que el comodín nombra hoy en el disco es de la zona (un enlace: `l?` con `l1` → estado).
+  // La zona protegida (el estado o el árbol instalado) adonde puede llegar un destino con un carácter que el shell expande
+  // (`*`, `?`, `[`, `{`, `(` de zsh), o null. Sin contar tramos: cualquiera de esos caracteres a la altura de una zona, de
+  // una carpeta que la contiene o adentro de ella llega (llaves de secuencia, `(o)` y `**` de zsh, `~+`…). Un tramo que
+  // empieza con `.` y nombra `..` sube hasta la raíz. Lo que el comodín nombra hoy en el disco, ocultos incluidos, se mira
+  // por ruta real (un enlace al estado). Frena de más un comodín escrito en la casa o en la carpeta del arnés.
   const zonas = () => [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
   const zonaQueAlcanzaElComodin = (abs) => {
     const partes = String(abs).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
-    // `(a|b)` de zsh, o un `(` sin cerrar (el `|` corta la palabra: `x(a|b)` llega como `x(a`)
-    const alterna = (p) => /\([^)]*(?:\||$)/.test(p);
-    const esComodin = (p) => /[*?[]/.test(p) || alterna(p);
-    const i = partes.findIndex(esComodin);
+    const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
-    const resto = partes.slice(i);
-    // sólo un tramo que empieza con `.` nombra `..` (ni con dotglob un `*` lo nombra)
     const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
-    const subeOAnda = resto.some((p) => p.includes('**') || alterna(p)
-      || nombraPadre(p));
-    const fijo = resto.some(nombraPadre)
-      ? path.parse(String(abs)).root || path.sep
-      : partes.slice(0, i).join(path.sep) || path.sep;
-    for (const z of zonas()) {
-      if (isInside(z, fijo)) return z;
-      if (isInside(fijo, z) && (subeOAnda || resto.length >= path.relative(fijo, z).split(path.sep).length)) return z;
-    }
-    try { for (const m of expandirComodin(abs, cwd, {})) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
+    const fijo = partes.slice(i).some(nombraPadre) ? path.parse(String(abs)).root || path.sep : partes.slice(0, i).join(path.sep) || path.sep;
+    for (const z of zonas()) if (isInside(z, fijo) || isInside(fijo, z)) return z;
+    try { for (const m of expandirComodin(abs, cwd, {}, { ocultos: true })) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
     return null;
   };
   // Las rutas de un destino con llaves (`{a,b}`, `{..,x}`, `{<estado>,x}`): cada alternativa, resuelta por su cuenta
@@ -633,7 +622,14 @@ function handleCarrilEHistoria(event, opts = {}) {
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
   // un comodín en el destino (`>> /p/est?do/x`, `{a,b}`, `**` y `(a|b)` de zsh): el shell lo expande y puede nombrar un
   // archivo del estado o del árbol instalado. Sin mirar el disco: si el comodín puede llegar adentro de una zona, frena
+  // las llaves antes que las variables, como el shell: `{<estado>,$NOSE}` tiene una alternativa que se resuelve
   for (const d of resueltos) {
+    for (const alt of /\{[^{}]*,[^{}]*\}/.test(String(d.raw)) ? expandirLlaves(String(d.raw)) : []) {
+      const ex = expandirRuta(cmdDestinos, alt);
+      if (ex.sinResolver.length) continue;
+      const x = resolveTarget(ex.valor, cwd, process.platform, { homeVariable: true });
+      if (!absTargets.includes(x)) absTargets.push(x);
+    }
     if (d.sinResolver.length) continue;
     for (const x of conLlaves(expandirRuta(cmdDestinos, d.raw).valor)) if (!absTargets.includes(x)) absTargets.push(x);
   }
