@@ -285,10 +285,28 @@ mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesio
 node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta=new Date(Date.now()-9*3600e3).toISOString(); require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
 printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":"/tmp","tool_input":{"command":"ls"}}' | \
   env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
-    TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+    TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-$AZ_TOPE_COMUN}" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "^$REGLA " "$TMP/az-reglas" || break; sleep 0.5; done
 if ! grep -q "^$REGLA " "$TMP/az-reglas"; then ok "T41 Guard_AnyCommand_LaunchesSweepForExpiredRule · una sesión larga sola no deja la regla pasar de 8 h"
 else no "T41 · la regla vencida sigue abierta tras un comando · estado: $(estado)"; fi
+espera_cierre "$PROD" || no "T41 · el cierre de fondo no terminó en 2 min"
+
+# ── T41b · un cierre de fondo termina antes de que la prueba siga ──────────────────────────────────────────────
+# El cierre que lanza el freno sigue escribiendo su estado y su registro después de borrar la regla. Con la máquina
+# cargada (el portón, con el medidor de cobertura) lo hacía sobre el mundo de la prueba siguiente, en la ruta que vio
+# al arrancar: T21 encontraba los dos archivos también en ~/.claude/.tycon-pipeline (issue #1855).
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesion_proceso "$SES_A" "$$"
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta=new Date(Date.now()-9*3600e3).toISOString(); require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+printf 'borrar-lento' > "$TMP/fake-az-mode"
+printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":"/tmp","tool_input":{"command":"ls"}}' | \
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
+    TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-$AZ_TOPE_COMUN}" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+for _ in $(seq 1 40); do grep -q "^$REGLA " "$TMP/az-reglas" || break; sleep 0.5; done
+espera_cierre "$PROD"
+mundo; mkdir -p "$CASA/.tycon/state"; sleep 4
+if [ ! -e "$CASA/.claude/.tycon-pipeline/production-firewall.json" ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production.log" ]; then
+  ok "T41b Sweep_FinishesBeforeTheNextWorld · el cierre de fondo no escribe en el mundo de la prueba siguiente"
+else no "T41b · el cierre de fondo escribió después en $(ls "$CASA/.claude/.tycon-pipeline" | tr '\n' ' ')"; fi
 
 # ── T19 · el hook está en la configuración administrada, en los dos eventos, sin interruptor ───────────────────
 PLANT="$AQUI/scripts/production/managed-settings.tycon-production.json.template"
@@ -308,10 +326,18 @@ if node -e '
 else no "T20 · faltan las reglas ask de Edit/Write sobre production-firewall.json"; fi
 
 # ── T21 · el estado cae donde cae el registro ──────────────────────────────────────────────────────────────────
-mundo; mkdir -p "$CASA/.tycon/state"; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
-if [ -f "$CASA/.tycon/state/production-firewall.json" ] && [ -f "$CASA/.tycon/state/production.log" ] && [ ! -f "$CASA/.claude/.tycon-pipeline/production-firewall.json" ]; then
+mundo; mkdir -p "$CASA/.tycon/state"; SES=$SES_A; viva $SES_A; rc="$(puerta --open-firewall "$PROD")"
+if [ "$rc" = 0 ] && [ -f "$CASA/.tycon/state/production-firewall.json" ] && [ -f "$CASA/.tycon/state/production.log" ] && [ ! -f "$CASA/.claude/.tycon-pipeline/production-firewall.json" ]; then
   ok "T21 StateFile_PathFollowsStateDirRule · con ~/.tycon/state, el estado y el registro van ahí"
-else no "T21 · $(ls "$CASA/.tycon/state" "$CASA/.claude/.tycon-pipeline" 2>&1 | tr '\n' ' ')"; fi
+else
+  # qué falta, qué sobra y con qué salió la puerta: las dos carpetas existen siempre, así que listarlas no dice nada
+  _t21=""
+  [ "$rc" = 0 ] || _t21="$_t21 la puerta salió $rc ($(tail -n 2 "$TMP/err" 2>/dev/null | tr '\n' ' '));"
+  [ -f "$CASA/.tycon/state/production-firewall.json" ] || _t21="$_t21 falta ~/.tycon/state/production-firewall.json;"
+  [ -f "$CASA/.tycon/state/production.log" ] || _t21="$_t21 falta ~/.tycon/state/production.log;"
+  [ ! -f "$CASA/.claude/.tycon-pipeline/production-firewall.json" ] || _t21="$_t21 sobra ~/.claude/.tycon-pipeline/production-firewall.json;"
+  no "T21 ·$_t21"
+fi
 
 # ── T24 · abrir un host no-producción o desconocido: sale 2 sin Azure ──────────────────────────────────────────
 for h in "$STAGING" "otro-cualquiera.database.windows.net"; do

@@ -21,8 +21,16 @@ IP_PUB=203.0.113.25
 SES_A=11111111-aaaa-4aaa-8aaa-111111111111
 SES_B=22222222-bbbb-4bbb-8bbb-222222222222
 
+# El tope de cada llamada al az falso, salvo las pruebas de lentitud, que ponen el suyo (AZ_TOPE=1 o 2). El az falso
+# contesta enseguida: este tope sólo tiene que no cortar una llamada sana en una máquina lenta, bajo el medidor de
+# cobertura y con otras suites a la vez (en una de 4 núcleos, 20 s pueden no alcanzar dentro del portón).
+AZ_TOPE_COMUN=120
+
 mundo(){ # arma la raíz falsa, la casa y los repos, y deja los dobles listos
-  RAIZ="$TMP/sys"; CASA="$TMP/casa"; REPOS="$TMP/repos"
+  # una casa nueva por mundo: un cierre que el freno lanzó de fondo en la prueba anterior, y que con la máquina cargada
+  # termina tarde, escribe en la casa de esa prueba y no en la de ésta (issue #1855, T21)
+  MUNDOS=$(( ${MUNDOS:-0} + 1 ))
+  RAIZ="$TMP/sys"; CASA="$TMP/casa-$MUNDOS"; REPOS="$TMP/repos"
   rm -rf "$RAIZ" "$CASA" "$REPOS" "$TMP"/*.log "$TMP/az-reglas" "$TMP/fake-name-odd"
   mkdir -p "$RAIZ/opt/tycon/bin" "$RAIZ/usr/bin" "$RAIZ/usr/sbin" "$RAIZ/opt/homebrew/bin" \
     "$CASA/.claude/.tycon-pipeline" "$CASA/.claude/projects/p" "$REPOS/backend-acme/.tycon"
@@ -60,7 +68,7 @@ esac
 SH
   # az: anota cada llamada y su entorno; las reglas viven en un archivo «nombre ip»
   # la puerta llama a az con un entorno limpio: la carpeta y los modos van escritos, no en variables
-  { printf '#!/usr/bin/env bash\nTMPLOG="%s"\nHOST_PROD="%s"\n' "$TMP" "$PROD"; cat <<'SH'
+  { printf '#!/usr/bin/env bash\nTMPLOG="%s"\nHOST_PROD="%s"\nCASA_MUNDO="%s"\n' "$TMP" "$PROD" "$CASA"; cat <<'SH'
 FAKE_AZ="$(cat "$TMPLOG/fake-az-mode" 2>/dev/null)"
 FAKE_NOMBRE="$(cat "$TMPLOG/fake-name-mode" 2>/dev/null)"
 printf '%s\n' "$*" >> "$TMPLOG/az.log"
@@ -72,7 +80,7 @@ esac
 arg(){ local k="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$k" ] && { echo "$2"; return; }; shift; done; }
 # la consulta del nombre del servidor (checkNameAvailability, con `-o json`: el booleano tal cual)
 if [ "$1" = rest ]; then
-  ESTADO_FW="$TMPLOG/casa/.claude/.tycon-pipeline/production-firewall.json"
+  ESTADO_FW="$CASA_MUNDO/.claude/.tycon-pipeline/production-firewall.json"
   case "${FAKE_NOMBRE:-}" in
     libre) echo true ;;
     # error y lento escriben `true` antes de fallar: quien mire sólo el texto, y no cómo salió az, cerraría la regla
@@ -169,7 +177,11 @@ case "$1 $2 $3 $4" in
     [ "$FAKE_AZ" = crear-lento ] && sleep 5
     exit 0 ;;
   "sql server firewall-rule delete")
-    n="$(arg -n "$@")"; grep -v "^$n " "$TMPLOG/az-reglas" > "$TMPLOG/az-reglas.t"; mv "$TMPLOG/az-reglas.t" "$TMPLOG/az-reglas"; exit 0 ;;
+    n="$(arg -n "$@")"; grep -v "^$n " "$TMPLOG/az-reglas" > "$TMPLOG/az-reglas.t"; mv "$TMPLOG/az-reglas.t" "$TMPLOG/az-reglas"
+    # borrar-lento: la regla ya no está en Azure, pero la respuesta tarda (una máquina cargada): la puerta escribe su
+    # estado y su registro después
+    [ "$FAKE_AZ" = borrar-lento ] && sleep 3
+    exit 0 ;;
 esac
 echo "az de mentira: no sé hacer «$*»" >&2; exit 9
 SH
@@ -211,7 +223,7 @@ puerta(){ # corre la puerta en el mundo falso; imprime el exit code. SES = la se
   # sin la sesión de quien corre la suite: la de la prueba es SES (vacía = una terminal)
   local sesion=(); [ -n "${SES:-}" ] && sesion=(CLAUDE_CODE_SESSION_ID="$SES")
   env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" \
-      PATH="$TMP/impostor:$PATH" ${sesion[@]+"${sesion[@]}"} TYCON_PROD_TEST_APPROVAL_JS="$TMP/aprobacion-de-la-sesion.js" TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" \
+      PATH="$TMP/impostor:$PATH" ${sesion[@]+"${sesion[@]}"} TYCON_PROD_TEST_APPROVAL_JS="$TMP/aprobacion-de-la-sesion.js" TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-$AZ_TOPE_COMUN}" \
       FAKE_SQLCMD="${FAKE_SQLCMD:-}" FAKE_AZ="${FAKE_AZ:-}" FAKE_IP="${FAKE_IP:-}" FAKE_UUID="${FAKE_UUID:-}" \
       bash "$PUERTA" "$@" >"$TMP/out" 2>"$TMP/err"
   echo $?
@@ -220,9 +232,22 @@ gancho(){ # $1 = evento, $2 = sesión → corre el hook con la puerta del repo y
   modos
   printf '{"hook_event_name":"%s","session_id":"%s"}' "$1" "$2" | \
     env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
-        TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" FAKE_AZ="${FAKE_AZ:-}" \
+        TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-$AZ_TOPE_COMUN}" FAKE_AZ="${FAKE_AZ:-}" \
         node "$HOOK" >"$TMP/hook.out" 2>"$TMP/hook.err"
   echo $?
+}
+# espera_cierre <host> — espera a que un cierre lanzado de fondo termine entero: su última escritura es la línea del
+# cierre en el registro, después del estado. Que la regla ya no esté en Azure no alcanza: la puerta sigue escribiendo, y
+# con la máquina cargada lo haría sobre el mundo de la prueba siguiente, que usa la misma casa.
+espera_cierre(){
+  local _i
+  for _i in $(seq 1 240); do
+    # la puerta anota el cierre después de escribir el estado y soltar su candado: es lo último que hace
+    # grep directo y sin tubería: con pipefail, un registro que todavía no existe haría fallar la condición
+    if grep -qsF "\"host\":\"$1\",\"accion\":\"close-firewall\"" "$CASA/.claude/.tycon-pipeline/production.log" "$CASA/.tycon/state/production.log"; then return 0; fi
+    sleep 0.5
+  done
+  return 1
 }
 viva(){ printf '{}\n' > "$CASA/.claude/projects/p/$1.jsonl"; touch "$CASA/.claude/projects/p/$1.jsonl"; } # actividad reciente
 muerta(){ printf '{}\n' > "$CASA/.claude/projects/p/$1.jsonl"; touch -t 202001010000 "$CASA/.claude/projects/p/$1.jsonl"; }

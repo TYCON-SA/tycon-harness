@@ -115,3 +115,17 @@ test('T5 Pasos_NoPeganLosArgsEnLaLinea — ningún paso pasa el JSON de args a w
   }
   assert.deepStrictEqual(malos, []);
 });
+
+// 🔴 Falla con: un corredor que recibe el pedido como argumento (Codex, Cursor) y un pedido que no entra en la línea de
+// comando. En Windows el tope es de unos 32 KB y la revisión del plan pesa 74-81 KB: Node tira la excepción al lanzar
+// (ENAMETOOLONG en Windows, E2BIG acá), la corrida se rompía y la revisión no se medía sin decir por qué. Ahora el agente
+// vuelve como «no se pudo lanzar», con el motivo y el largo, y la corrida sigue con el corredor siguiente.
+test('T7 PedidoQueNoEntraEnLaLinea_NoRompeLaCorrida — el agente vuelve como no lanzado, con el motivo', async () => {
+  const { spawnAgent } = require(LITE);
+  const enorme = 'x'.repeat(3 * 1024 * 1024);
+  const r = await spawnAgent([process.execPath, '-e', '1', enorme], 'pedido', os.tmpdir(), 10000);
+  assert.strictEqual(r.code, -1);
+  assert.match(r.err, /no entra en la línea de comando/);
+  assert.match(r.err, /entrada estándar/);
+  assert.strictEqual(r.tooLong, true, 'el corredor no queda caído: sirve para los pedidos cortos');
+});

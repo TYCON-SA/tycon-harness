@@ -799,6 +799,10 @@ function informe(argv) {
           }
           // lo que se midió en la base, con el veredicto y el motivo de cada suite
           if (get(r, 'base_check', null)) result.totals.base_check = r.base_check;
+          // las rojas de la corrida completa que pasan solas en la base y en la rama (orden o carga): avisan y no frenan,
+          // y quedan nombradas para que el aviso no se pierda
+          const noReproduce = (get(r.base_check || {}, 'suites', []) || []).filter((s) => s && s.verdict === 'no-reproduce');
+          if (pyLen(noReproduce)) result.totals.not_reproduced_alone = noReproduce.map((s) => s.ruta);
           // Las no medidas ya cuentan como ausentes; acá va su motivo (sólo si hay alguna: el informe de siempre no cambia).
           const noMedidas = get(r, 'unmeasured_suites', []);
           if (pyLen(noMedidas)) Object.assign(result.totals, { unmeasured: pyLen(noMedidas), unmeasured_suites: noMedidas });
