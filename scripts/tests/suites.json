@@ -5081,7 +5081,7 @@
       "requiere": []
     },
     {
-      "__nota": "Lo que el arranque de Windows corre como el del .sh: el lanzador en orden (scripts/lib/run-in-order.js) corre la recolección de hallazgos antes de la subida y uno que falla no corta el otro; la recolección con --log agrega su salida al registro y no escribe en la consola; el .ps1 corre las mismas suites rápidas de las skills que el .sh. Sin red.",
+      "__nota": "Lo que el arranque de Windows corre como el del .sh: el lanzador en orden (scripts/lib/run-in-order.js) corre la recolección de hallazgos antes de la subida y uno que falla no corta el otro; la recolección con --log agrega su salida al registro y no escribe en la consola; un programa que no se encuentra por su nombre corre con el Node del lanzador. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/windows-startup-batch.test.js",
       "requiere": []

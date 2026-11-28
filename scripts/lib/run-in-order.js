@@ -9,7 +9,8 @@
  *
  * Por qué: el arranque de Windows lanza lo de fondo con Start-Process, que lanza un solo proceso. La recolección de
  * hallazgos tiene que terminar antes de la subida al buzón, para que lo de hoy suba hoy (como la tanda de fondo del .sh).
- * El programa se pasa, no se toma el Node de este proceso: es el mismo con que el instalador lanza todo lo demás.
+ * El programa se pasa, no se toma el Node de este proceso: es el mismo con que el instalador lanza todo lo demás. Si no
+ * se encuentra por su nombre, corre con el Node de este proceso.
  */
 const { spawnSync } = require('child_process');
 
@@ -28,7 +29,10 @@ function parse(argv) {
 function run({ programa, comandos }, { spawn = spawnSync } = {}) {
   let todos = true;
   for (const args of comandos) {
-    const r = spawn(programa, args, { stdio: 'ignore', windowsHide: true });
+    let r = spawn(programa, args, { stdio: 'ignore', windowsHide: true });
+    // sin shell, un programa que sólo existe como `.cmd` (un `node` instalado así) no se encuentra por su nombre: corre con
+    // el Node de este proceso, el mismo que lanzó el instalador
+    if (r && r.error && r.error.code === 'ENOENT') r = spawn(process.execPath, args, { stdio: 'ignore', windowsHide: true });
     if (!r || r.error || r.status !== 0) todos = false;
   }
   return todos ? 0 : 1;

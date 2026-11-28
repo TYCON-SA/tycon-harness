@@ -37,13 +37,13 @@
 # Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js en una máquina sólo con Codex): la misma lista cerrada
 # que el .sh (ver «Sin Claude Code» en su cabecera), en lo que este archivo tiene: el candado, el reporte y el plan; la
 # lectura de la configuración y del perfil; los chequeos de engram y de sqlite3; el AGENTS.md puntero; el refresco de la
-# lista de proyectos de Azure; la recolección de hallazgos y la subida al buzón; las pruebas rápidas de las skills; los
-# hooks globales de git y la mirada al core.hooksPath local de los clones; y la mudanza del historial viejo de los hooks.
-# Lo de Claude Code —el lugar del arnés y sus enlaces, las skills de
+# lista de proyectos de Azure; la recolección de hallazgos y la subida al buzón; los hooks globales de git y la mirada al
+# core.hooksPath local de los clones; y la mudanza del historial viejo de los hooks. Lo de Claude Code —el lugar del arnés y sus enlaces, las skills de
 # este archivo, settings.json, los nombres viejos, los bloques de CLAUDE.md, el despliegue de Codex en este archivo— no
 # corre, y nada se escribe en la carpeta de Claude Code: lo que va al estado va a la carpeta del estado de la casa propia.
 # Las skills de esa máquina llegan por la versión bajada y harness.js las enlaza en la carpeta de Codex. Cada parte
-# saltada lleva la guarda `CLAUDE_OFF`.
+# saltada lleva la guarda `CLAUDE_OFF`. (Este archivo no corre las suites rápidas del .sh, con o sin Claude Code: varias
+# de esas pruebas todavía no corren en Windows.)
 
 # -Enlace es el nombre viejo de -Link (en castellano): sigue andando por el alias de PowerShell hasta el
 # retiro, y su uso se anota (más abajo, con la biblioteca ya cargada).
@@ -606,11 +606,6 @@ if (-not $Link) {
         $readSteps += @{ id = 'skills'; script = 'skills-dir'; args = @('--skills', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
         $readSteps += @{ id = 'source'; script = 'skills-dir'; args = @('--source', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
     }
-    # de dónde salen las suites rápidas: la regla para quien LEE (con la variable), como en el .sh; con -Check no corren
-    if (-not $Check -and (Test-Path $SkillsDirJs)) {
-        $readSteps += @{ id = 'utskills'; script = 'skills-dir'; args = @('--skills') }
-        $readSteps += @{ id = 'utsource'; script = 'skills-dir'; args = @('--source') }
-    }
     if (Test-Path $cfgJs) {
         $readSteps += @{ id = 'integrations'; script = 'tycon-config'; args = @('integrations', '--json') }
         $readSteps += @{ id = 'profile'; script = 'tycon-config'; args = @('get', 'install.profile') }
@@ -841,7 +836,9 @@ function Invoke-HarnessFromExisting {
     # lanzado POR harness.js: el estado lo escribe quien lo lanzó (se escribiría dos veces, con una copia de más)
     if ($env:TYCON_HARNESS_LOCK_HELD -eq '1') { return }
     $harnessJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'harness.js'
-    $stateFile = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'harness-state.json'
+    # el estado, en la carpeta que da la regla (en la casa propia, aunque haya Claude Code): sin ella no se sabe si falta
+    if (-not $StateDir) { return }
+    $stateFile = Join-Path $StateDir 'harness-state.json'
     if (-not (Test-Path $harnessJs) -or (Test-Path $stateFile)) { return }
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) { return }
     $prev = $env:TYCON_HARNESS_LOCK_HELD
@@ -923,7 +920,7 @@ if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
         if (Test-Path $tpManifest) {
             $tpLook = if ($CheckInClone) { $CheckInClone } else { $AgentSkillsRepo }
             $tpWhere = if ($CheckInClone) { Join-Path $ClaudeDir 'agent-skills' } else { $AgentSkillsRepo }
-            $tpStateFile = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'third-party-state.json'
+            $tpStateFile = Join-Path $StateDir 'third-party-state.json'
             $tpDone = @{}
             if (Test-Path $tpStateFile) {
                 foreach ($e in @(((Get-Content -Raw -Path $tpStateFile | ConvertFrom-Json).entries).PSObject.Properties)) { if ($e.Value.complete) { $tpDone[$e.Name.TrimEnd('/')] = $true } }
@@ -940,7 +937,7 @@ if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 # las skills de terceros que quedaron en su lugar, según el estado del paso (apagado el paso, no se anotan)
 if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
     try {
-        $tpState = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'third-party-state.json'
+        $tpState = Join-Path $StateDir 'third-party-state.json'
         if (Test-Path $tpState) {
             $tpEntries = (Get-Content -Raw -Path $tpState | ConvertFrom-Json).entries
             foreach ($e in @($tpEntries.PSObject.Properties)) {
@@ -1450,15 +1447,19 @@ if ($StateDir -and (Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH
 $upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
 $cfJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'collect-findings.js'
 $enOrdenJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'run-in-order.js'
-$tandaPuede = $StateDir -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $enOrdenJs)
+$tandaPuede = $StateDir -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$'
 $subir = $tandaPuede -and (Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and (Test-Path $upJs)
-$recolectar = $tandaPuede -and $ProfileFull -and $env:TYCON_NO_COLLECT_FINDINGS -ne '1' -and (Test-Path $cfJs)
+# la recolección necesita el lanzador en orden (sin él, en una copia parcial, la subida sale sola, como antes)
+$recolectar = $tandaPuede -and $ProfileFull -and (Get-LegacyEnv 'TYCON_NO_COLLECT_FINDINGS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and (Test-Path $cfJs) -and (Test-Path $enOrdenJs)
 if ($subir -or $recolectar) {
     $upLog = Join-Path $StateDir 'upload-runs.log'
     $cfLog = Join-Path $StateDir 'collect-findings.log'
-    $tanda = @($enOrdenJs, $script:NodeProgram)
-    if ($recolectar) { $tanda += @('--', $cfJs, '--budget-ms', '60000', '--log', $cfLog) }
-    if ($subir) { $tanda += @('--', $upJs, '--budget-ms', '90000', '--log', $upLog) }
+    $upArgs = @($upJs, '--budget-ms', '90000', '--log', $upLog)
+    if (Test-Path $enOrdenJs) {
+        $tanda = @($enOrdenJs, $script:NodeProgram)
+        if ($recolectar) { $tanda += @('--', $cfJs, '--budget-ms', '60000', '--log', $cfLog) }
+        if ($subir) { $tanda += @('--') + $upArgs }
+    } else { $tanda = $upArgs }
     $que = (@(if ($recolectar) { 'la recolección de hallazgos' }) + @(if ($subir) { 'la subida de ejecuciones al buzón' })) -join ' y '
     try {
         New-Item -ItemType Directory -Force -Path $StateDir -ErrorAction Stop | Out-Null
@@ -1470,64 +1471,6 @@ if ($subir -or $recolectar) {
         if ($subir) { Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de ejecuciones" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue }
         Start-Process @tandaStart -ErrorAction Stop
     } catch { Write-Host "!! tycon: no pude lanzar $que ($($_.Exception.Message))" }
-}
-
-# -- la suite de la capa determinista (espejo del .sh): las suites rápidas de las skills, en cada arranque --
-# Sin esto, una regresión de los ganchos o de los portones de las skills no avisa en Windows. Las mismas suites que el .sh
-# (la lista la ata windows-startup-batch.test.js). De DÓNDE salen lo dice la regla para quien lee (la variable › el propio
-# clon si es unido › lo instalado), y la línea del rojo dice de qué raíz salieron. Por quick-suite-run.js, nunca con un
-# `node --test` suelto: corre sólo si cambió lo que prueban desde la última corrida verde, con tope de núcleos y una sola
-# corrida por máquina. Con -Check no corren (dejarían archivos en la carpeta del estado).
-$UnitTests = @(
-    'tycon-pipeline/scripts/tests/story-discovery.test.js'
-    'tycon-pipeline/scripts/tests/story-gate.test.js'
-    'tycon-pipeline/scripts/tests/advisor-ledger.test.js'
-    'tycon-pipeline/scripts/tests/config-lint.test.js'
-    'tycon-pipeline/scripts/tests/navigation-drift.test.js'
-    'tycon-pipeline/scripts/tests/ledger-honesty.test.js'
-)
-$quickSuiteJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'quick-suite-run.js'
-function Get-ReaderSkills([string]$Id, [string]$Field) {
-    # lo que trajo la tanda de lectura; si no lo trajo, la misma pregunta suelta. Devuelve @(rc, primera línea)
-    $b = if ($script:ReadBatch) { $script:ReadBatch[$Id] } else { $null }
-    if ($b) {
-        $out = @(Split-NativeLines (Get-ChunkText $b.Chunks 'o')); $rc = $b.Rc
-        if ($rc -ne 0 -and -not $out.Count) { $out = @(Split-NativeLines (Get-ChunkText $b.Chunks 'e')) }
-    } else {
-        $eapR = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        try { $out = @(& node $SkillsDirJs $Field 2>&1 | ForEach-Object { "$_" }); $rc = $LASTEXITCODE }
-        catch { $out = @("$($_.Exception.Message)"); $rc = -1 } finally { $ErrorActionPreference = $eapR }
-    }
-    return @($rc, $(if ($out.Count) { "$($out[0])".Trim() } else { '' }))
-}
-if (-not $Check -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    $utSkills = $null
-    if (-not (Test-Path $SkillsDirJs)) {
-        # sin la biblioteca (copia parcial): las instaladas, como siempre (sin Claude Code, ninguna)
-        if (-not $ClaudeOff) { $utSkills = Join-Path (Join-Path $ClaudeDir 'agent-skills') 'skills' }
-    } else {
-        $r = Get-ReaderSkills 'utskills' '--skills'
-        if ($r[0] -eq 0 -and $r[1]) { $utSkills = $r[1] }
-        else { Write-Host "⚠ tycon: la suite de la capa determinista NO corrió — $(if ($r[1]) { $r[1] -replace '^skills-dir: ', '' } else { 'scripts/lib/skills-dir.js no contestó' })" }
-    }
-    $utPresent = @(if ($utSkills) { $UnitTests | ForEach-Object { Join-Path $utSkills ($_ -replace '/', [IO.Path]::DirectorySeparatorChar) } | Where-Object { Test-Path -LiteralPath $_ } })
-    if ($utPresent.Count -and -not (Test-Path $quickSuiteJs)) {
-        Write-Host "⚠ tycon: la suite de la capa determinista NO corrió — falta $quickSuiteJs"
-    } elseif ($utPresent.Count) {
-        # la carpeta del estado; en una copia parcial sin ella, una carpeta temporal
-        $qsState = if ($StateDir) { $StateDir } else { Join-Path ([IO.Path]::GetTempPath()) 'tycon-quick-suite' }
-        $watch = Join-Path (Join-Path $utSkills 'tycon-pipeline') 'scripts'
-        $eapQ = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        $qsRc = 0
-        try { & $script:NodeProgram $quickSuiteJs --state-dir $qsState --watch $watch @utPresent *> $null; $qsRc = $LASTEXITCODE }
-        catch { $qsRc = -1 } finally { $ErrorActionPreference = $eapQ }
-        if ($qsRc -ne 0) {
-            $utFrom = 'installed'
-            if (Test-Path $SkillsDirJs) { $s = Get-ReaderSkills 'utsource' '--source'; $utFrom = if ($s[0] -eq 0 -and $s[1]) { $s[1] } else { 'sin dato' } }
-            Write-Host "🛑 tycon: la suite de la capa determinista FALLÓ tras el pull (skills: $utSkills · salió de: $utFrom) — hooks/gates pueden tener una regresión."
-            Write-Host "   Diagnóstico: node --test $($utPresent -join ' ')"
-        }
-    }
 }
 
 # una linea con el estado de las ocho integraciones

@@ -1,13 +1,14 @@
 'use strict';
 // windows-startup-batch.test.js — lo que el arranque de Windows corre como el del .sh: la recolección de hallazgos antes de
-// la subida, cada una con su registro, y las mismas suites rápidas de las skills.
+// la subida, cada una con su registro.
 //
 // Lo que no se puede perder:
 //   · el lanzador en orden (run-in-order.js) corre cada comando después del anterior, y uno que falla no corta los demás:
 //     la subida corre aunque la recolección no encuentre nada;
 //   · la recolección con `--log <archivo>` AGREGA su salida al registro (un proceso de fondo de PowerShell no puede
 //     agregar a un archivo) y no escribe nada en la consola;
-//   · el .ps1 corre las mismas suites rápidas que el .sh: una lista de más o de menos en un lado no se ve en el otro.
+//   · si el programa no se encuentra por su nombre (un `node` que sólo existe como node.cmd), corre con el Node de este
+//     proceso: la subida no se pierde sin dejar rastro.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -58,23 +59,14 @@ test('W2 Recoleccion_ConLog_AgregaAlRegistro_YNoEscribeEnLaConsola', (t) => {
   assert.match(texto, /no encontré ningún repo/, 'el motivo queda en el registro');
 });
 
-/** Las suites rápidas del .sh (el bloque `UNIT_TESTS=( … )`) y las del .ps1 (`$UnitTests = @( … )`), relativas a las skills. */
-function listas() {
-  const sh = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
-  const ps1 = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.ps1'), 'utf8');
-  const enSh = sh.match(/UNIT_TESTS=\(\n([\s\S]*?)\n\s*\)/);
-  const enPs1 = ps1.match(/\$UnitTests = @\(\r?\n([\s\S]*?)\r?\n\s*\)/);
-  return {
-    sh: enSh ? [...enSh[1].matchAll(/"\$UT_SKILLS\/([^"]+)"/g)].map((x) => x[1]) : null,
-    ps1: enPs1 ? [...enPs1[1].matchAll(/'([^']+\.test\.js)'/g)].map((x) => x[1]) : null,
-  };
-}
-
-// 🔴 Falla con: el .ps1 sin las suites rápidas (una regresión de las skills no avisa en Windows), o con otra lista.
-test('W3 SuitesRapidas_ElPs1CorreLasMismasQueElSh', () => {
-  const { sh, ps1 } = listas();
-  assert.ok(sh && sh.length >= 6, `la lista del .sh: ${JSON.stringify(sh)}`);
-  assert.ok(ps1, 'el .ps1 no tiene la lista $UnitTests = @( … )');
-  assert.deepStrictEqual(ps1, sh);
-  assert.match(fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.ps1'), 'utf8'), /quick-suite-run\.js/, 'el .ps1 las corre por quick-suite-run.js');
+// 🔴 Falla con: el lanzador que busca `node` por su nombre sin shell: con un Node que sólo existe como node.cmd no lo
+// encuentra y, sin salida, no queda rastro de que la subida no corrió.
+test('W3 EnOrden_ProgramaQueNoSeEncuentra_UsaElNodeDeEsteProceso', (t) => {
+  const d = carpeta(t);
+  const marca = path.join(d, 'corrio.txt');
+  const a = path.join(d, 'a.js');
+  fs.writeFileSync(a, `require('fs').writeFileSync(${JSON.stringify(marca)}, 'si');`);
+  const r = spawnSync(process.execPath, [ORDEN, path.join(d, 'no-existe-node'), '--', a], { encoding: 'utf8', env: env(d) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(fs.readFileSync(marca, 'utf8'), 'si');
 });

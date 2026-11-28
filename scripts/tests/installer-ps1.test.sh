@@ -1651,24 +1651,6 @@ w4_defects_section() {
   if [ "$rc" -eq 0 ] && grep -q 'repo' "$cf" 2>/dev/null && grep -q 'sin_config' "$up" 2>/dev/null && [ -n "$ncf" ] && [ -n "$nup" ] && [ "$ncf" -lt "$nup" ]; then
     ok "(x) la recolección de hallazgos: de fondo, antes de la subida, con su registro"
   else no "(x) la recolección de hallazgos (rc $rc): registro $([ -f "$cf" ] && head -c 160 "$cf" || echo 'no quedó') · orden recolección ${ncf:-?} / subida ${nup:-?} · $(brief "$W/x4d.out" 200)"; fi
-  # (x4e) las suites rápidas de las skills, como en el .sh: con una rota en las skills que da la regla para quien lee,
-  # el arranque lo dice con su línea y de qué raíz salieron; con las seis sanas, calla. 🔴 Sin las suites en el .ps1,
-  # la rota no se ve.
-  local qs="$W/clone-qs" t
-  cp -R "$CLONE" "$qs"; mkdir -p "$qs/skills/tycon-pipeline/scripts/tests"
-  for t in story-discovery story-gate advisor-ledger config-lint navigation-drift ledger-honesty; do
-    printf "'use strict';\nrequire('node:test')('sana', () => {});\n" > "$qs/skills/tycon-pipeline/scripts/tests/$t.test.js"
-  done
-  h="$(new_home w4-rapidas-sanas)"
-  LAB_INSTALLER="$qs/scripts/install-tycon-hooks.ps1" installer "$h" > "$W/x4e-sanas.out" 2>&1; rc=$?
-  local sanas_rc="$rc"
-  printf "'use strict';\nrequire('node:test')('canario: rota a propósito (installer-ps1)', () => { throw new Error('canario'); });\n" > "$qs/skills/tycon-pipeline/scripts/tests/ledger-honesty.test.js"
-  h="$(new_home w4-rapidas-rota)"
-  LAB_INSTALLER="$qs/scripts/install-tycon-hooks.ps1" installer "$h" > "$W/x4e-rota.out" 2>&1; rc=$?
-  if [ "$sanas_rc" -eq 0 ] && ! grep -q 'capa determinista' "$W/x4e-sanas.out" && [ "$rc" -eq 0 ] \
-     && grep -q "la suite de la capa determinista FALLÓ tras el pull (skills: $qs/skills · salió de: " "$W/x4e-rota.out" && grep -q 'Diagnóstico: node --test .*ledger-honesty.test.js' "$W/x4e-rota.out"; then
-    ok "(x) las suites rápidas de las skills: con una rota el arranque lo dice y de dónde salieron; sanas, calla"
-  else no "(x) las suites rápidas (sanas rc $sanas_rc, rota rc $rc): sanas $(grep 'capa determinista' "$W/x4e-sanas.out" | head -1 | cut -c1-160) · rota $(grep -A1 'capa determinista' "$W/x4e-rota.out" | head -2 | tr '\n' ' ' | cut -c1-240) · $(brief "$W/x4e-rota.out" 160)"; fi
   # (x4f) el chequeo de sqlite3 corre con el PowerShell 7 de la misma consola, también fuera de Windows: con engram
   # prendido, sin sqlite3 y sin instalar, deja su sello. 🔴 Lanzado con `pwsh.exe`, fuera de Windows no corría.
   h="$(new_home w4-sqlite)"; mkdir -p "$W/bin-sqlite"
@@ -2317,7 +2299,8 @@ rm -f "$T/upload-started" "$T/upload-done"
 HUP="$(new_home ab-upload)"; ab_installed "$HUP" "$CLONE_UP"
 ab_run "$CLONE_UP" "$HUP" upload TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0
 N_UP="$(count_of upload-runs.js)"
-N_REST="$(grep -c -v -x -F -- 'upload-runs.js' "$T/ab-upload.counted" 2>/dev/null || true)"
+# lo de fondo es la tanda: el lanzador en orden (run-in-order.js) y la subida que lanza; no cuentan para el tope
+N_REST="$(grep -c -v -x -F -e 'upload-runs.js' -e 'run-in-order.js' "$T/ab-upload.counted" 2>/dev/null || true)"
 # la subida se lanza: hasta 5 s para que el proceso de fondo llegue a escribir que arrancó
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$T/upload-started" ] && break; sleep 0.5; done
 if [ "$AB_RC" = 0 ] && [ "$N_UP" = 1 ] && [ -f "$T/upload-started" ] && [ ! -f "$T/upload-done" ] && [ "${N_REST:-99}" -le "$AB_CAP" ]; then
@@ -2326,8 +2309,8 @@ else no "T4b la subida de ejecuciones (rc $AB_RC): lanzada $N_UP vez/veces, $( [
 [ -f "$T/upload-started" ] && kill "$(cat "$T/upload-started")" 2>/dev/null
 # en Windows, oculta y desprendida: el bloque de la subida la lanza con Start-Process y WindowStyle Hidden (fuera de
 # Windows no hay ventana que ocultar; se lee el guion, como el resto de las pruebas por lectura de esta suite)
-UPBLOCK="$(awk '/upload-runs\.js.$/{f=1} f{print} /Start-Process @upStart/{exit}' "$CLONE/scripts/install-tycon-hooks.ps1")"
-if printf '%s' "$UPBLOCK" | grep -F "\$upStart.WindowStyle = 'Hidden'" >/dev/null && printf '%s' "$UPBLOCK" | grep -F 'Start-Process @upStart' >/dev/null \
+UPBLOCK="$(awk '/upload-runs\.js.$/{f=1} f{print} /Start-Process @tandaStart/{exit}' "$CLONE/scripts/install-tycon-hooks.ps1")"
+if printf '%s' "$UPBLOCK" | grep -F "\$tandaStart.WindowStyle = 'Hidden'" >/dev/null && printf '%s' "$UPBLOCK" | grep -F 'Start-Process @tandaStart' >/dev/null \
    && ! printf '%s' "$UPBLOCK" | grep -E "^[[:space:]]*& .*(NodeProgram|node)" >/dev/null; then
   ok "T4b en Windows la subida sale con Start-Process y la ventana oculta, nunca con & node (que el arranque esperaría)"
 else no "T4b el bloque de la subida no la lanza oculta y desprendida: $(printf '%s' "$UPBLOCK" | head -3 | tr '\n' ' ' | cut -c1-200)"; fi
