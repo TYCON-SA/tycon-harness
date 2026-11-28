@@ -377,7 +377,8 @@ const HONDO_DE_POSICION = 32;
 
 /**
  * Si `t[p]` está donde el shell espera un comando (`{}`, o `{ for: true }` detrás de `for`; null si no): al principio,
- * detrás de `;`, `&`, `|`, un renglón o `$(`, o detrás de un `!`, `{`, `(` o palabra de bloque que también lo están
+ * detrás de `;`, `&`, `|` o un renglón, o detrás de un `!`, `{`, `(` o palabra de bloque que también lo están; nunca
+ * detrás de `$(` (`$(((2/2)))` es una cuenta de la ruta, no un comando: se lee con lo de su palabra)
  * (en `echo ! ((…))` el `!` es un argumento). Nunca escapado ni detrás de una redirección (`>|`, `<&`, `<(`).
  */
 function dondeEmpiezaUnComando(t, p, hondo = 0) {
@@ -391,8 +392,7 @@ function dondeEmpiezaUnComando(t, p, hondo = 0) {
   if (antes === '\n' || antes === ';') return {};
   if (antes === '&' || antes === '|') return /[<>&|]/.test(dos) && !(antes === dos) ? null : {};
   if (antes === '(') {
-    if (dos === '$') return t[k - 3] === '\\' ? null : {};
-    if (/[<>=]/.test(dos)) return null;
+    if (/[$<>=]/.test(dos)) return null;
     return dondeEmpiezaUnComando(t, k - 1, hondo + 1);
   }
   if (antes === '!' || antes === '{') return /[\s;&|()]/.test(dos) || k === 1 ? dondeEmpiezaUnComando(t, k - 1, hondo + 1) : null;

@@ -996,10 +996,11 @@ test('T47 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compa
 // subshell que sólo se parece a una cuenta, dejada de leer.
 test('T48 CuentaSinPesos_NoEsUnDestino @A213 — el > de (( … )) compara; lo que escribe al lado se sigue leyendo', () => {
   const c = corral();
+  fs.mkdirSync(path.join(c.dir, '1'));
   for (const cmd of [`(( x > ${H} ))`, `(( i++ ))`, `if (( x >= ${H} )); then echo si; fi`,
     `for ((i=0;i<${H};i++)); do echo $i; done`, `(( x > ${H} )) && echo si`, `while (( x < ${H} )); do break; done`,
     `echo a; (( x > ${H} ))`, `! (( x > ${H} ))`, `for ((i=5;i>${H};i--)); do echo $i; done`, `{ (( x > ${H} )); }`,
-    `x=$( (( x > ${H} )) && echo 1 )`, `until (( x > ${H} )); do break; done`, `time (( x > ${H} ))`, `(((x > ${H})))`,
+    `until (( x > ${H} )); do break; done`, `time (( x > ${H} ))`, `(((x > ${H})))`,
     `if true; then (( x > ${H} )); fi`, `! (( x > ${H} )) || echo no`, `if ! (( x > ${H} )); then :; fi`]) pasa(c, cmd);
   for (const cmd of [`(( 1 )) > ${H}`, `echo $(( 1 > 0 )) > ${H}`, `( cat README.md > ${H} )`,
     `((cat README.md > ${H}) )`, `( (cat README.md > ${H}) )`, `((cat README.md) > ${H})`, `(( x > 0 )); cp README.md ${H}`,
@@ -1015,6 +1016,8 @@ test('T48 CuentaSinPesos_NoEsUnDestino @A213 — el > de (( … )) compara; lo q
     // el `!`, el `{`, el `(` o la palabra de bloque de delante tienen que abrir un comando: detrás de `echo` son argumentos
     `( ( noglob echo ! ((x > ${H}))`, `( ( noglob echo if ((x > ${H}))`, `( ( noglob echo (((x > ${H})))`,
     `( ( noglob : for ((a; cp README.md ${H}; b))`, `echo { ((x > ${H}))`, `echo do ((x > ${H}))`,
+    // el `((` pegado a `$(` es la cuenta `$(((…)))` de la ruta destino, no un comando (revisión de Fable de la mezcla)
+    `echo x > $(((2/2)))/../${H}`, `echo x >> $(((2/2)))/../${H}`, `echo x &> $(((2/2)))/../${H}`,
   ]) frena(c, cmd);
   // en PowerShell (y en lo que corre Monitor) `((x > f))` escribe: la cuenta se lee así sólo en la herramienta Bash
   for (const herramienta of ['PowerShell', 'Monitor']) {
