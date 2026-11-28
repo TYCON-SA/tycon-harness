@@ -774,3 +774,20 @@ test('T12b KeepFree_RevisionLlena_NadaQueJustificar @story-8.326 @ac-12', () => 
   assert.match(r.message, /revisión/);
   assert.strictEqual(FS.current(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), t.nowMs).record, null, 'no anotó nada');
 });
+
+// 🔴 Falla con: comparar carpetas con fs.realpathSync común, que no corrige mayúsculas. En Windows (y en un disco de Mac,
+//    que tampoco las distingue) una sesión puede anotar su carpeta con otra mayúscula que la del disco: `c:\lab\proyecto`
+//    contra `C:\lab\proyecto`. La coordinación no la reconocía como la misma y abría otra copia (A85).
+test('A85 Coordinacion_CarpetaConOtraMayuscula_EsLaMisma', (t) => {
+  const C = require('../tools/coordination.js');
+  const raiz = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'a85-')));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  const real = path.join(raiz, 'Proyecto', 'Sub');
+  fs.mkdirSync(real, { recursive: true });
+  const otra = path.join(raiz, 'proyecto', 'sub');
+  // sólo tiene sentido donde el disco no distingue mayúsculas (Windows y la Mac de siempre); en Linux son otra carpeta
+  if (!fs.existsSync(otra)) return t.skip('el disco distingue mayúsculas: son dos carpetas');
+  const row = { name: 'Norte', cwd: real, at: 1000 };
+  const s = { name: 'Norte', cwd: otra, startedAt: 1000 };
+  assert.strictEqual(C.launchedMatches(row, s), true, 'la misma carpeta escrita con otra mayúscula es la misma sesión');
+});
