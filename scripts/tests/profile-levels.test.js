@@ -80,7 +80,7 @@ test('niveles T10 Perfil_ConEspacios_Rechaza', () => {
 // niveles T7 Perfil_Rutina_Pasa
 // 🔴 Falla con: la rutina rechazada, o `off` y un valor solo leídos como una firma.
 test('niveles T7 Perfil_Rutina_Pasa', () => {
-  for (const v of [['plan-approval', 'extra-round', 'refresh-after-main', 'pending-approval', 'save', 'adhoc-lane'],
+  for (const v of [['plan-approval', 'compare-waiver', 'refresh-after-main', 'pending-approval', 'save', 'adhoc-lane'],
     'plan-approval', 'off', ['off'], []]) {
     assert.deepStrictEqual(check(perfil(v)).rejected, [], JSON.stringify(v));
   }
@@ -112,10 +112,15 @@ test('niveles T8 Perfil_Comando_SalidasYMensajes', () => {
     assert.match(r.stderr, /no se pudo leer/);
 
     const otro = path.join(dir, 'otro.json');
-    fs.writeFileSync(otro, JSON.stringify(perfil(['extra-round'])));
+    fs.writeFileSync(otro, JSON.stringify(perfil(['compare-waiver'])));
     r = correr(['--profile', otro], dir);
     assert.strictEqual(r.status, 0, r.stderr);
     assert.match(r.stdout, /sólo delega rutina/);
+    // la vuelta extra pasado el tope la firma el dueño; un perfil que la delega, delega de más
+    fs.writeFileSync(otro, JSON.stringify(perfil(['extra-round'])));
+    r = correr(['--profile', otro], dir);
+    assert.strictEqual(r.status, 1, r.stdout);
+    assert.match(r.stderr, /extra-round.*nivel 2/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

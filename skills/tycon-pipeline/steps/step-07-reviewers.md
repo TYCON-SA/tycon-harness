@@ -558,11 +558,11 @@ Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuel
 Lo que cambió adentro de un archivo de código (`.js`, `.ts`, `.tsx`, `.cs`) lo decide `lib/change-kind.js` contra el sello de la última vuelta cerrada, con la regla de `lib/review-change-policy.js`:
 - **sólo comentarios o espacios** no pide otra vuelta; una directiva (`eslint-disable`, `@ts-ignore`) que cambia o se mueve, sí;
 - **sólo textos** (una cadena, una plantilla, el texto de JSX) pide la **vuelta chica**: `smart-reloop` devuelve sólo el revisor de seguridad (`mode: "small-round"`), pasa el tope sin vuelta extra ni firma y no pide la nota de repensar. Una cadena puede ser una consulta o una ruta: alguien la mira;
-- **código**, o cualquier duda, pide la vuelta de siempre; pasado el tope, la vuelta extra con su firma.
+- **código**, o cualquier duda, pide la vuelta de siempre; pasado el tope, la vuelta extra con la firma del dueño, o «Preparar el pull request» da los comandos para volver a lo revisado o llevarlo a una historia de arreglo.
 
 Que los textos lleven la vuelta chica, o ninguna, lo decide el dueño: es una línea de `lib/review-change-policy.js`.
 
-Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
+Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores. Una vuelta sin código se cierra sola, también pasado el tope: sin revisores, sin firma y sin nota de repensar. Tampoco se cierra sola con algo que cuenta siempre aunque no sea código (`cuentaSiempre` de `lib/reloop-code.js`): una instrucción para un agente (skills, agents, steps, guides, un CLAUDE.md o AGENTS.md), una imagen que compara una prueba visual, lo sensible. «Preparar el pull request» usa el mismo lector y, de lo que el re-loop no revisa, perdona sólo lo que no se ejecuta: una prueba del proyecto, una imagen suelta, y la guía, el informe o una imagen de la historia en su carpeta qa, fuera de una carpeta que la app sirve o compila. Lo demás (una nota suelta, la configuración, el estado del sprint, la historia) sigue sus reglas de papeleo.
 
 La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos y desde cuándo) en cada cambio y cada cierre de paso, y el cartel la lee: dice «falta revisar lo cambiado después de los revisores (vuelta N, M archivos)» y cuenta los minutos desde el primer cambio sin revisar.
 
@@ -599,11 +599,10 @@ iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vue
 tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
-  preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
-  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
-  el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
-  ventana, y el aviso del tope lo dice: no la firma una persona ni hace falta el dueño; la corre la propia sesión. El
-  cierre de «Hallazgos» lo dice igual. Eximir el crítico sigue siendo de una persona.
+  preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<el dueño>"`, que el dueño aprueba en la
+  ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). La
+  vuelta extra no es trámite ni la firma la coordinadora por delegación, aunque el perfil la liste: pasado el tope, la
+  firma el dueño. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.

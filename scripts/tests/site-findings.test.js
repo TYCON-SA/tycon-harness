@@ -169,7 +169,7 @@ test('T31 Mantenimiento_TresBloques_PorQuienTienePelota — te toca decidir, esp
       tarea: { numero: '77', enlace: 'https://dev.acme.example/acme/_workitems/edit/77' }, asignado: null, motivo: null }]);
     // y la vulnerabilidad, con la tarea de su proyecto armada con la organización de operations.json
     assert.deepStrictEqual(j.marcha.vulnerabilidades, [{ id: 'dep-uno', paquete: 'pkg-uno', severidad: 'high', repos: 1, desde: '2026-10-19', volvio: null,
-      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false, sinNombre: false, vigente: true }], motivo: null }]);
+      tareas: [{ proyecto: 'Producto X', numero: '5002', enlace: 'https://dev.azure.com/acme/Producto%20X/_workitems/edit/5002', asignado: null, sinAsignar: false, sinNombre: false, vigente: true, cerrada: false }], motivo: null }]);
     // la página: tarjetas, no tabla; los números son enlaces; nada de lo que no se muestra
     const p = await h.pedir('/mantenimiento', { cookie: lead });
     assert.strictEqual(p.status, 200);
@@ -1376,6 +1376,33 @@ test('T6 2.79-Mantenimiento_TareasDeProyectosSinElPaquete_SeMuestranAparte @stor
   });
 });
 
+// 🔴 Falla con: una ficha sin `repos:` (no dice dónde vive el paquete) mandaba todas sus tareas a «esperan su cierre: el
+//    paquete ya no está en sus proyectos», al lado de «Te toca decidir» la misma vulnerabilidad (A93, recorrido F21). Sin
+//    la lista no se sabe dónde vive: las tareas son vigentes, como con un repo que no declara su proyecto.
+// 🔴 Falla con: la tarea de una vulnerabilidad que la noche ve cerrada (el Inicio la cuenta en «Tareas cerradas con la
+//    vulnerabilidad viva») salía en Mantenimiento como si siguiera abierta, «asignada a…» (A99b).
+test('A99b Mantenimiento_TareaCerradaConLaVulnerabilidadViva_LoDice', { timeout: 60000 }, async () => {
+  const ficha = 'id: dep-cuatro\ndetectado: 2026-10-16\nveredicto: util\npaquete: pkg-cuatro\nseveridad: high\nnoches: 6\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5003\n';
+  const foto = JSON.stringify({ fecha: '2026-10-22', resumen: { rubros: { pedidos_cerrados_con_vivas: { valor: [{ ficha: 'dep-cuatro', proyecto: 'Producto X', pedido: 5003, clase: 'arreglado' }], motivo: null } } } });
+  await conSitio({ extra: { 'inbox/dependencies/promoted/dep-cuatro.yaml': ficha, '.dashboard/dependencias/dependencias-2026-10-22.json': foto } }, async ({ h, lead, lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-cuatro');
+    assert.strictEqual(v.tareas[0].cerrada, true, 'la tarea se sabe cerrada');
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
+    const fila = (/<li class="m-vuln">[\s\S]*?pkg-cuatro[\s\S]*?<\/li>/.exec(p.texto) || [''])[0];
+    assert.match(fila, /Tarea 5003 \(Producto X\)<\/a> · cerrada con la vulnerabilidad viva/);
+    assert.doesNotMatch(fila, /asignada a/);
+  });
+});
+
+test('A93 Mantenimiento_FichaSinRepos_SusTareasSonVigentes', { timeout: 60000 }, async () => {
+  const ficha = 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\npedidos:\n  - Producto X: 5002\n';
+  const repos = JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm' }] });
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
+    assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true]], 'sin repos no se sabe dónde vive: vigente');
+  });
+});
+
 // 2.79-CadaCausaTieneSuNombreEnIngles @story-2.79 @ac-35
 // 🔴 Falla con: un código de causa sin su texto en inglés, un castellano distinto del que escribe la noche, o dos
 //    códigos con el mismo nombre que comparten una sola clave.
@@ -1848,4 +1875,17 @@ test('A208 Mantenimiento_BarraFija_UnaFilaEnElTelefono', () => {
   assert.match(regla[1], /flex-wrap:nowrap/, 'una sola fila');
   assert.match(regla[1], /overflow-x:auto/, 'si no entra, se desplaza de costado');
   assert.match(tel, /\.m-barra \.btn\{[^}]*white-space:nowrap/, 'cada botón en un renglón');
+});
+
+// 🔴 Falla con (A116, A119; recorrido F21): «Arreglos en curso» remitía al historial de decisiones aunque la página no lo
+//    tuviera; y una vulnerabilidad con una sola tarea esperando su cierre decía «1 tareas».
+test('A116-A119 Mantenimiento_NoRemiteALoQueNoEstaYConcuerda', { timeout: 60000 }, async () => {
+  const ficha = 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto Y: 5003\n';
+  const repos = JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm' }] });
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ h, lead }) => {
+    const texto = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.doesNotMatch(texto, /1 tareas/);
+    assert.match(texto, /<summary>1 tarea<\/summary>/);
+    if (!/Historial de decisiones/.test(texto)) assert.doesNotMatch(texto, /historial de decisiones/i, 'no remite a un bloque que no está');
+  });
 });

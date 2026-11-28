@@ -15,7 +15,7 @@
  *   · Ningún texto visible se escribe acá: sale de la tabla de texts.js, en el idioma del pedido
  *     (`ctx.idioma`; sin él, castellano). Las funciones de filas reciben `idioma` por el mismo motivo.
  */
-const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
+const { esc, chip, umbralValido, claveDeProducto } = require('../nightly/dashboard/common.js');
 const fichasDelTablero = require('./tabs/cards.js');
 const { compare: compararVersiones } = require('../setup/harness/version-order.js');
 const { t, TEXTOS } = require('./texts.js');
@@ -187,7 +187,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   for (const p of productos) for (const k of p.proyectos || []) cuantos.set(k, (cuantos.get(k) || 0) + 1);
   const dep = m.despliegues;
   const vig = m.vigilante;
-  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map((x) => String(x).toLowerCase().replace(/\s+/g, '')) : []);
+  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map(claveDeProducto) : []);
   const contar = (stories) => {
     const r = { en_curso: 0, en_revision: 0, bloqueadas: 0 };
     for (const s of stories) {
@@ -244,7 +244,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
       por_proyecto: Object.fromEntries((p.proyectos || []).map((k) => { const c = contar(frescasDe(k).flatMap((s) => s.stories || [])); return [k, { en_curso: c.en_curso, paradas: c.paradas, sin_medir: c.sin_medir }]; })),
       despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? motivoDeDespliegue(d.motivo, idioma) : null }
         : { estado: 'no_medido', motivo: medida(dep) ? T('proyectos.despliegueSinProducto') : conFecha(dep, idioma) },
-      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(String(p.producto).toLowerCase().replace(/\s+/g, '')) : null,
+      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(claveDeProducto(p.producto)) : null,
       vivas,
       paridad: paridadDe(p),
     };
@@ -269,7 +269,16 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
   // banco, suites y examen los deja el proceso de la noche del tablero: una foto vieja lo nombra
   const sinMedir = (f) => `${cf(f)}${f && f.codigo === 'fuente_vieja' ? ` · ${T('arnes.laDejaElTablero')}` : ''}`;
   const b = m.banco;
-  lineas.push({ clave: 'banco', titulo: T('arnes.banco'), estado: medida(b) ? 'medido' : 'no_medido', texto: medida(b) ? T(Number.isFinite(b.total) ? 'arnes.bancoRojosDe' : 'arnes.bancoRojos', { n: (b.rojos || []).length, total: b.total, fecha: b.fecha }) : sinMedir(b) });
+  // el banco, como las suites: con la foto de ayer dice cuántos rojos son nuevos desde anoche (el mismo número que Inicio)
+  const textoDelBanco = () => {
+    const n = (b.rojos || []).length;
+    const uno = n === 1 ? 'Uno' : '';
+    const base = T(Number.isFinite(b.total) ? `arnes.bancoRojosDe${uno}` : `arnes.bancoRojos${uno}`, { n, total: b.total, fecha: b.fecha });
+    if (!b.ayer || !Array.isArray(b.ayer.rojos)) return base;
+    const nuevas = nuevos(b.rojos || [], b.ayer.rojos);
+    return `${T(nuevas === 1 ? 'arnes.bancoNuevoUno' : 'arnes.bancoNuevos', { n: nuevas })}, ${base}`;
+  };
+  lineas.push({ clave: 'banco', titulo: T('arnes.banco'), estado: medida(b) ? 'medido' : 'no_medido', texto: medida(b) ? textoDelBanco() : sinMedir(b) });
   const s = m.suites;
   if (medida(s)) {
     // con la foto de ayer, las nuevas desde anoche (el mismo número que Inicio) y la lista con las nuevas marcadas
@@ -409,6 +418,28 @@ const renglonDeLista = (marca, texto) => `<li>${marca || '<span class="li-marca"
 /** «1 día» y «N días». */
 const dias = (n, idioma) => t(idioma, n === 1 ? 'vista.dia' : 'vista.dias', { n });
 
+// el número con su enlace (o, sin enlace, con el texto) y el resto del renglón: [enlace | null, texto], ya escapados
+const conNumeroDe = (u, numero, resto) => (enlace(u) ? [`<a href="${esc(u)}">${numero}</a>`, resto] : [null, `${numero} ${resto}`]);
+/** El renglón de un pull request de la persona: «Proyecto / repo · N días» (el proyecto, como lo ve quien mantiene). */
+function renglonDePr(p, idioma = POR_DEFECTO) {
+  const donde = [p.proyecto, p.repo].filter(Boolean).map(esc).join(' / ');
+  return conNumeroDe(p.enlace, `#${esc(p.numero)}`, [donde, esc(dias(p.dias, idioma))].filter(Boolean).join(' · '));
+}
+// los tipos y estados de las plataformas que se conocen, por su nombre en minúsculas (castellano o inglés); uno que no se
+// conoce va como lo dice la plataforma
+const TIPOS_DE_PLATAFORMA = { bug: 'bug', task: 'tarea', tarea: 'tarea', 'user story': 'historia', 'product backlog item': 'historia', issue: 'tarea', epic: 'epica', feature: 'funcion' };
+const ESTADOS_DE_PLATAFORMA = { new: 'nuevo', nuevo: 'nuevo', active: 'activo', activo: 'activo', resolved: 'resuelto', closed: 'cerrado', removed: 'quitado', 'to do': 'porhacer', doing: 'enCurso', done: 'hecho', committed: 'enCurso', approved: 'aprobado', open: 'activo' };
+const deLaPlataforma = (mapa, prefijo, valor, idioma) => {
+  const k = typeof valor === 'string' ? mapa[valor.trim().toLowerCase()] : null;
+  return k ? t(idioma, `${prefijo}.${k}`) : String(valor || '');
+};
+/** El renglón de una tarea asignada: «título · tipo · estado · N días», con el tipo y el estado en el idioma del sitio. */
+function renglonDePedido(p, idioma = POR_DEFECTO) {
+  const partes = [p.titulo ? esc(p.titulo) : null, esc(deLaPlataforma(TIPOS_DE_PLATAFORMA, 'plataforma.tipo', p.tipo, idioma)) || null,
+    esc(deLaPlataforma(ESTADOS_DE_PLATAFORMA, 'plataforma.estado', p.estado, idioma)) || null, esc(dias(p.dias, idioma))].filter(Boolean);
+  return conNumeroDe(p.enlace, `#${esc(p.id)}`, `${partes.join(' · ')}${p.dependencias ? ` · <b>${esc(t(idioma, 'inicio.dependencias'))}</b>` : ''}`);
+}
+
 /** La lista de los PR abiertos hace más de 2 días (y los sin fecha), a donde lleva su ficha del Inicio de quien mantiene. */
 function prsTrabados(prs, idioma) {
   const T = (k, v) => t(idioma, k, v);
@@ -465,7 +496,7 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       return d.enlace && enlace(d.enlace)
         ? renglonDeLista(`<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`, nombre)
         : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
-          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }))}`);
+          : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr, tarea: d.tarea, proyecto: d.proyecto || '—' }))}`);
     };
     if (def.rubro === 'aceptadas_sin_resolver') {
       out.push(seccion(titulo, suyas.length ? `<ul class="lista">${suyas.map(filaAceptada).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguna'))}</p>`, T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
@@ -494,12 +525,8 @@ function paginaInicio(ctx) {
   // cada renglón: el enlace (o el marcador vacío) y el texto; sin enlace, el número va con el texto
   const lista = (items, fmt) => (items.length ? `<ul class="lista dos">${items.map((x) => renglonDeLista(...fmt(x))).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
   const conNumero = (u, numero, resto) => (enlace(u) ? [`<a href="${esc(u)}">${numero}</a>`, resto] : [null, `${numero} ${resto}`]);
-  const prs = d.prs.estado === 'medido'
-    ? lista(d.prs.lista, (p) => conNumero(p.enlace, `#${esc(p.numero)}`, `· ${esc(p.repo)} · ${esc(dias(p.dias, idioma))}`))
-    : filaNo(T('inicio.tusPrs'), d.prs.motivo);
-  const ped = d.pedidos.estado === 'medido'
-    ? lista(d.pedidos.lista, (p) => conNumero(p.enlace, `#${esc(p.id)}`, `${p.titulo ? `${esc(p.titulo)} ` : ''}· ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(dias(p.dias, idioma))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`))
-    : filaNo(T('inicio.loAsignado'), d.pedidos.motivo);
+  const prs = d.prs.estado === 'medido' ? lista(d.prs.lista, (p) => renglonDePr(p, idioma)) : filaNo(T('inicio.tusPrs'), d.prs.motivo);
+  const ped = d.pedidos.estado === 'medido' ? lista(d.pedidos.lista, (p) => renglonDePedido(p, idioma)) : filaNo(T('inicio.loAsignado'), d.pedidos.motivo);
   const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => [null, esc(p)]) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
   return layout(ctx, T('pestana.inicio'), [
     seccion(T('inicio.tusCorridas'), `<div class="grid">${corr}</div>`),
@@ -715,6 +742,7 @@ const paginaFrenado = ({ desde, idioma = POR_DEFECTO, url = null }) => layout({ 
 const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(ctx), 'cargando.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'cargando.texto'))}</p>`);
 
 module.exports = {
+  renglonDePr, renglonDePedido,
   hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasEstimaciones, filasArnes,
   paginaInicio, paginaProyectos, paginaArnes, inicioJson, listasDeDecision,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,

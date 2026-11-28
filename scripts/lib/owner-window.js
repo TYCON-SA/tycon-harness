@@ -1474,11 +1474,33 @@ function avisarOficina(sesion, casa) {
  * guion de este mismo árbol, corrido en la carpeta del evento. null si no contesta.
  */
 function clasificarConElGuion(palabras, cwd) {
-  const r = require('child_process').spawnSync('bash', [path.join(__dirname, '..', 'ci', 'run-base-controls.sh'), 'classify', ...palabras.slice(2)],
+  // la firma por rango: con la lista que ya armó el cuadro de esta misma decisión, sin armarla otra vez (fila A10)
+  const l = listaDeLaDecision(palabras, cwd);
+  // sin lista no hay clase: queda en cambio de control, que firma el dueño (el guion por rango tampoco la armaría)
+  if (l && l.error) return null;
+  const conLista = l && Array.isArray(l.entradas) ? ['--entries', JSON.stringify(l.entradas)] : [];
+  const r = require('child_process').spawnSync('bash', [path.join(__dirname, '..', 'ci', 'run-base-controls.sh'), 'classify', ...palabras.slice(2), ...conLista],
     { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: 20000 });
   if (r.status !== 0) return null;
   try { return JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (_) { return null; }
 }
+
+/** La lista de una firma de controles por rango (`signature-sources.js listaDelRango`, recordada en el proceso), o null. */
+function listaDeLaDecision(palabras, cwd) {
+  if (!Array.isArray(palabras) || base(palabras[0]) !== 'run-base-controls.sh' || palabras[1] !== 'approve') return null;
+  const i = palabras.indexOf('--root');
+  const raiz = path.resolve(cwd || process.cwd(), i >= 0 && palabras[i + 1] != null ? String(palabras[i + 1]) : '.');
+  let l = null;
+  try { l = require('./signature-sources.js').listaDelRango(palabras, raiz); } catch (_) { return null; }
+  // una lista enorme no entra en un argumento ni en el ambiente (en Windows, unos 32 000 caracteres): sigue el camino de
+  // siempre, que la arma el guion
+  if (l && Array.isArray(l.entradas) && JSON.stringify(l.entradas).length > TOPE_DE_LA_LISTA) return null;
+  return l;
+}
+const TOPE_DE_LA_LISTA = 16000;
+// la lista que el chequeo previo de `run-base-controls.sh approve` reusa en lugar de armarla (la lee el guion sólo en el
+// chequeo, y la vuelve a comprobar con sus commits y la huella del comando)
+const LISTA_DEL_CHEQUEO = 'BASE_CONTROLS_PRECHECK_LIST';
 
 // El chequeo antes de la ventana: el freno corre el guion de la firma con esta variable, y el guion comprueba todo lo que
 // exige sin escribir nada y sin usar la firma. Si se negaría, la ventana no se abre: un «Sí» del dueño que el guion
@@ -1570,8 +1592,11 @@ function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = nu
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
   const plazo = plazoDelChequeo(firma, env);
   if (!plazo) return { sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' };
+  // la firma de controles por rango lleva la lista de esta decisión; sin ella, vacía (nunca la que traiga el ambiente)
+  const l = listaDeLaDecision(palabras, cwd);
+  const lista = l && Array.isArray(l.entradas) && l.sello ? JSON.stringify({ entries: l.entradas, sello: l.sello }) : '';
   const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: plazo,
-    env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+    env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', [LISTA_DEL_CHEQUEO]: lista, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
   // lo que sigue ya no es el chequeo: si el corte llega después, no lo culpa
   etapa(`decidiendo la firma, después del chequeo de ${nombre}`);
   if (r.error && r.error.code === 'ETIMEDOUT') return { sinRespuesta: `el chequeo del guion no terminó en ${Math.round(plazo / 1000)} s` };

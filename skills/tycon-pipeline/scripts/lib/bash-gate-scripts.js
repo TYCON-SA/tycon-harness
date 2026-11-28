@@ -25,8 +25,8 @@ const { resolveSessionId } = require('./session-id.js');
 const { expandirRuta } = require('./command-vars.js');
 const { PIPELINE_LEE, PIPELINE_LISTA } = require('./marker-command.js');
 const { NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
-const { ANTES_DEL_PROGRAMA, BORRA_O_MUEVE, CORRE_ARCHIVO, EXTENSION_DE, GUION_TOPE, GUION_TOPE_DURO, INTERPRETE_DE, PREFIJO, Q, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, RECORRIDO_NIVELES, expandirLlaves, familiaDe, importsLocales, isInsideReal, nativePath, noSeLeeElPrograma, palabraExpandida, palabras, rutaRealDelGuion, sinGrupo, splitSegments, tok, versionadoEnElArbolPropio } = require('./bash-gate-words.js');
-const { CUERPOS_A_JUZGAR, LECTORES_DE_HISTORIA, NO_VA_FUERA_DEL_FOR, interpreteDe, nombreDeComando, programaEscrito, resolveTarget, seguidos, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
+const { ANTES_DEL_PROGRAMA, BORRA_O_MUEVE, CORRE_ARCHIVO, EXTENSION_DE, GUION_TOPE, GUION_TOPE_DURO, INTERPRETE_DE, PREFIJO, Q, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, RECORRIDO_NIVELES, expandirLlaves, familiaDe, importsLocales, isInsideReal, nativePath, noSeLeeElPrograma, palabraExpandida, palabras, rutaRealDelGuion, sinGrupo, splitSegments, tok, versionadoEnElArbolPropio, igualAMainDelArbolPropio } = require('./bash-gate-words.js');
+const { CUERPOS_A_JUZGAR, LECTORES_DE_HISTORIA, NO_VA_FUERA_DEL_FOR, comodinDelShell, expandirComodin, interpreteDe, nombreDeComando, programaEscrito, resolveTarget, seguidos, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { CONTROL, ENVOLTORIOS, MARKER_LEE, VARIABLE_DEL_SHELL, anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, esteGuion, extractWriteTargets, gitQueLee, gitQueNombra, heredocs, opcionesDelInterprete, origenesMovidos, programaDelSistema, sedQueLee, sinContinuaciones, stripNonCommandText, tramos } = require('./bash-gate-targets.js');
 const { carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, deshacenEnBloque, destinosBorrados, guionesDeShellEscritos, sinCuerposDeTexto } = require('./bash-gate-commands.js');
 
@@ -87,6 +87,51 @@ function comienzoDe(real, bytes) {
     const buf = Buffer.alloc(bytes);
     return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, bytes, 0));
   } finally { fs.closeSync(fd); }
+}
+
+/**
+ * Las suites que nombra un comodín de `node --test` desde `base`. Con comodín sólo en el último tramo (`dir/*.test.js`,
+ * lo común) se lista la carpeta hasta SUITES_DEL_COMODIN archivos; si no, lo que da `expandirComodin`. Un `null` en la
+ * lista dice que quedaron archivos sin mirar.
+ */
+const SUITES_DEL_COMODIN = 5000;
+// una variable dentro de una ruta: `$f`, `${f}`
+const VARIABLE_EN_RUTA = /\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g;
+const FOR_CON_LISTA = /(?:^|[\s;&|(])for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in[ \t]+([^;\n]*?)[ \t]*(?:;|\n)[ \t\n]*do(?=[\s;])/g;
+
+/**
+ * Lo que puede valer la variable de un guion en una ruta (`t/$f.test.js`): con la lista de su `for` a la vista, la
+ * ruta con cada palabra de la lista; si no (un `while read`, una lista con `$(…)`, varias variables, un `${f%x}`), la
+ * ruta con un comodín en lugar de la variable. Las comillas del medio (`t/"$f"`) no cuentan.
+ */
+function valoresDeLaVariable(cmd, valor) {
+  const v = String(valor).replace(/["']/g, '');
+  const usadas = [...v.matchAll(VARIABLE_EN_RUTA)].map((m) => m[0]);
+  const nombre = usadas.length === 1 ? (/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/.exec(usadas[0]) || [])[1] : null;
+  if (nombre) {
+    const listas = [...String(cmd).matchAll(FOR_CON_LISTA)].filter((m) => m[1] === nombre).map((m) => m[2]);
+    const lista = listas.length === 1 ? palabras(listas[0]).map(sinGrupo).filter(Boolean) : null;
+    if (lista && lista.length && lista.length <= 200 && lista.every((w) => !/[$`]/.test(w))) {
+      return lista.map((w) => v.replace(usadas[0], w.replace(/^"([^"]*)"$|^'([^']*)'$/, (_, a, b) => (a !== undefined ? a : b))));
+    }
+  }
+  const conComodin = v.replace(VARIABLE_EN_RUTA, '*');
+  return /[^*]/.test(conComodin) ? [conComodin] : [];
+}
+function suitesDelComodin(patron, base) {
+  const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
+  const dir = path.dirname(absoluto);
+  const ultimo = path.basename(absoluto);
+  if (!/[*?[]/.test(dir)) {
+    let nombres;
+    try { nombres = fs.readdirSync(dir); } catch { return []; }
+    const re = comodinDelShell(ultimo);
+    const out = nombres.filter((n) => re.test(n) && (!n.startsWith('.') || /^\\?\./.test(ultimo))).map((n) => path.join(dir, n));
+    return out.length > SUITES_DEL_COMODIN ? [...out.slice(0, SUITES_DEL_COMODIN), null] : out;
+  }
+  const aviso = {};
+  const out = expandirComodin(patron, base, aviso);
+  return aviso.recortado ? [...out, null] : out;
 }
 
 function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO_BYTES) {
@@ -154,13 +199,27 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
       }
     }
   };
+  // lo anotado de cada guion: si vuelve a correr con otros argumentos (`node t.js; node t.js <historia>`, o abierto
+  // antes sin argumentos como candidato de un bucle), se anota otra vez con ellos para la prueba de los argumentos
+  const anotados = new Map();
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
-    if (vistos.has(real)) return;
+    if (vistos.has(real)) {
+      const antes = anotados.get(real);
+      if (hondo === 0 && antes && argv.length && argv.join('\0') !== antes.argv.join('\0')) out.push({ ...antes, interprete, argv });
+      return;
+    }
     const cuenta = exento ? 'exentos' : 'revisados';
     if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
-    if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (leido.grande && !exento) return;
+    // uno grande de otra copia del arnés con los mismos bytes que main en la misma ruta es lo revisado: no frena por
+    // tamaño, pero sigue la prueba de las historias entre sus argumentos, y lo que importa se mira igual
+    const revisado = !exento && leido.grande && igualAMainDelArbolPropio(real, memo);
+    if (!exento) {
+      const entrada = { interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande && !revisado, revisado };
+      out.push(entrada);
+      anotados.set(real, entrada);
+    }
+    if (leido.grande && !exento && !revisado) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
@@ -194,6 +253,12 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
   const esGuionInstalado = (valor, nombre) => {
     const reales = bases.map((b) => rutaReal(valor, b)).filter(Boolean);
     return reales.length > 0 && reales.every((r) => path.basename(r) === nombre && instalado(r));
+  };
+  // las palabras del tramo sin sus redirecciones de salida y de entrada, si lo de antes de `desde` queda igual
+  const sinRedirecciones = (tramo, words, desde) => {
+    const texto = sinRedireccionesDeSalida(tramo).replace(/(?:(?<![^\s])\d+)?(?<!\\)<(?![<(])[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const otras = palabrasDe(texto);
+    return otras.slice(0, desde).join('\0') === words.slice(0, desde).join('\0') ? otras : words;
   };
   const noTocaElShell = comandoNoTocaElShell(cmd);
   for (const tramo of todosLosTramos) {
@@ -248,14 +313,52 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
         if (!abrir(interprete, `${rel}.py`, argumentos(words.slice(op.desde)))) abrir(interprete, `${rel}/__main__.py`, argumentos(words.slice(op.desde)));
       }
       if (op.enLinea || op.modulos.length) continue;
+      // con `node --test`, cada archivo nombrado es una suite que corre: se abren todos, no sólo el primero (una suite
+      // chica delante no esconde a la que sigue), también detrás de un `-` y los que nombran llaves y comodines. Un
+      // comodín con más archivos de los que se miran cuenta como un guion que no se pudo leer
       let hallado = false;
-      for (let j = op.desde; j < words.length && !hallado; j++) {
-        const w = words[j];
-        if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) break;
-        hallado = abrir(interprete, palabraExpandida(cmd, w), argumentos(words.slice(j + 1)));
+      const porVariable = [];
+      // en modo pruebas, sin las redirecciones: su destino (`> salida.txt`) no es una suite
+      const lista = op.pruebas ? sinRedirecciones(tramo, words, op.desde) : words;
+      for (let j = op.desde; j < lista.length && (!hallado || op.pruebas); j++) {
+        const w = lista[j];
+        if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) { if (op.pruebas) continue; break; }
+        const valor = palabraExpandida(cmd, w);
+        if (expandirRuta(cmd, w).sinResolver.length) {
+          porVariable.push(String(valor));
+          // `t/"$f"` llega partido en `t/` y `$f`: la ruta es la de las dos juntas
+          if (j > op.desde && /\/$/.test(lista[j - 1])) porVariable.push(`${palabraExpandida(cmd, lista[j - 1])}${valor}`);
+        }
+        if (!op.pruebas) { hallado = abrir(interprete, valor, argumentos(words.slice(j + 1))); continue; }
+        for (const x of expandirLlaves(String(valor))) {
+          // también la ruta tal cual: un `[id]` puede ser parte del nombre
+          if (abrir(interprete, x, argumentos(lista.slice(j + 1)))) hallado = true;
+          if (!/[*?[]/.test(x)) continue;
+          for (const base of bases) for (const f of suitesDelComodin(x, base)) {
+            if (f === null) out.push({ interprete, archivo: path.join(base, x), texto: '', argv: [], grande: true });
+            else if (abrir(interprete, f, [])) hallado = true;
+          }
+        }
+      }
+      // el guion en una variable que no se resuelve (la de un `for f in …`, la de un `while read f`, también de fondo):
+      // cuenta cada archivo del comando con la extensión del intérprete, y la ruta con la variable cambiada por cada
+      // palabra de la lista de su `for` (se abre aunque no tenga extensión: el intérprete la corre igual) o, si la
+      // lista no se ve, por un comodín (`scripts/tests/$f`)
+      if (porVariable.length) {
+        const valores = porVariable.flatMap((v) => valoresDeLaVariable(cmd, v));
+        for (const v of valores) if (!/[*?[]/.test(v)) abrir(interprete, v, []);
+        const conComodin = valores.filter((v) => /\*/.test(v)).map((v) => (EXTENSION_DE[familia].test(v) ? v : `${v}*`));
+        const candidatos = [...todasLasPalabras().map((x) => palabraExpandida(cmd, x)), ...conComodin];
+        for (const c of candidatos) for (const x of expandirLlaves(String(c))) {
+          if (!/[*?[]/.test(x)) { if (EXTENSION_DE[familia].test(x)) abrir(interprete, x, []); continue; }
+          for (const base of bases) for (const f of suitesDelComodin(x, base)) {
+            if (f === null) out.push({ interprete, archivo: path.join(base, x), texto: '', argv: [], grande: true });
+            else if (EXTENSION_DE[familia].test(f)) abrir(interprete, f, []);
+          }
+        }
       }
       // `echo p.py | xargs python3`: el guion llega por la entrada; cuenta cada archivo del comando con su extensión
-      if (!hallado && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
+      if ((!hallado || op.pruebas) && words.slice(0, k).some((w) => nombreDeComando(w) === 'xargs')) {
         for (const w of todasLasPalabras()) if (EXTENSION_DE[familia].test(w)) abrir(interprete, expandirRuta(cmd, w).valor, []);
       }
     }
@@ -349,15 +452,48 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
  * hace otra cosa (`-exec`, `-ok`, `-fprint`, `-fls`) o tiene algo que el shell expande: entonces cuenta la carpeta entera.
  * La configuración del repo no corre programas acá, y la salida se lee en inglés y sin comillas.
  */
+/**
+ * El `find` con que se ensaya un borrado: el mismo que corre el comando. En Windows el comando corre en el bash de Git,
+ * y su `find` es el de Git (`usr\\bin\\find.exe`); el del PATH del freno puede ser el de Windows (`System32\\find.exe`),
+ * que es otro programa: el ensayo fallaba y el freno tomaba la carpeta entera como borrada. Primero el de Git: al lado
+ * del bash que se le dio a Claude Code (`CLAUDE_CODE_GIT_BASH_PATH`) y en las instalaciones por defecto (para todos los
+ * usuarios o para uno); después, el primer `find.exe` del PATH que no está en la carpeta de Windows. Sin ninguno, `find`.
+ */
+function programaFind() {
+  if (process.platform !== 'win32') return 'find';
+  const deGit = [];
+  const bashDado = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  if (bashDado) {
+    const d = path.dirname(path.resolve(bashDado));
+    deGit.push(d, path.join(path.dirname(d), 'usr', 'bin'));
+  }
+  for (const raiz of [process.env.ProgramFiles, path.join(require('os').homedir(), 'AppData', 'Local', 'Programs')]) {
+    if (raiz) deGit.push(path.join(raiz, 'Git', 'usr', 'bin'));
+  }
+  const sistema = path.resolve(process.env.SystemRoot || 'C:\\Windows').toLowerCase() + path.sep;
+  const delPath = String(process.env.PATH || process.env.Path || '').split(';').filter(Boolean).map((d) => path.resolve(d))
+    .filter((d) => !(d.toLowerCase() + path.sep).startsWith(sistema));
+  for (const d of [...deGit, ...delPath]) {
+    const f = path.join(d, 'find.exe');
+    if (fs.existsSync(f)) return f;
+  }
+  return 'find';
+}
+
 function loQueDeshaceEnBloque(b, dir) {
   // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida.
   // Sin la biblioteca (las skills en un clon aparte, sin scripts/), a git no se le pregunta: lo que deshace en bloque
   // cuenta como «no pude preguntar» y frena; find corre igual
   let env = null;
   try { const cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); env = cge.idiomaFijo(cge.sinGitDelPadre()); } catch (_) { env = null; }
+  // en Windows, un programa de Git (MSYS) lanzado desde node expande él mismo los comodines de su línea de comando: el
+  // `-name '*.ts'` del ensayo llegaría como el nombre de un archivo de la carpeta. Con `noglob` los recibe tal cual
+  const sinComodines = process.platform === 'win32'
+    ? { MSYS: `${(env || process.env).MSYS || ''} noglob`.trim(), CYGWIN: `${(env || process.env).CYGWIN || ''} noglob`.trim() } : {};
   const correr = (prog, args, cwd = dir) => {
     if (prog === 'git' && !env) throw new Error('falta la biblioteca de git del arnés (scripts/lib/clean-git-env.js)');
-    const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, ...(env ? { env } : {}), maxBuffer: 32 * 1024 * 1024 });
+    const entorno = prog === 'git' ? env : { ...(env || process.env), ...sinComodines };
+    const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, ...(entorno ? { env: entorno } : {}), maxBuffer: 32 * 1024 * 1024 });
     if (r.error || r.status !== 0) throw new Error((r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `${prog} salió ${r.status}`);
     return String(r.stdout);
   };
@@ -369,17 +505,21 @@ function loQueDeshaceEnBloque(b, dir) {
       const peligro = (w) => /^-(?:exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|print|print0|printf|ls|quit)$/.test(w) || /[$`{~]/.test(w);
       if (b.expresion.some(peligro) || b.desde.some(peligro)) throw new Error('la expresión de find no se puede ensayar');
       // `-delete` lleva `-depth`, que hace que `-prune` no pode: el ensayo también
-      const salida = correr('find', [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
+      const salida = correr(programaFind(), [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
       // por ruta real: el repo puede estar detrás de un enlace (en Mac, /tmp y /var lo son)
       const realDe = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
-      const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(path.resolve(dir, f)), kind: 'delete' }));
+      // la misma ruta aunque git y el disco la escriban distinto: en Windows, git da `C:/…` y la carpeta temporal se
+      // nombra `TEMP` o `Temp` según quién la arma (el disco no distingue mayúsculas)
+      const clave = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : p);
+      // con la función de los destinos: en Windows `find /c/repo/src …` imprime `/c/repo/src/a.ts`, que es `C:\\repo\\…`
+      const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(resolveTarget(f, dir)), kind: 'delete' }));
       // qué sigue git, de una vez: la carpeta puede no ser un repo (y entonces nada es código seguido de la corrida)
       let seguidosAca = null;
       try {
-        const top = git(['rev-parse', '--show-toplevel']).trim();
-        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => path.join(top, f)));
+        const top = realDe(nativePath(git(['rev-parse', '--show-toplevel']).trim()));
+        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => clave(path.join(top, f))));
       } catch (_) { seguidosAca = null; }
-      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(a.abs) ? [a.abs] : [];
+      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(clave(a.abs)) ? [a.abs] : [];
       return { archivos };
     }
     const top = git(['rev-parse', '--show-toplevel']).trim();

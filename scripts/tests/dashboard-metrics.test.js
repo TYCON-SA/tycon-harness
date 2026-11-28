@@ -546,5 +546,27 @@ t('LatidoConStory_ElTableroLeeSuHistoria: `story` vale cuando falta `story_id`',
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// A126 (recorrido del sitio): la ficha «Productos sin pipeline de producción» contaba la deuda declarada aunque
+// Despliegues dijera que ese producto sí va a producción, y la nombraba como la escribe la deuda (`producto-y`), no como
+// la lista. Ahora una deuda contradicha por Despliegues no cuenta y se dice; la que cuenta nombra al producto.
+// 🔴 Falla con: 1 producto sin pipeline cuando los dos declaran producción, o un detalle que no dice cuál.
+t('A126 SinPipeline_DeudaContradichaPorDespliegues_NoCuenta', () => {
+  const D = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js'));
+  const prod = { production: [{ project: 'P', pipeline: 'X', stage: 'Production' }] };
+  const deuda = { debt: [{ id: 'PROD-PIPELINE-producto-y-1', revision: '2026-12-20' }] };
+  let r = D.fichaSinPipeline({ debt: deuda, productos: ['Producto X', 'Producto Y'], despliegues: { 'Producto X': prod, 'Producto Y': prod } });
+  assert.strictEqual(r.valor, 0, JSON.stringify(r));
+  assert.match(r.detalle, /Producto Y/);
+  assert.match(r.detalle, /Despliegues/);
+  // sin producción declarada para Y, la deuda cuenta y la ficha lo nombra como la lista
+  r = D.fichaSinPipeline({ debt: deuda, productos: ['Producto X', 'Producto Y'], despliegues: { 'Producto X': prod, 'Producto Y': { production: [] } } });
+  assert.strictEqual(r.valor, 1, JSON.stringify(r));
+  assert.match(r.detalle, /^Producto Y/);
+  // sin despliegues declarados, la deuda sola manda, con el nombre de la lista
+  r = D.fichaSinPipeline({ debt: deuda, productos: ['Producto X', 'Producto Y'], despliegues: null });
+  assert.strictEqual(r.valor, 1, JSON.stringify(r));
+  assert.match(r.detalle, /^Producto Y/);
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(process.exitCode ? '\nFALLARON tests' : `\n${n} tests OK`);
