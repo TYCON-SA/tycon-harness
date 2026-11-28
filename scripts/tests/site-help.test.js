@@ -353,3 +353,82 @@ test('A161_Mantenimiento_LaAyudaDiceQueLosBloquesVaciosNoSeVen — «Te toca dec
   assert.match(src, /const marcha = m\.cuentas\.marcha\s*\?/);
   assert.match(src, /m-decididas"\$\{m\.decididas\.length \? '' : ' hidden'\}/);
 });
+
+// 🔴 Falla con: la Ayuda dice que sin organización y proyecto la noche no pide trabajo (las vulnerabilidades sí) o que
+// «Cerrar la historia» es el cierre en Azure DevOps (la tarea vive en la plataforma del equipo) (A164, A165).
+test('A164_A165_LaAyudaDiceQuienDejaDePedirYDondeSeCierra', () => {
+  const es = leer(GUIA.es).replace(/\n\s*/g, ' ');
+  const en = leer(GUIA.en).replace(/\n\s*/g, ' ');
+  assert.doesNotMatch(es, /que la noche no va a pedir trabajo/);
+  assert.match(es, /la revisión de las ejecuciones y el vigilante no van a pedir trabajo; las vulnerabilidades sí/);
+  assert.doesNotMatch(en, /that the night will not request work/);
+  assert.match(en, /the run review and the watcher will not request work; vulnerabilities still do/);
+  assert.doesNotMatch(es, /el cierre en Azure DevOps/);
+  assert.doesNotMatch(en, /the closing in Azure DevOps/);
+});
+
+// 🔴 Falla con: la Ayuda nombra el rol de quien programa «Dev» y la pantalla dice «Programador», o la pantalla llama al
+// mismo rol «mantenedor» y «quienes mantienen el arnés» (A171).
+test('A171_ElRol_SeLlamaIgualEnLaAyudaYEnLaPantalla', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n\s*/g, ' ');
+    const dev = t(idioma, 'pantalla.dev'); const mant = t(idioma, 'pantalla.mantieneElSitio');
+    assert.doesNotMatch(md, idioma === 'es' ? /rol «Dev»|o «Dev»\)/ : /role "Dev"|or "Dev"\)/, `${idioma}: «Dev» no está en la pantalla`);
+    assert.ok(md.includes(idioma === 'es' ? `«${dev}»` : `"${dev}"`), `${idioma}: la Ayuda nombra «${dev}»`);
+    assert.ok(md.includes(idioma === 'es' ? `«${mant}»` : `"${mant}"`), `${idioma}: la Ayuda nombra «${mant}»`);
+  }
+  assert.doesNotMatch(t('es', 'pantalla.losCambiosDeUnMantenedor'), /mantenedor/);
+  assert.doesNotMatch(t('es', 'pantalla.mantenedoresVenTodo'), /el arnés/);
+  assert.doesNotMatch(t('en', 'pantalla.mantenedoresVenTodo'), /the harness/);
+});
+
+// 🔴 Falla con: un bloque de código dentro de un ítem de lista sale como texto corrido con las comillas invertidas a la
+// vista, y un asterisco escapado («\*») sale con su barra (A173).
+test('A173_Markdown_CodigoEnUnaListaYAsteriscosEscapados', () => {
+  const md = [
+    '- **Probarlo**: bajá la imagen:',
+    '',
+    '  ```bash',
+    '  docker pull ghcr.io/<organización>/<repo>:stable',
+    '  ```',
+    '',
+    '  y después:',
+    '',
+    '  ```json',
+    '  {',
+    '    "name": "acme-local"',
+    '  }',
+    '  ```',
+    '- otro ítem',
+    '',
+    '| Firma | Quién |',
+    '|---|---|',
+    '| Abrir · 1 | la coordinadora \\* |',
+    '',
+    'Una nota \\*\\* al pie, y `a\\*b` en código queda igual.',
+  ].join('\n');
+  const html = HELP.aHtml(md);
+  assert.ok(html.includes('<pre><code>docker pull ghcr.io/&lt;organización&gt;/&lt;repo&gt;:stable</code></pre>'), html);
+  assert.ok(html.includes('<pre><code>{\n  &quot;name&quot;: &quot;acme-local&quot;\n}</code></pre>'), html);
+  assert.ok(!html.includes('```'), 'sin comillas invertidas a la vista');
+  assert.ok(html.includes('<li>otro ítem</li>'), html);
+  assert.ok(html.includes('<td>la coordinadora *</td>'), html);
+  assert.ok(html.includes('Una nota ** al pie'), html);
+  assert.ok(html.includes('<code>a\\*b</code>'), 'en código, la barra queda');
+});
+
+// 🔴 Falla con: la Ayuda manda a buscar la dirección del sitio en «Quién entra al sitio», y la pantalla la tiene en
+// «La dirección del sitio en cada máquina», del perfil del equipo (A168).
+test('A168_LaDireccionDelSitio_DondeLaTieneLaPantalla', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const ORGC = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+  const sec = ORGC.SECCIONES.find((s) => s.id === 'direccionSitio');
+  assert.deepStrictEqual([sec.repo, sec.rutas], ['perfil', ['site.url']]);
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n\s*/g, ' ');
+    assert.doesNotMatch(md, idioma === 'es' ? /`site\.url`, en la sección «Quién entra al sitio»/ : /`site\.url`, in the "Who gets into the site" section/);
+    const titulo = t(idioma, 'pantalla.direccionSitioTitulo');
+    assert.ok(md.includes(idioma === 'es' ? `«${titulo}»` : `"${titulo}"`), `${idioma}: nombra «${titulo}»`);
+  }
+});

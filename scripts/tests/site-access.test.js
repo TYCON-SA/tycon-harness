@@ -483,7 +483,7 @@ test('T12 Producto_SinStories_TambienParaLaPersona', () => {
   modelo.proyectos = { estado: 'medido', fecha: '2026-10-15', hay_al_dia: true, lista: [{ proyecto: 'Alfa', repo: 'Web', vieja: false, stories: [] }, { proyecto: 'Gama', repo: 'Front', vieja: true, fecha: '2026-10-01', stories: [] }] };
   const mA = access.filtrar(modelo, access.quienPide(persona(A), { config }), access.crearReglas({ config, modelo, personas: null }));
   const delta = views.filasProyectos(mA).filas.find((f) => f.producto === 'Delta');
-  assert.strictEqual(delta.motivo, 'sus repos no usan stories del arnés', 'la persona ve lo mismo que quien mantiene');
+  assert.strictEqual(delta.motivo, 'sus repos no usan historias del arnés', 'la persona ve lo mismo que quien mantiene');
 });
 
 // si todo lo declarado no existe, «no te asignó productos» sería falso

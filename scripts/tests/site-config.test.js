@@ -659,7 +659,7 @@ test('T6 Sugerencia_SeAcepta', async () => {
   const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === '×' && n.attrs['data-producto'] === 'Beta' && n.attrs['aria-label'] === 'Quitar Beta');
   assert.ok(quitar, 'cada declarado tiene su × con su nombre');
   assert.ok(!pq.todo(pq.sec('personas')).some((n) => n.tag === 'button' && n.textContent === 'Quitar'), 'sin «Quitar» sueltos que no dicen qué quitan');
-  assert.ok(pq.textoDe('personas').includes('Quienes mantienen el arnés ven todo: no hace falta agregarlos acá.'), 'la línea de arriba');
+  assert.ok(pq.textoDe('personas').includes('Quienes mantienen el sitio ven todo: no hace falta agregarlos acá.'), 'la línea de arriba');
   quitar.on.click({});
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   await pq.click('Revisar cambios', 'personas');
@@ -1583,7 +1583,7 @@ test('2.31-T11b NewSections_InTheTab — vigente, ADO en GitHub, qué trae cada 
   await conEquipo({ remotos: { perfil: { platform: 'github', org: 'acme', repo: 'profile' } } }, async ({ seccion }) => {
     const ado = await seccion('ado');
     assert.strictEqual(ado.soloLectura, true);
-    assert.match(ado.motivo, /no aplica/);
+    assert.match(ado.motivo, /el repo del perfil viva en GitHub/);
   });
 });
 
@@ -2168,7 +2168,7 @@ test('T1 Lector_AutoApply_SoloSiONo @story-2.39 @ac-1', () => {
 test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
   const s = ORG.seccionPorId('aplicar');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Los cambios de un mantenedor', 'operations.json', 'operaciones', 'operations-config.js', ['site.auto_apply'], 'operations']);
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Los cambios de quien mantiene el sitio', 'operations.json', 'operaciones', 'operations-config.js', ['site.auto_apply'], 'operations']);
   const base = opsBase({ site: { maintainers: [LEAD], refresh_minutes: 15 } });
   const r = ORG.revisar({ seccion: 'aplicar', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], refresh_minutes: 30, auto_apply: true } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
@@ -5638,11 +5638,11 @@ test('T73 Config_Pedidos_SinDestino_DiceQueLaNocheNoPide @story-4.11 @ac-43', as
     const aviso = t.en('work_items.destino');
     assert.ok(aviso, `${JSON.stringify(wi)}: el aviso del destino`);
     assert.match(aviso.textContent, frase, JSON.stringify(wi));
-    assert.match(aviso.textContent, /la noche no va a pedir trabajo/, JSON.stringify(wi));
+    assert.match(aviso.textContent, /el vigilante no van a pedir trabajo \(las vulnerabilidades sí/, JSON.stringify(wi));
   }
   assert.strictEqual((await seccionPedidos(DESTINO)).en('work_items.destino'), undefined, 'con los dos, ningún aviso');
   const en = await seccionPedidos({ org: 'acme' }, { idioma: 'en' });
-  assert.match(en.texto, /The project is missing: the night will not request work/);
+  assert.match(en.texto, /The project is missing: the run review and the watcher will not request work/);
 });
 
 // T74 Config_Pedidos_FijosYGravedad_SoloVulnerabilidades @story-4.11 @ac-43

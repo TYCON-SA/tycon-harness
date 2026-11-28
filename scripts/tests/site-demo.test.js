@@ -30,7 +30,9 @@ const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.p
 // El resumen (sha256 del JSON con las claves ordenadas) de lo que las capturas de la guía armaban en línea, medido con el
 // guion de antes de mover los datos y a esta misma hora: si los datos movidos dan el mismo resumen, las capturas salen iguales.
 const AHORA_FIJO = Date.parse('2026-10-22T15:30:00Z');
-const RESUMEN_DE_LAS_CAPTURAS = 'cef71fb65e5da931de9ac58dae3564f1723300c7ba3d18f88612edc97fb3fd31';
+// A166: el repo de operaciones del demo pasó a vivir donde lo pone el sitio (su propio proyecto): el resumen cambia y las
+// capturas de Configuración se regeneran con site-guide-captures.js
+const RESUMEN_DE_LAS_CAPTURAS = 'f31d2e60e3aeb181e1f73854e49ab08e56e803cbd3dff41fcb9fbee97f1d2981';
 const canonico = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));
 
 test('2.76-Capturas_MismosDatos', () => {
@@ -1358,4 +1360,22 @@ test('A163_Demo_LasMaquinasAlDiaMandanSuHuella — sin huella queda sólo la de 
   assert.ok(!('machine_id_motivo' in r.maquinas['mac-bruno']), 'la de bruno tiene una versión de antes de la huella');
   const huellas = Object.values(r.maquinas).map((m) => m.machine_id).filter(Boolean);
   assert.strictEqual(new Set(huellas).size, huellas.length, 'cada máquina, su huella');
+});
+
+// 🔴 Falla con: el demo pone el repo de operaciones en GitHub en «Dónde vive cada repo» y enlaza la lista de la revisión
+// de dependencias a otra plataforma, dentro del proyecto de un producto (A166); o muestra tareas de la revisión de las
+// ejecuciones sin decir a qué organización y proyecto van (A164).
+test('A164_A166_Demo_OperacionesYTareas_DicenLoMismoEnTodaLaPantalla', () => {
+  const D = DATOS();
+  const P = require(path.join(SITE, 'demo', 'platform-answers.js')).plataformaDeEjemplo();
+  const { web, ...remoto } = P.remotos.operaciones;
+  assert.deepStrictEqual(D.REPOS.operations, remoto, 'team-repos.json y el remoto del sitio, el mismo repo');
+  assert.ok(web.includes(`/${encodeURIComponent(remoto.project)}/`), web);
+  const productos = Object.keys(P.pipelines);
+  assert.ok(!productos.includes(remoto.project), `operaciones en el proyecto de un producto: ${remoto.project}`);
+  const ops = D.operaciones({ ahora: AHORA_FIJO, completo: true });
+  const conf = ops['operations.json'] || ops;
+  const wi = (conf.work_items) || {};
+  assert.ok(wi.org && wi.project, `work_items sin organización o proyecto: ${JSON.stringify(wi)}`);
+  assert.ok(productos.includes(wi.project), wi.project);
 });

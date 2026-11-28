@@ -143,6 +143,8 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
   if (access) { delete ops.site.maintainers; ops.site.access = access; }
   if (invitaciones) ops.site.invitations = invitaciones;
   if (completo) {
+    // a dónde van las tareas de la revisión de las ejecuciones y del vigilante: las que muestra Mantenimiento
+    ops.work_items = { org: PLATAFORMA.urlOrganizacion, project: 'Producto X', ...ops.work_items };
     // en qué productos trabaja cada persona, de dónde se leen los despliegues y por dónde sale el aviso
     ops.people.projects = { [ANA]: { add: ['Producto X', 'Producto Y'] }, [INVITADA]: { add: ['Producto X'] } };
     const pipeline = (p, nombre, stage) => [{ pipeline: `${p}/${nombre}`, stages: [stage] }];
@@ -426,7 +428,9 @@ const RECETA_NETFX = {
   results: { format: 'trx', path: '{results}/**/*.trx' },
 };
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
-const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), stack: { test_runners: [RECETA_NETFX] } };
+// operaciones, donde lo pone el sitio demo (`remotos.operaciones`): así «Dónde vive cada repo» y los enlaces dicen lo mismo
+const { web: _web, ...OPERACIONES } = PLATAFORMA.remotos.operaciones;
+const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: { ...OPERACIONES }, stack: { test_runners: [RECETA_NETFX] } };
 
 /**
  * Los archivos del repo del perfil de «acme» (`ruta → objeto o texto`). `repos`: claves que se suman a `team-repos.json`;

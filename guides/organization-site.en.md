@@ -87,7 +87,7 @@ with or without the site), where each setting lives and what each machine can ov
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
-site's configuration (for maintainers: `site.url`, in the "Who gets into the site" section).
+site's configuration (for maintainers: `site.url`, in People, in "The site's address on each machine").
 If you do not have it, ask whoever sent you the link or whoever installed the harness on your machine.
 
 **Signing in.** The site asks for the account your organization chose when installing it: Microsoft, Google or GitHub.
@@ -261,7 +261,7 @@ highlighted. The buttons to decide are always in view, under the heading **Decid
 **Archive** means "this is normal, nothing to touch". **Fix** means the night creates a work item to correct it. You
 mark an option on each card (or "Follow the recommendations" for all the analyzed ones) and then **Send for approval**:
 it opens a single pull request to the operations repo with all your choices. Nothing changes until someone else
-approves it. If the organization turned on "A maintainer's changes" (`site.auto_apply`), the button says **Send** and
+approves it. If the organization turned on "The changes of a site maintainer" (`site.auto_apply`), the button says **Send** and
 what you send is saved without waiting for anyone: that night's review applies it. Your marks stay saved in the browser until you send or clear them. Each term has its "?" with the
 explanation.
 
@@ -422,7 +422,8 @@ If the card calculation fails, every card says so with its own reason: «the car
 
 At the top, **Your organization**: the integrations that are on and off (crossed out), the active reviewer packs and the
 rules (how tests are named, which screens need an end-to-end test, which language the app uses). Below, the steps of the
-run in order; apart, under "Outside the main path", "Close the story" (the closing in Azure DevOps), and at the end,
+run in order; apart, under "Outside the main path", "Close the story" (closing its work item on the team
+platform), and at the end,
 under "At any step", what acts throughout the run. Choosing a step shows:
 
 - **Guides it cites:** the step file and the guides it names.
@@ -656,7 +657,7 @@ The sections, in the order of the screen:
   `operations.json`, in the operations repo. A maintainer reviews it, unless the organization turned on "A
   maintainer's changes": then the site approves it itself.
 - **Who gets into the site**: the list of who gets in and what they see, one row per person,
-  with their role ("Maintains the site" or "Dev") and one or more emails. Nobody gets in if they
+  with their role ("Maintains the site" or "Developer") and one or more emails. Nobody gets in if they
   are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
   A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
   the site" → **+ Add person**, their email and their role; it is done here, without the Microsoft
@@ -675,7 +676,7 @@ The sections, in the order of the screen:
   pass before the site reads again the configuration (this operations repo), the runs mailbox and the team profile. It
   goes from 5 to 120 minutes; if you do not declare it, it is 15. It does not install versions: that is "How the site
   updates", in Installation and updating.
-- **"A maintainer's changes"**: whether a change proposed by a site maintainer goes in
+- **"The changes of a site maintainer"**: whether a change proposed by a site maintainer goes in
   by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
   The organization's rule turns it on ("The branch policy of the operations repo", below).
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
@@ -762,7 +763,8 @@ be, to copy it and open the request by hand.
   reviews it.
 - **Work items**: where and how the night requests work. At the top, the **organization** and
   the **project** that receive the work items of the run review and the watcher; if one is missing, the section says
-  which one and that the night will not request work. Then, in a box, the **type** (empty, each project uses its
+  which one and that the run review and the watcher will not request work; vulnerabilities still do, in each
+  repo's project. Then, in a box, the **type** (empty, each project uses its
   backlog item) and the **fixed fields**. Below, **by severity**, a table with one row per field and one column per
   severity (critical, high, moderate and low); its values win over the fixed ones when the field matches. The fixed
   fields and the table apply to vulnerabilities only, and the section says so. With an organization and a project, the
@@ -958,7 +960,7 @@ be, to copy it and open the request by hand.
   more files without reviewers or the adversarial pass when the risk is normal; raising the second removes the separate
   click on larger fixes. Sensitive files, high risk and the notice to the person do not change, and the first cannot
   exceed the second. An empty field removes the key from the profile. **This section never applies by itself**, even if
-  the organization has «A maintainer's changes» turned on: it opens the request and a person other than the one who
+  the organization has «The changes of a site maintainer» turned on: it opens the request and a person other than the one who
   proposes it approves it. If the profile repo's main branch does not require such a reviewer, «Propose» stays off and
   says why. Neither the machine nor a variable changes the limits. It lives in `team-profile.json` →
   `short_path.coordinator_max_files` and `short_path.max_files`; who signs what is in `guides/owner-signatures.md`.
@@ -1173,7 +1175,7 @@ them in the menu. **Offices** is in both menus; which offices each one sees is i
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
 
-- To get in as a **dev**, your email has to be in "Who gets into the site" with the role "Dev". To see your runs, a
+- To get in as a **dev**, your email has to be in "Who gets into the site" with the role "Developer". To see your runs, a
   machine of yours also has to be confirmed in your name ("People and machines"): it shows up by itself in "To confirm"
   when it uploads its first run.
 - To **maintain**, your email has to be in "Who gets into the site" with the role "Maintains the site". Whoever installs
@@ -1272,7 +1274,7 @@ no permission to write to that repo, or when there is already an open request on
 link).
 
 **What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can set
-the organization's policy (with "A maintainer's changes" on) or grant the write permission. With an open request, wait
+the organization's policy (with "The changes of a site maintainer" on) or grant the write permission. With an open request, wait
 until it is merged or closed.
 
 !["Propose" off, with its reason: the repo has no policy requiring review](sitio-de-la-organizacion/capturas/proponer-apagado.png)
@@ -1599,7 +1601,7 @@ no policy at all, "Proponer" (propose) stays off.
    leaves the request waiting for those people.
 2. *Security*: **Bypass policies when pushing** set to "Allow" only for the build identity of the night processes, which
    save by pushing to `main`. Nobody else, not the site's identity either.
-3. In `operations.json`, `site.auto_apply: true` ("A maintainer's changes", in People).
+3. In `operations.json`, `site.auto_apply: true` ("The changes of a site maintainer", in People).
 
 With that the night pushes directly, and the site opens its request, approves it with its identity and completes it
 (the section says "Applied", *Aplicado*). A person cannot push to `main` (it bounces with `TF402455`): they go in through
@@ -1630,7 +1632,7 @@ team profile. On Azure DevOps, a token with *Code: Read & write* on those repos,
 pushing* or *Bypass policies when completing pull requests*: the site creates a branch and a request, it never writes
 `main`. With a personal token, the requests come out in that person's name. If the policy lets whoever creates the
 request approve it ("Allow requestors to approve their own changes", the organization's rule), the site proposes only
-with "A maintainer's changes" on (below): off, the author would approve it without the organization having asked for
+with "The changes of a site maintainer" on (below): off, the author would approve it without the organization having asked for
 it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand".
@@ -1646,7 +1648,7 @@ The product repos have their own secret, `SITE_PRODUCTS_WRITE_TOKEN`. To set it 
    Without that policy, the site does not propose to that repo and says so.
 
 With that secret the site only creates `team-config/...` branches and opens requests. It never writes `main` or
-completes the request, even with "A maintainer's changes" on: that option applies to the profile and to operations, not
+completes the request, even with "The changes of a site maintainer" on: that option applies to the profile and to operations, not
 to the product repos.
 
 An organization can choose not to require that reviewer on its product repos, for example because each dev merges to
@@ -1722,7 +1724,7 @@ button says it is missing again, and nothing else changes.
 
 ### Changes that apply by themselves
 
-With `site.auto_apply: true` in `operations.json` ("A maintainer's changes", in People), the site approves and completes
+With `site.auto_apply: true` in `operations.json` ("The changes of a site maintainer", in People), the site approves and completes
 each request a maintainer proposes. For that its write identity needs, on Azure DevOps, *Code: Read & write* and
 *Contribute to pull requests* on the repo, and never *Bypass policies*: the site skips no policy, and if one is not met
 with its vote, the request stays. The review policy of `main` is the organization's (above): it lets the vote of whoever
