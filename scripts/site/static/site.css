@@ -436,6 +436,8 @@ table.tabla#proyectos thead th{white-space:normal}
    sea la del sitio (la de la noche pide una tipografía que el sitio no trae) y los gráficos no pasen del ancho */
 .shell .corridas *:not(code):not(pre):not(.mono):not(svg *){font-family:var(--sans)}
 .shell .corridas svg{min-width:0 !important;max-width:100%;height:auto}
+/* salvo la línea de tiempo del detalle: achicada al ancho del celular no se lee; su caja se desplaza de costado */
+.shell .corridas .tl svg{min-width:600px !important;max-width:none}
 .shell .corridas .card{min-width:0;max-width:100%}
 /* el enlace a una sola corrida (?solo=) esconde el resumen; las fichas del tablero, que van entre el resumen y la tabla, también */
 body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{display:none}

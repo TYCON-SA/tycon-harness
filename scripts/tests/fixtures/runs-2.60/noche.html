@@ -45,7 +45,7 @@ section{margin-top:40px}h2{font-size:clamp(18px,2.3vw,24px);letter-spacing:-.018
 .leyenda{display:flex;flex-wrap:wrap;gap:5px 14px;margin:12px 0 2px;font-size:11.5px;color:var(--ink-2);font-family:"IBM Plex Mono",monospace}
 .lg{display:inline-flex;align-items:center;gap:5px}.lg i{width:11px;height:11px;display:inline-block;border-radius:2px}
 .lg i.falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
-.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface);container-type:inline-size}
 /* entre 641 y 1439 px la tabla se desplaza de costado: la sombra del borde derecho avisa que sigue */
 .tabla-caja{position:relative}.tabla-caja::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--ink) 18%,transparent));opacity:0}.tabla-caja.sigue::after{opacity:1}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:940px}
@@ -61,21 +61,27 @@ td.barra{width:9%;min-width:80px}
 td.ar small{display:block;font-size:9.5px;font-style:italic}td.dur,td.ag,td.vu,td.tk,td.ar{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 td.pasos-n{font-family:"IBM Plex Mono",monospace;font-size:11.5px;white-space:nowrap}.ok9{color:var(--good)}.parcial{color:var(--warn)}
 td.frenos{white-space:normal;min-width:150px}.f{display:inline-block;margin-bottom:2px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;border:1px solid var(--line-strong);color:var(--ink-3);padding:1px 5px;margin-right:3px;border-radius:2px}
+/* los controles, lo que se mira primero, quedan contra el borde derecho mientras la tabla se desplaza de costado */
+.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:sticky;right:0;background:var(--surface);box-shadow:-6px 0 6px -6px color-mix(in srgb,var(--ink) 30%,transparent)}
+.tabla>table>thead>tr>th:last-child{background:var(--surface-2);z-index:3}.tabla>table>tbody>tr[data-i]:hover>td.frenos,.tabla>table>tbody>tr.abierta>td.frenos{background:var(--surface-2)}
 .f.f-error{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
 .f.f-freno{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .f.f-sin{color:var(--ink-3);border-style:dashed}.f b{font-weight:600;white-space:nowrap}
 .nd{color:var(--ink-3);font-style:italic;font-size:11.5px}
 tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}tbody tr[data-i]{cursor:pointer}
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
-.det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
+/* el detalle mide lo que se ve de la caja de la tabla (no la ventana): no queda cortado a la derecha */
+.det{position:sticky;left:0;width:min(1124px,100cqw);box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
 /* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
-@media (max-width:640px){.tabla{overflow-x:visible}.tabla table{display:block;min-width:0}.tabla thead{display:none}.tabla tbody{display:block}
+@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block;min-width:0}.tabla>table>thead{display:none}.tabla>table>tbody{display:block}
+.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:static;box-shadow:none}
+
 .tabla tbody tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
 .tabla tbody tr[data-i] td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
 .tabla tbody tr[data-i] td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
 .tabla tbody tr[data-i] td.story,.tabla tbody tr[data-i] td.barra,.tabla tbody tr[data-i] td.frenos{grid-column:1/-1}
-.tabla .fila-det{display:block}.tabla .fila-det td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
+.tabla>table>tbody>.fila-det{display:block}.tabla>table>tbody>.fila-det>td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
 .det-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .det-head b{font-size:16px}.det-head .mono{font-size:12.5px;color:var(--ink-2)}.det-head .sub{color:var(--ink-3);font-size:11.5px;margin-top:3px}
 .det-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}

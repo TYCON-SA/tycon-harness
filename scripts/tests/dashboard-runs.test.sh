@@ -2576,6 +2576,22 @@ if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.tes
   && ok "2.78-T10 la razón larga se corta por letra, sin partir un emoji" || mal "2.78-T10 el corte: $(cat "${T}/err")"
 rm -rf "${T}"
 
+# ── A137-A139 · la tabla y el detalle a 1280 px y en el celular (recorrido F21) ─────────────────
+# 🔴 Sale rojo con el estilo de antes: a 1280 px la columna Controles quedaba afuera de la caja y el detalle medía el
+#    ancho de la ventana (cortado a la derecha); en el celular, las reglas de la tabla de ejecuciones desarmaban también
+#    la tabla de controles del detalle, y la línea de tiempo se achicaba hasta no leerse. Se mide con un navegador; acá
+#    se cuida la regla que lo resuelve.
+CSS_RUNS="${RAIZ}/scripts/nightly/dashboard/runs.js"
+CSS_SITIO="${RAIZ}/scripts/site/static/site.css"
+grep -qF '.tabla>table>thead>tr>th:last-child,.tabla>table>tbody>tr[data-i]>td.frenos{position:sticky;right:0' "${CSS_RUNS}" \
+  && ok "A137 la columna Controles queda a la vista mientras la tabla se desplaza" || mal "A137 Controles no queda fija a la derecha"
+grep -qF 'container-type:inline-size' "${CSS_RUNS}" && grep -qF '.det{position:sticky;left:0;width:min(1124px,100cqw)' "${CSS_RUNS}" \
+  && ok "A138 el detalle mide lo que se ve de la caja de la tabla" || mal "A138 el detalle sigue midiendo la ventana"
+grep -qF '@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block' "${CSS_RUNS}" && ! grep -qF '.tabla table{display:block' "${CSS_RUNS}" \
+  && ok "A139 en el celular, las reglas de la tabla no desarman la del detalle" || mal "A139 las reglas del celular alcanzan a las tablas del detalle"
+grep -qF '.shell .corridas .tl svg{min-width:600px !important;max-width:none}' "${CSS_SITIO}" \
+  && ok "A139 la línea de tiempo no se achica en el celular" || mal "A139 la línea de tiempo se achica al ancho del celular"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
