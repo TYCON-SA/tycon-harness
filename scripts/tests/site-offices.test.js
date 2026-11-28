@@ -469,3 +469,14 @@ test('T-nombre MaquinasPorConfirmar_UnSoloNombre — Inicio y Configuración las
   assert.ok(inicio.es.startsWith(config.es), `Inicio: «${inicio.es}» · Configuración: «${config.es}»`);
   assert.ok(inicio.en.startsWith(config.en), `Inicio: «${inicio.en}» · Configuración: «${config.en}»`);
 });
+
+// 🔴 Falla con: con la máquina sin conexión, una sesión «parada · sin novedades» se contaba en «esperan o libres»: lo que
+//    se ve es de antes del corte y nadie sabe si está disponible (A105, recorrido F21).
+test('A105 Pestana_SinConexion_NadieSeCuentaDisponible', () => {
+  const P = decisiones();
+  const foto = { agents: [{ nombre: 'Hugo', estado: 'parada' }, { nombre: 'Iris', estado: 'libre' }, { nombre: 'Juan', estado: 'trabajando' }] };
+  assert.strictEqual(P.resumenDeOficina(foto).esperanOLibres, 2, 'conectada, como siempre');
+  const sin = P.resumenDeOficina(foto, { sinConexion: true });
+  assert.strictEqual(sin.esperanOLibres, null, 'sin conexión no se sabe quién está libre');
+  assert.strictEqual(sin.sesiones, 3, 'las sesiones que se vieron por última vez se siguen contando');
+});
