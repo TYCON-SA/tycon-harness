@@ -998,10 +998,29 @@ test('8.177 T4d Open_ModoFueraDeLista_NoAbre @story-8.177 @ac-4: un modo que el 
   refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'modo raro');
 });
 
-test('8.177 T4e Open_ModoMasLejosQueElTope_NoAbre @story-8.177 @ac-4: un modo anotado a más de 1 MB del final no se busca: no abre', () => {
+// Una coordinadora que trabaja sola no recibe mensajes de la persona, y Claude Code anota el modo sólo con cada uno:
+// tras unas pocas llamadas con registros de cientos de KB, el último modo queda a más de 1 MB del final. Se busca hasta
+// el principio de la conversación, y vale el último anotado.
+test('8.177 T4e Open_ModoMasLejosQueUnMega_SeEncuentra @story-8.177 @ac-4: un modo anotado lejos del final se busca hasta el principio', () => {
+  for (const [modos, pad, esperado] of [[['bypassPermissions'], 1024 * 1024 + 10, 'bypassPermissions'], [['default', 'auto'], 3 * 1024 * 1024, 'auto']]) {
+    const t = toy();
+    callerTranscript(t, modos, { pad });
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: esperado }, `pad ${pad}: ${JSON.stringify(r)}`);
+  }
+});
+
+// La anotación partida justo en el borde de un bloque de lectura se lee entera.
+test('8.177 T4e2 Open_ModoPartidoEntreBloques_SeLee @story-8.177 @ac-4: el modo partido entre dos bloques de lectura se encuentra', () => {
   const t = toy();
-  callerTranscript(t, ['bypassPermissions'], { pad: 1024 * 1024 + 10 });
-  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'más lejos que el tope');
+  const file = callerTranscript(t, ['auto']);
+  const linea = fs.readFileSync(file, 'utf8');
+  const corte = linea.indexOf('"permissionMode"') + 8;
+  for (const despues of [64 * 1024 - corte, 1024 * 1024 - corte, 1024 * 1024 + 64 * 1024 - corte]) {
+    fs.writeFileSync(file, `${linea}${'y'.repeat(despues)}\n`);
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: 'auto' }, `${despues}: ${JSON.stringify(r)}`);
+  }
 });
 
 test('8.177 T5 Open_SinModo_ConRepo_NoTomaPuesto @story-8.177 @ac-4: con el repo y sin modo legible, no toma puesto ni crea la rama', () => {

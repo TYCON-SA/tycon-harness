@@ -2861,29 +2861,32 @@ function closeSignature({ home, id, folder }) {
 // Los modos que acepta `claude --permission-mode`, más `default`, que es como la conversación anota el modo por
 // defecto (el lanzador sin la opción ya arranca en él).
 const LAUNCHER_MODES = new Set(['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan', 'default']);
-const MODE_TAIL_BYTES = 1024 * 1024;
-const MODE_CHUNK_BYTES = 64 * 1024;
+const MODE_CHUNK_BYTES = 256 * 1024;
 const MODE_RE = /"permissionMode":"([^"\\]*)"/g;
+// lo que se guarda del bloque leído antes para el siguiente: más largo que cualquier anotación entera, así una partida
+// entre dos bloques queda completa en uno de los dos textos
+const MODE_OVERLAP_BYTES = 512;
 
-// El último modo anotado en el último MODE_TAIL_BYTES de un archivo, leído de atrás hacia adelante; null si no hay.
+// El último modo anotado en un archivo, leído de atrás hacia adelante hasta el principio; null si no hay. Claude Code
+// anota el modo sólo con cada mensaje de la persona, y una sesión que trabaja sola (sin mensajes) lo deja muy atrás:
+// no se corta en una distancia. Cada bloque se mira una vez, con el sobrante del bloque anterior.
 function lastModeIn(file) {
   const fd = fs.openSync(file, 'r');
   try {
-    const size = fs.fstatSync(fd).size;
-    let end = size;
-    let tail = '';
-    while (end > 0 && size - end < MODE_TAIL_BYTES) {
-      const len = Math.min(MODE_CHUNK_BYTES, end, MODE_TAIL_BYTES - (size - end));
+    let end = fs.fstatSync(fd).size;
+    let carry = '';
+    while (end > 0) {
+      const len = Math.min(MODE_CHUNK_BYTES, end);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, end - len);
       end -= len;
-      // se suma el bloque nuevo adelante: una anotación partida entre dos bloques queda entera en el texto
-      tail = buf.toString('latin1') + tail;
+      const text = buf.toString('latin1') + carry;
       let m;
       let last = null;
       MODE_RE.lastIndex = 0;
-      while ((m = MODE_RE.exec(tail))) last = m[1];
+      while ((m = MODE_RE.exec(text))) last = m[1];
       if (last !== null) return last;
+      carry = text.slice(0, MODE_OVERLAP_BYTES);
     }
     return null;
   } finally { fs.closeSync(fd); }
@@ -2892,7 +2895,7 @@ function lastModeIn(file) {
 // El modo de permisos de la sesión que llama. No está en el entorno ni en su archivo de sesión: sólo en su
 // conversación, donde cada mensaje de la persona lleva el modo de ese momento. Se busca en todas las carpetas de
 // `projects/` (la conversación no siempre está en la de su carpeta de arranque) y vale la de modificación más nueva.
-// Límite conocido: un cambio de modo sin un mensaje después no queda anotado.
+// Límite conocido: un cambio de modo sin un mensaje después no queda anotado, y vale el último que sí.
 function callerPermissionMode({ home, env }) {
   const sid = env.CLAUDE_CODE_SESSION_ID;
   if (!sid || !SAFE_SID.test(String(sid))) return { problem: 'no sé qué sesión me llama' };
@@ -2909,7 +2912,7 @@ function callerPermissionMode({ home, env }) {
   if (!newest) return { problem: 'no encontré la conversación de esta sesión' };
   let mode;
   try { mode = lastModeIn(newest.file); } catch (e) { return { problem: `no pude leer la conversación: ${e.code || e.message}` }; }
-  if (mode === null) return { problem: 'la conversación no lo anota cerca del final' };
+  if (mode === null) return { problem: 'la conversación no lo anota' };
   if (!LAUNCHER_MODES.has(mode)) return { problem: `la conversación dice «${label(mode)}», que el lanzador no conoce` };
   // una sesión de fondo en plan queda esperando que alguien apruebe su plan
   if (mode === 'plan') return { problem: 'estás en modo plan, y la sesión nueva quedaría esperando que alguien apruebe su plan' };

@@ -154,7 +154,8 @@ back from it; if the owner is also away from the machine, they cannot go in with
 and `--remote-control <name>`. The mode is not chosen: `open` does not accept `--permission-mode`, so it never opens a
 session with more permissions than the coordinator. It does not open, and says so in one line, if it cannot tell the
 mode or if the coordinator is in plan mode (the new session would wait for someone to approve its plan). The mode comes
-from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
+from the coordinator's conversation, which records it with each of the person's messages; the whole conversation is
+searched, so it is also found for a coordinator working alone, with no message from the owner for hours. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
 `claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
