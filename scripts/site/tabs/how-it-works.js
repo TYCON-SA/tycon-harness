@@ -149,7 +149,10 @@ function renderPage(model, { idioma, publicRepo, version }) {
     // la regla de pantallas con las palabras del selector de Configuración; sin elegir, la de fábrica
     const OPCION_PANTALLAS = { ui: 'pantalla.tecTodas', react: 'pantalla.tecSoloReact', off: 'pantalla.tecNinguna' };
     const pantallas = (x) => (x && x.source === 'por_defecto' ? T('pantalla.tecSinDeclararTodas') : x && OPCION_PANTALLAS[x.value] ? T(OPCION_PANTALLAS[x.value]) : valor(x));
-    const reglas = [T('comoTrabaja.reglaNombres', { valor: valor(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: pantallas(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
+    // el estilo de nombres con las palabras del selector de Configuración, no el valor guardado («any»)
+    const OPCION_NOMBRES = { any: 'pantalla.tecCualquierNombre', pascal: 'pantalla.tecPascal', snake: 'pantalla.tecSnake' };
+    const nombres = (x) => (x && OPCION_NOMBRES[x.value] ? T(OPCION_NOMBRES[x.value]) : valor(x));
+    const reglas = [T('comoTrabaja.reglaNombres', { valor: nombres(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: pantallas(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
     const problemas = (o.problems || []).length ? `<div class="ct-fila"><b>${esc(T('comoTrabaja.orgProblemas'))}</b><span>${o.problems.map((p) => problemaConSeccion(p, T)).join(' · ')}</span></div>` : '';
     franja = `<section class="ct-org card" aria-label="${esc(T('comoTrabaja.orgTitulo'))}"><h2>${esc(T('comoTrabaja.orgTitulo'))}</h2><div class="ct-fila"><b>${esc(T('comoTrabaja.orgIntegraciones'))}</b><span>${integ} <span class="ct-nota">${esc(T('comoTrabaja.orgIntegracionesAyuda'))} ${esc(T('comoTrabaja.telegramDeCadaMaquina'))}</span></span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgPaquetes'))}</b><span>${esc(activos)}</span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgReglas'))}</b><span>${esc(reglas)}</span></div>${problemas}</section>`;
   } else {

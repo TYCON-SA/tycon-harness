@@ -1736,3 +1736,29 @@ test('T74 2.79-Lector_ProblemaConEnlace @story-2.79 @ac-67 — el problema en ll
     assert.doesNotMatch(html, /banderaQueNoTieneTexto/, `${idioma}: sin el id crudo de la marca`);
   }
 });
+
+// 🔴 Falla con (A153, recorrido F21): el monitor de disco sólo avisa y figuraba en «Anotan»; la puesta al día del freno
+//    de producción actúa por su cuenta y figuraba en «Avisan». Cada control, en el grupo de lo que hace.
+test('A153 Controles_CadaUnoEnElGrupoDeLoQueHace', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+  const hooks = Array.isArray(lista) ? lista : lista.hooks;
+  const de = (spec) => hooks.find((h) => h.spec === spec);
+  assert.strictEqual(de('@tcg:disk-notice.js').effect, 'warns', 'el disco sólo avisa');
+  assert.strictEqual(de('@tcg:guard-auto-update.js').effect, 'records', 'la puesta al día del freno actúa sola: anota');
+});
+
+// 🔴 Falla con (A155, recorrido F21): «Cómo trabaja» decía «nombres de prueba: any», «ADO», «deprecado», «mergearon» y
+//    «en choque»: jerga sin traducir.
+test('A155 ComoTrabaja_SinJerga', () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const es = (k) => TX.t('es', k);
+  for (const k of ['piezaOrg.pedidoDeTrabajoActivo', 'piezaOrg.pedidoDeTrabajoCierra', 'control.ado-story-create', 'segun.pedidoAdo', 'segun.pedidoAdo.pieza']) {
+    assert.doesNotMatch(es(k), /\bADO\b/, `${k}: ${es(k)}`);
+  }
+  for (const k of ['control.@tcg:deprecated-session-notice.js', 'control.@tcg:deprecated-read-notice.js', 'control.on-deprecated-edit']) assert.doesNotMatch(es(k), /deprecad/, k);
+  assert.doesNotMatch(es('control.@tcg:worktree-sweep.js'), /mergear/);
+  assert.doesNotMatch(es('control.@tcg:stuck-pr-notice.js'), /en choque/);
+  // el estilo de nombres con las palabras del selector de Configuración, no el valor guardado
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'how-it-works.js'), 'utf8');
+  assert.match(src, /tecCualquierNombre/, 'el valor «any» se dice con las palabras del selector');
+});
