@@ -210,7 +210,7 @@ const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
 const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
-const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
+const { algunOpenEscribe, comodinDelShell, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
 const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
@@ -383,11 +383,125 @@ function handleCarrilEHistoria(event, opts = {}) {
     return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true })
       || signedRecordKind(abs) !== null || signedRecordKind(real) !== null;
   };
+  // La zona protegida (el estado o el árbol instalado) adonde puede llegar un destino con un carácter que el shell expande
+  // (`*`, `?`, `[`, `{`, `(` de zsh), o null. Sin contar tramos: cualquiera de esos caracteres a la altura de una zona, de
+  // una carpeta que la contiene o adentro de ella llega (llaves de secuencia, `(o)` y `**` de zsh, `~+`…). Un tramo que
+  // empieza con `.` y nombra `..` sube hasta la raíz. Lo que el comodín nombra hoy en el disco, ocultos incluidos, se mira
+  // por ruta real (un enlace al estado). Frena de más un comodín escrito en la casa o en la carpeta del arnés.
+  const zonas = () => [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
+  const zonaQueAlcanzaElComodin = (abs) => {
+    // lo que no se sabe (un `$(…)`, comillas invertidas, una variable sin resolver) puede ser cualquier texto: cuenta como
+    // `*`. Un `$(…)` sin cerrar es una palabra que el lector cortó en un blanco (`$(date +%F).log` llega como `$(date`):
+    // se juzga con la palabra entera, más abajo
+    let texto = String(abs);
+    if ((texto.match(/\$\(/g) || []).length > (texto.match(/\)/g) || []).length || (texto.match(/`/g) || []).length % 2) return null;
+    // lo desconocido cuenta como `*` sólo si el destino ya tiene un comodín (`est?do$(true)`); sin comodín (`$R/src/x.cs`)
+    // es un destino sin resolver, que juzga la opción B
+    const DESCONOCIDO = '\u0001';
+    for (let v = 0; v < 8 && /\$\(/.test(texto); v++) texto = texto.replace(/\$\([^()]*\)/g, DESCONOCIDO);
+    texto = texto.replace(/`[^`]*`/g, DESCONOCIDO).replace(/\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g, DESCONOCIDO);
+    // (en cualquier tramo, si algún tramo trae comodín: `~/.c*/estado$NOSE/x` también llega)
+    // un tramo entero desconocido puede quedar vacío (y volver absoluta la ruta: `$NOSE/Users/…`), traer barras o `..`:
+    // cuenta como si subiera hasta la raíz
+    let desconocidoEntero = false;
+    if (/[*?[{(]/.test(texto)) {
+      // (también sólo con puntos al lado: `$NOSE.` puede quedar `.` o `..`)
+      const ENTERO = /(^|[\\/])(?=[.\u0001]*\u0001)[.\u0001]+(?=[\\/]|$)/g;
+      desconocidoEntero = new RegExp(ENTERO.source).test(texto);
+      texto = texto.replace(ENTERO, '$1**').split(DESCONOCIDO).join('*');
+    }
+    const partes = texto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
+    const i = partes.findIndex((p) => /[*?[{(]/.test(p));
+    if (i < 0) return null;
+    const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
+    const P = process.platform === 'win32' ? path.win32 : path;
+    // un `..` después del comodín sube desde donde el comodín cayó (un enlace: `l?/../x` sube desde el destino del enlace)
+    // unas llaves con una barra adentro Y otras llaves anidadas (`{x,l{1..1}/active}`: la expansión de llaves con coma no
+    // las abre), o más de cuatro niveles: nombran tramos que no se pueden contar, como si subieran hasta la raíz. Con una
+    // barra y sin anidar (`{v1/a.txt,v2/a.txt}`) cada alternativa ya se juzga por su cuenta
+    let hondo = 0;
+    let llaveRara = false;
+    let barraEnGrupo = false;
+    let anidado = false;
+    for (const ch of String(abs)) {
+      if (ch === '{') { hondo++; if (hondo > 1) anidado = true; if (hondo > 4) llaveRara = true; }
+      else if (ch === '}') {
+        hondo = Math.max(0, hondo - 1);
+        if (hondo === 0) { if (barraEnGrupo && anidado) llaveRara = true; barraEnGrupo = false; anidado = false; }
+      } else if (hondo > 0 && (ch === '/' || ch === '\\')) barraEnGrupo = true;
+    }
+    if (hondo > 0 && barraEnGrupo && anidado) llaveRara = true;
+    const sube = llaveRara || desconocidoEntero || partes.slice(i).some((p) => nombraPadre(p) || p === '..');
+    const fijo = sube ? P.parse(texto).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
+    const resto = partes.slice(i).filter(Boolean);
+    // `**` y `(a|b)` de zsh (o un `(` sin cerrar: el `|` corta la palabra) llegan a cualquier profundidad
+    const anda = resto.some((p) => p.includes('**') || /\([^)]*(?:\||$)/.test(p));
+    const sinMay = process.platform === 'darwin' || process.platform === 'win32';
+    const igual = (a1, b1) => (sinMay ? String(a1).toLowerCase() === String(b1).toLowerCase() : a1 === b1);
+    // un tramo del patrón puede nombrar ese tramo de la zona: llaves y paréntesis cuentan como `*` (de más, nunca de menos)
+    // las llaves con coma se abren en sus alternativas (`{repo,muchos}` no nombra `estado`); las de secuencia, como `*`
+    const puedeNombrar = (seg, comp) => (/\{[^{}]*,[^{}]*\}/.test(seg) ? expandirLlaves(seg) : [seg]).some((alt) => puedeNombrarUno(alt, comp));
+    const puedeNombrarUno = (seg, comp) => {
+      let patron = seg;
+      for (let v = 0; v < 8 && /[{(]/.test(patron); v++) patron = patron.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*\)?/g, '*');
+      patron = patron.replace(/[{}()]/g, '*');
+      if (!/[*?[]/.test(patron)) return igual(seg, comp);
+      // el comodín del shell compara con los nombres del disco tal cual (`[!E]stado` nombra `estado`); lo que dan las
+      // llaves es texto literal, que en Mac y Windows llega igual con otras mayúsculas (`ESTAD{O..O}`)
+      try {
+        if (comodinDelShell(patron).test(comp)) return true;
+        if (!sinMay) return false;
+        // en Mac y Windows, además, sin distinguir mayúsculas y de más: una clase negada (`[!E]`) cuenta como cualquier
+        // carácter, así ninguna lectura sin mayúsculas nombra de menos
+        let re = '';
+        for (let k = 0; k < patron.length; k++) {
+          const ch = patron[k];
+          if (ch === '*') { re += '.*'; continue; }
+          if (ch === '?') { re += '.'; continue; }
+          if (ch === '\\' && k + 1 < patron.length) { re += patron[++k].replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); continue; }
+          if (ch === '[') {
+            const cierre = patron.indexOf(']', k + 2);
+            if (cierre > 0) {
+              const cuerpo = patron.slice(k + 1, cierre);
+              k = cierre;
+              if (/^[!^]/.test(cuerpo) || cuerpo.includes('[:')) { re += '.'; continue; }
+              re += `[${cuerpo.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')}]`;
+              continue;
+            }
+          }
+          re += ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+        }
+        return new RegExp(`^${re}$`, 'i').test(comp);
+      } catch { return true; }
+    };
+    for (const z of zonas()) {
+      if (!z) continue;
+      if (isInside(z, fijo)) return z;
+      if (!isInside(fijo, z)) continue;
+      if (sube || anda) return z;
+      // la zona queda a `rel` tramos del tramo fijo: el patrón llega si tiene esa cantidad o más y cada tramo puede nombrar
+      // el de la zona (`*.log` en la casa no nombra `.tycon`; `est?do` sí nombra `estado`)
+      const rel = P.relative(fijo, z).split(P.sep).filter(Boolean);
+      if (resto.length >= rel.length && rel.every((comp, k) => puedeNombrar(resto[k], comp))) return z;
+    }
+    // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)
+    let enDisco = texto;
+    // de adentro hacia afuera (`{x,l{1..1}}`), con tope: cada vuelta saca un nivel
+    for (let v = 0; v < 8 && /[{(]/.test(enDisco); v++) enDisco = enDisco.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*(?:\)|$)/g, '*');
+    enDisco = enDisco.replace(/\*{2,}/g, '*');
+    try { for (const m of expandirComodin(enDisco, cwd, {}, { ocultos: true })) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
+    return null;
+  };
+  // Las rutas de un destino con llaves (`{a,b}`, `{..,x}`, `{<estado>,x}`): cada alternativa, resuelta por su cuenta
+  const conLlaves = (valor) => (/\{[^{}]*,[^{}]*\}/.test(String(valor))
+    ? expandirLlaves(String(valor)).map((x) => resolveTarget(x, cwd, process.platform, { homeVariable: true })) : []);
   // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
   // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
   const keep = (t) => {
     const valor = expandirRuta(cmd, t).valor;
-    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
+    const abs = resolveTarget(valor, cwd, process.platform, { homeVariable: true });
+    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null
+      || conLlaves(valor).some((x) => protegido(x) || zonaQueAlcanzaElComodin(x) !== null);
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
   const constancias = constanciasTocadas(cmd, cwd, stateDir, baseCwd);
@@ -566,6 +680,130 @@ function handleCarrilEHistoria(event, opts = {}) {
     return true;
   });
   const cmdDestinos = sub.cmd;
+  // Un destino que no se sabe resolver (una variable o un `$(…)` que no se calcula sin correrlo) no se puede probar fuera
+  // del estado. Se mira el texto del destino y el de las asignaciones de las variables que usa (dos niveles): frena si
+  // nombra una zona protegida (entera, o desde la casa con `~` o `$HOME`) o la carpeta del arnés en la casa (`~/.tycon`),
+  // o si el cuerpo de un `$(…)` o de comillas invertidas, sin lo que va entre comillas simples, nombra la casa (`~`,
+  // `$HOME`, un `cd` solo). `$PWD` se lee como la carpeta del comando. Lo que el comando lee de esas carpetas sin
+  // escribirlas no cuenta. Se esquiva armando el nombre a pedazos (`$(printf %s .ty con)`) o con una variable que el freno
+  // no sigue (`declare`, `read`): límite conocido y aceptado (opción B del dueño, A215)
+  {
+    const casa = os.homedir();
+    const formasDe = (z) => {
+      const out = [z];
+      if (z && casa && (z === casa || z.startsWith(casa + path.sep))) {
+        const resto = z.slice(casa.length);
+        out.push(`~${resto}`, `$HOME${resto}`, `\${HOME}${resto}`);
+      }
+      return out;
+    };
+    // la carpeta del arnés en la casa cuenta como zona; en Mac y Windows el disco no distingue mayúsculas
+    const sinMayusculas = process.platform === 'darwin' || process.platform === 'win32';
+    const comparable = (x) => (sinMayusculas ? String(x).toLowerCase() : String(x));
+    const nombresDeZona = [...zonas().filter(Boolean), ...(casa ? [path.join(casa, '.tycon')] : [])].flatMap(formasDe).map(comparable);
+    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/i.test(t) || nombresDeZona.some((z) => comparable(t).includes(z));
+    // un `cd` solo en el comando deja la carpeta en la casa
+    const cdSolo = /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(String(cmd));
+    const nombraCasa = (t) => {
+      const sinSimples = String(t).replace(/'[^']*'/g, "''");
+      // `pwd` parado en la casa (o en una carpeta que contiene una zona) también la nombra
+      return /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(sinSimples) || /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(sinSimples)
+        || (/(^|[;&|(\s])pwd\b/.test(sinSimples) && (cdSolo || zonas().some((z) => z && (isInside(cwd, z) || isInside(z, cwd)))))
+        // la casa pedida a otro programa: `printenv HOME`, `os.homedir()`, `Path.home()`, `expanduser`, `getenv("HOME")`
+        || /\bprintenv\s+HOME\b|\bhomedir\s*\(|\bPath\.home\s*\(|\bexpanduser\b|\bgetenv\s*\(\s*\\?["']?HOME\b|\bENV\s*\[\s*\\?["']HOME/.test(t);
+    };
+    // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
+    const cuerposDe = (texto) => {
+      const out = [];
+      for (let k = texto.indexOf('$('); k >= 0 && out.length < 100; k = texto.indexOf('$(', k + 2)) {
+        let hondo = 0;
+        let fin = -1;
+        for (let m = k + 1; m < texto.length && m < k + 20000; m++) {
+          if (texto[m] === '(') hondo++;
+          else if (texto[m] === ')' && --hondo === 0) { fin = m; break; }
+        }
+        out.push(texto.slice(k + 2, fin < 0 ? Math.min(texto.length, k + 20000) : fin));
+      }
+      for (const m of texto.matchAll(/`([^`]*)`/g)) out.push(m[1]);
+      return out;
+    };
+    let asigs = [];
+    try { asigs = require('./lib/command-vars.js').asignaciones(cmd); } catch (e) { logHookError(e); }
+    // la palabra entera del shell desde donde empieza el destino: el lector corta en una comilla o en un blanco adentro
+    // de un `$(…)` (`"$HOME"/x/$(echo a)/y` llega como `$HOME`)
+    const palabraEntera = (texto, desde) => {
+      let modo = '';
+      let hondo = 0;
+      let k = desde;
+      for (; k < texto.length && k < desde + 20000; k++) {
+        const ch = texto[k];
+        if (modo === "'") { if (ch === "'") modo = ''; continue; }
+        if (ch === '\\') { k++; continue; }
+        if (modo === '"') { if (ch === '"') modo = ''; else if (ch === '(' && texto[k - 1] === '$') hondo++; else if (ch === ')' && hondo) hondo--; continue; }
+        if (ch === "'" || ch === '"') { modo = ch; continue; }
+        if (ch === '(') { hondo++; continue; }
+        if (ch === ')') { if (!hondo) break; hondo--; continue; }
+        if (!hondo && /[\s;&|<>]/.test(ch)) break;
+      }
+      return texto.slice(desde, k);
+    };
+    // el destino con las variables que tienen una asignación en el comando reemplazadas por su texto (cuatro niveles), y
+    // además ese texto suelto: `C=.x; D=~/$C/y` se lee `~/.x/y`
+    const textoDe = (t) => {
+      const valorDe = new Map();
+      for (const a of asigs) valorDe.set(a.nombre, String(a.valor));
+      let x = String(t);
+      const piezas = [x];
+      for (let nivel = 0; nivel < 4; nivel++) {
+        const y = x.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, a1, a2) => (valorDe.has(a1 || a2) ? valorDe.get(a1 || a2) : m));
+        if (y === x || y.length > 20000) break;
+        x = y;
+        piezas.push(x);
+      }
+      return piezas.join('\n');
+    };
+    const texto = String(cmd);
+    for (const t of extractWriteTargets(cmd, { keep: () => true })) {
+      if (!/[$`]/.test(t)) continue;
+      const ex = expandirRuta(cmd, t);
+      const palabras = [];
+      for (let k = texto.indexOf(t); k >= 0 && palabras.length < 20; k = texto.indexOf(t, k + 1)) palabras.push(palabraEntera(texto, k));
+      // (la palabra entera también: `"$HOME"/x/$(echo a)` llega como `$HOME`, que sí se resuelve)
+      const sinResolver = ex.sinResolver.length > 0 || /\$\(|`/.test(t) || palabras.some((w) => /\$\(|`/.test(w));
+      if (!sinResolver) continue;
+      // la palabra entera, sin comillas ni escapes y con las barras colapsadas, como las lee el shell (`"$HOME"/x`, `\.x`,
+      // `a//b`, `a/./b`, `a/b/../b`)
+      let suyo = textoDe([t, ...palabras].join('\n')).replace(/\\(.)/g, '$1').replace(/["']/g, '').replace(/\/\.(?=\/)/g, '').replace(/\/{2,}/g, '/');
+      const SUBE = /\/(?!\.\.(?:\/|$))[^/\s$`]+\/\.\.(?=\/)/g;
+      for (let v = 0; v < 20 && SUBE.test(suyo); v++) { SUBE.lastIndex = 0; suyo = suyo.replace(SUBE, ''); }
+      // la casa armada con el nombre de la persona: `/Users/$(whoami)`, `/home/$USER`
+      const casaConNombre = /\/(?:Users|home)\/(?:\$\(\s*(?:whoami|logname|id)\b|`\s*(?:whoami|logname|id)\b|\$\{?(?:USER|LOGNAME)\b)/.test(suyo);
+      // un `$(…)` con blancos adentro llega cortado (`/Users/$(id`): sus cuerpos se leen del comando entero
+      const cortado = (String(t).match(/\$\(/g) || []).length > (String(t).match(/\)/g) || []).length;
+      // cada pieza por separado (un `$(…)` sin cerrar de una pieza no se come la siguiente); una pieza relativa se lee
+      // también desde la carpeta del comando
+      const piezas = suyo.split('\n');
+      // (las relativas y las que empiezan con `$PWD`, con la carpeta pegada y sus `..` colapsados)
+      const colapsar = (x) => { let y = x; for (let v = 0; v < 20 && SUBE.test(y); v++) { SUBE.lastIndex = 0; y = y.replace(SUBE, ''); } SUBE.lastIndex = 0; return y; };
+      const conCarpeta = [
+        ...piezas.filter((x) => x && !/^[/~$`]/.test(x)).map((x) => `${cwd}/${x}`),
+        ...piezas.filter((x) => /^\$\{?PWD\b/.test(x)).map((x) => x.replace(/^\$\{PWD\}|^\$PWD\b/, cwd)),
+      ].map((x) => colapsar(x.replace(/\/{2,}/g, '/')));
+      let frena = casaConNombre || [...piezas, ...conCarpeta].some(nombraZona) || piezas.some((x) => cuerposDe(x).some(nombraCasa))
+        || (cortado && cuerposDe(texto).some(nombraCasa));
+      if (!frena && /\$\{?PWD\b/.test(t)) {
+        const conCarpeta = String(ex.sinResolver.length ? t : ex.valor).replace(/\$\{PWD\}|\$PWD\b/g, cwd);
+        const ex2 = expandirRuta(cmd, conCarpeta);
+        if (!ex2.sinResolver.length && !/[$`]/.test(String(ex2.valor))) {
+          const abs = resolveTarget(ex2.valor, cwd, process.platform, { homeVariable: true });
+          frena = protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null;
+        }
+      }
+      if (frena) {
+        return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: t, via: `Bash: ${texto.replace(/\s+/g, ' ').slice(0, 120)} (un destino que no se puede resolver y nombra la casa o el arnés)` }) + '\n' };
+      }
+    }
+  }
   const targets = extractWriteTargets(cmdDestinos, { keep });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
@@ -599,6 +837,47 @@ function handleCarrilEHistoria(event, opts = {}) {
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
+  // un comodín en el destino (`>> /p/est?do/x`, `{a,b}`, `**` y `(a|b)` de zsh): el shell lo expande y puede nombrar un
+  // archivo del estado o del árbol instalado. Sin mirar el disco: si el comodín puede llegar adentro de una zona, frena
+  // las llaves antes que las variables, como el shell: `{<estado>,$NOSE}` tiene una alternativa que se resuelve
+  for (const d of resueltos) {
+    for (const alt of /\{[^{}]*,[^{}]*\}/.test(String(d.raw)) ? expandirLlaves(String(d.raw)) : []) {
+      const ex = expandirRuta(cmdDestinos, alt);
+      if (ex.sinResolver.length) continue;
+      const x = resolveTarget(ex.valor, cwd, process.platform, { homeVariable: true });
+      if (!absTargets.includes(x)) absTargets.push(x);
+    }
+    if (d.sinResolver.length) continue;
+    for (const x of conLlaves(expandirRuta(cmdDestinos, d.raw).valor)) if (!absTargets.includes(x)) absTargets.push(x);
+  }
+  // un destino que el lector cortó en un blanco de un `$(…)`: el comodín se juzga con la palabra entera del shell
+  for (const d of resueltos) {
+    const raw = String(d.raw);
+    if ((raw.match(/\$\(/g) || []).length <= (raw.match(/\)/g) || []).length) continue;
+    const textoCmd = String(cmdDestinos);
+    for (let k = textoCmd.indexOf(raw), n = 0; k >= 0 && n < 20; k = textoCmd.indexOf(raw, k + 1), n++) {
+      let modo = '';
+      let hondo = 0;
+      let fin = k;
+      for (; fin < textoCmd.length && fin < k + 20000; fin++) {
+        const ch = textoCmd[fin];
+        if (modo === "'") { if (ch === "'") modo = ''; continue; }
+        if (ch === '\\') { fin++; continue; }
+        if (modo === '"') { if (ch === '"') modo = ''; continue; }
+        if (ch === "'" || ch === '"') { modo = ch; continue; }
+        if (ch === '(') { hondo++; continue; }
+        if (ch === ')') { if (!hondo) break; hondo--; continue; }
+        if (!hondo && /[\s;&|<>]/.test(ch)) break;
+      }
+      const palabra = textoCmd.slice(k, fin).replace(/["']/g, '');
+      const zona = zonaQueAlcanzaElComodin(resolveTarget(palabra, cwd, process.platform, { homeVariable: true }));
+      if (zona && !absTargets.includes(path.join(zona, 'comodin'))) absTargets.push(path.join(zona, 'comodin'));
+    }
+  }
+  for (const abs of [...absTargets]) {
+    const zona = zonaQueAlcanzaElComodin(abs);
+    if (zona && !absTargets.includes(path.join(zona, 'comodin'))) absTargets.push(path.join(zona, 'comodin'));
+  }
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // los destinos relativos, si el comando cambia de carpeta con un `cd` (o `pushd`/`popd`) que no es el que se sigue: el
   // del principio, o el de la forma mínima de `resolverCd`. Ahí la carpeta de esos destinos no se sabe

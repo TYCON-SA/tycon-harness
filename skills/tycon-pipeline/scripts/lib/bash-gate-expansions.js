@@ -1011,7 +1011,7 @@ function comodinDelShell(glob) {
  * Las rutas que un comodín (`specs/*.md`, `specs/story-2.?`) nombra en el disco, desde `base` (hasta 200 en cada
  * tramo). Si se le pasa `aviso`, `aviso.recortado` queda en true cuando algún tramo pasó de 200.
  */
-function expandirComodin(patron, base, aviso) {
+function expandirComodin(patron, base, aviso, { ocultos = false } = {}) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   // la barra invertida separa carpetas sólo en Windows: en los demás, `[1\]]` es un solo tramo
   const partes = absoluto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
@@ -1025,7 +1025,7 @@ function expandirComodin(patron, base, aviso) {
       let nombres = [];
       try { nombres = fs.readdirSync(dir); } catch { continue; }
       // un `\.` al comienzo pide los ocultos igual que un `.`
-      for (const n of nombres) if (comodin.test(n) && (!n.startsWith('.') || /^\\?\./.test(parte))) sig.push(path.join(dir, n));
+      for (const n of nombres) if (comodin.test(n) && (ocultos || !n.startsWith('.') || /^\\?\./.test(parte))) sig.push(path.join(dir, n));
     }
     if (aviso && sig.length > 200) aviso.recortado = true;
     actuales = sig.slice(0, 200);
@@ -1412,7 +1412,8 @@ function inlineStoryText(cmd, declares) {
  */
 function resolveTarget(target, cwd, platform = process.platform, { homeVariable = false } = {}) {
   const P = platform === 'win32' ? path.win32 : path;
-  let expanded = String(target).replace(/^~(?=\/|$)/, os.homedir());
+  // `~+` es la carpeta actual (bash y zsh)
+  let expanded = String(target).replace(/^~\+(?=\/|$)/, () => String(cwd)).replace(/^~(?=\/|$)/, os.homedir());
   // `$HOME` sólo lo expande quien ya lo expandía (los destinos de una escritura): acá no cambia qué se expande
   if (homeVariable) expanded = expanded.replace(/^\$\{?HOME\}?(?=\/|$)/, os.homedir());
   expanded = nativePath(expanded, platform);
