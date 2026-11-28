@@ -2092,11 +2092,11 @@ test('8.116 T28 TyconConfig_DelegatedSigning_ListaYCompatible', () => {
   assert.equal(c.valores.approvals.delegated_signing, 'refresh-after-main', 'el suelto sigue suelto');
   assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
   assert.equal(lib().delegaFirma(c.valores, 'adversarial-skip'), false);
-  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'extra-round'] } }) });
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'compare-waiver'] } }) });
   assert.deepEqual(c.errores, []);
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'extra-round']);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'compare-waiver']);
   assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), true);
-  assert.equal(lib().delegaFirma(c.valores, 'extra-round'), true);
+  assert.equal(lib().delegaFirma(c.valores, 'compare-waiver'), true);
   assert.equal(lib().delegaFirma(c.valores, 'lost-run'), false);
   c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', delegated_signing: ['refresh-after-main', 'inventado'] } }) });
   assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), 'un valor fuera del vocabulario rompe la clave');
@@ -2107,8 +2107,8 @@ test('8.116 T28 TyconConfig_DelegatedSigning_ListaYCompatible', () => {
     c = cargar({ home: casa(), arnes: arnesCon({ approvals: v === undefined ? {} : { delegated_signing: v } }) });
     assert.equal(lib().delegaFirma(c.valores, 'refresh-after-main'), false, `${v}: no delega`);
   }
-  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'] } }) }),
-    /approvals\.delegated_signing = refresh-after-main, extra-round/);
+  assert.match(lib().explicar({ env: {}, home: casa(), arnes: arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'compare-waiver'] } }) }),
+    /approvals\.delegated_signing = refresh-after-main, compare-waiver/);
 });
 
 // T43 TyconConfig_DelegatedSigning_VocabularioEntero @story-8.116 @ac-42
@@ -2132,16 +2132,16 @@ test('8.116 T43 TyconConfig_DelegatedSigning_VocabularioEntero', () => {
 // T46 TyconConfig_ListaTapadaSeComparaPorValor @story-8.116 @ac-46
 // 🔴 Falla con: dos listas iguales comparadas por referencia, que marcan tapado lo que no lo está.
 test('8.116 T46 TyconConfig_ListaTapadaSeComparaPorValor', () => {
-  const arnes = arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'], delegated_machines: MAQUINAS } });
+  const arnes = arnesCon({ approvals: { delegated_signing: ['refresh-after-main', 'compare-waiver'], delegated_machines: MAQUINAS } });
   const otro = path.join(tmp('tcfg-otro-'), 'team-profile.json');
-  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['refresh-after-main', 'extra-round'], delegated_machines: MAQUINAS } }));
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['refresh-after-main', 'compare-waiver'], delegated_machines: MAQUINAS } }));
   let c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
   assert.equal(c.shadowed['approvals.delegated_signing'], undefined);
   assert.equal(c.shadowed['approvals.delegated_machines'], undefined);
   fs.writeFileSync(otro, JSON.stringify({ approvals: { delegated_signing: ['plan-approval'] } }));
   c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes });
   assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: ['plan-approval'], origin: 'TYCON_PROFILE', by: 'solo-perfil' });
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'extra-round'], 'gana el del árbol');
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['refresh-after-main', 'compare-waiver'], 'gana el del árbol');
 });
 
 // ── Qué firmas son sólo del dueño (approvals.owner_only) y con qué ids se delega (@story-8.139) ─────────────────────
@@ -2548,29 +2548,33 @@ test('niveles T6 TyconConfig_Levels_SoloSubeYSoloDelPerfil', () => {
 // sin abrirse, o una delegación que se rompe entera (y deja a la coordinadora sin la rutina) por una firma de más.
 test('niveles T7 TyconConfig_Delegacion_SoloRutina', () => {
   const con = (approvals) => cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora', ...approvals } }) });
-  let c = con({ delegated_signing: ['plan-approval', 'extra-round'] });
+  let c = con({ delegated_signing: ['plan-approval', 'compare-waiver'] });
   assert.deepEqual([c.errores, c.ignoradas], [[], []], 'la rutina se delega como siempre');
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['plan-approval', 'extra-round']);
-  c = con({ delegated_signing: ['plan-approval', 'extra-round'], levels: { 'plan-approval': 2 } });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['plan-approval', 'compare-waiver']);
+  c = con({ delegated_signing: ['plan-approval', 'compare-waiver'], levels: { 'plan-approval': 2 } });
   assert.deepEqual(c.errores, [], 'no es un error: el resto se sigue delegando');
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver']);
   assert.equal(lib().delegaFirma(c.valores, 'plan-approval'), false);
   assert.deepEqual(c.ignoradas.map((x) => x.clave), ['approvals.delegated_signing']);
   assert.match(c.ignoradas[0].motivo, /plan-approval \(nivel 2\)/);
-  c = con({ delegated_signing: ['extra-round', 'control-change', 'adversarial-skip'] });
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'las de la tabla en 2 o 3 también salen');
+  c = con({ delegated_signing: ['compare-waiver', 'control-change', 'adversarial-skip'] });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver'], 'las de la tabla en 2 o 3 también salen');
   assert.match(c.ignoradas[0].motivo, /control-change \(nivel 3\).*adversarial-skip \(nivel 2\)/);
+  // la vuelta extra pasado el tope es de nivel 2: nombrada en el perfil, sale de lo delegado
+  c = con({ delegated_signing: ['compare-waiver', 'extra-round'] });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver']);
+  assert.match(c.ignoradas[0].motivo, /extra-round \(nivel 2\)/);
   // las excepciones de trámite se delegan por su nombre, con las dos formas (el plan delicado y el guardado sensible)
-  c = con({ delegated_signing: ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible'] });
+  c = con({ delegated_signing: ['compare-waiver', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible'] });
   assert.deepEqual([c.errores, c.ignoradas], [[], []]);
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible']);
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver', 'runtime-waiver', 'lost-run', 'escape:set-autonomous', 'plan-approval:delicada', 'save:sensible']);
   // lo que el perfil sube a 3 vuelve al dueño
-  c = con({ delegated_signing: ['extra-round', 'runtime-waiver'], levels: { 'runtime-waiver': 3 } });
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round']);
+  c = con({ delegated_signing: ['compare-waiver', 'runtime-waiver'], levels: { 'runtime-waiver': 3 } });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver']);
   c = con({ delegated_signing: 'control-change' });
   assert.equal(c.valores.approvals.delegated_signing, 'off', 'si no queda ninguna, ninguna');
-  c = con({ delegated_signing: ['extra-round', 'escape-phrases'] });
-  assert.deepEqual(c.valores.approvals.delegated_signing, ['extra-round'], 'el grupo de antes se abre y sale lo que no es rutina');
+  c = con({ delegated_signing: ['compare-waiver', 'escape-phrases'] });
+  assert.deepEqual(c.valores.approvals.delegated_signing, ['compare-waiver'], 'el grupo de antes se abre y sale lo que no es rutina');
   // un nivel roto no deja adivinar: se delega sólo lo que la tabla sola deja, y el error lo dice
   c = con({ delegated_signing: ['plan-approval'], levels: { 'plan-approval': 'alto' } });
   assert.deepEqual(c.errores.map((e) => e.clave), ['approvals.levels']);

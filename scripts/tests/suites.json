@@ -1318,6 +1318,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-cap-holes.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/reloop-code.test.js",
       "requiere": []
     },
