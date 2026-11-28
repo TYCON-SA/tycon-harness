@@ -135,6 +135,8 @@ function proyectar(def, m, cfg) {
     // lo entregado y lo rehecho de cada mes de «lo rehecho al lado de lo entregado»: el mes con su forma, sólo números y
     // las claves con la forma de las de «por qué volvió»; lo que no cumple, no viaja
     ...(def.id === 'rework_por_mes' && Array.isArray(m.filas) ? { meses: mesesDelSitio(m.filas) } : {}),
+    // qué cuenta su número: las rehechas sin la deuda declarada (que la lista sí muestra), en los meses de la serie
+    ...(def.id === 'rework_por_mes' && Array.isArray(m.filas) ? { cuenta: { clave: 'rehechas_sin_deuda', meses: mesesDelSitio(m.filas).length } } : {}),
   };
 }
 
@@ -258,7 +260,10 @@ function tile(f, idioma = 'es') {
   // el denominador llega como su código y sale en el idioma de la página
   const etiq = f.den ? ` ${esc(T(`den.${f.den}`))}` : '';
   const de = (a, b) => esc(T('fichas.de', { medidos: a, total: b }));
-  const den = f.unidad === 'ratio' ? `${de(f.medidos, f.total)}${etiq}` : `n=${f.total && f.total !== f.medidos ? de(f.medidos, f.total) : esc(f.medidos)}${etiq}`;
+  // una ficha cuyo número es una cuenta con nombre dice qué cuenta, en vez de un «n=» que no dice de qué
+  const cuenta = f.cuenta && f.cuenta.clave === 'rehechas_sin_deuda' && Number.isInteger(f.cuenta.meses)
+    ? esc(T(f.cuenta.meses === 1 ? 'fichas.cuenta.rehechas_sin_deuda1' : 'fichas.cuenta.rehechas_sin_deuda', { meses: f.cuenta.meses })) : null;
+  const den = cuenta || (f.unidad === 'ratio' ? `${de(f.medidos, f.total)}${etiq}` : `n=${f.total && f.total !== f.medidos ? de(f.medidos, f.total) : esc(f.medidos)}${etiq}`);
   // el número con su unidad («6,4 días», «1 segundo»); el singular sale del número que se muestra, ya redondeado
   const valor = formatear(f, idioma);
   const unidad = f.unidadDelValor ? ` ${T(`fichas.unidad.${f.unidadDelValor}${valor === '1' ? '1' : ''}`)}` : '';

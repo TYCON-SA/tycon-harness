@@ -1604,7 +1604,8 @@ function cabecera(M, opts = {}) {
   const conConsumo = C.filter((c) => c.consumo.estado === 'medido').length;
   const conControles = C.filter((c) => c.controles).length;
   const alFinal = C.filter((c) => c.llego_al_final).length;
-  const origen = sitio ? x('v.versionDelSitio') : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return L(I, 'v.desconocido'); } })())}`;
+  // en el sitio, la versión que armó la página (la que le pasa la pestaña); sin ella, «desconocida», nunca el rótulo solo
+  const origen = sitio ? x(sitio.version ? 'v.versionDelSitio' : 'v.versionDelSitioDesconocida', { version: String(sitio.version || '') }) : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return L(I, 'v.desconocido'); } })())}`;
   // cada parte del sello con su número: «1 duplicado», «1 no se pudo leer», aunque las otras sean varias
   const selloCorridas = Number.isFinite(M.archivos) ? [x(M.archivos === 1 ? 'v.selloLeidosUno' : 'v.selloLeidos', { n: N, a: M.archivos }), x(M.duplicados === 1 ? 'v.selloDuplicadoUno' : 'v.selloDuplicados', { d: M.duplicados }),
     x(M.ilegibles === 1 ? 'v.selloIlegibleUno' : 'v.selloIlegibles', { i: M.ilegibles })].join(' · ') : String(N);

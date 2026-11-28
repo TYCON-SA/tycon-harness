@@ -105,7 +105,9 @@ h3.block{margin:34px 0 12px;display:flex;gap:10px;align-items:baseline;flex-wrap
 .lista li.nm{color:var(--nm-ink)}
 .lista .pieza{font-weight:600}.lista .estado{grid-column:1;font-size:13px;color:var(--ink-2)}
 .lista .marca{grid-row:1/span 2;grid-column:2}
-.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:4px 8px}
+/* una tabla más ancha que la caja avisa que se desplaza: las cubiertas (local) se mueven con el contenido y las sombras
+   (scroll) quedan quietas; sin nada más a un lado, la cubierta tapa la sombra de ese lado */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:4px 8px;background:linear-gradient(to right,var(--surface) 30%,transparent) left center/40px 100% no-repeat local,linear-gradient(to left,var(--surface) 30%,transparent) right center/40px 100% no-repeat local,radial-gradient(farthest-side at 0 50%,var(--line-strong),transparent) left center/14px 100% no-repeat scroll,radial-gradient(farthest-side at 100% 50%,var(--line-strong),transparent) right center/14px 100% no-repeat scroll,var(--surface)}
 /* table.tabla, con su elemento: en Corridas «tabla» es la caja que envuelve la tabla de corridas */
 table.tabla{width:100%;border-collapse:collapse;margin:0;font-size:13.5px}
 table.tabla th,table.tabla td{border-bottom:1px solid var(--line);padding:9px 9px;text-align:left;vertical-align:top}
@@ -431,6 +433,11 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
 @media (max-width:420px){.grid{grid-template-columns:minmax(0,1fr)}}
 table.tabla#proyectos{min-width:940px}table.tabla#proyectos td:last-child{min-width:150px}
 table.tabla#proyectos thead th{white-space:normal}
+/* al desplazar la tabla de productos, la primera columna queda fija: se sigue viendo de qué producto es la fila */
+table.tabla#proyectos tbody th{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:-9px 0 0 var(--surface),1px 0 0 var(--line)}
+table.tabla#proyectos thead th:first-child{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:-9px 0 0 var(--surface),1px 0 0 var(--line)}
+/* el resaltado de la fila también en la columna fija, sin dejar ver lo que pasa por debajo */
+table.tabla#proyectos tbody tr:hover th{background:linear-gradient(var(--wash),var(--wash)),var(--surface)}
 
 /* ── Corridas: la vista de la noche adentro del sitio ── su hoja carga después; esto va con más peso para que la letra
    sea la del sitio (la de la noche pide una tipografía que el sitio no trae) y los gráficos no pasen del ancho */

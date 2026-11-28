@@ -481,7 +481,7 @@ test('T8 Dev_SoloSusCorridas_SinConteosGlobales @story-2.27 @ac-8', async () => 
     assert.deepStrictEqual(l.maquinas.lista.map((m) => m.nombre), ['maq-a'], 'las opciones de máquina, sólo las suyas');
     const p = (await h.pedir('/corridas', { cookie: dev })).texto;
     const sello = /<div class="stamp">([\s\S]*?)<\/div>/.exec(p)[1];
-    assert.match(sinTags(sello), /^Ejecuciones: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al final: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio Alcance: maq-a 2$/);
+    assert.match(sinTags(sello), /^Ejecuciones: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al final: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio desconocida Alcance: maq-a 2$/);
     assert.doesNotMatch(sello, /archivos|esta máquina|undefined/);
     assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'el eyebrow no enlaza una página que el dev no puede abrir');
   });
