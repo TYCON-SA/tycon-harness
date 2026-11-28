@@ -322,7 +322,8 @@ function tile(f, idioma) {
   const pie = f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T(f.enlace.startsWith('#') ? 'vista.verLaLista' : f.enlace === '/arnes' ? 'vista.verEnArnes' : 'vista.dondeSeDecide'))}</a></div>` : '';
   if (f.estado === 'cargando') return `<div class="tile cargando">${chip('', T('vista.cargando'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-den">${esc(f.motivo)}</div>${pie}</div>`;
   if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div>${pie}</div>`;
-  const est = f.valor > 0 ? 'warn' : 'ok';
+  // lo que sólo se sigue no lleva el rombo ni el amarillo de lo que hay que decidir: el estado neutro, con su propia marca
+  const est = f.valor > 0 ? (f.seguimiento ? 'neutro' : 'warn') : 'ok';
   // de cuándo es la cuenta: al momento (la de Mantenimiento), leída recién (las máquinas) o de la noche
   const cuando = f.alMomento ? T('vista.alMomento') : Number.isFinite(f.leido) ? T('vista.leido', { hora: horaCorta(f.leido) }) : f.fecha ? T('vista.deLaNocheDel', { fecha: f.fecha }) : null;
   return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${cuando ? `<div class="t-den">${esc(cuando)}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${pie}</div>`;

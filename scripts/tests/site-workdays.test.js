@@ -595,6 +595,18 @@ test('E3 E2E_HorasYTokens_CelularY1280 — A109 y A110: en un celular la página
   } finally { await navegador.close(); await h.cerrar(); }
 });
 
+// 🔴 Falla con (A123, recorrido F21): en «Ver por máquina» la fecha de cada fila se partía en dos renglones, y la página
+//    mezclaba tres formatos de fecha (año-mes-día, día/mes y mes-día).
+test('A123 Horas_LasFechasNoSeParten_YDiaPorDiaComoLosGraficos', () => {
+  const t = WD().armarTabla(WD().leerJornadas(espejo({ 'maquina-a': Object.fromEntries(DIAS5.map((d) => [d, dia(d)])) })), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, {});
+  const html = WD().htmlDiaPorPersona(t, r, 'es');
+  assert.match(html, /<th>09\/11<\/th>/, 'el día como en los gráficos: día/mes');
+  assert.doesNotMatch(html, /<th>11-09<\/th>/);
+  const css = fs.readFileSync(path.join(SITE, 'static', 'site.css'), 'utf8');
+  assert.match(css, /table\.horas th\[scope="?row"?\][^{]*\{[^}]*white-space:nowrap/, 'la fecha de cada fila no se parte');
+});
+
 // 🔴 mutación: comparar una semana de 7 días medidos contra una de 3 sin decirlo (la flecha dice que bajó cuando por día
 // casi se duplicó), o la barra de una semana incompleta igual a las enteras, sin marca.
 test('OH18 SemanaIncompleta_SinFlechaYMarcada — la semana anterior con menos días medidos lo dice, sin flecha; la barra también', () => {

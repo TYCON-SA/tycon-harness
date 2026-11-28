@@ -816,3 +816,19 @@ test('A115-A119 Vistas_BancoNuevosYRenglonesDeLaPersona', () => {
   assert.doesNotMatch(raro[1], /^#9 ·/, 'sin título tampoco queda un signo suelto');
   assert.doesNotMatch(require(path.join(H.SITE, 'texts.js')).t('es', 'inicio.vigilante_aceptadas_sin_story'), /story/);
 });
+
+// 🔴 Falla con: la ficha de «seguimiento» llevaba el mismo rombo y el mismo amarillo que «decidir»: no se distinguía lo que
+//    hay que decidir de lo que sólo se sigue (A120, recorrido F21).
+test('A120 Inicio_SeguimientoNoSeVeComoDecidir', () => {
+  const m = modeloCompleto({ dependencias: leida({ rubros: { nuevos: 3, aceptadas_sin_resolver: 1, rechazadas_sin_deuda: 2, pedidos_cerrados_con_vivas: 0 }, vivas_por_proyecto: {} }) });
+  const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const fichaDe = (texto) => (html.match(new RegExp(`<div class="tile [^"]*"><span class="chip [^"]*"><span class="g">[^<]*</span>${texto}</span>`, 'g')) || []);
+  const seguimiento = fichaDe('seguimiento');
+  const decidir = fichaDe('decidir');
+  assert.ok(seguimiento.length && decidir.length, 'hay de las dos');
+  for (const s of seguimiento) {
+    assert.doesNotMatch(s, /chip warn|◆/, `seguimiento sin el rombo ni el amarillo de decidir: ${s}`);
+    assert.doesNotMatch(s, /tile warn/);
+  }
+  for (const d of decidir) assert.match(d, /chip warn/, 'decidir sigue igual');
+});

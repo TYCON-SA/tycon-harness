@@ -149,7 +149,7 @@ const TEXTOS = {
   'corridas.v.tituloSinPasos': { es: 'la ejecución trabajó pero el marcador sólo anotó el arranque: no es una ejecución abandonada', en: 'the run worked but the marker only recorded the start: it is not an abandoned run' },
   'corridas.v.sinPasosAnotados': { es: 'no anotó sus pasos', en: 'did not record its steps' },
   'corridas.v.quedoEn': { es: 'quedó en {p}', en: 'stopped at {p}' },
-  'corridas.v.pasosPartidos': { es: 'Desde el {desde}, «Implementar» y «Correr las pruebas» son dos pasos. Las ejecuciones de antes los tienen juntos en «Implementar + pruebas», sin repartir.', en: 'Since {desde}, «Implement» and «Run the tests» are two steps. Earlier runs have them together as «Implement + tests», not split.' },
+  'corridas.v.pasosPartidos': { es: 'Desde el {desde}, el arnés anota «Implementar» y «Correr las pruebas» como dos pasos. Las ejecuciones de una versión anterior del arnés —también las que corrieron después, en una máquina sin actualizar— los tienen juntos en «Implementar + pruebas», sin repartir.', en: 'Since {desde}, the harness records «Implement» and «Run the tests» as two steps. Runs from an earlier harness version —including later ones, on a machine that was not updated— have them together in «Implement + tests», not split.' },
   'corridas.v.sinAgentes': { es: 'no registra agentes lanzados — no es cero', en: 'it does not record launched agents — it is not zero' },
   'corridas.v.porEjecucion': { es: 'Ejecución por ejecución', en: 'Run by run' },
   'corridas.v.porEjecucionNota1': { es: 'Ordenadas de la más nueva a la más vieja. La barra reparte el tiempo por paso con la rampa de abajo.', en: 'Sorted from newest to oldest. The bar splits the time by step with the ramp below.' },

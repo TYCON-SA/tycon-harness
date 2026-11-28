@@ -51,7 +51,7 @@ const EN={
   "Tenés demasiadas ventanas abiertas en las oficinas: cerrá otra pestaña y recargá esta.":"You have too many office windows open: close another tab and reload this one.",
   "Todavía no contestó: mirá su conversación más tarde.":"No answer yet: check its conversation later.","Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"There are no offices to show you yet: they appear when a machine confirmed in your name connects.",
   "Tokens consumidos":"Tokens used","Tu sesión venció o tu cuenta ya no está en la lista: volvé a entrar al sitio.":"Your session expired or your account is no longer on the list: sign in to the site again.",
-  "Ver conversación":"See conversation","Vos · desde la oficina":"You · from the office","Vos":"You","cerrada, sin hora":"closed, no time","esperan o libres":"waiting or free","esperan tu firma":"waiting for your signature",
+  "Ver conversación":"See conversation","Vos · desde la oficina":"You · from the office","Vos":"You","cerrada, sin hora":"closed, no time","esperan o libres":"waiting or free","espera o está libre":"waiting or free","espera tu firma":"waiting for your signature","esperan tu firma":"waiting for your signature",
   "la oficina no contestó":"the office did not answer","más nueva que el sitio":"newer than the site","no medido":"not measured","posible clave copiada":"possible copied key","reconectando: el sitio se reinició":"reconnecting: the site restarted",
   "sin dato":"no data","sin hora":"no time","una conversación sin su forma":"a conversation without its shape","Última acción":"Last action","Escribí un número, como T-41 o 41.":"Type a number, such as T-41 or 41.",
   "Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes.":"This machine has no designated coordinator: there is no one to cross the messages with.",
@@ -1053,6 +1053,11 @@ const TOPE_DE_SALAS=8,ESPERA_MIN_MS=2000,ESPERA_MAX_MS=60000;
 const SIN_NOVEDAD_MS=60000,REVISAR_CONEXION_MS=5000,AVISO_SIN_NOVEDAD="Hace más de un minuto que no llega nada del sitio: lo que ves puede estar atrasado. Vuelvo a conectar.";
 function conexionMuerta(ultimoMs,ahoraMs){return ahoraMs-ultimoMs>=SIN_NOVEDAD_MS}
 // la coordinadora que espera una firma sigue coordinando: la foto la marca por cómo trabaja
+// el nombre de una oficina es el de su máquina, para la persona y para quien mantiene (quien mantiene ve además de quién es)
+function nombreDeOficina(o){return (o&&o.id)||""}
+// el texto de cada contador, con el verbo que concuerda con el número
+const CONTADORES={sesiones:["sesión","sesiones"],trabajando:["trabajando","trabajando"],firma:["espera tu firma","esperan tu firma"],libres:["espera o está libre","esperan o libres"]};
+function textoDeContador(n,clave){const c=CONTADORES[clave];return c?c[n===1?0:1]:""}
 // sin conexión, lo que se ve es de antes del corte: nadie se cuenta disponible (null: no se sabe)
 function resumenDeOficina(foto,{sinConexion=false}={}){const a=(foto&&foto.agents)||[],n=l=>a.filter(x=>l.includes(x.estado)).length,c=a.find(x=>x.estado==="coordina"||x.comoTrabaja==="Coordinando");
   return {sesiones:a.length,trabajando:n(["trabajando","prueba"]),firma:n(["firma","pregunta"]),esperanOLibres:sinConexion?null:n(["espera","esperando","parada","libre","inactiva"]),coordina:c?c.nombre:null}}
@@ -1124,10 +1129,11 @@ function arrancarOficinas(){
     f={card,h,stats,stage,sinSala,cover,bloque,titulo,crew,T:null};fichas.set(o.id,f);return f;}
   // el reloj corre antes del resumen: una sesión que pasó a inactiva se cuenta igual que la dice su tarjeta
   function pintarOficina(o){const lista=(o.foto&&o.foto.agents)||[];relojTick(lista,Date.now(),o.foto&&o.foto.meta);
-    const f=fichaDe(o),r=resumenDeOficina(o.foto,{sinConexion:!!(o.reconectando||o.sinConexionDesde)}),quien=o.person||o.id;
-    f.h.replaceChildren(document.createTextNode(quien));if(o.person)f.h.append(el("small",null,o.id));
-    const chip=(n,t,c)=>{const s=el("span","stat"+(c&&n?" "+c:""));s.append(el("b",null,String(n)),document.createTextNode(t));return s};
-    f.stats.replaceChildren(chip(r.sesiones,r.sesiones===1?"sesión":"sesiones"),chip(r.trabajando,"trabajando"),chip(r.firma,"esperan tu firma","firma"),...(r.esperanOLibres===null?[]:[chip(r.esperanOLibres,"esperan o libres")]));
+    const f=fichaDe(o),r=resumenDeOficina(o.foto,{sinConexion:!!(o.reconectando||o.sinConexionDesde)}),quien=nombreDeOficina(o);
+    f.h.replaceChildren(document.createTextNode(quien));if(o.person)f.h.append(el("small",null,o.person));
+    // el número y su texto, separados por un espacio (que no se pegue «1esperan»)
+    const chip=(n,clave,c)=>{const s=el("span","stat"+(c&&n?" "+c:""));s.append(el("b",null,String(n))," ",document.createTextNode(textoDeContador(n,clave)));return s};
+    f.stats.replaceChildren(chip(r.sesiones,"sesiones"),chip(r.trabajando,"trabajando"),chip(r.firma,"firma","firma"),...(r.esperanOLibres===null?[]:[chip(r.esperanOLibres,"libres")]));
     if(r.coordina){const s=el("span","stat");s.append("coordina ",el("b",null,r.coordina));f.stats.append(s)}
     // el sitio se reinició y esta máquina estaba: todavía no volvió a conectarse (no desapareció)
     if(o.reconectando)f.stats.append(el("span","stat apagada","reconectando: el sitio se reinició"));
