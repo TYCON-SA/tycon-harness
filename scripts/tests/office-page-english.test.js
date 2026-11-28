@@ -240,3 +240,13 @@ test('T-pasos Steps_AndCoordinatesLabel_InEnglish — cada paso del pipeline y �
   }
   assert.strictEqual(traducir('coordina '), 'coordinates ', 'la etiqueta del resumen de cada oficina');
 });
+
+// 🔴 Falla con: «Corriendo pruebas» con una tilde sobre la cabeza. La tilde se lee como «terminó» y la sesión sigue
+// trabajando (recorrido del sitio del 27/11).
+test('T-icono Running_Tests_Icon_IsNotACheckMark — el ícono de quien corre pruebas no dice «terminado»', () => {
+  const m = /const FX=(\{[^}]*\});/.exec(CODE);
+  assert.ok(m, 'page.js trae la tabla FX de los íconos sobre la cabeza');
+  const FX = JSON.parse(m[1].replace(/([{,])(\w+):/g, '$1"$2":'));
+  assert.ok(FX.prueba, 'quien corre pruebas tiene su ícono');
+  assert.doesNotMatch(FX.prueba, /[✓✔☑✅]/u, `el ícono de «Corriendo pruebas» es «${FX.prueba}»`);
+});

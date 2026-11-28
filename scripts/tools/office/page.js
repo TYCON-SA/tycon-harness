@@ -872,7 +872,8 @@ T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
 {let abajo=null;document.addEventListener("pointerdown",e=>{abajo=!panel.hidden&&ventana().hidden&&!panel.contains(e.target)&&!e.target.closest(".tag,.ventana")?{x:e.clientX,y:e.clientY}:null},true);
   document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true);}
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
-const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
+// el ícono sobre la cabeza; el de quien corre pruebas es una vuelta (sigue trabajando), no una tilde, que se lee «terminó»
+const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"↻",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado||"","#999"],
   // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
