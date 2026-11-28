@@ -401,7 +401,13 @@ function handleCarrilEHistoria(event, opts = {}) {
     for (let v = 0; v < 8 && /\$\(/.test(texto); v++) texto = texto.replace(/\$\([^()]*\)/g, DESCONOCIDO);
     texto = texto.replace(/`[^`]*`/g, DESCONOCIDO).replace(/\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g, DESCONOCIDO);
     // (en cualquier tramo, si algún tramo trae comodín: `~/.c*/estado$NOSE/x` también llega)
-    if (/[*?[{(]/.test(texto)) texto = texto.split(DESCONOCIDO).join('*');
+    // un tramo entero desconocido puede quedar vacío (y volver absoluta la ruta: `$NOSE/Users/…`), traer barras o `..`:
+    // cuenta como si subiera hasta la raíz
+    let desconocidoEntero = false;
+    if (/[*?[{(]/.test(texto)) {
+      desconocidoEntero = /(^|[\\/])\u0001+(?=[\\/]|$)/.test(texto);
+      texto = texto.replace(/(^|[\\/])\u0001+(?=[\\/]|$)/g, '$1**').split(DESCONOCIDO).join('*');
+    }
     const partes = texto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
@@ -423,7 +429,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       } else if (hondo > 0 && (ch === '/' || ch === '\\')) barraEnGrupo = true;
     }
     if (hondo > 0 && barraEnGrupo && anidado) llaveRara = true;
-    const sube = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..');
+    const sube = llaveRara || desconocidoEntero || partes.slice(i).some((p) => nombraPadre(p) || p === '..');
     const fijo = sube ? P.parse(texto).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
     const resto = partes.slice(i).filter(Boolean);
     // `**` y `(a|b)` de zsh (o un `(` sin cerrar: el `|` corta la palabra) llegan a cualquier profundidad
