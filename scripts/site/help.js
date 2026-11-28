@@ -7,8 +7,9 @@
  * carpeta de capturas). La página se arma al pedirla, así que no hay una segunda copia que se desactualice.
  *
  * Quién ve qué: cada sección `##` de la guía tiene sus roles en `SECCIONES`, una tabla cerrada. Una sección que la tabla
- * no conoce no se muestra a nadie (lo nuevo no queda a la vista por omisión) y la prueba frena. El filtro corre acá, en
- * el servidor: a quien no mantiene nunca le llega el texto de instalación.
+ * no conoce no se muestra a nadie (lo nuevo no queda a la vista por omisión) y la prueba frena. Dentro de una sección
+ * que ven todos, un bloque entre `<!-- maintainers-only -->` y `<!-- /maintainers-only -->` es sólo de quien mantiene. El
+ * filtro corre acá, en el servidor: a quien no mantiene nunca le llega el texto de instalación.
  *
  * El markdown se arma escapado: títulos, párrafos, listas, citas, código, tablas, enlaces e imágenes. Cualquier HTML del
  * archivo sale como texto; un enlace sólo es `https://` o `#ancla`; una imagen, sólo una captura de la guía, servida por
@@ -95,15 +96,32 @@ function partir(md) {
   return out.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n') }));
 }
 
+// Dentro de una sección que ven todos, un bloque sólo para quien mantiene (los pasos de instalación, una decisión interna)
+// va entre estas dos marcas, cada una sola en su renglón. Quien no mantiene no recibe el bloque; las marcas no las ve
+// nadie. Un bloque sin cierre llega hasta el final de su sección: si falta la marca de cierre, se oculta de más, no de menos.
+const ABRE_MANTIENE = /^<!-- maintainers-only -->\s*$/;
+const CIERRA_MANTIENE = /^<!-- \/maintainers-only -->\s*$/;
+function segunRol(texto, rol) {
+  const out = [];
+  let dentro = false;
+  for (const l of String(texto).split('\n')) {
+    if (ABRE_MANTIENE.test(l)) { dentro = true; continue; }
+    if (CIERRA_MANTIENE.test(l)) { dentro = false; continue; }
+    if (dentro && rol !== 'maintainer') continue;
+    out.push(l);
+  }
+  return out.join('\n');
+}
+
 /** Lo que ve `rol`: el comienzo y las secciones con ese rol. `desconocidas`: las que la tabla no conoce (no se muestran). */
 function paraRol(md, idioma, rol) {
   const tabla = SECCIONES[idioma] || {};
   const partes = [];
   const desconocidas = [];
   for (const s of partir(md)) {
-    if (s.titulo === null) { partes.push(s); continue; }
+    if (s.titulo === null) { partes.push({ ...s, texto: segunRol(s.texto, rol) }); continue; }
     if (!Object.prototype.hasOwnProperty.call(tabla, s.titulo)) { desconocidas.push(s.titulo); continue; }
-    if (tabla[s.titulo].includes(rol)) partes.push(s);
+    if (tabla[s.titulo].includes(rol)) partes.push({ ...s, texto: segunRol(s.texto, rol) });
   }
   return { partes, desconocidas };
 }

@@ -1,12 +1,16 @@
+<!-- maintainers-only -->
 # El sitio de la organización: qué es, cómo se usa y cómo se instala
 
 Esta guía es para quien nunca vio el sitio. Sirve a quien lo usa todos los días y a quien lo instala por primera vez.
 Primero cuenta qué es y cómo se usa; después, cómo se instala.
+<!-- /maintainers-only -->
 
 - **[Usar el sitio](#qué-es-y-para-qué-sirve):** qué es, el primer ingreso, cada pestaña, la configuración, qué ve
   cada persona y los problemas comunes.
+<!-- maintainers-only -->
 - **[El sitio demo](#el-sitio-demo):** el mismo sitio con datos de ejemplo, abierto y sin cuenta, para mostrarlo.
 - **[Instalarlo](#qué-hace-falta-antes):** qué hace falta, cómo probarlo en tu máquina y cómo dejarlo andando.
+<!-- /maintainers-only -->
 
 Cada paso de esta guía sale del código o de una ejecución real. Lo que todavía no se probó en real lo dice en la misma
 línea.
@@ -308,10 +312,12 @@ regla espera a que se cierre (los dos cambiarían el mismo bloque); rechazar sig
 y el de operaciones falló, reenviar no abre otro pedido al perfil. Si una propuesta cambió desde que la viste, la página
 pide recargar y no pisa nada. Con `site.auto_apply`, el botón dice **Enviar** y no espera a nadie.
 
+<!-- maintainers-only -->
 **Qué necesita.** Las dos identidades de escritura del sitio: la de operaciones para rechazar y la del perfil para
 aprobar (cómo se configuran, en «Lo que necesita «Aprendizajes»», en la instalación). Sin alguna, la pestaña se ve
 entera, de sólo lectura, y cada botón dice qué le falta. Las propuestas viven en el repo de operaciones: ese repo tiene
 que ser de lectura sólo para quienes mantienen, no para todo el equipo.
+<!-- /maintainers-only -->
 
 ### Proyectos
 
@@ -456,6 +462,7 @@ repo del perfil.
 **Qué hacer:** si una pieza no se entiende o falta algo, «Proponer una mejora». Si un paquete de tu organización dice
 que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el arnés tampoco lo carga.
 
+<!-- maintainers-only -->
 ### Horas y tokens
 
 **Qué contesta:** ¿cuánto trabajaron las sesiones de agente de cada máquina, y cuántos tokens consumieron, día por
@@ -527,6 +534,8 @@ esperan ahí.
 
 ![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
 
+<!-- /maintainers-only -->
+
 ## La pestaña «Oficinas»
 
 La oficina de cada máquina del equipo, en vivo: la misma que `/office` dibuja en la máquina, con una sala por máquina.
@@ -556,6 +565,7 @@ la carpeta personal ni las claves que se reconocen. La conversación viaja apart
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.
 
+<!-- maintainers-only -->
 **Lo que decidió el dueño.**
 - **D1** — La red: cada máquina abre una conexión de salida al sitio (`wss://`, puerto 443). Nada entra a la máquina.
 - **D1b** — Una sola copia del sitio: la última foto de cada máquina vive en su memoria, y cada receta fija una réplica.
@@ -566,14 +576,19 @@ hace cada dev; cada dev lo sabe por la línea de la huella.
 - **D5** — Un proceso por máquina, de fondo, que avisa cada cambio y vive mientras haya sesiones.
 - **D7** — Las rutas de la máquina, `/live/machine` y `/live/enroll`, quedan fuera del candado de la plataforma.
 
+<!-- /maintainers-only -->
+
 El canal de vuelta está cerrado: el sitio no le puede mandar órdenes a la máquina. Un mensaje que no sea de los que
 espera la máquina se descarta y corta la conexión.
 
+<!-- maintainers-only -->
 **Un sitio ya instalado: el paso de una vez.** `/live/machine` y `/live/enroll` están en `RUTAS_SIN_SESION`, pero el
 candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, se corre una vez la orden de
 `--excluded-paths` de la receta, que ya las nombra; en la receta local con túnel, se las deja libres en el candado del
 túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
 avisa «falta el paso de una vez» si el candado las tapa.
+
+<!-- /maintainers-only -->
 
 ## Configuración, sección por sección
 
