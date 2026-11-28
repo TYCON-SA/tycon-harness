@@ -33,4 +33,9 @@ test('W2 Productos_PrimeraColumnaFija — al desplazar se sigue viendo de qué p
   assert.match(cuerpo, /position:sticky/);
   assert.match(cuerpo, /left:0/);
   assert.match(cuerpo, /background:var\(--surface\)/, 'con fondo: si no, las otras columnas se ven por debajo');
+  // el margen de la caja (8 px) tapado a su izquierda y un borde a su derecha: el texto que pasa por debajo no asoma
+  assert.match(cuerpo, /box-shadow:-9px 0 0 var\(--surface\),1px 0 0 var\(--line\)/);
+  assert.match(regla('table.tabla#proyectos thead th:first-child'), /box-shadow:-9px 0 0 var\(--surface\)/);
+  // al pasar el mouse, el resaltado de la fila llega a la columna fija, sobre un fondo que tapa
+  assert.match(regla('table.tabla#proyectos tbody tr:hover th') || '', /background:linear-gradient\(var\(--wash\),var\(--wash\)\),var\(--surface\)/);
 });

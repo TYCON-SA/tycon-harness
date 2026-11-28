@@ -434,8 +434,10 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
 table.tabla#proyectos{min-width:940px}table.tabla#proyectos td:last-child{min-width:150px}
 table.tabla#proyectos thead th{white-space:normal}
 /* al desplazar la tabla de productos, la primera columna queda fija: se sigue viendo de qué producto es la fila */
-table.tabla#proyectos tbody th{position:sticky;left:0;z-index:1;background:var(--surface)}
-table.tabla#proyectos thead th:first-child{position:sticky;left:0;z-index:2;background:var(--surface)}
+table.tabla#proyectos tbody th{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:-9px 0 0 var(--surface),1px 0 0 var(--line)}
+table.tabla#proyectos thead th:first-child{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:-9px 0 0 var(--surface),1px 0 0 var(--line)}
+/* el resaltado de la fila también en la columna fija, sin dejar ver lo que pasa por debajo */
+table.tabla#proyectos tbody tr:hover th{background:linear-gradient(var(--wash),var(--wash)),var(--surface)}
 
 /* ── Corridas: la vista de la noche adentro del sitio ── su hoja carga después; esto va con más peso para que la letra
    sea la del sitio (la de la noche pide una tipografía que el sitio no trae) y los gráficos no pasen del ancho */
