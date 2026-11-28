@@ -321,3 +321,20 @@ test('T11 CarpetaDeMktemp_SeSabeDondeQueda — la carpeta temporal pasa; un mold
   // un TMPDIR relativo en el ambiente: mktemp lo usa relativo, no `/tmp`
   assert.deepStrictEqual(expandirRuta('T=$(mktemp -d); cat > $T/x', '$T/x', { env: { TMPDIR: 'src' } }).sinResolver, ['T']);
 });
+
+// T13 LlavesQueBashNoLee_NoSe
+// 🔴 Falla con (A215): `${}` (o una `${` sin nombre válido) se dejaba como texto: bash da «bad substitution», corta la
+// línea y deja el valor anterior. Y una `${` sin cerrar repetida era cuadrática.
+test('T13 LlavesQueBashNoLee_NoSe — ${} vacía o sin cerrar dan «no sé», en tiempo lineal', () => {
+  const v = (cmd, raw = '$F/x.txt') => expandirRuta(cmd, raw, { env: {} });
+  for (const c of ['F=/tmp/q${}; echo x > $F/x.txt', 'F=/tmp/q${ x}; echo x > $F/x.txt', 'F=/tmp/q${x; echo x > $F/x.txt']) {
+    assert.ok(v(c).sinResolver.length, `«no sé»: ${c}`);
+  }
+  assert.ok(expandirRuta('echo x > /tmp/${}/x.txt', '/tmp/${}/x.txt', { env: {} }).sinResolver.length, 'en el destino también');
+  assert.deepEqual(v('x=/tmp/q; F=${x}; echo x > $F/x.txt'), { valor: '/tmp/q/x.txt', sinResolver: [] }, '${x} se sigue leyendo');
+  const largo = 'F=' + '${a'.repeat(270000) + '; echo x > $F/x.txt';
+  const t0 = process.hrtime.bigint();
+  v(largo);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 1500, `tardó ${ms} ms`);
+});
