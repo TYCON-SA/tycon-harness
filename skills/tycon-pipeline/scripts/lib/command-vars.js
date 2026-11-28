@@ -76,26 +76,45 @@ const BLOQUE_CIERRA = new Set(['fi', 'done', 'esac']);
  */
 function sinEscapesDelShell(v) {
   const s = String(v);
-  // `$'…'` y `$"…"` (comillas de bash con escapes propios), o una comilla o contrabarra que corta un `$nombre` y sigue con
-  // una letra (`$x''do` es `$x` y `do` pegados: quitar las comillas daría la variable `xdo`): «no sé»
-  if (/\$["']/.test(s) || /\$[A-Za-z_][A-Za-z0-9_]*["'\\]+[A-Za-z0-9_]/.test(s)) return null;
+  // `$'…'`, `$"…"` (comillas de bash con escapes propios) y `$\x` (un `$` literal pegado a lo que sigue): «no sé»
+  if (/\$["'\\]/.test(s)) return null;
   let out = '';
   let modo = '';
+  // un `$nombre` que se está escribiendo ('' no, 'empieza' recién el `$`, 'sigue' ya con letras) y si lo último fue una
+  // comilla o una contrabarra que se quitó: si después viene una letra, quitarlas pegaría dos palabras en otra variable
+  // (`$x''do` no es `$xdo`): «no sé»
+  let nombre = '';
+  let corte = false;
+  const emitir = (c, deUnDolar = false) => {
+    const letra = /[A-Za-z0-9_]/.test(c);
+    if (corte && nombre && (letra || (nombre === 'empieza' && c === '{'))) return false;
+    corte = false;
+    if (deUnDolar) nombre = 'empieza';
+    else if (nombre === 'empieza' && /[A-Za-z_]/.test(c)) nombre = 'sigue';
+    else if (!(nombre === 'sigue' && letra)) nombre = '';
+    out += c;
+    return true;
+  };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (modo === "'") { if (c === "'") modo = ''; else if (c === '$' || c === '`') return null; else out += c; continue; }
-    if (c === '\\' && i + 1 < s.length) {
-      const sig = s[i + 1];
-      if (modo === '"' && !'$`"\\\n'.includes(sig)) { out += c; continue; }
-      i++;
-      if (sig === '\n') continue;
-      if (sig === '$' || sig === '`') return null;
-      out += sig;
+    if (modo === "'") {
+      if (c === "'") { modo = ''; corte = true; continue; }
+      if (c === '$' || c === '`') return null;
+      if (!emitir(c)) return null;
       continue;
     }
-    if (modo === '"') { if (c === '"') modo = ''; else out += c; continue; }
-    if (c === "'" || c === '"') { modo = c; continue; }
-    out += c;
+    if (c === '\\' && i + 1 < s.length) {
+      const sig = s[i + 1];
+      if (modo === '"' && !'$`"\\\n'.includes(sig)) { if (!emitir(c)) return null; continue; }
+      i++;
+      if (sig === '$' || sig === '`') return null;
+      corte = true;
+      if (sig !== '\n' && !emitir(sig)) return null;
+      continue;
+    }
+    if (modo === '"' && c === '"') { modo = ''; corte = true; continue; }
+    if (modo === '' && (c === "'" || c === '"')) { modo = c; corte = true; continue; }
+    if (!emitir(c, c === '$')) return null;
   }
   return out;
 }
