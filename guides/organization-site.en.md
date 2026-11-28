@@ -687,7 +687,7 @@ The sections, in the order of the screen:
   someone approves it; if the repository does not allow auto-merge either, the request stays. Before proposing, next to
   the button, the section says what will
   happen. Who did it stays written: the request's description names who asked for it, and the site's log records
-  `cambio aplicado: <file>, pedido <link>`. What counts is the option already in the repo: the change that
+  `cambio aplicado: <file>, pedido <link>` (change applied: file, request). What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
 - **"How the site is updated"**: whether the site brings itself up to date with the new
@@ -1417,7 +1417,7 @@ your own machine, for trying it out. The same goes for the operations repo addre
    `/livez` answers `{"ok":true}`. The check without a session makes sure that, without signing in, nothing is visible.
    With made-up values (a repo that does not exist) we measured it: the site starts, `/livez` gives 200, `/` redirects to
    the GitHub sign-in, `/api/inicio` gives 401, and the site is **stopped** because it cannot read the repo (`/healthz`
-   gives 503 and the check says "el sitio está frenado"). With the real repo and its token, the site loads.
+   gives 503 and the check says "el sitio está frenado" (the site is stopped)). With the real repo and its token, the site loads.
 
    **The minimum operations repo.** For the site to start without being stopped, `operations.json`, at the root of
    `main`, needs at least this (with your email instead of the example one). Measured: with this file, `/healthz` gives
@@ -1433,8 +1433,9 @@ your own machine, for trying it out. The same goes for the operations repo addre
    ```
 
    `owners` and `reviewers` belong to the night processes, but the file does not validate without them (the container
-   log says what is missing: "owners: falta"). If the site is stopped, the exact reason is in that log, not in
-   `/healthz`. With a repo like this, the log also says "el repo de operaciones no trae repos.json" and "sin_foto":
+   log says what is missing: "owners: falta" (owners: missing)). If the site is stopped, the exact reason is in that log, not in
+   `/healthz`. With a repo like this, the log also says "el repo de operaciones no trae repos.json" (the operations repo has no repos.json) and "sin_foto"
+   (no snapshot):
    that is normal until the night has run.
 
 4. **Sign in.** Open http://127.0.0.1:8080 and sign in with your account. For that you first register the application
@@ -1611,7 +1612,7 @@ GitHub README, the site does not propose changes to `operations.json`: it valida
 opens the pull request by hand.
 
 **What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a
-request with who asked for it, and the site's log records `cambio aplicado: <file>, pedido <link>`. Whoever
+request with who asked for it, and the site's log records `cambio aplicado: <file>, pedido <link>` (change applied: file, request). Whoever
 can write to the operations repo can make themselves a site maintainer or change a night process without anyone else
 looking: what you guard is who has write access to that repo.
 
@@ -1751,7 +1752,7 @@ there is something new:
   the one running. Each environment runs it with its own tool: each recipe has its **Up to date** paragraph.
 - **From an old image, the first one goes by hand.** An image published before images carried their version does not
   tell the updater which version is running, and without knowing it, it installs nothing (it never downgrades): the
-  result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
+  result says "no se sabe qué versión corre" (which version runs is not known) and the first update goes by hand, with your environment's recipe. From
   then on, the automatic mode carries on by itself.
 - **A one-time step when moving to a version with the "You signed out" page.** If the site sits behind the platform's
   lock (the cloud's built-in sign-in), the "You signed out" page and what it loads should stay outside that lock: that
@@ -1776,10 +1777,12 @@ After any installation, and every morning from the night process:
 node scripts/site/check-deploy.js --url https://<site address>
 ```
 
-It asks, without a session, what a stranger would ask. It exits 0 if nothing is visible; 1 with the reason ("el sitio
-responde sin iniciar sesión", "/api contesta con datos", "el sitio está frenado", "/healthz cuenta de más", "falta
-no-store", "acepta http", "sin Referer: el candado de la plataforma frenaría las escrituras de Configuración" — the
-site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
+It asks, without a session, what a stranger would ask. It exits 0 if nothing is visible; 1 with the reason, which it prints in Spanish:
+"el sitio responde sin iniciar sesión" (the site answers without signing in), "/api contesta con datos" (/api answers
+with data), "el sitio está frenado" (the site is stopped), "/healthz cuenta de más" (/healthz tells too much), "falta
+no-store" (no-store is missing), "acepta http" (it accepts plain http), "sin Referer: el candado de la plataforma
+frenaría las escrituras de Configuración" (without a Referer, the platform's lock would stop Configuration's writes —
+the site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
 while to wake up. The morning notice carries the link only if it passed that morning.
 
 It also asks for the sign-out page (`/saliste`) without a session. If the platform's lock answers it instead of the
