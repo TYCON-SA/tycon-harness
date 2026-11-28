@@ -1052,13 +1052,17 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((' \\' )) ${H}; done`, `: 'for ((' \\' ; for ((i=0;i<1;i++)) do rm $(: ')' ')' ) ${H}; done`,
     `for ((i=0;i<1;i++)) do for ((j=0;j<1;j++)) do rm $(: $(: 'for ((')) ${H}; done; done`,
     // con más cabeceras sin `;` que el tope no se lee qué corre: frena
-    `${'for ((i=0;i<1;i++)) do echo $i; done; '.repeat(9)}cp README.md ${H}`,
+    `${'for ((i=0;i<1;i++)) do echo $i; done; '.repeat(25)}cp README.md ${H}`,
+    // (séptima vuelta) la cabecera partida en dos renglones
+    `for \\\n((i=0;i<1;i++)) do cp README.md ${H}; done`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
     `pwsh -Command 'cp README.md notas.txt'`, `pwsh -Command '((x > notas.txt))'`, `echo "pwsh -Command 'cp README.md ${H}'"`,
     `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`, `echo 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`,
     `pwsh -Command 'Get-Content README.md' 2>&1 | tail -5`, `pwsh -File script.ps1 <<'EOF'\nhola\nEOF`,
+    // nueve bucles sin `;` que no escriben, o nueve `for ((` en un texto, se leen (el tope es 24)
+    `${'for ((i=0;i<3;i++)) do echo $i; done; '.repeat(9)}echo fin`, `grep -c ${"-e 'for ((a)) b' ".repeat(9)}README.md`,
     // (un texto pegado a su opción, `-m'…'`, o un comentario que copian literalmente un `for ((…)) do cp … h.md` pueden
     // frenar: la lectura con el `;` es en todo el texto, el lado seguro)
   ]) pasa(c, cmd);

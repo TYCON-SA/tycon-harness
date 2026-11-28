@@ -442,7 +442,8 @@ function puntosDeSeparador(t) {
   // dónde va cada `;`, y si reemplaza un blanco
   const puntos = new Map();
   if (!t.includes('((')) return puntos;
-  for (const m of t.matchAll(/(?<![\w$.-])for[ \t]*\(\(/g)) {
+  // (también con la cabecera partida en dos renglones: `for \⏎((…))`)
+  for (const m of t.matchAll(/(?<![\w$.-])for(?:[ \t]|\\\r?\n)*\(\(/g)) {
     const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
     if (fin < 0) continue;
     let k = fin + 1;
@@ -467,7 +468,7 @@ function conSeparadorTrasElFor(texto) {
 }
 
 // hasta cuántas cabeceras se lee una versión por cada una sola
-const TOPE_DE_CABECERAS = 8;
+const TOPE_DE_CABECERAS = 24;
 
 /**
  * Las versiones del comando con el `;` de `conSeparadorTrasElFor` que hay que leer además de la de tal cual: con todas
