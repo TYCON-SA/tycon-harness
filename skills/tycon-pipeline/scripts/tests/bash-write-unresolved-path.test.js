@@ -332,4 +332,10 @@ test('T12 EscapesEnElValor_ComoLosQuitaBash — fuera de comillas se quitan, ent
   assert.deepEqual(v('F="/tmp/a\\\\b"; echo x > $F/x.txt'), { valor: '/tmp/a\\b/x.txt', sinResolver: [] }, 'entre comillas dobles `\\\\` es una');
   assert.deepEqual(v("F=/tmp/'ca\\r'peta; echo x > $F/x.txt"), { valor: '/tmp/ca\\rpeta/x.txt', sinResolver: [] }, 'un tramo entre comillas simples es literal');
   assert.ok(v('F=/tmp/\\$HOME; echo x > $F/x.txt').sinResolver.length, 'un `$` escapado es literal: no se sabe representar, «no sé»');
+  // de la revisión de Fable: lo que bash lee distinto y quitar comillas no alcanza
+  assert.deepEqual(v("F='/tmp/est''ado'; echo x > $F/x.txt"), { valor: '/tmp/estado/x.txt', sinResolver: [] }, 'comillas simples con comillas adentro');
+  for (const c of ["F=$'/tmp/estado'; echo x > $F/x.txt", "F=/tmp/est$'\\141'do; echo x > $F/x.txt", 'F=$"/tmp/estado"; echo x > $F/x.txt',
+    "x=esta; xdo=/tmp/q; F=/tmp/$x''do; echo x > $F/x.txt", 'x=esta; xdo=/tmp/q; F=/tmp/"$x"do; echo x > $F/x.txt', 'x=esta; xdo=/tmp/q; F=/tmp/$x\\do; echo x > $F/x.txt']) {
+    assert.ok(v(c).sinResolver.length, `«no sé»: ${c}`);
+  }
 });

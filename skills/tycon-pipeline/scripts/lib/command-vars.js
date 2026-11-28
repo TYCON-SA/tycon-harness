@@ -76,6 +76,9 @@ const BLOQUE_CIERRA = new Set(['fi', 'done', 'esac']);
  */
 function sinEscapesDelShell(v) {
   const s = String(v);
+  // `$'…'` y `$"…"` (comillas de bash con escapes propios), o una comilla o contrabarra que corta un `$nombre` y sigue con
+  // una letra (`$x''do` es `$x` y `do` pegados: quitar las comillas daría la variable `xdo`): «no sé»
+  if (/\$["']/.test(s) || /\$[A-Za-z_][A-Za-z0-9_]*["'\\]+[A-Za-z0-9_]/.test(s)) return null;
   let out = '';
   let modo = '';
   for (let i = 0; i < s.length; i++) {
@@ -427,12 +430,9 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
           const crudo = String(a.valor);
           // `D=$(mktemp -d …)`: una carpeta temporal, que se sabe dónde queda aunque no su nombre
           const temporal = carpetaDeMktemp(crudo, a.pos, asigs, env);
-          if (temporal !== null) { a.resuelto = temporal; a.temporal = true; } else if (/^'[\s\S]*'$/.test(crudo)) {
-            // entre comillas simples el shell no expande nada: el valor es literal. Si trae un `$`, la ruta final tendría
-            // un `$` de verdad y otra pieza (resolveTarget) lo expandiría: «no sé».
-            const literal = crudo.slice(1, -1);
-            a.resuelto = /\$/.test(literal) ? NO_SE : literal;
-          } else {
+          if (temporal !== null) { a.resuelto = temporal; a.temporal = true; } else {
+            // entre comillas simples el shell no expande nada; si trae un `$`, la ruta final tendría un `$` de verdad y
+            // otra pieza (resolveTarget) lo expandiría: sinEscapesDelShell da «no sé»
             const literal = sinEscapesDelShell(crudo);
             const r = literal === null ? { valor: null } : expandirEn(literal, a.pos, asigs, env, home, prof + 1);
             a.resuelto = r.valor === null ? NO_SE : r.valor;
