@@ -264,7 +264,8 @@ function handle(evento, opts = {}) {
   // (`conSeparadorTrasElFor`)
   const original = evento?.tool_input?.command;
   const separado = typeof original === 'string' ? conSeparadorTrasElFor(original) : original;
-  const event = separado === original ? evento : { ...evento, tool_input: { ...evento.tool_input, command: separado } };
+  // (la aprobación del dueño a un comando exacto se busca con el que llegó: `comandoTalCual`)
+  const event = separado === original ? evento : { ...evento, comandoTalCual: original, tool_input: { ...evento.tool_input, command: separado } };
   modoDeLectura({ apagoAlgo: false });
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !modoDeLectura().apagoAlgo) return r;

@@ -1111,6 +1111,11 @@ function shellLeeEntrada(tramo) {
   const words = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((w) => w !== '');
   const programa = nombreDeComando(words[0]);
   if (programa === 'source' || programa === '.') return LA_ENTRADA_COMO_ARCHIVO.test(words.slice(1).find((w) => w !== '--') || '');
+  // PowerShell: con `-Command -` o `-File -`, o sin ninguno de los dos (sin saber qué opción lleva valor, se lee la entrada)
+  if (programa === 'pwsh' || programa === 'powershell') {
+    const i = words.findIndex((w, k) => k > 0 && (COMANDO_DE_POWERSHELL.test(w) || ARCHIVO_DE_POWERSHELL.test(w)));
+    return i < 0 || words[i + 1] === '-';
+  }
   if (!SHELLS_QUE_LEEN_COMANDOS.has(programa)) return false;
   for (let i = 1; i < words.length; i++) {
     if (/^-[A-Za-z]*c/.test(words[i])) return false;
@@ -1472,6 +1477,8 @@ function palabrasConAnsi(tramo) {
 const COMANDO_DE_POWERSHELL = /^(?:--?|\/)(?:c|co|com|comm|comma|comman|command|commandwithargs|cwa)$/i;
 // y las que lo llevan en base64 de UTF-16 (`-e`, `-ec`, `-enc`, `-EncodedCommand`)
 const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)$/i;
+// y la que corre un guion (`-f`, `-File`)
+const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
 
 /**
  * Lo que corre `pwsh` o `powershell` con `-Command` (o `-c`, `-cwa`, `-EncodedCommand`): las palabras que siguen,
@@ -1479,7 +1486,8 @@ const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|e
  * más, y como lo lee el freno en la herramienta PowerShell: `((cp a b))` copia.
  */
 function cuerpoDePowerShell(tramo) {
-  const w = palabrasConAnsi(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
+  // (sin las redirecciones del tramo: `pwsh -c 'cp a b' 2>&1` no copia a `1`)
+  const w = palabrasConAnsi(sinRedireccionesDeSalida(sinPalabrasDelShell(pelarEnv(tramo).resto))).filter((x) => x !== '');
   let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
   while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command', 'busybox', 'toybox'].includes(nombreDeComando(w[k0]))) k0++;
   if (!['pwsh', 'powershell'].includes(nombreDeComando(w[k0]))) return null;

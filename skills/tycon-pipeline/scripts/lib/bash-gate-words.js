@@ -431,19 +431,20 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
 
 /**
  * El comando con un `;` detrás de la cabecera de cada `for ((…))` que no lo tiene: `for ((i=0;i<1;i++)) do cp a b`,
- * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. Sólo donde
- * empieza un comando (`dondeEmpiezaUnComando`), fuera de comillas y heredocs. El primer blanco de detrás se cambia por
- * el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda como está.
+ * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. En todo
+ * el texto, también entre comillas y en comentarios: un `for ((` que no abre un comando es un error del shell y no corre
+ * nada, y el de un `"$(…)"`, una función, un `case` o un `<(…)` sí corre; lo citado sigue siendo texto para quien lo lee.
+ * El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda igual.
  */
 function conSeparadorTrasElFor(texto) {
   const t = String(texto);
-  if (!/\bfor[ \t]*\(\(/.test(t)) return t;
-  const es = posicionesDeComando(t);
+  const cabecera = /(?<![\w$.-])for[ \t]*\(\(/g;
+  if (!t.includes('((')) return t;
   let out = '';
   let hecho = 0;
-  for (const m of t.matchAll(/\bfor[ \t]*\(\(/g)) {
+  for (const m of t.matchAll(cabecera)) {
     const f = m.index;
-    if (f < hecho || !es[f] || !dondeEmpiezaUnComando(t, f)) continue;
+    if (f < hecho) continue;
     const fin = cierreDeParentesis(t, f + m[0].length - 2);
     if (fin < 0) continue;
     let k = fin + 1;

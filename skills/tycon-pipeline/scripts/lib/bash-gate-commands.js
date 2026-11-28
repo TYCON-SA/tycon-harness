@@ -1020,7 +1020,7 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     if (cuerpo !== null) for (const b of cuerpoConValores(cuerpo, asignados)) sumarConCd(b);
     // lo que corre PowerShell con `-Command` (`pwsh -Command '((cp a h.md))'`)
     const dePowerShell = cuerpoDePowerShell(tramo);
-    if (dePowerShell !== null) sumarConCd(dePowerShell);
+    if (dePowerShell !== null) for (const b of cuerpoConValores(dePowerShell, asignados)) sumarConCd(b);
     // `busybox` y `toybox` corren el programa que les sigue (`busybox rm h.md`, `sudo busybox sh -c '…'`): se mira el
     // tramo sin ellos, con lo que vale afuera
     if (w.some((x) => /^(?:\S*\/)?(?:busybox|toybox)$/.test(x))) {

@@ -807,8 +807,8 @@ function coordinadoraPorConsola(event, opts = {}) {
   };
   return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
     sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,
-    // con el click del dueño a este comando exacto, pasa una vez
-    comando: original, cwd: baseCwd, casa: opts.casa, buscar: opts.buscarAprobacion, herramienta: opts.herramienta,
+    // con el click del dueño a este comando exacto, pasa una vez (el que llegó, sin el `;` de `conSeparadorTrasElFor`)
+    comando: event?.comandoTalCual ?? original, cwd: baseCwd, casa: opts.casa, buscar: opts.buscarAprobacion, herramienta: opts.herramienta,
   });
 }
 

@@ -1023,9 +1023,19 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     `if true; then for ((i=0;i<1;i++)) do cp README.md ${H}; done; fi`, `for ((i=0;i<1;i++)) do rm ${H}; done`,
     `bash -c "for ((i=0;i<1;i++)) do rm ${H}; done"`, `pwsh -Command "rm ${H}"`,
     `pwsh -EncodedCommand ${Buffer.from(`cp README.md ${H}`, 'utf16le').toString('base64')}`,
+    // (revisión de Fable) las redirecciones de afuera no son destinos de la copia; las variables de afuera valen; la entrada
+    `pwsh -Command 'cp README.md ${H}' 2>/dev/null`, `pwsh -Command 'cp README.md ${H}' 2>&1 | tail -5`,
+    `F=${H}; pwsh -c "cp README.md $F"`, `F=${H}; pwsh -c 'rm $F'`, `echo 'cp README.md ${H}' | pwsh -Command -`,
+    `pwsh <<'EOF'\ncp README.md ${H}\nEOF`,
+    // el `for` en una función, un `case`, un `<(…)`, un `"$(…)"`, tres anidados, detrás de un comentario con apóstrofo
+    `f() { for ((i=0;i<1;i++)) do cp README.md ${H}; done; }; f`, `case x in x) for ((i=0;i<1;i++)) do cp README.md ${H}; done;; esac`,
+    `cat <(for ((i=0;i<1;i++)) do cp README.md ${H}; done)`, `x="$(for ((i=0;i<1;i++)) do cp README.md ${H}; done)"`,
+    `for ((i=0;i<1;i++)) do for ((j=0;j<1;j++)) do for ((k=0;k<1;k++)) do cp README.md ${H}; done; done; done`,
+    `# don't\nfor ((i=0;i<1;i++)) do cp README.md ${H}; done`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
     `pwsh -Command 'cp README.md notas.txt'`, `pwsh -Command '((x > notas.txt))'`, `echo "pwsh -Command 'cp README.md ${H}'"`,
-    `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`]) pasa(c, cmd);
+    `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`, `echo 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`,
+    `pwsh -Command 'Get-Content README.md' 2>&1 | tail -5`, `pwsh -File script.ps1 <<'EOF'\nhola\nEOF`]) pasa(c, cmd);
 });
