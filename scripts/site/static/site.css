@@ -722,11 +722,17 @@ details.dia-a-dia{margin-top:18px}
 :root{--serie-1:#257de0;--serie-2:#f47230;--serie-3:#00b894;--serie-4:#f2a600;--serie-5:#ee7fac;--serie-6:#008a17;--serie-7:#6a4ce2;--serie-8:#ec4647}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--serie-1:#338ced;--serie-2:#e76624;--serie-3:#00a888;--serie-4:#d28e05;--serie-5:#e24d8b;--serie-6:#0aac23;--serie-7:#9887ef;--serie-8:#eb6263}}
 :root[data-theme="dark"]{--serie-1:#338ced;--serie-2:#e76624;--serie-3:#00a888;--serie-4:#d28e05;--serie-5:#e24d8b;--serie-6:#0aac23;--serie-7:#9887ef;--serie-8:#eb6263}
-figure.grafico{margin:12px 0}figure.grafico figcaption{font-size:13px;color:var(--ink-2);margin-bottom:4px}figure.grafico svg{width:100%;max-width:640px;height:auto}
-figure.grafico .grilla{stroke:var(--grid);stroke-width:1}figure.grafico .eje{font-size:11px;fill:var(--ink-3)}figure.grafico .sin-medir{font-size:11px;fill:var(--nm-ink)}figure.grafico .barra-tokens{fill:var(--ink-3)}
+figure.grafico{margin:12px 0}figure.grafico figcaption{font-size:13px;color:var(--ink-2);margin-bottom:4px}figure.grafico svg{width:100%;min-width:480px;max-width:640px;height:auto}
+figure.grafico .grilla{stroke:var(--grid);stroke-width:1}figure.grafico .eje{font-size:13px;fill:var(--ink-3)}figure.grafico .sin-medir{font-size:13px;fill:var(--nm-ink)}figure.grafico .barra-tokens{fill:var(--ink-3)}
 ul.leyenda{list-style:none;padding:0;margin:4px 0 12px;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--ink-2)}ul.leyenda .muestra{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 p.aviso{border-left:3px solid var(--warn);padding:4px 10px;background:var(--warn-soft)}table.por-persona td,table.por-persona th{white-space:nowrap}
 table.horas-personas,table.por-persona{border-collapse:collapse;margin:6px 0 14px}
 table.horas-personas th,table.horas-personas td,table.por-persona th,table.por-persona td{padding:5px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 table.horas-personas td,table.por-persona td{font-variant-numeric:tabular-nums}
-div.desliza{overflow-x:auto;max-width:100%}
+/* una tabla o un gráfico más ancho que la pantalla se desliza dentro de su caja, nunca la página entera; la sombra del
+   borde dice que hay más de ese lado (se va cuando se llega al final: el fondo «local» se mueve con el contenido) */
+div.desliza{overflow-x:auto;max-width:100%;background:linear-gradient(to right,var(--page) 30%,transparent),linear-gradient(to left,var(--page) 30%,transparent) 100% 0,radial-gradient(farthest-side at 0 50%,rgba(0,0,0,.18),transparent),radial-gradient(farthest-side at 100% 50%,rgba(0,0,0,.18),transparent) 100% 0;background-repeat:no-repeat;background-size:40px 100%,40px 100%,14px 100%,14px 100%;background-attachment:local,local,scroll,scroll}
+p.desliza-aviso{font-size:12.5px;color:var(--ink-2);margin:8px 0 2px}
+table.horas thead th,table.horas tbody th,table.horas-personas td,table.horas-personas th{white-space:nowrap}
+/* en el celular cada celda por máquina guarda un ancho que se lee, en vez de partirse palabra por palabra */
+table.horas td{min-width:13em}

@@ -224,7 +224,7 @@ function htmlTabla(tabla, idioma) {
       : lineas(idioma, { horas: tot.con_horas ? { arnes_segundos: tot.arnes_segundos, sesion_segundos: tot.sesion_segundos } : null, tokens: tot.con_tokens ? tot : null }) + sinMedir;
     return `<tr><th scope="row">${esc(d)}</th>${celdas}<td class="total">${total}</td></tr>`;
   }).join('');
-  return `<table class="horas"><thead>${cab}</thead><tbody>${filas}</tbody></table>`;
+  return `<div class="desliza" tabindex="0"><table class="horas"><thead>${cab}</thead><tbody>${filas}</tbody></table></div>`;
 }
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -387,7 +387,7 @@ function htmlResumen(r, idioma) {
     + `${ficha(t('horas.fichaSinMedir'), String(r.semana.sinMedir))}${ficha(t('horas.fichaCosto'), textoCosto(r.semana.costo, t))}</div>`;
   const filas = r.personas.map((f) => `<tr><th scope="row">${esc(nombreDeFila(f, t))}${f.maquinas.length > 1 || f.maquinas[0] !== f.persona ? `<div class="maquinas">${esc(t('horas.maquinasDe', { lista: f.maquinas.join(', ') }))}</div>` : ''}</th>`
     + `<td>${h(f.promedioDia)}</td><td>${h(f.segundos)}</td><td>${esc(t('horas.nDe7', { n: f.diasMedidos }))}</td><td>${tk(f.tokens)}</td><td>${textoCosto(f.costo, t)}</td></tr>`).join('');
-  const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><table class="horas-personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th><th>${esc(t('horas.costoColumna'))}</th></tr></thead><tbody>${filas}</tbody></table>` : '';
+  const tabla = r.personas.length ? `<h3>${esc(t('horas.porPersona'))}</h3><div class="desliza" tabindex="0"><table class="horas-personas"><thead><tr><th>${esc(t('horas.persona'))}</th><th>${esc(t('horas.promedioDia'))}</th><th>${esc(t('horas.totalSemana'))}</th><th>${esc(t('horas.diasMedidos'))}</th><th>${esc(t('horas.tokensSinCache'))}</th><th>${esc(t('horas.costoColumna'))}</th></tr></thead><tbody>${filas}</tbody></table></div>` : '';
   const fuera = r.fuera ? `<p class="nota">${esc(r.fuera === 1 ? t('horas.fuera1') : t('horas.fueraN', { n: r.fuera }))}</p>` : '';
   const avisos = (r.sinHoras || []).map((m) => `<p class="aviso">${esc(t('horas.sinHoras', { maquina: m }))}</p>`).join('');
   return `${titulo}${avisos}${fichas}${tabla}${fuera}`;
@@ -431,7 +431,8 @@ function htmlSemanas(r, idioma) {
       }).join('');
       return `${etiqueta}${partes}`;
     }).join('');
-    return `<figure class="grafico"><figcaption>${esc(titulo)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">${grilla}${barras}</svg></figure>`;
+    // en una pantalla angosta el gráfico se desliza en vez de achicarse hasta que los rótulos no se leen
+    return `<div class="desliza" tabindex="0"><figure class="grafico"><figcaption>${esc(titulo)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">${grilla}${barras}</svg></figure></div>`;
   };
   const horas = semanas.map((s) => nombres.map((persona, i) => ({ persona, i, valor: s.porPersona[persona] })).filter((p) => p.valor !== null));
   const leyenda = `<ul class="leyenda">${nombres.map((n, i) => `<li><span class="muestra" style="background:${color(i)}"></span>${esc(i < SERIES ? etiquetas[i] : `${etiquetas[i]} (${t('horas.otras')})`)}</li>`).join('')}</ul>`;
@@ -451,7 +452,8 @@ function htmlDiaPorPersona(tabla, r, idioma) {
     }).join('');
     return `<tr><th scope="row">${esc(nombreDeFila(p, t))}</th>${celdas}</tr>`;
   }).join('');
-  return `<div class="desliza"><table class="por-persona"><thead>${cab}</thead><tbody>${filas}</tbody></table></div>`;
+  // 30 columnas no entran en la pantalla: se dice que hay más y hacia dónde
+  return `<p class="desliza-aviso">${esc(t('horas.deslizaAviso', { n: dias.length }))}</p><div class="desliza" tabindex="0"><table class="por-persona"><thead>${cab}</thead><tbody>${filas}</tbody></table></div>`;
 }
 
 function crearRutas({ fuentes, log = () => {}, ahora = Date.now } = {}) {

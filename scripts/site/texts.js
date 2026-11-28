@@ -2797,6 +2797,7 @@ const TEXTOS = {
   'horas.graficoTokens': { es: 'Tokens sin caché, por semana', en: 'Tokens without cache, by week' },
   'horas.sinMedirCorto': { es: 'sin medir', en: 'not measured' },
   'horas.otras': { es: 'con las demás', en: 'with the rest' },
+  'horas.deslizaAviso': { es: '{n} días, del más nuevo al más viejo: deslizá la tabla de costado para ver el resto →', en: '{n} days, newest first: scroll the table sideways to see the rest →' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la
