@@ -1824,12 +1824,12 @@ tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)
 .det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
 /* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
-@media (max-width:640px){.tabla{overflow-x:visible}.tabla table{display:block;min-width:0}.tabla thead{display:none}.tabla tbody{display:block}
-.tabla tbody tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
-.tabla tbody tr[data-i] td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
-.tabla tbody tr[data-i] td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
-.tabla tbody tr[data-i] td.story,.tabla tbody tr[data-i] td.barra,.tabla tbody tr[data-i] td.frenos{grid-column:1/-1}
-.tabla .fila-det{display:block}.tabla .fila-det td{display:block}.tabla tbody tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
+@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block;min-width:0}.tabla>table>thead{display:none}.tabla>table>tbody{display:block}
+.tabla>table>tbody>tr[data-i]{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line-strong)}
+.tabla>table>tbody>tr[data-i]>td{display:block;border:0;padding:0;min-width:0;width:auto;text-align:left;white-space:normal}
+.tabla>table>tbody>tr[data-i]>td[data-col]::before{content:attr(data-col);display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+.tabla>table>tbody>tr[data-i]>td.story,.tabla>table>tbody>tr[data-i]>td.barra,.tabla>table>tbody>tr[data-i]>td.frenos{grid-column:1/-1}
+.tabla>table>tbody>.fila-det{display:block}.tabla>table>tbody>.fila-det>td{display:block}.tabla>table>tbody>tr[hidden]{display:none}.det{position:static;width:auto}.tabla-caja.sigue::after{opacity:0}}
 .det-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .det-head b{font-size:16px}.det-head .mono{font-size:12.5px;color:var(--ink-2)}.det-head .sub{color:var(--ink-3);font-size:11.5px;margin-top:3px}
 .det-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
