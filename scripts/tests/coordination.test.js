@@ -23,7 +23,8 @@ const esperar = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0
 
 // A toy machine: HOME with its Claude folder, the pipeline state and a profile outside HOME.
 function toy({ profile = {}, machine = null } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-'));
+  // la ruta real, como la da git (en Windows, C:\Windows\TEMP es Temp en el disco: sólo la nativa lo dice)
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'coord-')));
   const home = path.join(root, 'home');
   fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
   const state = stateDir(home);
@@ -2153,10 +2154,11 @@ function nextWithOwnPass(t, { pending, exempt = false, status = 'completed' }) {
     adversarial: { launchedAtStep: 'run-tests', runId: 'wf_own', sessionId: 'propia-1', launchedAt: new Date(mins(20)).toISOString() },
   });
   workflowRecord(t, 'propia-1', 'wf_own', status);
-  const env = { ...process.env, HOME: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1' };
+  // la casa en las dos variables: en Windows sale de USERPROFILE
+  const env = { ...process.env, HOME: t.home, USERPROFILE: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1' };
   for (const k of ['TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'TYCON_5B_EARLY', 'TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS']) delete env[k];
   const r = spawnSync(process.execPath, [PIPELINE, 'next'], { encoding: 'utf8', env, cwd: repo });
-  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.status, 0, r.stderr || r.stdout);
   return JSON.parse(r.stdout);
 }
 
@@ -3373,11 +3375,12 @@ test('OwnerNext_PrintsDetailBelowQuestion_WithoutFileList (T15) @story-8.275 @ac
   for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\nb=2\n');
   git('commit', '-qam', 'cambio');
   const entradas = JSON.stringify(controles.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
-  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh');
+  // con barras normales, como lo escribe el agente en la consola (en Windows, el bash de Git)
+  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/');
+  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh').split(path.sep).join('/');
   const pedidos = {
     'plan-approval': `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño"`,
-    'control-change': `bash ${CONTROLES} approve --root ${repo} --base ${base} --entries '${entradas}'`,
+    'control-change': `bash ${CONTROLES} approve --root ${repo.split(path.sep).join('/')} --base ${base} --entries '${entradas}'`,
   };
   const ahora = Date.parse('2026-11-04T12:30:00Z');
   for (const [firma, comando] of Object.entries(pedidos)) {
@@ -3556,7 +3559,8 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
   OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
   try {
     const ow = require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js'));
-    const extra = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js')} smart-reloop --iter 3 --extra-round`;
+    // con barras normales, como lo escribe el agente en la consola (en Windows, el bash de Git)
+    const extra = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js').split(path.sep).join('/')} smart-reloop --iter 3 --extra-round`;
     const desviado = `${extra} --repo /r --for-session ses-a`;
     sl.anotarFirma({ casa: t.home, firma: 'extra-round', titulo: 'pedir una vuelta más', sesion: 'ses-a', destino: 'ses-a', comando: extra, palabras: ow.canonica(extra), cwd: '/r', ahora: NOW - 60000,
       delegable: { comando: desviado, coordinadora: 's-coord', cwd: '/c', tool_use_id: 'toolu_01', plazo_min: 10 } });
@@ -3566,7 +3570,7 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
     assert.doesNotMatch(n, /sin firmar nada vos/);
     assert.doesNotMatch(n, /esperan a la persona/);
     // y una común: las dos cuentas por separado, y la frase sólo para la de la persona
-    const marcar = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js')} mark-tested --acs 3`;
+    const marcar = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/')} mark-tested --acs 3`;
     sl.anotarFirma({ casa: t.home, firma: 'manual-test', titulo: 'marcar un criterio', sesion: 'ses-a', destino: 'ses-a', comando: marcar, palabras: ow.canonica(marcar), cwd: '/r', ahora: NOW - 60000 });
     n = C.listNotice({ ...t.opts, sessionId: 's-coord', prompt: 'volví de nuevo' });
     assert.match(n, /esperan a la persona 1 firma\./);
