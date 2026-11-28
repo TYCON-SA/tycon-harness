@@ -2030,3 +2030,66 @@ test('A42 Maquina_ConexionVieja_ElSitioLaRenueva_YVuelveSola — issue 1798', as
   assert.ok(r0, 'con 0 arranca');
   assert.throws(() => crearSitio({ env: H.envBase({ SITE_OFFICE_RECONNECT_MINUTES: 'diez' }), fuentes: H.fuentesFijas({ config: ops(), personas: personasDe() }), llaves: null }), /SITE_OFFICE_RECONNECT_MINUTES/);
 });
+
+test('F29 Apagado_CierraLasMaquinasConReinicioDelServicio — issue 1777 punto 5', async () => {
+  // una plataforma que drena la instancia vieja (Cloud Run) deja abiertas sus conexiones hasta el plazo: al apagarse, el
+  // sitio cierra cada conexión de máquina con 1012 («el servicio se reinicia») y la máquina abre otra contra la nueva
+  const h = await montar();
+  try {
+    const k = par();
+    pedir(h.llaves, k);
+    h.aprobar(k);
+    const m = await maquinaCruda(h, k);
+    assert.ok(m.msgs.some((x) => x.type === 'ack'), 'la máquina entró');
+    await h.reiniciar();
+    await hasta(() => m.cerro !== null, 3000, 'el cierre');
+    assert.strictEqual(m.cerro, 1012, 'cierra con 1012, no corta en seco');
+  } finally { await h.cerrar(); }
+});
+
+test('F29 Cadencia_UnIntermediarioCortaCadaMinuto_ElSitioAvisaUnaVez — issue 1777 punto 4', async () => {
+  const reloj = { t: Date.now() };
+  const h = await montar({ reloj });
+  try {
+    const k = par();
+    pedir(h.llaves, k);
+    h.aprobar(k);
+    const avisos = () => h.registro.filter((l) => /maquina-a reconecta cada ~\d+ s/.test(l));
+    // la conexión dura lo que el otro lado deja y la corta él, sin cierre del sitio
+    const vuelta = async (ms) => {
+      const m = await maquinaCruda(h, k);
+      assert.ok(m.msgs.some((x) => x.type === 'ack'), 'la máquina entró');
+      reloj.t += ms;
+      m.ws.terminate();
+      await hasta(() => !h.centro.conectada('maquina-a'), 3000, 'el corte');
+    };
+    // duraciones dispares: un corte de red cualquiera, no avisa
+    for (const ms of [30000, 200000, 61000]) await vuelta(ms);
+    assert.strictEqual(avisos().length, 0, 'cortes sin ritmo no avisan');
+    // tres cortes seguidos a ~61 s: avisa una vez, con el número y qué mirar
+    for (const ms of [61000, 61500, 60800]) await vuelta(ms);
+    assert.strictEqual(avisos().length, 1, 'avisa al tercer corte parejo');
+    assert.match(avisos()[0], /cada ~61 s/);
+    assert.match(avisos()[0], /--timeout=3600/);
+    for (const ms of [61000, 61000, 61000]) await vuelta(ms);
+    assert.strictEqual(avisos().length, 1, 'no repite el aviso dentro de la hora');
+  } finally { await h.cerrar(); }
+
+  // la renovación del propio sitio (1012) tiene ritmo fijo y no es un intermediario: no avisa
+  const reloj2 = { t: Date.now() };
+  const h2 = await montar({ reloj: reloj2, env: { SITE_OFFICE_RECONNECT_MINUTES: '1' } });
+  try {
+    const k = par();
+    pedir(h2.llaves, k);
+    h2.aprobar(k);
+    for (let i = 0; i < 4; i += 1) {
+      const m = await maquinaCruda(h2, k);
+      assert.ok(m.msgs.some((x) => x.type === 'ack'), 'la máquina entró');
+      reloj2.t += MIN + 1000;
+      h2.centro.revisar();
+      await hasta(() => m.cerro !== null, 3000, 'la renovación');
+      assert.strictEqual(m.cerro, 1012);
+    }
+    assert.strictEqual(h2.registro.filter((l) => /reconecta cada/.test(l)).length, 0, 'la renovación del sitio no avisa');
+  } finally { await h2.cerrar(); }
+});

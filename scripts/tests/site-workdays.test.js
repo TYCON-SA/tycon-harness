@@ -110,7 +110,8 @@ test('T28 Sitio_TokensNoMedidos_ConMotivo @story-8.209 @ac-17', () => {
   assert.strictEqual(c.tokens, null);
   const html = WD().htmlTabla(t, 'es');
   assert.match(html, /tokens no medidos/);
-  assert.match(html, /title="una conversación no se pudo leer \(EACCES\)"/);
+  // el motivo, a la vista (antes sólo al pasar el mouse: A102)
+  assert.match(html, /tokens no medidos: una conversación no se pudo leer \(EACCES\)/);
 });
 
 // el sitio demo en este proceso; la vista se elige con su cookie
@@ -521,4 +522,75 @@ test('OH17 Costo_EscrituraDeCache_ConSuPrecio — se cobra con el precio de su p
   const v = WD().validarDia(malo, '2026-11-08');
   assert.ok(v.ok);
   assert.strictEqual(v.tokens.porModelo, null);
+});
+
+// 🔴 Falla con (A102-A104, recorrido F21): «tokens no medidos» sin motivo a la vista (sólo al pasar el mouse); el total
+//    contaba «1 máquina sin medir» por una que tenía horas y le faltaban los tokens; los tokens de la semana no avisaban
+//    que faltaba un día; la columna «Persona» nombraba máquinas sin dueño como si fueran personas; y las barras de tokens
+//    usaban el color de la primera máquina del gráfico de horas.
+test('A102-A104 Horas_LoQueNoSeMidioDiceQuéYPorQué', () => {
+  const sinTokens = dia('2026-11-08', { tokens: { medido: false, motivo: 'una conversación no se pudo leer' } });
+  const t = WD().armarTabla(WD().leerJornadas(espejo({
+    'maquina-a': Object.fromEntries(DIAS5.map((d) => [d, dia(d)])),
+    'maquina-b': { ...Object.fromEntries(DIAS5.map((d) => [d, dia(d)])), '2026-11-08': sinTokens },
+  })), { ayer: '2026-11-09' });
+  const tabla = WD().htmlTabla(t, 'es');
+  assert.match(tabla, /tokens no medidos: una conversación no se pudo leer/, 'el motivo, a la vista');
+  const fila8 = tabla.split('<th scope="row">2026-11-08</th>')[1].split('</tr>')[0];
+  assert.doesNotMatch(fila8, /máquina sin medir/, 'tiene horas: no es una máquina sin medir');
+  assert.match(fila8, /1 máquina sin tokens medidos/);
+  // una máquina con dueño y otra sin: la que no tiene persona no se presenta como persona
+  const r = WD().resumen(t, { machines: { 'maquina-a': { person: 'Ana' } } });
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /1 día de tokens sin medir/, 'los tokens de la semana avisan que les falta un día');
+  assert.match(html, /maquina-b · sin persona asignada/, 'la máquina sin dueño se dice máquina');
+  assert.doesNotMatch(html, /<th scope="row">maquina-b<div/);
+  const semanas = WD().htmlSemanas(r, 'es');
+  assert.doesNotMatch(semanas.split('Tokens sin caché, por semana')[1] || '', /var\(--serie-1\)/, 'las barras de tokens no son del color de una persona');
+  assert.match(semanas, /maquina-b · sin persona asignada/, 'la leyenda tampoco la llama persona');
+});
+
+// ── Recorrido del 27/11 (A109, A110): las tablas y los gráficos anchos no sacan la página de la pantalla ─────────────────
+
+test('OH23 TablasAnchas_SeDeslizanConAviso — A109 y A110: las tablas anchas van en una caja que se desliza y dice que hay más', () => {
+  const ds = diasAtras('2026-11-09', 30);
+  const maquinas = { 'maquina-a': Object.fromEntries(ds.map((d) => [d, dia(d)])) };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  assert.match(WD().htmlResumen(r, 'es'), /<div class="desliza"[^>]*><table class="horas-personas">/, 'la tabla por persona');
+  assert.match(WD().htmlTabla(t, 'es'), /^<div class="desliza"[^>]*><table class="horas">/, 'la tabla por máquina');
+  const diario = WD().htmlDiaPorPersona(t, r, 'es');
+  assert.match(diario, /<p class="desliza-aviso">[^<]*30 días[^<]*<\/p><div class="desliza"/, 'el día por día dice que hay 30 columnas y que se desliza');
+  assert.match(WD().htmlDiaPorPersona(t, r, 'en'), /<p class="desliza-aviso">[^<]*30 days/);
+  assert.match(WD().htmlSemanas(r, 'es'), /<div class="desliza"[^>]*><figure class="grafico">/, 'los gráficos también');
+  const css = fs.readFileSync(path.join(SITE, 'static', 'site.css'), 'utf8');
+  // la sombra del borde que dice «hay más» y el ancho mínimo de los gráficos para que los rótulos se lean
+  assert.match(css, /div\.desliza\{[^}]*background-attachment:local/);
+  assert.match(css, /figure\.grafico svg\{[^}]*min-width:/);
+});
+
+test('E3 E2E_HorasYTokens_CelularY1280 — A109 y A110: en un celular la página no se sale; a 1280 el día por día dice que se desliza', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const h = await arrancarDemo();
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const ancho of [390, 1280]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 } });
+      await ctx.setExtraHTTPHeaders({ cookie: 'sitio-demo-vista=mantenedor' });
+      const page = await ctx.newPage();
+      await page.goto(`${h.base}/horas`);
+      await page.locator('table.horas-personas').waitFor({ timeout: 20000 });
+      await page.getByText('Ver día por día', { exact: true }).click();
+      await page.getByText('Ver por máquina', { exact: true }).click();
+      await page.locator('table.horas').waitFor({ timeout: 20000 });
+      const medida = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, vista: window.innerWidth }));
+      assert.ok(medida.doc <= medida.vista, `a ${ancho} px la página mide ${medida.doc} px`);
+      assert.ok(await page.locator('p.desliza-aviso').isVisible(), `a ${ancho} px el aviso de que se desliza se ve`);
+      // los rótulos de los ejes se dibujan con al menos 9 px
+      const eje = await page.locator('figure.grafico text.eje').first().evaluate((n) => n.getBoundingClientRect().height);
+      assert.ok(eje >= 9, `a ${ancho} px los rótulos miden ${eje} px`);
+      if (process.env.TYCON_E2E_CAPTURE) await page.screenshot({ path: path.join(process.env.TYCON_E2E_CAPTURE, `horas-${ancho}.png`), fullPage: true });
+      await ctx.close();
+    }
+  } finally { await navegador.close(); await h.cerrar(); }
 });

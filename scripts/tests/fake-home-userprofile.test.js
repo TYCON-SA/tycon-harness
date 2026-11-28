@@ -24,7 +24,14 @@ const path = require('path');
 const RAIZ = path.join(__dirname, '..', '..');
 const SUITES = [
   'skills/tycon-pipeline/scripts/tests/unit.test.js',
+  // las seis suites rápidas que el instalador corre en cada arranque (UNIT_TESTS de install-tycon-hooks.sh): antes de
+  // prenderlas en Windows (A80) tienen que aislarse también ahí
   'skills/tycon-pipeline/scripts/tests/story-gate.test.js',
+  'skills/tycon-pipeline/scripts/tests/story-discovery.test.js',
+  'skills/tycon-pipeline/scripts/tests/advisor-ledger.test.js',
+  'skills/tycon-pipeline/scripts/tests/config-lint.test.js',
+  'skills/tycon-pipeline/scripts/tests/navigation-drift.test.js',
+  'skills/tycon-pipeline/scripts/tests/ledger-honesty.test.js',
   'skills/tycon-pipeline/scripts/tests/ledger-visible.test.js',
   'skills/tycon-pipeline/scripts/tests/run-close.test.js',
   'scripts/tests/apply-hooks.test.js',
