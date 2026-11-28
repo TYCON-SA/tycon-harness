@@ -231,12 +231,22 @@ function ordenesDeBucles(cmd, { palabras, alcanzadas, citar, ruta = (x) => x }) 
     const tuberia = antes.replace(/[|&\s({]+$/, '');
     const productores = /\|&?\s*[({]?\s*$/.test(antes) ? [primerPrograma(tuberia)] : [];
     // lo que entra después del `done`, con otras redirecciones antes (`done 2>/dev/null < <(find …)`, `done 3< <(…)`)
+    // Se recorre a mano, una redirección por vez (cada una, una palabra que empieza con `N>` y termina en blancos): una
+    // expresión con la repetición adentro tenía más de una lectura y podía tardar exponencial con un texto armado.
     const despues = s.slice(c.fin, c.fin + 4000);
-    // (cada redirección termina en blancos y su destino no lleva blancos, `<` ni `>`: dónde termina una y empieza la otra
-    // no tiene dos lecturas, y la expresión no se enreda)
-    const entrada = /^\s*(?:\d*>&?[^\s<>]+\s+)*(?:\d*<\s*<\(|<<<\s*"?\$\()/.exec(despues);
+    const REDIRECCION = /\d*>\S*\s+/y;
+    const ENTRADA = /\d*<\s*<\(|<<<\s*"?\$\(/y;
+    let k = /^\s*/.exec(despues)[0].length;
+    for (let n = 0; n < 50; n++) {
+      REDIRECCION.lastIndex = k;
+      const r = REDIRECCION.exec(despues);
+      if (!r) break;
+      k = REDIRECCION.lastIndex;
+    }
+    ENTRADA.lastIndex = k;
+    const entrada = ENTRADA.exec(despues);
     if (entrada) {
-      const x = sustitucion(c.fin + entrada[0].length - 2);
+      const x = sustitucion(c.fin + ENTRADA.lastIndex - 2);
       if (x) productores.push(x.texto);
     }
     const items = productores.flatMap((p) => deFind(p, c.cuerpo));
