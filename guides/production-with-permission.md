@@ -652,6 +652,15 @@ El mensaje dice el motivo y el camino correcto. Los dos casos normales:
   2026-09-16 instalado. Claude Code 2.1.272 (la extensión de VS Code) ya no escribe ese snapshot, y
   el freno de ahora, sin snapshot, le pregunta al shell de login en vivo. Corré el instalador
   (`scripts/production/install-guard.command`, pide `sudo`) y volvé a intentar.
+- **«no pude saber cuándo arrancó esta sesión para elegir su snapshot de shell»** → esa máquina tiene el freno de
+  antes del 2026-11-27 instalado. Le pasaba a una sesión larga y retomada, y a cualquier sesión con el idioma de la
+  terminal (`LANG`) en castellano en enero, abril, agosto y diciembre. El freno de ahora entiende la hora en cualquier idioma y reconoce la
+  sesión retomada; si igual no sabe cuándo arrancó, revisa todos los snapshots y le pregunta al shell de login, en vez
+  de cerrar la puerta. Corré el instalador (`scripts/production/install-guard.command`, pide `sudo`); mientras tanto,
+  una sesión nueva suele destrabarla.
+- **«el snapshot de shell … define … y no pude saber cuándo arrancó esta sesión»** → un snapshot de una sesión vieja
+  define un nombre que se quedaría con la puerta, y el freno no puede descartar que sea de esta sesión. Borrá ese
+  snapshot (la ruta va en el mensaje) si sabés que es viejo, o abrí una sesión nueva.
 - **«el freno no pudo decidir»** → el freno no contesta a tiempo (o se cayó) y por eso frena, también
   un comando que no toca ninguna base. Suele ser la carga de la máquina: reintentá en un momento. Queda
   constancia en `hook-errors.log`. Si el cartel pide reinstalar, el freno instalado es de antes de que

@@ -3875,9 +3875,25 @@ function detectarSecuestro(cmd) {
   const dir = path.join(home, '.claude', 'shell-snapshots');
   let archivos = [];
   try { archivos = fs.readdirSync(dir).filter((f) => /^snapshot-(zsh|bash)-\d+-/.test(f)); } catch { archivos = []; }
+  // 🔴 Sin el arranque de la sesión, el lado seguro no es frenar: es mirar TODO. Una sesión larga y retomada
+  // varias veces quedaba con la puerta cerrada para siempre (también para `--verify`), porque la ascendencia no
+  // llevaba a ningún `claude` reconocible. Revisar todos los snapshots y además preguntarle al shell de login en
+  // vivo mira más que cualquier arranque bien leído: el snapshot de esta sesión, si existe, está entre todos; y si
+  // no existe, el comando corre con lo que define el login, que es lo que contesta el shell vivo.
   const desde = arranqueDeLaSesion();
-  if (desde === null) return 'no pude saber cuándo arrancó esta sesión para elegir su snapshot de shell (y sin eso no puedo descartar un secuestro).';
-  const candidatos = archivos.filter((f) => Number((/-(\d+)-/.exec(f) || [])[1] || 0) >= desde);
+  const sinArranque = desde === null;
+  const candidatos = sinArranque ? archivos : archivos.filter((f) => Number((/-(\d+)-/.exec(f) || [])[1] || 0) >= desde);
+  if (sinArranque) {
+    for (const f of candidatos) {
+      const motivo = secuestroEnSnapshot(dir, f);
+      if (motivo) {
+        return motivo.secuestro
+          ? `el snapshot de shell ${path.join(dir, f)} define «${motivo.secuestro}», y no pude saber cuándo arrancó esta sesión para saber si es suyo: secuestraría la puerta. Si ese snapshot es de una sesión vieja, borrarlo o abrir una sesión nueva destraba la puerta.`
+          : motivo.error;
+      }
+    }
+    return secuestroEnShellDeLogin('sin saber cuándo arrancó esta sesión');
+  }
   // 🔴 Sin snapshot NO es «no pude mirar»: Claude Code 2.1.272 (extensión de VS Code, medido en esta
   // Mac el 2026-09-16 con `ps` sobre el propio comando) ya no escribe ninguno y corre cada comando
   // como `zsh -c -l …`, sin sourcear nada. Frenar por la ausencia dejaba la puerta CERRADA para
@@ -3886,18 +3902,28 @@ function detectarSecuestro(cmd) {
   // mismo shell, arrancado igual. Con snapshot, se sigue mirando el snapshot (es lo que se sourcea).
   if (!candidatos.length) return secuestroEnShellDeLogin();
   for (const f of candidatos) {                      // más de uno → se revisan TODOS (lado seguro)
-    let texto;
-    try { texto = fs.readFileSync(path.join(dir, f), 'utf8'); } catch { return `no pude leer el snapshot de shell ${f}.`; }
-    const corte = texto.indexOf(CORTE_SHIMS);
-    if (!/^# Snapshot file/.test(texto)) return `el archivo ${f} no parece un snapshot de shell (formato desconocido).`;
-    // los shims de Claude Code (rg, find, grep, pkill) viven al final: sin cortar, el hook acusaría
-    // a la herramienta de secuestrar la puerta en todas las máquinas
-    const util = corte >= 0 ? texto.slice(0, corte) : texto;
-    if (corte < 0 && !/# Aliases/.test(texto)) return `el archivo ${f} no parece un snapshot de shell (formato desconocido).`;
-    const n = defineNombre(util);
-    if (n) return `el shell de esta sesión define «${n}»: secuestraría la puerta.`;
+    const motivo = secuestroEnSnapshot(dir, f);
+    if (motivo) return motivo.secuestro ? `el shell de esta sesión define «${motivo.secuestro}»: secuestraría la puerta.` : motivo.error;
   }
   return null;
+}
+
+/** @returns {{secuestro?: string, error?: string}|null} qué nombre secuestra el snapshot, o por qué no se pudo leer */
+function secuestroEnSnapshot(dir, f) {
+  const fs = require('fs'); const path = require('path');
+  let texto;
+  // sólo un archivo común: leer un FIFO con nombre de snapshot cuelga al freno hasta que el registro lo mata, y un
+  // freno muerto deja pasar el comando
+  try { if (!fs.statSync(path.join(dir, f)).isFile()) return { error: `el snapshot de shell ${f} no es un archivo común.` }; } catch { return { error: `no pude leer el snapshot de shell ${f}.` }; }
+  try { texto = fs.readFileSync(path.join(dir, f), 'utf8'); } catch { return { error: `no pude leer el snapshot de shell ${f}.` }; }
+  const corte = texto.indexOf(CORTE_SHIMS);
+  if (!/^# Snapshot file/.test(texto)) return { error: `el archivo ${f} no parece un snapshot de shell (formato desconocido).` };
+  // los shims de Claude Code (rg, find, grep, pkill) viven al final: sin cortar, el hook acusaría
+  // a la herramienta de secuestrar la puerta en todas las máquinas
+  const util = corte >= 0 ? texto.slice(0, corte) : texto;
+  if (corte < 0 && !/# Aliases/.test(texto)) return { error: `el archivo ${f} no parece un snapshot de shell (formato desconocido).` };
+  const n = defineNombre(util);
+  return n ? { secuestro: n } : null;
 }
 
 /**
@@ -3909,7 +3935,7 @@ function detectarSecuestro(cmd) {
  * de (b) no alcanza: ni .zlogin ni un archivo sourceado desde otro.
  * @returns {string|null} motivo del freno, o null si el shell no define ninguno
  */
-function secuestroEnShellDeLogin() {
+function secuestroEnShellDeLogin(porque = 'sin snapshot de shell') {
   const { spawnSync } = require('child_process');
   const path = require('path');
   const shell = process.env.SHELL || '';
@@ -3924,7 +3950,7 @@ function secuestroEnShellDeLogin() {
     script = 'for n; do t=$(\\builtin type -t -- "$n") || t=none; printf "%s: %s\\n" "$n" "$t"; done';
     sanos = new Set(['none', 'file']); preguntan = ['command', 'builtin', 'type'];
   } else {
-    return `sin snapshot de shell, y no sé preguntarle a tu shell (${shell || 'SHELL vacío'}) qué define: sólo zsh y bash.`;
+    return `${porque}, y no sé preguntarle a tu shell (${shell || 'SHELL vacío'}) qué define: sólo zsh y bash.`;
   }
   const puerta = [NOMBRE_PUERTA, PUERTA];
   const nombres = [...puerta, ...preguntan];
@@ -3958,21 +3984,38 @@ function arranqueDeLaSesion() {
   if (inyectado !== undefined && inyectado !== '' && !Number.isNaN(Number(inyectado))) return Number(inyectado);
 
   const { spawnSync } = require('child_process');
+  // `ps` escribe la hora en el idioma del sistema: en castellano, «mar. 1 dic. 10:00:00 2026», que Date.parse no
+  // entiende en enero, abril, agosto ni diciembre, y «mar.» (martes) puede leerse como marzo. Con el idioma fijo de
+  // clean-git-env.js la escribe siempre en inglés. En /opt/tycon esa biblioteca no viaja (el freno lleva sólo sus
+  // copias de guard-libs/): sin ella no se lee la hora entera y se usa el tiempo transcurrido, que no depende del idioma.
+  const idioma = (() => { try { return require(require('path').join(__dirname, '..', 'lib', 'clean-git-env.js')).idiomaFijo; } catch (_) { return null; } })();
+  const ps = (args, env) => spawnSync('ps', args, { windowsHide: true, encoding: 'utf8', timeout: 1500, env: env || process.env });
+  // el `claude` de la sesión: por nombre, el binario de la extensión de VS Code, o el binario instalado con su
+  // número de versión como nombre (`~/.local/share/claude/versions/2.1.332 --resume …`), que es como puede aparecer
+  // una sesión retomada
+  // (el de la versión, sólo como ejecutable: la ruta nombrada en un argumento de otro proceso no lo hace la sesión)
+  const esSesion = (c) => /(^|\/)claude(\s|$)/.test(c) || c.includes('native-binary/claude') || /\/claude\/versions\/[^/\s]+$/.test(c.split(/\s+/)[0]);
   let pid = process.ppid;
   for (let i = 0; i < 6 && pid && pid > 1; i++) {
-    if (vencido()) return null;                       // «no pude mirar» → el llamador frena
-    const r = spawnSync('ps', ['-o', 'ppid=,command=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
+    if (vencido()) return null;                       // «no pude mirar» → el llamador mira todo
+    const r = ps(['-o', 'ppid=,command=', '-p', String(pid)]);
     if (r.status !== 0 || !r.stdout) break;
     const m = /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim());
     if (!m) break;
-    const comando = m[2];
-    if (/(^|\/)claude(\s|$)/.test(comando) || comando.includes('native-binary/claude')) {
-      const l = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { windowsHide: true, encoding: 'utf8', timeout: 1500 });
-      const t = l.status === 0 ? Date.parse(l.stdout.trim()) : NaN;
+    if (esSesion(m[2])) {
+      const l = typeof idioma === 'function' ? ps(['-o', 'lstart=', '-p', String(pid)], idioma(process.env)) : null;
+      const t = l && l.status === 0 ? Date.parse(l.stdout.trim()) : NaN;
       if (!Number.isNaN(t)) return t;
+      // la hora entera no se entendió: el tiempo transcurrido ([[dd-]hh:]mm:ss) no depende del idioma. Se resta un
+      // segundo más: un arranque más temprano suma candidatos, nunca los quita. El reloj se toma ANTES de preguntar:
+      // tomado después, lo que tarde `ps` correría el arranque hacia adelante y dejaría afuera el snapshot de la sesión
+      const ahora = Date.now();
+      const e = ps(['-o', 'etime=', '-p', String(pid)]);
+      const p = e.status === 0 ? /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(e.stdout) : null;
+      if (p) return ahora - ((((Number(p[1] || 0) * 24 + Number(p[2] || 0)) * 60 + Number(p[3])) * 60 + Number(p[4]) + 1) * 1000);
       break;
     }
     pid = Number(m[1]);
   }
-  return null;   // sin ascendencia ni costura: «no pude mirar» → el llamador frena
+  return null;   // sin ascendencia ni costura: «no pude mirar» → el llamador mira todo
 }
