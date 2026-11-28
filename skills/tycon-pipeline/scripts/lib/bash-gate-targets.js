@@ -172,6 +172,40 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
   return -1;
 }
 
+// lo que puede llevar una cuenta: nombres, números (`16#ff`), operadores, paréntesis y corchetes; no `$`: el valor de una
+// variable adentro de una cuenta se lee como otra cuenta, y puede correr un comando (`x='a[$(cp …)]'; echo $(( $x ))`)
+const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]#.]/;
+
+/**
+ * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`) que no corre nada, su texto entre
+ * `$(` y el último `)` en blanco: el `>` de una cuenta compara, no escribe. Es una cuenta, como la lee el shell, si el
+ * `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una sustitución. null si
+ * no es una cuenta o si lleva algo más que nombres, números, operadores y otras cuentas así: una sustitución, una
+ * variable (`$x`, `${x}`), comillas, una barra invertida, un `;`, un renglón, `<(`. Ahí se lee como antes, como un comando: zsh corre
+ * como comandos una cuenta que no puede leer y que tiene una sustitución adentro (`$((cp a b && : `: \(`))`).
+ */
+function adentroDeUnaCuenta(t, i, fin) {
+  if (t[i] !== '$' || t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
+  let out = '';
+  let hondo = 0;
+  for (let j = i + 2; j < fin; j++) {
+    const ch = t[j];
+    if (ch === '$' && t[j + 1] === '(') {
+      // otra cuenta adentro, si tampoco corre nada
+      const f = cierreDeUnaSustitucion(t, j);
+      if (f <= j || f >= fin || adentroDeUnaCuenta(t, j, f) === null) return null;
+      out += ' '.repeat(f - j + 1);
+      j = f;
+      continue;
+    }
+    if (!LETRA_DE_CUENTA.test(ch) || ((ch === '<' || ch === '>') && t[j + 1] === '(')) return null;
+    if (ch === '(') hondo++;
+    else if (ch === ')' && --hondo === 0 && j !== fin - 1) return null;
+    out += ' ';
+  }
+  return hondo === 0 ? out : null;
+}
+
 /**
  * El delimitador del heredoc cuya palabra empieza en `t[k]` (justo después de `<<`): `{ delim, dash, fin }`, con `fin`
  * donde termina la palabra, o null si no hay una. La palabra se lee con la misma expresión que `delimitadoresQueAbre`:
@@ -243,8 +277,10 @@ function leerCitados(t, hondo) {
   const comandos = [];
   // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
   // un comando, y el de las sustituciones de adentro
+  // (una cuenta que no corre nada queda en blanco: `adentroDeUnaCuenta`)
   const sustitucion = (desde, fin) => {
-    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(t.slice(desde, fin), true)), hondo + 1);
+    const cuenta = adentroDeUnaCuenta(t, desde - 2, fin);
+    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(cuenta ?? t.slice(desde, fin), true)), hondo + 1);
     comandos.push(r.texto, ...r.comandos);
     return r.texto;
   };
@@ -255,9 +291,13 @@ function leerCitados(t, hondo) {
     if (fin === -1) { agregar(t.slice(i)); break; }
     if (fin > i) {
       // en el texto de afuera, lo de adentro vaciado como antes: un pedazo roto adentro (una comilla o un `$(` sin
-      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte
+      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte. Una cuenta que no corre nada queda como
+      // está, en una sola palabra y sin sus `<` `>` `|` `&` (comparan, no redirigen) ni su `/` (divide: no es una carpeta): es parte de la palabra de afuera
+      // (`cp a specs/story-1.$((0+1)).md` escribe esa historia)
       const abre = c === '`' ? 1 : 2;
-      agregar(t.slice(i, i + abre) + vaciarConExpresion(sustitucion(i + abre, fin)) + t[fin]);
+      const adentro = vaciarConExpresion(sustitucion(i + abre, fin));
+      const cuenta = adentroDeUnaCuenta(t, i, fin) !== null;
+      agregar(cuenta ? t.slice(i, fin + 1).replace(/[\s<>|&;/]/g, '_') : t.slice(i, i + abre) + adentro + t[fin]);
       i = fin;
       continue;
     }
@@ -371,10 +411,11 @@ function tramosDelShell(texto, hondo = 0) {
   const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
   const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
   // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
-  // las otras lecturas
+  // las otras lecturas. Una cuenta que no corre nada queda en blanco (`adentroDeUnaCuenta`)
   const adentro = (desde, fin) => {
     if (hondo >= HONDO_DE_SUSTITUCIONES) return;
-    for (const t of tramosDelShell(s.slice(desde, fin), hondo + 1)) out.push(t);
+    const cuenta = adentroDeUnaCuenta(s, desde - 2, fin);
+    for (const t of tramosDelShell(cuenta ?? s.slice(desde, fin), hondo + 1)) out.push(t);
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -612,11 +653,12 @@ function scriptsInline(cmd) {
 /**
  * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
  * en la línea (`-c`, `-e`: lo ve `scriptsInline`), `desde` la primera palabra que ya no es opción, `modulos` lo que se
- * corre como módulo (`python3 -m x`) y `precargas` los guiones que se cargan antes (`node -r ./p.js`). Cada familia lee
+ * corre como módulo (`python3 -m x`), `precargas` los guiones que se cargan antes (`node -r ./p.js`) y `pruebas` si es
+ * `node --test` (cada archivo que sigue es un guion que corre). Cada familia lee
  * sus opciones agrupadas y con el valor pegado (`-Wignore`, `-mx`, `-Ilib`, `--require=./p.js`).
  */
 function opcionesDelInterprete(familia, words, i) {
-  const r = { enLinea: false, desde: words.length, modulos: [], precargas: [] };
+  const r = { enLinea: false, desde: words.length, modulos: [], precargas: [], pruebas: false };
   for (; i < words.length; i++) {
     const w = words[i];
     if (w === '--') { r.desde = i + 1; return r; }
@@ -625,6 +667,7 @@ function opcionesDelInterprete(familia, words, i) {
       const largo = /^(--[\w-]+)(?:=(.*))?$/.exec(w);
       const nombre = largo ? largo[1] : w;
       if (['-e', '-p', '--eval', '--print'].includes(nombre) || /^-[A-Za-z]*[ep]$/.test(w)) r.enLinea = true;
+      if (nombre === '--test') r.pruebas = true;
       if (['-r', '--require', '--import', '--loader', '--experimental-loader'].includes(nombre)) {
         const v = largo && largo[2] != null ? largo[2] : words[++i];
         if (v) r.precargas.push(v);
@@ -1509,4 +1552,4 @@ function modoDeLectura(cambios = {}) {
   return { leerComentarios, apagoAlgo, soloDecidir };
 }
 
-module.exports = { desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };
+module.exports = { adentroDeUnaCuenta, desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };

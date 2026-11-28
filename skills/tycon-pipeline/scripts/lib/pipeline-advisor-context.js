@@ -6,7 +6,7 @@
  * Lo que cambia mientras corre (los avisos del portón, la sesión para la que se trabaja) y las rutas del despachador
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
-const { estadoPipeline, MODELOS, PROPIA, RUNS_DIR, codeFiles, companionLib, deriveStoryId, esCodex, exists, fs, leerMarcadorDeLaCorrida, os, parseFrontmatterPipeline, path, readText, resolveRunDir, sessionIdFileKey, sessionLogPath, stackConfig, stateDirOf } = require('./pipeline-shared.js');
+const { estadoPipeline, MODELOS, PROPIA, RUNS_DIR, codeFiles, companionLib, deriveStoryId, esCodex, exists, fs, leerMarcadorDeLaCorrida, os, parseFrontmatterPipeline, path, readText, resolveRunDir, resolveSessionId, sessionIdFileKey, sessionLogPath, stackConfig, stateDirOf } = require('./pipeline-shared.js');
 const { ADVISOR_COST_TIER, gitAddedLinesByFile, lanzadorCodex, readSessionMarkerStrict, revisorDePaquete, revisoresPorConfirmar } = require('./pipeline-advisor-set.js');
 const { detectarWordSplit } = require('./pipeline-deep-review.js');
 const BATCH_RULE_CODEX = 'Bajo Codex los revisores NO los lanza el modelo: correr el comando de `launch` (pipeline.js reviewers-run). ' +
@@ -530,13 +530,11 @@ function validateFilesExist(args, opts) {
 // el chequeo antes de la ventana de firma (owner-window.js): comprueba lo que la firma exige sin hacer lo que autoriza
 const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 
-// ¿La vuelta extra es una firma de trámite? La misma respuesta que el cartel del cierre (lib/review-rounds.js).
-const vueltaExtraDeTramite = () => require('./review-rounds.js').vueltaExtraDeTramite();
-
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
-// por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
-// ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
-function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false }) {
+// por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide el dueño (una vuelta extra con su
+// firma, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
+// La vuelta extra no es firma de trámite ni la firma la coordinadora por delegación.
+function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false, sinCodigo = false, baseIter = null }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
@@ -553,9 +551,32 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const p of tope.problems || []) process.stderr.write(`⚠️  ${p}\n`);
     return null;
   }
+  // una vuelta sin código no lanza revisores: se cierra sola, sin tope ni firma. Queda anotada
+  // pasado el tope, sólo si «Preparar» pasaría: la misma comparación con lo revisado (lib/reviewed-diff.js). Lo que el
+  // re-loop no revisa y se ejecuta (la configuración, un workflow), o código que el delta por horas no vio, frena acá
+  // lo cambiado desde la última vuelta sellada, con la regla de «Preparar»: se mira una vez y lo usan la vuelta sin código
+  // y el tope sin nada abierto
+  let cambiosMirados;
+  const cambiosDesdeLaVuelta = () => (cambiosMirados === undefined ? (cambiosMirados = cambiosDesdeLoRevisado({ storyId, repoAbs, args })) : cambiosMirados);
+  // la vuelta sin código se compara contra el sello de su ronda base, la última vista entera: lo sellado después (una
+  // vuelta pedida y no lanzada, una vuelta extra firmada) no lo vio nadie
+  const sinCambiosRevisables = sinCodigo && !estadoPipeline.paraOtra ? cambiosDesdeLoRevisado({ storyId, repoAbs, args, etiqueta: baseIter ? `rev-iter${baseIter}` : null }) : null;
+  if (sinCodigo && !baseIter) sinCambiosRevisables.vacio = false;
+  if (sinCambiosRevisables && !sinCambiosRevisables.vacio) {
+    process.stderr.write(`⚠️  La vuelta ${iter} no trae revisores, pero no se cierra sola pasado el tope: ${sinCambiosRevisables.motivo}.\n`);
+  }
+  if (sinCodigo && !estadoPipeline.paraOtra && sinCambiosRevisables && sinCambiosRevisables.vacio) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} no trae código: se cierra sola, sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'no-code-round', status: 'ok', tope: tope.value });
+    process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} sin revisores: desde la última vuelta no cambió código, y se cierra sola, sin firma.\n`);
+    return null;
+  }
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) {
     if (estadoPipeline.paraOtra) return `🛑 La vuelta extra ${iter} ya está autorizada. ${laPideLaCorrida}, sin otra firma.\n`;
-    return args.extraRound ? `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n` : null;
+    if (args.extraRound) return `🛑 La vuelta extra ${iter} ya está autorizada: pedí el set sin --extra-round, sin otra firma.\n`;
+    // una vuelta extra que firmó el dueño no sale sin revisores (cmdSmartReloop)
+    estadoPipeline.vueltaExtraAutorizada = iter;
+    return null;
   }
   const h = rr.hallazgosDe(runDir);
   const pre = rr.prefijos();
@@ -578,27 +599,25 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   // los dos frenan como siempre
   const porConfirmar = !ab.length ? revisoresPorConfirmar({ ...args, iter }) : null;
   const nadaPorConfirmar = !!porConfirmar && !porConfirmar.error && !porConfirmar.agregar.length && !porConfirmar.fuera.length;
-  if (!estadoPipeline.paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar) {
+  // con algo cambiado desde la última vuelta revisada que «Preparar» frena, «nada abierto» no es «no hace falta otra
+  // vuelta»: frena con las salidas, y la vuelta extra del dueño es una de ellas
+  const cambiosSinRevisar = !estadoPipeline.paraOtra && !ab.length && nadaPorConfirmar ? cambiosDesdeLaVuelta() : null;
+  // sólo lo que se encontró: sin poder comparar, el tope sin nada abierto sigue como siempre (la vuelta sin código, no)
+  const conCambios = !!cambiosSinRevisar && !cambiosSinRevisar.vacio && !cambiosSinRevisar.sinMedir;
+  if (!estadoPipeline.paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar && !conCambios) {
     if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: no quedó nada abierto. Pedí el set sin --extra-round.\n`;
     anotar({ name: 'review-cap-shown', status: 'ok', tope: tope.value, abiertos: [] });
     return { sinAbiertos: `ℹ️  Llegaste al tope de ${tope.value} vueltas de revisores (${de}) y no quedó nada abierto: no hace falta otra vuelta. Seguí con «Probar en vivo» y «Preparar el pull request».\n` };
   }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
-  const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {
-    const quien = tramite ? 'es una firma de trámite del perfil del equipo y la da el arnés solo, sin ventana'
-      : 'la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo';
-    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: ${quien}.\n`;
+    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: lo aprueba una persona en la ventana de permiso, o en su terminal con --terminal.\n`;
   }
   if (args.extraRound) {
     // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
-    if (args.quote) {
-      const quien = tramite ? 'Es una firma de trámite del perfil del equipo: el mismo comando sin --quote, y la da el arnés solo'
-        : 'La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal)';
-      return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. ${quien}.\n`;
-    }
+    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba una persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
     // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
     const rt = require('./rethink.js');
     const antes = () => {
@@ -615,6 +634,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     const f = ow.fijarDestino({ r, propia: PROPIA, necesitaMarcador: !!estadoPipeline.paraOtra, leerMarcador: (sid) => ow.marcadorEn(path.join(stateDir, 'active', `${sid}.json`)) });
     if (f.codigo !== 0) { process.stderr.write(`🛑 No se sirvió la vuelta extra ${iter}: ${f.motivo}. No escribí nada.\n`); process.exit(f.codigo); }
     anotar({ name: 'extra-round', status: 'ok', quien: args.approvedBy || process.env.USER || 'persona', via: r.via, ...(f.constancia.por ? { por: f.constancia.por } : {}) });
+    estadoPipeline.vueltaExtraAutorizada = iter;
     return null;
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
@@ -625,18 +645,15 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
     for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
     renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
+  } else if (conCambios) {
+    renglones.push(`   No quedó nada abierto, pero ${cambiosSinRevisar.motivo}. «Preparar el pull request» lo frena: volvé a lo revisado (te da los`);
+    renglones.push('   comandos), llevalo a una historia de arreglo, o pedí la vuelta extra con --extra-round, que aprueba una persona en la ventana de permiso.');
   } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el pull request».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    if (tramite) {
-      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
-      renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la firma una persona.');
-    } else {
-      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
-      renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
-      renglones.push('       --for-session desde su pestaña, sin ventana.');
-    }
+    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y una persona lo aprueba en la ventana de permiso');
+    renglones.push('       (o lo corre en su terminal con --terminal). No es trámite ni la firma la coordinadora por delegación.');
     renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
   if (deuda.length) {
@@ -648,6 +665,52 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   // el aviso queda anotado: el ok de una vuelta extra tiene que ser posterior
   anotar({ name: 'review-cap-shown', status: 'blocked', tope: tope.value, abiertos: ab.map((a) => a.regla) });
   return `${renglones.join('\n')}\n`;
+}
+
+/**
+ * La foto de la vuelta que se lanza (`marker.js snapshot-iter N --at-launch`): la vuelta siguiente calcula su delta desde
+ * ella aunque esta ronda no se complete. Nunca frena el lanzamiento; si no se pudo, lo dice. Una vuelta servida para otra
+ * sesión (`--for-session`) no toca su marcador: la firma autoriza la vuelta, no escribir la corrida ajena.
+ */
+function fotoAlLanzar(iter, horaDelSello) {
+  if (estadoPipeline.paraOtra) return;
+  // sin una corrida en marcha (un pedido de revisores suelto) no hay vuelta que fotografiar: nada que avisar
+  let enMarcha = null;
+  try { enMarcha = readSessionMarkerStrict().marcador; } catch (_e) { enMarcha = null; }
+  if (!enMarcha) return;
+  const n = parseInt(iter, 10) || 1;
+  try {
+    require('child_process').execFileSync(process.execPath, [path.join(estadoPipeline.SCRIPTS_DIR, 'marker.js'), 'snapshot-iter', String(n), '--at-launch', '--at', horaDelSello], {
+      windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000,
+    });
+  } catch (e) {
+    process.stderr.write(`⚠️  no pude guardar la foto de la vuelta ${n} al lanzarla (${String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]}): ` +
+      'si la ronda no se completa, la vuelta siguiente re-corre el set completo.\n');
+  }
+}
+
+// ¿Cambió algo desde la última vuelta sellada de esta sesión que «Preparar» contaría? `{ vacio: true }` si nada, o
+// `{ vacio: false, motivo }` (lo cambiado, o por qué no se pudo mirar: ante la duda, no está vacío).
+function cambiosDesdeLoRevisado({ storyId, repoAbs, args, etiqueta = null }) {
+  try {
+    const ft = require('./frozen-tree.js');
+    const sid = sessionIdFileKey();
+    // con `etiqueta`, la vuelta sellada de esa ronda; si no, la última sellada
+    const v = etiqueta ? ft.vueltas(stateDirOf(os.homedir()), sid).filter((x) => x.tipo === 'revisores' && x.etiqueta === etiqueta).pop() || null
+      : ft.ultimaVuelta(stateDirOf(os.homedir()), sid, 'revisores');
+    if (!v || !(v.repos || []).length) return { vacio: false, sinMedir: true, motivo: 'no hay una vuelta sellada con qué comparar' };
+    if (v.story !== undefined && v.story !== null && String(v.story) !== String(storyId)) return { vacio: false, sinMedir: true, motivo: 'la última vuelta sellada es de otra historia' };
+    const { marcador } = readSessionMarkerStrict();
+    const marker = marcador || { storyId, repoPath: repoAbs };
+    const storyArg = args.story || marker.storyPath || null;
+    const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
+    const { STEPS_TABLE } = require('./pipeline-shared.js');
+    const c = require('./reviewed-diff.js').comparar({ marker, v, storyAbs, stateDir: stateDirOf(os.homedir()), cierre: STEPS_TABLE.reviewersClose(marker) });
+    if (c.error) return { vacio: false, sinMedir: true, motivo: c.error };
+    if (!c.distintos.length) return { vacio: true };
+    const lista = c.distintos.map((d) => d.f);
+    return { vacio: false, motivo: `cambió después de la última vuelta revisada ${lista.slice(0, 5).join(', ')}${lista.length > 5 ? '…' : ''}` };
+  } catch (e) { return { vacio: false, sinMedir: true, motivo: `no pude comparar con lo revisado (${(e && e.message) || e})` }; }
 }
 
 // El freno de la carpeta sin trabajo: antes de una vuelta de revisores, si la carpeta de la story no tiene ningún cambio
@@ -698,12 +761,67 @@ function salidaDelFreno(r) {
   if (r) { process.stderr.write(r); process.exit(3); }
 }
 
+/** Los revisores que el set de una vuelta puede traer: los del núcleo y los de los paquetes instalados (si cargan). */
+function revisoresDelCatalogo() {
+  const nombres = new Set(require('./pipeline-reviewers.js').coreReviewerNames());
+  try { for (const p of require('./pipeline-advisor-set.js').paquetesInstalados()) for (const r of p.revisores) nombres.add(r.agente); } catch { /* paquete roto: quedan los del núcleo */ }
+  return nombres;
+}
+
+// Las corridas abiertas en el repo (lib/open-runs.js: el último evento de cada sesión es su apertura), las de esta sesión
+// también: quien llama ya sabe que el pedido no es de la corrida de su marcador. `{ lista }` o `{ error }` si el registro
+// existe y no se puede leer. El repo se compara por su raíz de git (una subcarpeta es el mismo repo; una copia de trabajo
+// anidada es otro); una apertura sin repo, por la raíz de git de su carpeta.
+function corridasAbiertasDelRepo(repoAbs) {
+  const or = require('./open-runs.js');
+  const r = or.leerEventos(os.homedir());
+  if (!r.ok) return r.ausente ? { lista: [] } : { error: r.error };
+  const ultimo = new Map();
+  for (const e of r.eventos) ultimo.set(e.sesion, e);
+  const raiz = or.raizDeGit(repoAbs) || repoAbs;
+  const mismo = (p) => or.dentroDe(p, raiz) && or.dentroDe(raiz, p);
+  const lista = [...ultimo.values()].filter((e) => e.name === 'run-open'
+    && (typeof e.repo === 'string' ? mismo(or.raizDeGit(e.repo) || e.repo)
+      : typeof e.runDir === 'string' && mismo(or.raizDeGit(e.runDir) || e.runDir)));
+  return { lista };
+}
+
+// La hora (ms) en que se escribió un archivo, o null.
+function horaDe(file) {
+  try { return fs.statSync(file).mtimeMs; } catch { return null; }
+}
+
+// ¿Desde `desde` (ms) se lanzó algún revisor en esta sesión o cambió algún archivo de la corrida? Sin hora, no.
+function movidaDesde(desde, marcador, storyId, repoAbs) {
+  if (!desde) return false;
+  if (Object.values((marcador && marcador.filesTouchedAt) || {}).some((v) => v && Number(v.ts) > desde)) return true;
+  let lineas = [];
+  try { lineas = fs.readFileSync(sessionLogPath(), 'utf8').split('\n'); } catch { return false; }
+  // revisor = del set (núcleo y paquetes) y no de otra etapa: lo mismo que cuenta el gancho de lanzamientos
+  const { esRevisor } = require('./late-snapshot.js');
+  const catalogo = revisoresDelCatalogo();
+  const parsed = lineas.map((l) => { if (!l.trim()) return null; try { return JSON.parse(l); } catch { return null; } });
+  // sólo lo anotado después del último pedido de vuelta de esta historia en este repo (su `step5-start`): lo de antes es
+  // de vueltas anteriores, aunque su hora diga otra cosa, y el pedido de otra historia u otro repo en la sesión no corta
+  const orLib = require('./open-runs.js');
+  const raiz = (p) => orLib.raizDeGit(p) || path.resolve(p);
+  const raizPropia = repoAbs ? raiz(repoAbs) : null;
+  const delRepo = (r) => !r || !raizPropia || (orLib.dentroDe(raiz(r), raizPropia) && orLib.dentroDe(raizPropia, raiz(r)));
+  let desdeIdx = 0;
+  for (let i = parsed.length - 1; i >= 0; i -= 1) {
+    const d = parsed[i];
+    if (d && d.event === 'step5-start' && (!d.story || !storyId || String(d.story) === String(storyId)) && delRepo(d.repo)) { desdeIdx = i + 1; break; }
+  }
+  return parsed.slice(desdeIdx).some((d) => d && esRevisor(d.advisor) && catalogo.has(d.advisor) && Date.parse(d.ts) > desde);
+}
+
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
 // `vueltaChica`: el re-loop ya calculó que desde la última vuelta sólo cambiaron textos. Esa vuelta pasa el tope sin firma
-// y no pide la nota de repensar: no es un arreglo que se repite.
-function rethinkGate(args, { vueltaChica = false } = {}) {
+// y no pide la nota de repensar: no es un arreglo que se repite. `sinCodigo`: la vuelta no trae código ni revisores que
+// lanzar; se cierra sola, sin tope, sin firma y sin nota.
+function rethinkGate(args, { vueltaChica = false, sinCodigo = false, baseIter = null } = {}) {
   const rt = require('./rethink.js');
   // La vuelta que vale es la MAYOR entre la que declara quien llama, la que cuenta el marcador (las fotos de iteración
   // guardadas: la última + 1, o el `iter` que lleve alguna) y la de la propia carpeta de la corrida: si ya se sirvió alguna
@@ -731,6 +849,35 @@ function rethinkGate(args, { vueltaChica = false } = {}) {
   // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
+  // ¿El pedido es de la corrida del marcador de esta sesión (el mismo repo, por su raíz de git, y la misma historia)?
+  const orLib = require('./open-runs.js');
+  const raizDe = (p) => orLib.raizDeGit(p) || path.resolve(p);
+  const mismaRaiz = (a, b) => orLib.dentroDe(raizDe(a), raizDe(b)) && orLib.dentroDe(raizDe(b), raizDe(a));
+  const storyDelMarcador = marcadorConStory
+    ? deriveStoryId(path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.join(path.resolve(marcador.repoPath || repoAbs), marcador.storyPath))
+    : null;
+  const deEstaCorrida = marcadorConStory && mismaRaiz(marcador.repoPath || repoAbs, repoAbs)
+    && (!storyId || String(storyId) === String(storyDelMarcador));
+  // Fuera de la corrida de su marcador, el pedido no usa la cuenta de vueltas de ninguna: si el repo tiene una corrida
+  // abierta, la vuelta se pide desde la sesión de esa corrida y con su historia. Si no, otra sesión (con o sin marcador
+  // propio), la variable de sesión cambiada en el comando o una copia de la historia con otro número sacaban el set de
+  // una corrida al tope.
+  if (!deEstaCorrida) {
+    const abiertas = corridasAbiertasDelRepo(repoAbs);
+    if (abiertas.error) {
+      return `🛑 No pude leer el registro de corridas abiertas (${abiertas.error}): sin él no sé si ${repoAbs} tiene una corrida abierta, y ante la duda no devuelvo el set.\n`;
+    }
+    const yo = resolveSessionId();
+    const propias = abiertas.lista.filter((e) => e.sesion === yo);
+    if (propias.length) {
+      // la corrida de esta sesión en el repo es de otra historia que la pedida (una copia con otro número, otra ruta)
+      return `🛑 Esta sesión tiene una corrida abierta en ${repoAbs} (story ${propias.map((e) => e.story).join(', ')}) y el pedido es de otra historia: las vueltas de revisores se piden con la historia de la corrida, que es la que las cuenta.\n`;
+    }
+    if (abiertas.lista.length) {
+      const nombradas = abiertas.lista.map((e) => `sesión ${e.sesion}, story ${e.story}`).join('; ');
+      return `🛑 ${repoAbs} tiene una corrida abierta de otra sesión (${nombradas}) y esta sesión no tiene el marcador de esa corrida: sus vueltas de revisores las cuenta su marcador, y desde acá no se ven. Pedilo desde la sesión de la corrida.\n`;
+    }
+  }
   if (!marcadorConStory && !propia) {
     // el tope vale también fuera de una corrida (con tope 1, la vuelta 2 no pasa)
     const iterSin = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
@@ -756,23 +903,32 @@ function rethinkGate(args, { vueltaChica = false } = {}) {
   if (!servidas.ok) {
     return `🛑 El registro de vueltas servidas de la corrida (${rt.servedPath(runDir)}) existe y no se puede leer: ${servidas.reason}. Sin él no sé cuántas vueltas de revisores lleva, y ante la duda no devuelvo el set. Corregilo o borralo.\n`;
   }
+  // la copia de fuera del repo: borrar o achicar served.json no baja la cuenta
+  const espejo = rt.readServedMirror({ stateDir: stateDirOf(os.homedir()), runDir });
+  if (!espejo.ok) {
+    return `🛑 El registro de vueltas servidas de la carpeta de estado (gates.log) existe y no se puede leer: ${espejo.reason}. Sin él no sé cuántas vueltas de revisores lleva la corrida, y ante la duda no devuelvo el set.\n`;
+  }
+  const ultima = Math.max(servidas.last, espejo.last);
   const pedida = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
   // Una vuelta es un número de iteración que llegó a lanzar revisores (la foto que el arnés toma al lanzar el último).
   // Pedir de nuevo el set de la última vuelta servida, sin que se haya lanzado, es la MISMA vuelta; con sus revisores
-  // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). Sin marcador con la story
-  // no hay fotos que mirar: ahí cada pedido es una vuelta nueva, para que repetir no esquive la nota.
+  // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). También es nueva si desde
+  // que se sirvió se lanzó algún revisor o cambió algún archivo: si no, dejar un revisor sin lanzar repetía la vuelta con
+  // arreglos en el medio. Sin el marcador de esta corrida no hay fotos que mirar (las de otra historia no cuentan): ahí cada
+  // pedido es una vuelta nueva, para que repetir no esquive la nota.
   const rr = require('./review-rounds.js');
-  const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
-  const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
+  const servidaEn = espejo.last === ultima && espejo.ts ? espejo.ts : (runDir ? horaDe(rt.servedPath(runDir)) : null);
+  const ultimaLanzada = ultima > 0 && (!deEstaCorrida || rr.lanzada(marcador, ultima) || movidaDesde(servidaEn, marcador, storyId, repoAbs));
+  const iter = ultima > 0 ? Math.max(pedida, ultimaLanzada ? ultima + 1 : ultima) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
-  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica });
+  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica, sinCodigo, baseIter });
   if (bloqueoDelTope) return bloqueoDelTope;
-  if (iter >= rt.FIRST_ITER && !vueltaChica) {
+  if (iter >= rt.FIRST_ITER && !vueltaChica && !sinCodigo) {
     const dice = [];
     if (iter !== declarada) {
       dice.push(`Pediste la vuelta ${args.iter === undefined ? '(sin --iter)' : declarada}, pero ${iter === pedida
         ? `el marcador de la sesión lleva ${iter - 1} vuelta(s) cerrada(s)`
-        : `ya se sirvió la vuelta ${servidas.last} en esta corrida`}: vale la mayor, la ${iter}.`);
+        : `ya se sirvió la vuelta ${ultima} en esta corrida`}: vale la mayor, la ${iter}.`);
     }
     const diceAmbas = dice.length ? `\n${dice.join(' ')}` : '';
     const leida = rt.readNote(runDir, iter);
@@ -791,6 +947,8 @@ function rethinkGate(args, { vueltaChica = false } = {}) {
   if (donde) {
     const anotada = rt.recordServed(donde, iter);
     if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
+    const copia = rt.recordServedMirror({ stateDir: stateDirOf(os.homedir()), runDir: donde, iter, story: storyId, sessionId: resolveSessionId() || null });
+    if (!copia.ok) return `🛑 No pude anotar la vuelta ${iter} en el gates.log de la carpeta de estado: ${copia.reason}. Sin esa copia, borrar served.json bajaría la cuenta, y ante la duda no devuelvo el set.\n`;
   } else {
     // Sin carpeta de corrida no hay dónde contar las vueltas: un `--iter 1` repetido podría ser la tercera. Ante la duda,
     // no se devuelve el set.
@@ -799,4 +957,4 @@ function rethinkGate(args, { vueltaChica = false } = {}) {
   return null;
 }
 
-module.exports = { aplicarModelosDeRevisores, tierDe, buildStoryDigest, buildAdvisorContext, validateFilesExist, reloopHintsFor, emptyWorkGate, salidaDelFreno, rethinkGate, PRECHEQUEO, congelarVuelta, contextoConLaCopia, resumenReglas, reglasRevisores, conLanzadorCodex, logStep5Start };
+module.exports = { fotoAlLanzar, topeDeVueltas, revisoresDelCatalogo, aplicarModelosDeRevisores, tierDe, buildStoryDigest, buildAdvisorContext, validateFilesExist, reloopHintsFor, emptyWorkGate, salidaDelFreno, rethinkGate, PRECHEQUEO, congelarVuelta, contextoConLaCopia, resumenReglas, reglasRevisores, conLanzadorCodex, logStep5Start };

@@ -2861,38 +2861,54 @@ function closeSignature({ home, id, folder }) {
 // Los modos que acepta `claude --permission-mode`, más `default`, que es como la conversación anota el modo por
 // defecto (el lanzador sin la opción ya arranca en él).
 const LAUNCHER_MODES = new Set(['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan', 'default']);
-const MODE_TAIL_BYTES = 1024 * 1024;
-const MODE_CHUNK_BYTES = 64 * 1024;
-const MODE_RE = /"permissionMode":"([^"\\]*)"/g;
+const MODE_CHUNK_BYTES = 256 * 1024;
+const MODE_KEY = Buffer.from('"permissionMode"');
 
-// El último modo anotado en el último MODE_TAIL_BYTES de un archivo, leído de atrás hacia adelante; null si no hay.
+// El modo de un renglón de la conversación, si es la anotación de Claude Code: un mensaje de la persona (`type: user`,
+// no el de un subagente) con `permissionMode` en su primer nivel. La misma clave adentro de la entrada de una
+// herramienta o de un resultado no cuenta. null si el renglón no es eso. Un renglón con la clave que no se puede leer
+// (a medio escribir, pegado con otro) no se saltea: tira, y `open` no abre antes que copiar un modo más viejo.
+function modeOfLine(buf) {
+  if (buf.indexOf(MODE_KEY) < 0) return null;
+  let d;
+  try { d = JSON.parse(buf.toString('utf8')); } catch { throw new Error('un renglón con el modo no se puede leer (a medio escribir o roto); probá de nuevo en un momento'); }
+  return d && d.type === 'user' && !d.isSidechain && typeof d.permissionMode === 'string' ? d.permissionMode : null;
+}
+
+// El último modo anotado en un archivo, leído de atrás hacia adelante hasta el principio, renglón por renglón; null si
+// no hay. Claude Code anota el modo sólo con cada mensaje de la persona, y una sesión que trabaja sola (sin mensajes)
+// lo deja muy atrás: no se corta en una distancia. Un renglón partido entre bloques se junta una sola vez, al
+// encontrar su principio: cada bloque se recorre una vez, por largo que sea el renglón.
 function lastModeIn(file) {
   const fd = fs.openSync(file, 'r');
   try {
-    const size = fs.fstatSync(fd).size;
-    let end = size;
-    let tail = '';
-    while (end > 0 && size - end < MODE_TAIL_BYTES) {
-      const len = Math.min(MODE_CHUNK_BYTES, end, MODE_TAIL_BYTES - (size - end));
+    let end = fs.fstatSync(fd).size;
+    let despues = []; // los pedazos del renglón que sigue al principio de este bloque, en orden
+    while (end > 0) {
+      const len = Math.min(MODE_CHUNK_BYTES, end);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, end - len);
       end -= len;
-      // se suma el bloque nuevo adelante: una anotación partida entre dos bloques queda entera en el texto
-      tail = buf.toString('latin1') + tail;
-      let m;
-      let last = null;
-      MODE_RE.lastIndex = 0;
-      while ((m = MODE_RE.exec(tail))) last = m[1];
-      if (last !== null) return last;
+      let fin = len;
+      let nl = buf.lastIndexOf(10, len - 1);
+      while (nl >= 0) {
+        const linea = despues.length ? Buffer.concat([buf.subarray(nl + 1, fin), ...despues]) : buf.subarray(nl + 1, fin);
+        despues = [];
+        const mode = modeOfLine(linea);
+        if (mode !== null) return mode;
+        fin = nl;
+        nl = fin > 0 ? buf.lastIndexOf(10, fin - 1) : -1;
+      }
+      despues = [buf.subarray(0, fin), ...despues];
     }
-    return null;
+    return despues.length ? modeOfLine(Buffer.concat(despues)) : null;
   } finally { fs.closeSync(fd); }
 }
 
 // El modo de permisos de la sesión que llama. No está en el entorno ni en su archivo de sesión: sólo en su
 // conversación, donde cada mensaje de la persona lleva el modo de ese momento. Se busca en todas las carpetas de
 // `projects/` (la conversación no siempre está en la de su carpeta de arranque) y vale la de modificación más nueva.
-// Límite conocido: un cambio de modo sin un mensaje después no queda anotado.
+// Límite conocido: un cambio de modo sin un mensaje después no queda anotado, y vale el último que sí.
 function callerPermissionMode({ home, env }) {
   const sid = env.CLAUDE_CODE_SESSION_ID;
   if (!sid || !SAFE_SID.test(String(sid))) return { problem: 'no sé qué sesión me llama' };
@@ -2909,7 +2925,7 @@ function callerPermissionMode({ home, env }) {
   if (!newest) return { problem: 'no encontré la conversación de esta sesión' };
   let mode;
   try { mode = lastModeIn(newest.file); } catch (e) { return { problem: `no pude leer la conversación: ${e.code || e.message}` }; }
-  if (mode === null) return { problem: 'la conversación no lo anota cerca del final' };
+  if (mode === null) return { problem: 'la conversación no lo anota' };
   if (!LAUNCHER_MODES.has(mode)) return { problem: `la conversación dice «${label(mode)}», que el lanzador no conoce` };
   // una sesión de fondo en plan queda esperando que alguien apruebe su plan
   if (mode === 'plan') return { problem: 'estás en modo plan, y la sesión nueva quedaría esperando que alguien apruebe su plan' };
@@ -2965,7 +2981,9 @@ const LAUNCHED_KEEP_MS = 24 * 3600000;
 const LAUNCHED_EARLY_MS = 5000;
 const LAUNCHED_LATE_MS = LAUNCH_TIMEOUT_MS + 60000;
 const launchedFile = (home) => path.join(coordinationDir(home), 'launched.json');
-const realDir = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(String(p)); } };
+// la variante nativa corrige las mayúsculas a las del disco (y en Windows, los nombres cortos): la común deja las que
+// llegaron, y `c:\lab\proyecto` no era `C:\lab\proyecto` aunque sean la misma carpeta
+const realDir = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(String(p)); } };
 
 /** Los renglones de `launched.json`, tal como están. Sin archivo, vacío; roto o que no es una lista, tira con su motivo. */
 function readLaunched(home) {
@@ -3548,7 +3566,7 @@ function folderGaps(dir, opts) {
   const onBranch = branch.code === 0;
   const slots = workSlots.list({ home: opts.home, env: opts.env, arnes: opts.arnes, repo: dir });
   if (!slots.ok) unknown.push(`no pude mirar si ${dir} es un puesto fijo (${slots.message})`);
-  const slot = slots.ok ? slots.slots.find((s) => fs.realpathSync(top.out) === s.path) : null;
+  const slot = slots.ok ? slots.slots.find((s) => realDir(top.out) === realDir(s.path)) : null;
   // un puesto que la sesión soltó y ahora ocupa otra sesión viva, que arrancó después, ya no es suyo: lo de ahora (los
   // cambios, la rama, el puesto tomado) es de la otra, y lo suyo son las ramas que dejó ahí antes de que la otra llegara.
   // Sin el registro que diga que lo soltó, o con la rama de ahora entre las suyas, se mira todo como siempre.
@@ -3771,7 +3789,7 @@ function close(opts = {}) {
   if (s.alive && s.status !== 'idle') missing.push(`está trabajando (${oneLine(s.status) || 'sin estado'})`);
   // la sesión viva que arrancó después en su misma carpeta: si la carpeta es un puesto fijo, lo heredó. Sin una así, la
   // que arrancó antes y está ahí ahora: puede haber llegado al puesto después de la suelta (lo dice el registro)
-  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const real = realDir;
   const others = s.cwd && Number.isFinite(s.startedAt)
     ? [...sessions.entries()].filter(([o, x]) => o !== sid && x.alive && x.cwd && Number.isFinite(x.startedAt) && real(x.cwd) === real(s.cwd)).map(([, x]) => x)
     : [];

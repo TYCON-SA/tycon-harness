@@ -44,6 +44,20 @@ function partirAMano(md) {
   return out.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n') }));
 }
 
+/** El texto de una sección como lo ve `rol`: un bloque entre `<!-- maintainers-only -->` y su cierre, sólo para quien
+ *  mantiene; las marcas no las ve nadie. */
+function segunRolAMano(texto, rol) {
+  const out = [];
+  let dentro = false;
+  for (const l of texto.split('\n')) {
+    if (/^<!-- maintainers-only -->\s*$/.test(l)) { dentro = true; continue; }
+    if (/^<!-- \/maintainers-only -->\s*$/.test(l)) { dentro = false; continue; }
+    if (dentro && rol !== 'maintainer') continue;
+    out.push(l);
+  }
+  return out.join('\n');
+}
+
 /** El sitio con la ayuda sobre `raiz` (un árbol con guides/); `entrar(correo)` da la cookie de una sesión real. */
 async function conAyuda({ raiz = ROOT } = {}, fn) {
   const emisor = await arrancarEmisor();
@@ -85,7 +99,7 @@ test('T2 Ayuda_LoQueVeCadaRol_EsLaGuia @story-2.41 @ac-2 @ac-7', () => {
       const esperadas = aMano.filter((s) => s.titulo === null || HELP.SECCIONES[idioma][s.titulo].includes(rol));
       const r = HELP.paraRol(md, idioma, rol);
       assert.deepStrictEqual(r.partes.map((p) => p.titulo), esperadas.map((s) => s.titulo), `${idioma}/${rol}: las secciones`);
-      r.partes.forEach((p, i) => assert.strictEqual(p.texto, esperadas[i].texto, `${idioma}/${rol}: «${p.titulo || 'el comienzo'}» no es el texto de la guía`));
+      r.partes.forEach((p, i) => assert.strictEqual(p.texto, segunRolAMano(esperadas[i].texto, rol), `${idioma}/${rol}: «${p.titulo || 'el comienzo'}» no es el texto de la guía`));
     }
   }
   // «Qué ve cada rol» dice que la ayuda está dentro del sitio (AC 7)
@@ -297,4 +311,157 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
     const img = await h.pedir(`/ayuda/capturas/${una}`, { cookie: c });
     assert.strictEqual(img.headers['cache-control'], 'private, max-age=3600', 'la captura se guarda sólo en el navegador de la sesión');
   } finally { await h.cerrar(); await emisor.cerrar(); }
+});
+
+// 🔴 Falla con: la guía sin las marcas de quien mantiene dentro de las secciones que ven todos, o help.js que no las
+// aplica. Una persona recibía la instalación, las decisiones del dueño, las rutas del sitio y dónde se cargan los precios
+// (recorrido del sitio del 27/11).
+test('T7 Ayuda_DentroDeLoComun_LoDeQuienMantieneNoLlegaALaPersona — y nadie ve las marcas', () => {
+  const frases = {
+    es: ['después, cómo se instala', 'Instalarlo', 'Lo que decidió el dueño', 'RUTAS_SIN_SESION', 'site.prices', 'en la instalación', '### Configuración\n'],
+    en: ['then, how to install it', 'Installing it', 'What the owner decided', 'RUTAS_SIN_SESION', 'site.prices', 'in the installation', '### Configuration\n'],
+  };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]);
+    const texto = (rol) => HELP.paraRol(md, idioma, rol).partes.map((p) => p.texto).join('\n');
+    const persona = texto('person');
+    const mantiene = texto('maintainer');
+    for (const f of frases[idioma]) assert.ok(!persona.includes(f), `${idioma}: la persona recibe «${f.trim()}»`);
+    for (const f of frases[idioma].slice(2, 5)) assert.ok(mantiene.includes(f), `${idioma}: quien mantiene no recibe «${f}»`);
+    for (const t of [persona, mantiene]) assert.ok(!t.includes('maintainers-only'), `${idioma}: una marca quedó a la vista`);
+  }
+});
+
+// Las pestañas de cada rol, leídas de las rutas del sitio: `needs` y `pestana.id` de cada archivo que arma una pestaña.
+// `solo` es quien mantiene; `necesita` (Oficinas), los dos roles.
+function pestanasDelSitio() {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const archivos = [path.join(H.SITE, 'server.js'), path.join(H.SITE, 'help.js'), ...fs.readdirSync(path.join(H.SITE, 'tabs')).filter((f) => f.endsWith('.js')).map((f) => path.join(H.SITE, 'tabs', f))];
+  const roles = { solo: ['maintainer'], necesita: ['maintainer', 'person'] };
+  const out = [];
+  for (const f of archivos) {
+    for (const m of leer(f).matchAll(/needs: (\[[^\]]*\]|\w+), pestana: \{ id: '(\w+)'/g)) {
+      const needs = m[1].startsWith('[') ? JSON.parse(m[1].replace(/'/g, '"')) : roles[m[1]];
+      assert.ok(needs, `${path.basename(f)}: no sé qué roles son «${m[1]}»`);
+      out.push({ id: m[2], needs, es: t('es', `pestana.${m[2]}`), en: t('en', `pestana.${m[2]}`) });
+    }
+  }
+  return out;
+}
+
+// 🔴 Falla con: la Ayuda lista en «El primer ingreso» otras pestañas que las del menú (A160).
+test('A160_PrimerIngreso_NombraLasPestanasDeCadaRol — quien mantiene, todas; una persona, las suyas y ninguna de quien mantiene', () => {
+  const pestanas = pestanasDelSitio();
+  assert.ok(pestanas.length >= 11, `encontré ${pestanas.length} pestañas`);
+  const renglones = {
+    es: { mantiene: /^- \*\*Quien mantiene\*\* ve todas las pestañas \(([^)]*)\)/m, persona: /^- \*\*Una persona confirmada\*\* ve ([^,]*(?:, [^,]*)*?), con lo suyo/m },
+    en: { mantiene: /^- \*\*A maintainer\*\* sees every tab \(([^)]*)\)/m, persona: /^- \*\*A confirmed person\*\* sees (.*?), with their own things/m },
+  };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n {2}/g, ' ');
+    const lista = (re) => { const m = re.exec(md); assert.ok(m, `${idioma}: no encontré el renglón ${re}`); const partes = m[1].split(', '); const ult = partes.pop(); const y = Math.max(ult.lastIndexOf(' y '), ult.lastIndexOf(' and '));
+      // el último par va con «y»/«and», que también puede estar adentro de un nombre («Horas y tokens»)
+      return [...partes, ...(y < 0 ? [ult] : [ult.slice(0, y), ult.slice(y).replace(/^ (y|and) /, '')])].map((x) => x.trim()); };
+    const mantiene = lista(renglones[idioma].mantiene);
+    const persona = lista(renglones[idioma].persona);
+    assert.deepStrictEqual([...mantiene].sort(), pestanas.filter((p) => p.needs.includes('maintainer')).map((p) => p[idioma]).sort(), `${idioma}: quien mantiene`);
+    assert.deepStrictEqual([...persona].sort(), pestanas.filter((p) => p.needs.includes('person')).map((p) => p[idioma]).sort(), `${idioma}: una persona`);
+  }
+});
+
+// 🔴 Falla con: la Ayuda promete cuatro bloques fijos en Mantenimiento y la pantalla esconde los vacíos (A161).
+test('A161_Mantenimiento_LaAyudaDiceQueLosBloquesVaciosNoSeVen — «Te toca decidir» siempre; los otros tres, sólo con algo', () => {
+  const secciones = { es: '### Mantenimiento', en: '### Maintenance' };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]);
+    const desde = md.indexOf(secciones[idioma]);
+    const sec = md.slice(desde, md.indexOf('\n### ', desde + 5)).replace(/\n/g, ' ');
+    assert.doesNotMatch(sec, /tiene cuatro bloques:|has four blocks:/, `${idioma}: promete cuatro bloques fijos`);
+    assert.match(sec, idioma === 'es' ? /hasta cuatro bloques/ : /up to four blocks/, `${idioma}: dice hasta cuántos`);
+    assert.match(sec, idioma === 'es' ? /vacío no se muestra/ : /empty is not shown/, `${idioma}: dice que el vacío no se ve`);
+  }
+  // y la pantalla, en efecto, arma esos tres bloques sólo con algo adentro
+  const src = leer(path.join(H.SITE, 'tabs', 'findings.js'));
+  assert.match(src, /const espera = m\.espera\.length\s*\?/);
+  assert.match(src, /const marcha = m\.cuentas\.marcha\s*\?/);
+  assert.match(src, /m-decididas"\$\{m\.decididas\.length \? '' : ' hidden'\}/);
+});
+
+// 🔴 Falla con: la Ayuda dice que sin organización y proyecto la noche no pide trabajo (las vulnerabilidades sí) o que
+// «Cerrar la historia» es el cierre en Azure DevOps (la tarea vive en la plataforma del equipo) (A164, A165).
+test('A164_A165_LaAyudaDiceQuienDejaDePedirYDondeSeCierra', () => {
+  const es = leer(GUIA.es).replace(/\n\s*/g, ' ');
+  const en = leer(GUIA.en).replace(/\n\s*/g, ' ');
+  assert.doesNotMatch(es, /que la noche no va a pedir trabajo/);
+  assert.match(es, /la revisión de las ejecuciones y el vigilante no van a pedir trabajo; las vulnerabilidades sí/);
+  assert.doesNotMatch(en, /that the night will not request work/);
+  assert.match(en, /the run review and the watcher will not request work; vulnerabilities still do/);
+  assert.doesNotMatch(es, /el cierre en Azure DevOps/);
+  assert.doesNotMatch(en, /the closing in Azure DevOps/);
+});
+
+// 🔴 Falla con: la Ayuda nombra el rol de quien programa «Dev» y la pantalla dice «Programador», o la pantalla llama al
+// mismo rol «mantenedor» y «quienes mantienen el arnés» (A171).
+test('A171_ElRol_SeLlamaIgualEnLaAyudaYEnLaPantalla', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n\s*/g, ' ');
+    const dev = t(idioma, 'pantalla.dev'); const mant = t(idioma, 'pantalla.mantieneElSitio');
+    assert.doesNotMatch(md, idioma === 'es' ? /rol «Dev»|o «Dev»\)/ : /role "Dev"|or "Dev"\)/, `${idioma}: «Dev» no está en la pantalla`);
+    assert.ok(md.includes(idioma === 'es' ? `«${dev}»` : `"${dev}"`), `${idioma}: la Ayuda nombra «${dev}»`);
+    assert.ok(md.includes(idioma === 'es' ? `«${mant}»` : `"${mant}"`), `${idioma}: la Ayuda nombra «${mant}»`);
+  }
+  assert.doesNotMatch(t('es', 'pantalla.losCambiosDeUnMantenedor'), /mantenedor/);
+  assert.doesNotMatch(t('es', 'pantalla.mantenedoresVenTodo'), /el arnés/);
+  assert.doesNotMatch(t('en', 'pantalla.mantenedoresVenTodo'), /the harness/);
+});
+
+// 🔴 Falla con: un bloque de código dentro de un ítem de lista sale como texto corrido con las comillas invertidas a la
+// vista, y un asterisco escapado («\*») sale con su barra (A173).
+test('A173_Markdown_CodigoEnUnaListaYAsteriscosEscapados', () => {
+  const md = [
+    '- **Probarlo**: bajá la imagen:',
+    '',
+    '  ```bash',
+    '  docker pull ghcr.io/<organización>/<repo>:stable',
+    '  ```',
+    '',
+    '  y después:',
+    '',
+    '  ```json',
+    '  {',
+    '    "name": "acme-local"',
+    '  }',
+    '  ```',
+    '- otro ítem',
+    '',
+    '| Firma | Quién |',
+    '|---|---|',
+    '| Abrir · 1 | la coordinadora \\* |',
+    '',
+    'Una nota \\*\\* al pie, y `a\\*b` en código queda igual.',
+  ].join('\n');
+  const html = HELP.aHtml(md);
+  assert.ok(html.includes('<pre><code>docker pull ghcr.io/&lt;organización&gt;/&lt;repo&gt;:stable</code></pre>'), html);
+  assert.ok(html.includes('<pre><code>{\n  &quot;name&quot;: &quot;acme-local&quot;\n}</code></pre>'), html);
+  assert.ok(!html.includes('```'), 'sin comillas invertidas a la vista');
+  assert.ok(html.includes('<li>otro ítem</li>'), html);
+  assert.ok(html.includes('<td>la coordinadora *</td>'), html);
+  assert.ok(html.includes('Una nota ** al pie'), html);
+  assert.ok(html.includes('<code>a\\*b</code>'), 'en código, la barra queda');
+});
+
+// 🔴 Falla con: la Ayuda manda a buscar la dirección del sitio en «Quién entra al sitio», y la pantalla la tiene en
+// «La dirección del sitio en cada máquina», del perfil del equipo (A168).
+test('A168_LaDireccionDelSitio_DondeLaTieneLaPantalla', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const ORGC = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+  const sec = ORGC.SECCIONES.find((s) => s.id === 'direccionSitio');
+  assert.deepStrictEqual([sec.repo, sec.rutas], ['perfil', ['site.url']]);
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n\s*/g, ' ');
+    assert.doesNotMatch(md, idioma === 'es' ? /`site\.url`, en la sección «Quién entra al sitio»/ : /`site\.url`, in the "Who gets into the site" section/);
+    const titulo = t(idioma, 'pantalla.direccionSitioTitulo');
+    assert.ok(md.includes(idioma === 'es' ? `«${titulo}»` : `"${titulo}"`), `${idioma}: nombra «${titulo}»`);
+  }
 });

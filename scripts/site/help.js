@@ -7,8 +7,9 @@
  * carpeta de capturas). La página se arma al pedirla, así que no hay una segunda copia que se desactualice.
  *
  * Quién ve qué: cada sección `##` de la guía tiene sus roles en `SECCIONES`, una tabla cerrada. Una sección que la tabla
- * no conoce no se muestra a nadie (lo nuevo no queda a la vista por omisión) y la prueba frena. El filtro corre acá, en
- * el servidor: a quien no mantiene nunca le llega el texto de instalación.
+ * no conoce no se muestra a nadie (lo nuevo no queda a la vista por omisión) y la prueba frena. Dentro de una sección
+ * que ven todos, un bloque entre `<!-- maintainers-only -->` y `<!-- /maintainers-only -->` es sólo de quien mantiene. El
+ * filtro corre acá, en el servidor: a quien no mantiene nunca le llega el texto de instalación.
  *
  * El markdown se arma escapado: títulos, párrafos, listas, citas, código, tablas, enlaces e imágenes. Cualquier HTML del
  * archivo sale como texto; un enlace sólo es `https://` o `#ancla`; una imagen, sólo una captura de la guía, servida por
@@ -95,15 +96,32 @@ function partir(md) {
   return out.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n') }));
 }
 
+// Dentro de una sección que ven todos, un bloque sólo para quien mantiene (los pasos de instalación, una decisión interna)
+// va entre estas dos marcas, cada una sola en su renglón. Quien no mantiene no recibe el bloque; las marcas no las ve
+// nadie. Un bloque sin cierre llega hasta el final de su sección: si falta la marca de cierre, se oculta de más, no de menos.
+const ABRE_MANTIENE = /^<!-- maintainers-only -->\s*$/;
+const CIERRA_MANTIENE = /^<!-- \/maintainers-only -->\s*$/;
+function segunRol(texto, rol) {
+  const out = [];
+  let dentro = false;
+  for (const l of String(texto).split('\n')) {
+    if (ABRE_MANTIENE.test(l)) { dentro = true; continue; }
+    if (CIERRA_MANTIENE.test(l)) { dentro = false; continue; }
+    if (dentro && rol !== 'maintainer') continue;
+    out.push(l);
+  }
+  return out.join('\n');
+}
+
 /** Lo que ve `rol`: el comienzo y las secciones con ese rol. `desconocidas`: las que la tabla no conoce (no se muestran). */
 function paraRol(md, idioma, rol) {
   const tabla = SECCIONES[idioma] || {};
   const partes = [];
   const desconocidas = [];
   for (const s of partir(md)) {
-    if (s.titulo === null) { partes.push(s); continue; }
+    if (s.titulo === null) { partes.push({ ...s, texto: segunRol(s.texto, rol) }); continue; }
     if (!Object.prototype.hasOwnProperty.call(tabla, s.titulo)) { desconocidas.push(s.titulo); continue; }
-    if (tabla[s.titulo].includes(rol)) partes.push(s);
+    if (tabla[s.titulo].includes(rol)) partes.push({ ...s, texto: segunRol(s.texto, rol) });
   }
   return { partes, desconocidas };
 }
@@ -151,6 +169,9 @@ function formato(t) {
 function enLinea(texto, rechazar) {
   return String(texto).split(/(`[^`]+`)/).map((tramo) => {
     if (/^`[^`]+`$/.test(tramo)) return `<code>${esc(tramo.slice(1, -1))}</code>`;
+    // un carácter escapado («\\*») sale como el carácter, sin la barra y sin hacer formato
+    const escapados = [];
+    tramo = tramo.replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, (todo, c) => { escapados.push(c); return `\u0003${escapados.length - 1}\u0004`; });
     // las imágenes y los enlaces se reconocen sobre el texto crudo y cada parte se escapa por separado
     const partes = [];
     const re = /(!?)\[([^\]]*)\]\(([^)\s]+)\)/g;
@@ -171,7 +192,7 @@ function enLinea(texto, rechazar) {
     }
     partes.push(esc(tramo.slice(desde)));
     // la negrita y la cursiva sobre el tramo entero (pueden envolver un enlace); el texto ya está escapado
-    return formato(partes.join(''));
+    return formato(partes.join('')).replace(/\u0003(\d+)\u0004/g, (todo, n) => esc(escapados[Number(n)]));
   }).join('');
 }
 
@@ -180,23 +201,56 @@ const celdas = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').
 const MARCA = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
 const sangria = (l) => /^\s*/.exec(l)[0].length;
 
-/** Una lista desde la línea `i`, con sus sublistas (por sangría): { html, i } con la primera línea que ya no es suya. */
+const FENCE = /^\s*```/;
+/**
+ * Un bloque de código desde la línea `i` (su cerco puede venir con sangría, adentro de un ítem): { html, i } con la
+ * línea siguiente al cierre. Cada línea pierde la sangría del cerco, no más: lo de adentro conserva la suya.
+ */
+function bloqueDeCodigo(lineas, i) {
+  const quitar = sangria(lineas[i]);
+  const cuerpo = [];
+  i += 1;
+  while (i < lineas.length && !FENCE.test(lineas[i])) { const l = lineas[i]; cuerpo.push(l.slice(Math.min(quitar, sangria(l)))); i += 1; }
+  return { html: `<pre><code>${esc(cuerpo.join('\n'))}</code></pre>`, i: i + 1 };
+}
+
+/**
+ * Una lista desde la línea `i`, con sus sublistas (por sangría), sus bloques de código y sus párrafos de más: { html, i }
+ * con la primera línea que ya no es suya. Un renglón en blanco no corta la lista si lo que sigue es del ítem (con más
+ * sangría) o es otro ítem de la misma lista.
+ */
 function lista(lineas, i, rechazar) {
   const base = sangria(lineas[i]);
   const ordenada = /^\s*\d+\./.test(lineas[i]);
   const items = [];
+  // cada ítem: sus trozos en orden; un texto se va sumando hasta que llega un bloque
+  const texto = (t) => { const tr = items[items.length - 1].trozos; const ult = tr[tr.length - 1]; if (ult && ult.texto !== undefined && !ult.cerrado) ult.texto += ` ${t}`; else tr.push({ texto: t }); };
+  const bloque = (html) => items[items.length - 1].trozos.push({ html });
   while (i < lineas.length) {
     const l = lineas[i];
     const m = MARCA.exec(l);
-    if (m && sangria(l) === base) { items.push({ texto: m[3], hijos: '' }); i += 1; continue; }
+    if (m && sangria(l) === base) { items.push({ trozos: [{ texto: m[3] }] }); i += 1; continue; }
     if (!items.length) break;
-    if (m && sangria(l) > base) { const sub = lista(lineas, i, rechazar); items[items.length - 1].hijos += sub.html; i = sub.i; continue; }
+    if (!l.trim()) {
+      let j = i + 1;
+      while (j < lineas.length && !lineas[j].trim()) j += 1;
+      const sigue = j < lineas.length && (sangria(lineas[j]) > base || (MARCA.test(lineas[j]) && sangria(lineas[j]) === base && /^\s*\d+\./.test(lineas[j]) === ordenada));
+      if (!sigue) break;
+      // el texto de después del renglón en blanco es otro párrafo del ítem
+      const tr = items[items.length - 1].trozos; const ult = tr[tr.length - 1];
+      if (ult && ult.texto !== undefined) ult.cerrado = true;
+      i = j;
+      continue;
+    }
+    if (sangria(l) > base && FENCE.test(l)) { const b = bloqueDeCodigo(lineas, i); bloque(b.html); i = b.i; continue; }
+    if (m && sangria(l) > base) { const sub = lista(lineas, i, rechazar); bloque(sub.html); i = sub.i; continue; }
     // la continuación de un ítem: una línea con sangría que no es una marca
-    if (!m && l.trim() && sangria(l) > base) { items[items.length - 1].texto += ` ${l.trim()}`; i += 1; continue; }
+    if (!m && sangria(l) > base) { texto(l.trim()); i += 1; continue; }
     break;
   }
   const tag = ordenada ? 'ol' : 'ul';
-  return { html: `<${tag}>${items.map((x) => `<li>${enLinea(x.texto, rechazar)}${x.hijos}</li>`).join('')}</${tag}>`, i };
+  const item = (x) => x.trozos.map((t, n) => (t.html !== undefined ? t.html : n === 0 ? enLinea(t.texto, rechazar) : `<p>${enLinea(t.texto, rechazar)}</p>`)).join('');
+  return { html: `<${tag}>${items.map((x) => `<li>${item(x)}</li>`).join('')}</${tag}>`, i };
 }
 
 /** Un enlace a un ancla que la página no tiene (una sección de otro rol) queda como texto: no apunta a lo que no se ve. */
@@ -217,13 +271,11 @@ function aHtml(md, { alRechazar = () => {} } = {}) {
   const cerrarParrafo = () => { if (parrafo.length) { out.push(`<p>${enLinea(parrafo.join(' '), alRechazar)}</p>`); parrafo.length = 0; } };
   while (i < lineas.length) {
     const l = lineas[i];
-    if (/^```/.test(l)) {
+    if (FENCE.test(l)) {
       cerrarParrafo();
-      const cuerpo = [];
-      i += 1;
-      while (i < lineas.length && !/^```/.test(lineas[i])) { cuerpo.push(lineas[i]); i += 1; }
-      out.push(`<pre><code>${esc(cuerpo.join('\n'))}</code></pre>`);
-      i += 1;
+      const b = bloqueDeCodigo(lineas, i);
+      out.push(b.html);
+      i = b.i;
       continue;
     }
     const h = /^(#{1,6})\s+(.+)$/.exec(l);
