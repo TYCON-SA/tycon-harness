@@ -1036,14 +1036,18 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     `rm $(: $(: 'for ((')) ${H}`, `cp README.md $(: "$(: 'for ((')") ${H}`, `cat README.md | tee $(: $(: '# for ((')) ${H}`,
     `touch fora; cp for((a)) ${H}`, `pwsh -c 'cp README.md ${H}' </dev/null`, `pwsh -c 'cp README.md ${H}' <<< x`,
     `pwsh -c 'cp README.md ${H}' > >(cat)`, `pwsh -c 'cp README.md ${H}' {fd}>/tmp/x`,
+    // (tercera vuelta) se lee tal cual y con el `;`: ni un `for ((` citado corta argumentos ni uno real se esconde
+    `cp README.md $(: $(: $'\\'' '; for ((' )) ${H}`, `rm \${x} for((a))(N) ${H}`, `echo $'it\\'s' ; for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `echo a\\ #; for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `x=\${y/ #/}; for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `cat <<'E-1'\ndon't\nE-1\nfor ((i=0;i<1;i++)) do cp README.md ${H}; done`, `repeat 1 for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `pwsh -c 'cp README.md ${H}' <<EOF\ndatos\nEOF`, `pwsh -c 'cp README.md ${H}' < $(mktemp)`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
     `pwsh -Command 'cp README.md notas.txt'`, `pwsh -Command '((x > notas.txt))'`, `echo "pwsh -Command 'cp README.md ${H}'"`,
     `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`, `echo 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`,
     `pwsh -Command 'Get-Content README.md' 2>&1 | tail -5`, `pwsh -File script.ps1 <<'EOF'\nhola\nEOF`,
-    `git commit -m'fix: for ((i=0;i<1;i++)) do cp README.md ${H}; done'`, `git commit -m"fix: for ((i=0;i<1;i++)) do cp README.md ${H}; done"`,
-    `git log -S'for ((i=0;i<1;i++)) do cp README.md ${H}' --oneline`, `git grep -n -e'for ((i=0;i<1;i++)) do cp README.md ${H}'`,
-    `# for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `echo hola # for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
-    `echo ok # (ver for ((i=0;i<1;i++)) cp README.md ${H})`]) pasa(c, cmd);
+    // (un texto pegado a su opción, `-m'…'`, o un comentario que copian literalmente un `for ((…)) do cp … h.md` pueden
+    // frenar: la lectura con el `;` es en todo el texto, el lado seguro)
+  ]) pasa(c, cmd);
 });

@@ -923,10 +923,14 @@ function cuerpoDelShell(tramo) {
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
  */
 function comandosAnidados(comando, hondo = 0, valores = null) {
-  // (el cuerpo de un `for ((…)) do …` sin `;` antes del `do` es un comando: `conSeparadorTrasElFor`)
-  const cmd = conSeparadorTrasElFor(sinTextoDeHeredocs(comando));
+  const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
+  // con un `for ((`, también lo que corre adentro del comando con un `;` detrás de cada cabecera: el cuerpo de un
+  // `for ((…)) do …` sin `;` antes del `do` es un comando (`conSeparadorTrasElFor`). El comando de arriba con el `;` no
+  // es un anidado: lo lee la segunda lectura del freno (`handle`)
+  const separado = hondo === 0 ? conSeparadorTrasElFor(cmd) : cmd;
+  if (separado !== cmd) out.push(...comandosAnidados(separado, hondo, valores).slice(1));
   // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
   // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
   // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.

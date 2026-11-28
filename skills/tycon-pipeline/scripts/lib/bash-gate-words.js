@@ -292,18 +292,13 @@ const DESTINO_CON_SUBCOMANDO = new RegExp(String.raw`((?:^|[^<>&])(?:>{1,2}|\bte
  * Qué posiciones de `cmd` son texto de comando: fuera de las comillas y fuera del cuerpo de un heredoc. Un `>` adentro
  * de un mensaje de commit o de un heredoc no es una redirección.
  */
-/** `es` con los cuerpos de los heredocs de `s` en false (y sus renglones de cierre). */
-function sinCuerposDeHeredocEn(s, es) {
+function posicionesDeComando(cmd) {
+  const s = String(cmd || '');
+  const es = new Array(s.length).fill(true);
   for (const m of s.matchAll(/(?<!<)<<(?!<)-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g)) {
     const desde = m.index + m[0].indexOf('\n') + 1;
     for (let i = desde; i < m.index + m[0].length; i++) es[i] = false;
   }
-  return es;
-}
-
-function posicionesDeComando(cmd) {
-  const s = String(cmd || '');
-  const es = sinCuerposDeHeredocEn(s, new Array(s.length).fill(true));
   let q = null;
   for (let i = 0; i < s.length; i++) {
     if (!es[i]) continue;
@@ -435,71 +430,21 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
 }
 
 /**
- * Qué letras de `t` son código del shell: no las de adentro de comillas simples o dobles, de un comentario ni del
- * cuerpo de un heredoc; sí las de un `$(…)` o comillas invertidas, también entre comillas dobles (`"$(cp a b)"`).
- * Una sola pasada, con lo abierto en una pila.
- */
-function codigoDelShell(t) {
-  const fuera = sinCuerposDeHeredocEn(t, new Array(t.length).fill(true));
-  const es = new Array(t.length).fill(false);
-  // lo abierto: `(` y `$(` y `` ` `` son código; `'` y `"` no
-  const pila = [];
-  const arriba = () => pila[pila.length - 1];
-  for (let i = 0; i < t.length; i++) {
-    if (!fuera[i]) continue;
-    const c = t[i];
-    const a = arriba();
-    if (a === "'") { if (c === "'") pila.pop(); continue; }
-    if (a === '"') {
-      if (c === '\\') i++;
-      else if (c === '"') pila.pop();
-      else if (c === '$' && t[i + 1] === '(') { pila.push('$('); i++; } else if (c === '`') pila.push('`');
-      continue;
-    }
-    es[i] = true;
-    if (c === '\\') { es[i + 1] = true; i++; continue; }
-    if (c === "'" || c === '"') { es[i] = false; pila.push(c); continue; }
-    if (c === '`') { if (a === '`') pila.pop(); else pila.push('`'); continue; }
-    if (c === '(') { pila.push(t[i - 1] === '$' ? '$(' : '('); continue; }
-    if (c === ')') { if (a === '(' || a === '$(') pila.pop(); continue; }
-    // un comentario: el `#` que empieza una palabra, hasta el renglón
-    if (c === '#' && (i === 0 || /[\s;&|()]/.test(t[i - 1]))) {
-      for (; i < t.length && t[i] !== '\n'; i++) es[i] = false;
-      i--;
-    }
-  }
-  return es;
-}
-
-/** Si `t[p]` va detrás de lo que abre un comando: el principio, `;`, `&`, `|`, un paréntesis, una llave, `!`, un
- * renglón, una comilla invertida o una palabra de bloque; nunca escapado. */
-function abreUnComando(t, p) {
-  let k = p;
-  while (k > 0 && (t[k - 1] === ' ' || t[k - 1] === '\t')) k--;
-  if (k === 0) return true;
-  if (t[k - 2] === '\\') return false;
-  return /[;&|(){}\n!`]/.test(t[k - 1]) || PALABRA_DE_BLOQUE.test(t.slice(Math.max(0, k - 7), k));
-}
-
-/**
  * El comando con un `;` detrás de la cabecera de cada `for ((…))` que no lo tiene: `for ((i=0;i<1;i++)) do cp a b`,
- * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. Sólo
- * donde el texto es código (`codigoDelShell`: no entre comillas, en un comentario ni en el cuerpo de un heredoc; sí en un
- * `"$(…)"`), y detrás de lo que abre un comando (`;`, `&`, `|`, un paréntesis, una llave, `!`, un renglón o una palabra
- * de bloque): así también en una función, un `case`, un `<(…)` o un `for` adentro de otro; `cp for((a)) h` (un comodín
- * de zsh) no. El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. La cuenta queda igual.
+ * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. En todo
+ * el texto, también entre comillas y en comentarios: un `for ((` que no abre un comando es un error del shell y no corre
+ * nada, y el de un `"$(…)"`, una función, un `case` o un `<(…)` sí corre; lo citado sigue siendo texto para quien lo lee.
+ * El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda igual.
  */
 function conSeparadorTrasElFor(texto) {
   const t = String(texto);
   const cabecera = /(?<![\w$.-])for[ \t]*\(\(/g;
-  if (!cabecera.test(t)) return t;
-  cabecera.lastIndex = 0;
-  const es = codigoDelShell(t);
+  if (!t.includes('((')) return t;
   let out = '';
   let hecho = 0;
   for (const m of t.matchAll(cabecera)) {
     const f = m.index;
-    if (f < hecho || !es[f] || !abreUnComando(t, f)) continue;
+    if (f < hecho) continue;
     const fin = cierreDeParentesis(t, f + m[0].length - 2);
     if (fin < 0) continue;
     let k = fin + 1;
@@ -1505,8 +1450,8 @@ function guionDeSedSinEfectos(guion) {
 const COMANDO_DE_POWERSHELL = /^(?:--?|\/)(?:c|co|com|comm|comma|comman|command|commandwithargs|cwa)$/i;
 // y las que lo llevan en base64 de UTF-16 (`-e`, `-ec`, `-enc`, `-EncodedCommand`)
 const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)$/i;
-// las redirecciones de entrada (`<f`, `<<< x`, `<&0`), las de un descriptor con nombre (`{fd}>`) y los `<(…)`/`>(…)`
-const REDIRECCION_DE_ENTRADA_O_PROCESO = /(?<![^\s])\{[A-Za-z_]\w*\}(?=[<>])|[<>]\((?:[^()]|\([^()]*\))*\)|(?<![^\s])\d*(?:<<<|<>|<&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^\s;&|()<>]+)?/g;
+// las redirecciones de entrada (`<f`, `<<< x`, `<<EOF`, `< $(mktemp)`, `<&0`), las de un descriptor con nombre (`{fd}>`) y los `<(…)`/`>(…)`
+const REDIRECCION_DE_ENTRADA_O_PROCESO = /(?<![^\s])\{[A-Za-z_]\w*\}(?=[<>])|[<>]\((?:[^()]|\([^()]*\))*\)|(?<![^\s])\d*(?:<<<|<<-?|<>|<&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|\$\([^()]*\)|[^\s;&|()<>]+)?/g;
 // y la que corre un guion (`-f`, `-File`)
 const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
 

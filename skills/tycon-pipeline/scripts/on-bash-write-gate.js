@@ -259,17 +259,37 @@ function paso(texto) {
   try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
 }
 
-function handle(evento, opts = {}) {
-  // el cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: cada lectura lo ve con el `;`
-  // (`conSeparadorTrasElFor`)
-  const original = evento?.tool_input?.command;
+/**
+ * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: si el comando tiene un `for ((`, se lee
+ * otra vez con un `;` detrás de cada cabecera (`conSeparadorTrasElFor`, en todo el texto), y frena si cualquiera de las
+ * dos lecturas frena. La de tal cual ve lo que el `;` cortaría (un `for ((` citado en un argumento); la otra, el `for`
+ * en cualquier lugar donde corra. La segunda sólo decide, y la aprobación del dueño a un comando exacto se busca con el
+ * que llegó (`comandoTalCual`).
+ */
+function handle(event, opts = {}) {
+  const r = handleConComentarios(event, opts);
+  if (r && r.block) return r;
+  const original = event?.tool_input?.command;
   const separado = typeof original === 'string' ? conSeparadorTrasElFor(original) : original;
-  // (la aprobación del dueño a un comando exacto se busca con el que llegó: `comandoTalCual`)
-  const event = separado === original ? evento : { ...evento, comandoTalCual: original, tool_input: { ...evento.tool_input, command: separado } };
+  if (separado === original) return r;
+  paso('la lectura con un ; detrás de cada for (( ))');
+  const antes = modoDeLectura().soloDecidir;
+  modoDeLectura({ soloDecidir: true });
+  try {
+    const conSeparador = handleConComentarios({ ...event, comandoTalCual: original, tool_input: { ...event.tool_input, command: separado } }, opts);
+    if (conSeparador && conSeparador.block) return conSeparador;
+  } finally {
+    modoDeLectura({ soloDecidir: antes });
+  }
+  return r;
+}
+
+function handleConComentarios(event, opts = {}) {
   modoDeLectura({ apagoAlgo: false });
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !modoDeLectura().apagoAlgo) return r;
   paso('la segunda lectura, sin los comentarios');
+  const antes = modoDeLectura().soloDecidir;
   modoDeLectura({ leerComentarios: false });
   modoDeLectura({ soloDecidir: true });
   try {
@@ -277,7 +297,7 @@ function handle(evento, opts = {}) {
     if (comoAntes && comoAntes.block) return comoAntes;
   } finally {
     modoDeLectura({ leerComentarios: true });
-    modoDeLectura({ soloDecidir: false });
+    modoDeLectura({ soloDecidir: antes });
   }
   return r;
 }

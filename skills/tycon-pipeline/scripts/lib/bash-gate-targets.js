@@ -349,15 +349,19 @@ const ANTES_DEL_CD_COMPLEJO = /['"`(){}|<>#\\]|\$\(|(?:^|[^&])&(?!&)|\b(?:if|the
  */
 function extractWriteTargets(cmd, { keep = null, cuentas = false } = {}) {
   const out = new Set();
-  // el cuerpo de un `for ((…)) do …` sin `;` antes del `do` es un comando (`conSeparadorTrasElFor`)
-  const raw = conSeparadorTrasElFor(String(cmd || ''));
-  const s = stripNonCommandText(raw, 0, { cuentas });
-  const lecturas = [s];
-  // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
-  const unidos = sinContinuaciones(s, { sinCuerpos: true });
-  if (unidos !== s) lecturas.push(unidos);
-  for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
-  destinosPorElPartidor(raw, keep, out, 0, { cuentas });
+  // tal cual y, con un `for ((`, también con un `;` detrás de cada cabecera: el cuerpo de un `for ((…)) do …` sin `;`
+  // antes del `do` es un comando (`conSeparadorTrasElFor`). Cuentan los destinos de las dos
+  const tal = String(cmd || '');
+  const separado = conSeparadorTrasElFor(tal);
+  for (const raw of separado === tal ? [tal] : [tal, separado]) {
+    const s = stripNonCommandText(raw, 0, { cuentas });
+    const lecturas = [s];
+    // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
+    const unidos = sinContinuaciones(s, { sinCuerpos: true });
+    if (unidos !== s) lecturas.push(unidos);
+    for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
+    destinosPorElPartidor(raw, keep, out, 0, { cuentas });
+  }
   return [...out];
 }
 
