@@ -298,8 +298,11 @@ function runInCopy(copyRoot, ruta, { timeout, workDir, i, coverage = false }) {
   const env = { ...process.env };
   delete env.TYCON_SKILLS_DIR;
   delete env.TYCON_MAIN_CHECK;
-  // con el medidor de cobertura si la rama se midió con él: main se mide en las mismas condiciones (issue #1855)
+  // con el medidor de cobertura si la rama se midió con él: main se mide en las mismas condiciones (issue #1855). Sin él,
+  // tampoco el que llega heredado del ambiente (`NODE_V8_COVERAGE` de quien corre el portón): mediría main con el medidor
   const cobertura = coverage ? ['--coverage', path.join(workDir, `cov-${i}`)] : [];
+  // (vacía, no borrada: Node se la vuelve a poner a un hijo cuyo ambiente no la trae)
+  if (!coverage) env.NODE_V8_COVERAGE = '';
   const r = spawnSync(process.execPath, [RUN_CAPPED, '--seconds', String(timeout), '--mark', mark, '--', process.execPath, RUNNER, copyRoot, out, '--suite', ruta, ...cobertura],
     { windowsHide: true, cwd: copyRoot, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: (timeout + 60) * 1000 });
   if (fs.existsSync(mark)) return { error: `pasó el tope de ${timeout} s` };

@@ -623,7 +623,9 @@ function main(argv, env = process.env) {
       portable: Array.isArray(s.requiere) && s.requiere.length === 0 };
   });
 
-  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
+  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, nucleos: maquina.nucleos, carga: maquina.carga, esperas: { veces: 0, ms: 0 }, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}),
+    // la corrida de una sola suite (`--suite`): quien juzga el rojo sabe que ya se midió sola
+    ...(suiteOnly ? { suite_only: suiteOnly } : {}) };
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];
@@ -988,11 +990,13 @@ function main(argv, env = process.env) {
   // El resto de lo que la CI le pone a cada portable (`casaVacia` de scripts/tests/portable-suites.test.sh), salvo el
   // PATH: acá las herramientas de la máquina siguen a mano. Y la configuración de git de quien corre tampoco llega: un
   // gancho global de la máquina (rechazar un merge sin mensaje propio) frenaba acá lo que en la CI pasa. Git la lee de
-  // la HOME, pero también de estas variables.
+  // la HOME, pero también de estas variables. Tampoco las que mudan las casas de quien corre (`TYCON_HOME`, `CODEX_HOME`,
+  // `CLAUDE_CONFIG_DIR`): con la HOME vacía, una suite que las lee saldría de ella y otra que no, no; la CI no las tiene.
   const isolatedEnv = (home, p) => {
     const e = { ...env };
     for (const k of Object.keys(e)) {
       if (k === 'GIT_CONFIG_GLOBAL' || k === 'XDG_CONFIG_HOME' || k === 'GIT_CONFIG_PARAMETERS' || /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(k)) delete e[k];
+      if (k === 'TYCON_HOME' || k === 'CODEX_HOME' || k === 'CLAUDE_CONFIG_DIR') delete e[k];
     }
     const tmp = path.join(tmpsDir, `t${p.idx}`);
     return Object.assign(e, {

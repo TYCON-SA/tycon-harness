@@ -146,7 +146,10 @@ de cada pedido: el portón pasa su resumen por el juez de los pedidos con la fot
 frena como siempre. Lo mismo al repetir una sola con `--suite`: si ya estaba roja en la foto, sale de la lista y deja
 en verde `tests-suite`. Sin foto (el repo público solo), o si la foto no sirve (vieja, tocada o ilegible), lo rojo se
 mide en la base, en el momento: cada roja corre sola sobre la bifurcación con `origin/main`, sin el cambio. Roja también
-ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y frena; sin poder medirla (sin
+ahí, es heredada (`measured_on: "base"`). Verde ahí, la misma suite se corre sola también en la rama: roja sola, el
+rojo es del cambio y frena; verde sola, no se reproduce sola (orden, carga u otra suite de la corrida) y avisa sin frenar
+(`no-reproduce`, `measured_on: "branch-alone"`, nombrada aparte al cierre y en `not_reproduced_alone` del informe); al
+repetir una sola con `--suite` no se compara otra vez. Sin poder medirla (sin
 `origin/main`, la suite no está en la base, pasó el tope, el árbol armado del privado), sigue roja y dice «no medido» y
 por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
 `TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
