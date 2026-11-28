@@ -220,6 +220,15 @@ function crearDecididas({ dataDir = null, ahora = Date.now, log = () => {} } = {
   };
 }
 
+/** El nombre de una causa como título: la noche lo escribe en minúscula, y un título arranca con mayúscula. */
+function conMayuscula(t) {
+  const s = String(t == null ? '' : t);
+  return s ? s[0].toLocaleUpperCase('es') + s.slice(1) : s;
+}
+// como título dibujado (no dentro de una oración ni en los datos): sólo las de ejecuciones, cuyo nombre es una causa; el
+// de una dependencia es el nombre del paquete, que se deja como es
+const tituloVisible = (x) => (x && x.fuente === 'ejecuciones' ? conMayuscula(x.nombre) : x && x.nombre);
+
 function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, demo = false }) {
   const T = (idioma, k, v) => TX.t(idioma, k, v);
   const clones = () => (typeof fuentes.clones === 'function' ? fuentes.clones() : null) || {};
@@ -855,7 +864,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       }
       // las historias y las máquinas van en «Qué pasó», a la vista: no hay desplegable aparte
       return `<article class="m-carta${a || deDependencias ? '' : ' sin-analizar'}" data-ficha="${esc(clave(f))}"${f.recomendada ? ` data-recomendada="${esc(f.recomendada)}"` : ''}>`
-        + `<header class="m-cab"><b class="m-nombre">${esc(f.nombre)}</b>${ayudaRegla(f.regla)}<span class="m-meta">${esc(f.meta)}</span></header>`
+        + `<header class="m-cab"><b class="m-nombre">${esc(tituloVisible(f))}</b>${ayudaRegla(f.regla)}<span class="m-meta">${esc(f.meta)}</span></header>`
         + `${deDependencias ? '' : `<p><b>${esc(T(idioma, 'mant.quePaso'))}</b> ${esc(f.que_paso)}</p>`}${cuerpo}</article>`;
     }
 
@@ -876,7 +885,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       // «Pedido 12 · 3 decisiones»: el enlace va sobre la primera parte
       const [nombre, ...resto] = T(idioma, g.filas.length === 1 ? 'mant.espera.pedidoUna' : 'mant.espera.pedido', { numero: g.numero, n: g.filas.length }).split(' · ');
       const cab = [enlace(nombre, g.enlace), ...resto.map(esc)].join(' · ');
-      const filas = g.filas.map((x) => `<li>${esc(x.nombre)} → ${esc(x.accion ? accion(x.accion, x.fuente) : '?')}</li>`).join('');
+      const filas = g.filas.map((x) => `<li>${esc(tituloVisible(x))} → ${esc(x.accion ? accion(x.accion, x.fuente) : '?')}</li>`).join('');
       return `<div class="m-pedido"><p class="m-pedido-cab">${cab}</p><ul>${filas}</ul></div>`;
     };
     const espera = m.espera.length
@@ -889,7 +898,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const estadoDe = (x) => (x.estado === 'esta_noche' ? [T(idioma, 'mant.decididas.estaNoche')] : x.estado === 'no_aplicada' ? [T(idioma, 'mant.decididas.noAplicada')]
       : [x.vista_el ? T(idioma, 'mant.decididas.aplicada', { dia: dia(x.vista_el) }) : null, x.tarea ? T(idioma, 'mant.decididas.tarea', { numero: x.tarea }) : null]);
     const decididaEl = (el) => (dia(el) ? T(idioma, 'mant.decididas.decidida', { dia: dia(el) }) : null);
-    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(x.nombre)}</b> <span class="m-tarea">${esc([x.donde || T(idioma, 'mant.decididas.sinDonde'), x.accion ? accion(x.accion, x.fuente) : '?', x.quien, decididaEl(x.el), ...estadoDe(x)].filter(Boolean).join(' · '))}</span></li>`;
+    const decidida = (x) => `<li data-ficha="${esc(`${x.fuente}/${x.id}`)}"><b>${esc(tituloVisible(x))}</b> <span class="m-tarea">${esc([x.donde || T(idioma, 'mant.decididas.sinDonde'), x.accion ? accion(x.accion, x.fuente) : '?', x.quien, decididaEl(x.el), ...estadoDe(x)].filter(Boolean).join(' · '))}</span></li>`;
     const ya = `<details class="m-bloque m-decididas"${m.decididas.length ? '' : ' hidden'} data-t-esta-noche="${esc(T(idioma, 'mant.decididas.estaNoche'))}" data-t-decidida="${esc(T(idioma, 'mant.decididas.decidida', { dia: '{dia}' }))}" data-t-sin-donde="${esc(T(idioma, 'mant.decididas.sinDonde'))}">`
       + `<summary data-t="${esc(T(idioma, 'mant.decididas.titulo', { n: '{n}' }))}">${esc(T(idioma, 'mant.decididas.titulo', { n: m.decididas.length }))}</summary>`
       + `<p class="m-intro">${esc(T(idioma, 'mant.decididas.intro'))}</p><ul class="m-lista">${m.decididas.map(decidida).join('')}</ul></details>`;
@@ -906,7 +915,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
           : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
             : x.estado === 'historia' ? esc(historia(x.historia))
               : esc(T(idioma, 'mant.marcha.seCrea'));
-      return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
+      return `<li><b>${esc(tituloVisible(x))}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
       // «sin asignar» sólo si la noche leyó la tarea y no la tiene nadie; sin medir, lo dice
@@ -1429,4 +1438,4 @@ ${BUSY.TRABAJANDO}
 })();
 `;
 
-module.exports = { crearRutas, crearDecididas, CLIENTE, CARPETAS_VIVAS };
+module.exports = { crearRutas, crearDecididas, CLIENTE, CARPETAS_VIVAS, conMayuscula };
