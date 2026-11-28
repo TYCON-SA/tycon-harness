@@ -474,7 +474,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       }
     } else if (['git merge', 'git reset', 'git cherry-pick', 'git revert', 'git read-tree', 'git rebase', 'git pull', 'git stash', 'git switch', 'git checkout', 'git branch', 'git update-ref', 'git symbolic-ref', 'git fetch', 'git push', 'git remote', 'git config'].includes(c)) {
       const desde = base;
-      out.push(...constanciasDeOtraRama(c, args, base, constanciaDeGit, { tramo, anidado: (sub) => constanciasTocadas(sub, desde, stateDir) }).map((p) => `${tramo.trim()} (${p})`));
+      out.push(...constanciasDeOtraRama(c, args, base, constanciaDeGit, { tramo, comando: cmd, anidado: (sub) => constanciasTocadas(sub, desde, stateDir) }).map((p) => `${tramo.trim()} (${p})`));
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);

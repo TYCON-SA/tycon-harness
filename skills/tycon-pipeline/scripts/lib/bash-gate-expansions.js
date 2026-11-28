@@ -431,20 +431,72 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   })();
   const blob = (ref, p) => (git(['rev-parse', '--verify', '-q', `${ref}:${p}`]) || '').trim() || null;
   // las rutas de constancias que quedan distintas al pasar de `desde` a `hasta`, salvo las que se borran
-  const comparar = (desde, hasta, nombre, rutas = []) => {
+  // `acepta(p)`: la constancia `p` que trae `hasta` ya se sabe buena (el avance hasta la rama del remoto, más abajo)
+  const comparar = (desde, hasta, nombre, rutas = [], acepta = null) => {
     if (/^-/.test(desde) || /^-/.test(hasta)) { out.push(`no pude ver qué constancias trae ${nombre}`); return; }
     const r = git(['diff', '--name-only', '--no-renames', '--diff-filter=d', '--end-of-options', desde, hasta, ...(rutas.length ? ['--', ...rutas] : [])]);
     if (r === null) { out.push(`no pude ver qué constancias trae ${nombre}${principal ? '' : ' (la rama principal no está confirmada: git fetch)'}`); return; }
     for (const p of r.split(/\r?\n/).filter(Boolean).filter((x) => isControlApproval(x))) {
       const traida = blob(hasta, p);
       if (principal && traida && blob(principal, p) === traida) continue;
+      if (acepta && acepta(p)) continue;
       out.push(`${p} desde ${nombre}${principal ? '' : ' (la rama principal no está confirmada: corré git fetch)'}`);
     }
   };
-  const fusion = (ref, desde = 'HEAD') => {
+  // Avanzar la rama hasta la copia de una rama de origin que escribió git al bajarla (A211): la constancia ya está en un
+  // commit del remoto, la firmó otra máquina, y lo que esta máquina empuja pasa por el freno del empuje, que pide su
+  // huella. Pasa sólo si es un avance rápido (lo que se trae es el commit del remoto tal cual, sin mezclarlo con nada) y si
+  // cada constancia coincide con su huella: un archivo `<hash>.json` de una carpeta de constancias, cuyo nombre y `hash`
+  // son los de sus reglas, cuyas reglas son lo que había en el commit que la escribió por última vez, y cuyo cuadro, si
+  // lo trae, es el de su línea. Una constancia escrita a mano en esta copia no está en la copia del remoto; una que no
+  // coincide, o un renglón del registro de antes, siguen frenando. Devuelve `acepta(p)` o null.
+  const delRemoto = (ref, mb) => {
+    // un solo `--ff-only` hasta una sola ref: git no fusiona ni deja nada en el índice. Con un fetch o un pull en el mismo
+    // comando, lo que se trae se baja después de mirarlo: no hay excepción
+    if (!args.includes('--ff-only') || args.some((w) => /^--(?:no-ff|ff|squash|no-commit|allow-unrelated-histories)$/.test(w))) return null;
+    if (sueltas.length > 1) return null;
+    if (/\b(?:fetch|pull)\b/.test(String(extra.comando ?? tramo))) return null;
+    // (`rev-parse --symbolic-full-name` repite `--end-of-options` en su salida: una ref con guion no se pregunta)
+    if (/^-/.test(ref)) return null;
+    const nombreCompleto = (git(['rev-parse', '--symbolic-full-name', ref]) || '').trim();
+    if (!/^refs\/remotes\/origin\/[^\s]+$/.test(nombreCompleto) || /^refs\/remotes\/origin\/HEAD$/.test(nombreCompleto)) return null;
+    const punta = commit(nombreCompleto);
+    if (!punta || punta !== commit(ref)) return null;
+    const ultimo = (git(['reflog', 'show', '-n1', '--format=%H%x09%gs', nombreCompleto]) || '').trim().split('\t');
+    // la escribió un fetch o un pull de origin, con opciones sin valor (`fetch -q origin`, `fetch`, `pull --ff-only`): un
+    // `--refmap=…` o una ruta en lugar de origin bajan de otro lado con el nombre de origin
+    if (ultimo[0] !== punta || !/^(?:(?:fetch|pull)(?: --?[a-z][a-z-]*)*(?: origin(?: [\w./-]+)*)?:|update by push$)/.test(ultimo[1] || '')) return null;
+    // es la rama que sigue esta (su upstream, o origin/<la rama de ahora>): una rama ajena no se trae por acá
+    const actual = (git(['symbolic-ref', '-q', 'HEAD']) || '').trim().replace(/^refs\/heads\//, '');
+    const arriba = (git(['rev-parse', '--symbolic-full-name', '@{upstream}']) || '').trim();
+    if (!actual || (nombreCompleto !== arriba && nombreCompleto !== `refs/remotes/origin/${actual}`)) return null;
+    // avance rápido: la punta de ahora es la base común
+    if (!mb || mb !== commit('HEAD')) return null;
+    let sra = null;
+    try { sra = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signed-record-approval.js')); } catch (_) { sra = null; }
+    const crypto = require('crypto');
+    const hashOf = (rules) => crypto.createHash('sha256').update(rules.map((e) => `${e.path}\t${e.blob}\n`).sort().join('')).digest('hex');
+    return (p) => {
+      const m = /^\.(?:github|tycon)\/control-changes\/([0-9a-f]{64})\.json$/.exec(p);
+      if (!m) return false;
+      // el commit que la escribió por última vez, entre la base y la punta
+      const escritor = (git(['log', '-n1', '--format=%H', '--end-of-options', `${mb}..${punta}`, '--', p]) || '').trim();
+      if (!/^[0-9a-f]{40,64}$/.test(escritor) || blob(escritor, p) !== blob(punta, p)) return false;
+      let linea;
+      try { linea = JSON.parse(git(['cat-file', 'blob', `${punta}:${p}`]) || ''); } catch (_) { return false; }
+      if (!linea || typeof linea !== 'object' || Array.isArray(linea) || linea.hash !== m[1]) return false;
+      const rules = linea.rules;
+      if (!Array.isArray(rules) || !rules.length || rules.some((x) => !x || typeof x.path !== 'string' || !x.path || typeof x.blob !== 'string')) return false;
+      if (hashOf(rules) !== m[1]) return false;
+      if (rules.some((x) => (blob(escritor, x.path) || 'borrado') !== x.blob)) return false;
+      if (linea.cuadro !== undefined && (!sra || !linea.cuadro || typeof linea.cuadro !== 'object' || linea.cuadro.huella !== sra.huella(linea))) return false;
+      return true;
+    };
+  };
+  const fusion = (ref, desde = 'HEAD', { avanceDelRemoto = false } = {}) => {
     const mb = (git(['merge-base', '--end-of-options', desde, ref]) || '').trim() || null;
     if (!mb) { out.push(`no pude ver qué constancias trae ${ref}`); return; }
-    comparar(mb, ref, ref);
+    comparar(mb, ref, ref, [], avanceDelRemoto && desde === 'HEAD' ? delRemoto(ref, mb) : null);
   };
   // mover la rama `nombre` (o crearla) a `ref`: lo que trae es lo que cambia en su historia
   const mover = (nombre, ref) => {
@@ -563,7 +615,7 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   if (c === 'git read-tree' && args.some((w) => /^--prefix(?:=|$)/.test(w))) { out.push('con --prefix las rutas quedan en otra carpeta: no pude ver qué constancias trae'); return out; }
   for (const e of execs) out.push(...anidado(e));
   if (c === 'git merge') {
-    for (const ref of sueltas.length ? sueltas : ['@{upstream}']) fusion(ref);
+    for (const ref of sueltas.length ? sueltas : ['@{upstream}']) fusion(ref, 'HEAD', { avanceDelRemoto: true });
   } else if (c === 'git rebase') {
     // la rama queda encima de la de arriba y trae todo lo que esa tiene; con `<arriba> <rama>`, se rebasa esa rama
     if (args.some((w) => /^(?:-i|--interactive)$/.test(w) || /^-[A-Za-z]*i[A-Za-z]*$/.test(w))) {
@@ -584,7 +636,10 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
     for (const ref of destino) {
       const local = /^refs\/heads\//.test(ref) || remoto === '.';
       const esPrincipal = /^refs\/remotes\/origin\/(?:main|master)$/.test(ref) && remoto !== '?';
-      if (!local && !esPrincipal) { out.push(`${ref.replace(/^refs\/remotes\//, '')} se baja recién al correr: traela con git fetch y git merge, que el freno puede mirar`); continue; }
+      // la de origin se trae con un fetch y el avance rápido hasta su copia, que el freno mira (y deja pasar si sus
+      // constancias coinciden con su huella)
+      const corto = ref.replace(/^refs\/remotes\//, '');
+      if (!local && !esPrincipal) { out.push(/^refs\/remotes\/origin\//.test(ref) && remoto !== '?' ? `${corto} se baja recién al correr: traela con git fetch origin y después git merge --ff-only ${corto}, que el freno puede mirar` : `${corto} se baja recién al correr: traela con git fetch y git merge, que el freno puede mirar`); continue; }
       if (!commit(ref)) { out.push(`no pude ver qué constancias trae ${ref}: traela con git fetch y git merge, que el freno puede mirar`); continue; }
       fusion(ref);
     }
