@@ -497,6 +497,7 @@ test('T14b Coordinadora_ClickDelDueno_ConForDeCuenta_PasaUnaVez @A216', (t) => {
   const con = (c) => conEnv(SOLO_ESTE, () => BASH.handle({ hook_event_name: 'PreToolUse', session_id: COORD, tool_name: 'Bash', tool_input: { command: c }, cwd: toy.raiz },
     { ...opts(toy), casa: toy.casa, buscarAprobacion: () => respuesta, herramienta: { pid: 4242, inicio: 'jue 21 nov 10:00' } }));
   assert.ok(negada(con('for ((i=0;i<1;i++)) do cp acme/x.md acme/a.md; done')), 'el cuerpo del for, sin el click, se niega');
+  assert.ok(negada(con("for ((i=0;i<1;i++)) do rm -rf $(: $(: 'for ((')) acme/guias; done")), 'ni con un señuelo citado adentro');
   const cmd = 'for ((i=0;i<1;i++)) do echo $i; done; git -C acme switch main';
   assert.ok(negada(con(cmd)), 'sin el click, se niega');
   respuesta = { ok: true, aprobacion: { id: 'click-for' }, via: 'click' };

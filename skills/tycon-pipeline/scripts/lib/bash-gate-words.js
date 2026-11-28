@@ -447,6 +447,11 @@ function conSeparadorTrasElFor(texto) {
   for (const m of t.matchAll(cabecera)) {
     const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
     if (fin < 0) continue;
+    // una que abre adentro de comillas y cierra afuera no es una cabecera: lo de entre sus paréntesis tiene un número
+    // impar de comillas (`'for ((')) h`); su `;` cortaría los argumentos de lo que sigue
+    const cuenta = t.slice(m.index + m[0].length, fin - 1);
+    const impares = (re) => (cuenta.match(re) || []).length % 2 === 1;
+    if (impares(/'/g) || impares(/(?<!\\)"/g) || impares(/`/g)) continue;
     let k = fin + 1;
     while (t[k] === ' ' || t[k] === '\t') k++;
     // ya separado, o cierra lo de afuera

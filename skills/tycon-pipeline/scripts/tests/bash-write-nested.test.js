@@ -1044,6 +1044,9 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     // (cuarta vuelta) un `for ((` citado antes y un `))` citado después no saltean al `for` de verdad
     `: 'for ((' ; for ((i=0;i<1;i++)) do rm ${H}; done; : '))' x`, `# for ((\nfor ((i=0;i<1;i++)) do rm ${H}; done # )) x`,
     `: 'for ((' ; : 'for ((' ; for ((i=0;i<1;i++)) do cp README.md ${H}; done; : '))' x ; : '))' y`,
+    // (quinta vuelta) ni con el señuelo adentro del cuerpo de un `for` real sin `;`
+    `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((')) ${H}; done`, `for ((i=0;i<1;i++)) do cp README.md $(: "$(: 'for ((')") ${H}; done`,
+    `for ((i=0;i<1;i++)) { rm $(: $(: 'for ((')) ${H}; }`, `bash -c 'for ((i=0;i<1;i++)) do rm $(: $(: "for ((")) ${H}; done'`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
