@@ -175,7 +175,8 @@ function plataformaDeEjemplo() {
   // las direcciones de la plataforma de ejemplo: nadie las resuelve, `fetch` las contesta de adentro del proceso
   const URL_BASE = Object.freeze({ azure: 'https://dev.azure.example', github: 'https://api.github.example' });
   const REMOTOS = Object.freeze({
-    operaciones: Object.freeze({ platform: 'azure', org: ORG, project: 'Producto X', repo: 'operaciones', web: 'https://dev.azure.example/acme/Producto%20X/_git/operaciones' }),
+    // el repo de operaciones vive en su propio proyecto, no en el de un producto
+    operaciones: Object.freeze({ platform: 'azure', org: ORG, project: 'Operaciones', repo: 'operaciones', web: 'https://dev.azure.example/acme/Operaciones/_git/operaciones' }),
     perfil: Object.freeze({ platform: 'github', org: ORG, repo: 'perfil', web: 'https://github.example/acme/perfil' }),
   });
   // los pipelines de cada proyecto de ejemplo y los stages de la última corrida de cada uno
@@ -217,7 +218,9 @@ function plataformaDeEjemplo() {
     const m = new RegExp(`^/${ORG}/([^/]+)/_apis/(.*)$`).exec(p);
     if (!m) return respuesta(404, {});
     const [, proyecto, resto] = m;
-    if (!PIPELINES[proyecto]) return respuesta(404, {});
+    const deOperaciones = proyecto === REMOTOS.operaciones.project;
+    if (!PIPELINES[proyecto] && !deOperaciones) return respuesta(404, {});
+    if (deOperaciones && !/^git\/repositories\/operaciones$/.test(resto) && resto !== 'policy/configurations') return respuesta(404, {});
     if (resto === 'pipelines') return respuesta(200, { value: PIPELINES[proyecto] });
     if (resto === 'build/builds') return respuesta(200, { value: [{ id: 9000 + Number(u.searchParams.get('definitions') || 0) }] });
     if (/^build\/builds\/\d+\/timeline$/.test(resto)) return respuesta(200, { records: STAGES.map((s) => ({ type: 'Stage', identifier: s.identifier, name: s.name })) });

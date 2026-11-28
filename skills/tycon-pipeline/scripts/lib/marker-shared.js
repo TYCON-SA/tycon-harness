@@ -506,8 +506,6 @@ function vueltaCongeladaComprobada(tipo, quien) {
  * no se compara: se dice y queda en gates.log.
  */
 function comprobarLoRevisado(marker, quien) {
-  const ft = require('./frozen-tree.js');
-  const { isControlApproval } = require('./story-gate.js');
   const v = vueltaCongeladaComprobada('revisores', quien);
   if (!v || !(v.repos || []).length) {
     appendLog('gates.log', { name: 'reviewed-tree', status: 'no-medido', story: marker.storyId || null, quien, motivo: 'la vuelta no tiene sello' });
@@ -515,53 +513,14 @@ function comprobarLoRevisado(marker, quien) {
     return;
   }
   const storyAbs = resolveStoryPath(marker.storyPath, marker);
-  const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
-  const distintos = [];
-  // lo de adentro de un submódulo o repo anidado: otra vuelta no lo arregla, hay que commitearlo en su repo o descartarlo
-  const adentro = [];
-  const papeleo = [];
-  const deMain = [];
-  const sinSepararMain = [];
-  const huellas = [];
-  const movidos = [];
-  // sólo comentarios movidos (historia 8.217): contra una vuelta ya cerrada y de esta historia; nunca una lanzada sin cerrar
-  let conComentarios = false;
-  try {
-    const cerrada = ft.vueltaCerradaDeLosRevisores(marker, STEPS_LIB.reviewersClose(marker), { stateDir: STATE_DIR });
-    conComentarios = !!cerrada && cerrada.etiqueta === v.etiqueta && cerrada.ts === v.ts;
-  } catch (_e) { conComentarios = false; }
-  const frenar = (motivo) => {
-    appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo });
-    console.error(`marker.js ${quien} BLOQUEADO — ${motivo}`);
+  // la misma comparación que usa el tope de vueltas para dejar pasar sola una vuelta sin código (lib/reviewed-diff.js)
+  const cmp = require('./reviewed-diff.js').comparar({ marker, v, storyAbs, stateDir: STATE_DIR, cierre: STEPS_LIB.reviewersClose(marker) });
+  if (cmp.error) {
+    appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, motivo: cmp.error });
+    console.error(`marker.js ${quien} BLOQUEADO — ${cmp.error}`);
     process.exit(2);
-  };
-  for (const r of v.repos) {
-    const ahora = ft.seal(r.repo);
-    if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
-    const anidados = ft.anidadosConCambios(r.repo, ahora.tree);
-    if (anidados.error) frenar(`no pude comparar lo que se guarda con lo revisado en ${path.basename(r.repo)}: ${anidados.error}.`);
-    for (const f of anidados.files) { distintos.push({ repo: r.repo, f }); adentro.push(f); }
-    const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
-    // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
-    // del sello y el de ahora, del mismo repo
-    const pm = r.mainBase ? ft.puntoComunConMain(r.repo) : { error: `${path.basename(r.repo)}: la vuelta se selló sin el punto en común con main` };
-    if (pm.error) sinSepararMain.push(pm.error);
-    let c;
-    try {
-      c = ft.changed(r.repo, r.tree, ahora.tree, { storyRel: rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null,
-        mainAntes: r.mainBase || null, mainAhora: pm.sha || null, comentarios: conComentarios });
-    } catch (e) { c = { error: String((e && e.message) || e).split('\n')[0] }; }
-    if (c.error) frenar(`no pude comparar lo que se guarda con lo revisado (${c.error}).`);
-    // una constancia de cambio de control la firma el dueño: no es código que los revisores tengan que ver
-    for (const f of c.files) {
-      if (isControlApproval(f)) papeleo.push(f);
-      else distintos.push({ repo: r.repo, f });
-    }
-    for (const f of c.papeleo) papeleo.push(f);
-    for (const f of c.deMain || []) deMain.push(f);
-    for (const f of c.comentarios || []) movidos.push(f);
-    huellas.push(`${path.basename(r.repo)} ${r.tree.slice(0, 12)}`);
   }
+  const { distintos, adentro, papeleo, deMain, sinSepararMain, huellas, movidos, sinCodigo } = cmp;
   if (distintos.length) {
     appendLog('gates.log', { name: 'reviewed-tree-mismatch', status: 'blocked', story: marker.storyId || null, quien, vuelta: v.etiqueta, files: distintos.length });
     const iter = (parseInt(String(v.etiqueta || '').replace(/\D/g, ''), 10) || 1) + 1;
@@ -569,13 +528,44 @@ function comprobarLoRevisado(marker, quien) {
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
     if (adentro.length) console.error('  Lo de adentro de un submódulo o repo anidado no lo ve la vuelta: commitealo en su repo, o descartalo, y después corré otra vuelta.');
+    // pasado el tope, la coordinadora no firma sola otra vuelta: lo cambiado vuelve a lo
+    // revisado, va a una historia de arreglo, o el dueño firma la vuelta extra
+    let tope = null;
+    try { tope = require('./review-rounds.js').tope({ repo: marker.repoPath || undefined }).value; } catch (_e) { tope = null; }
+    // las vueltas hechas: la etiqueta del sello o las fotos del marcador, la mayor (pedidas sin --iter caen en la misma etiqueta)
+    let hechas = iter - 1;
+    try { hechas = Math.max(hechas, require('./review-rounds.js').vueltas(marker)); } catch (_e) { /* la etiqueta */ }
+    if (tope !== null && hechas >= tope) {
+      console.error(`  Pasaste el tope de ${tope} ${tope === 1 ? 'vuelta' : 'vueltas'} de revisores. Lo que cambió después de la última tiene tres salidas:`);
+      console.error('  (a) Volver a lo revisado: estos comandos lo guardan aparte (stash) y dejan el disco como lo vieron los revisores.');
+      console.error('      Revisá la lista: un archivo de otra tarea también queda guardado, no se pierde.');
+      const porRepo = new Map();
+      for (const d of distintos) { if (!porRepo.has(d.repo)) porRepo.set(d.repo, []); porRepo.get(d.repo).push(d.f); }
+      const { spawnSync } = require('child_process');
+      for (const [repo, archivos] of porRepo) {
+        const sello = ((v.repos || []).find((r) => r.repo === repo) || {}).tree;
+        // lo que git no sigue (un archivo nuevo sin agregar) no lo vuelve `restore`: lo saca el stash
+        const conocido = (f) => spawnSync('git', ['-C', repo, 'ls-files', '--error-unmatch', '--', f], { windowsHide: true }).status === 0
+          || (!!sello && spawnSync('git', ['-C', repo, 'cat-file', '-e', `${sello}:${f}`], { windowsHide: true }).status === 0);
+        const seguidos = archivos.filter(conocido);
+        // comillas simples: dentro de ellas el shell no expande nada (un `$` o una comilla invertida en un nombre)
+        const mensaje = `${marker.storyId || 'historia'}: lo cambiado después de la vuelta ${hechas}`;
+        console.error(`     git -C ${citar(repo)} stash push --include-untracked -m ${citar(mensaje)} -- ${archivos.map(citar).join(' ')}`);
+        // lo que se commiteó después de la vuelta no lo devuelve el stash: sale del sello
+        if (seguidos.length && sello) console.error(`     git -C ${citar(repo)} restore --source=${sello} --staged --worktree -- ${seguidos.map(citar).join(' ')}`);
+      }
+      console.error('  (b) Llevarlo a una historia de arreglo (followup_of: esta historia): lo mismo que (a), y de lo guardado sale para esa historia.');
+      console.error(`  (c) Una vuelta extra, que firma una persona (no la coordinadora ni como trámite): pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'}`);
+      console.error(`      --repo ${marker.repoPath || '<repo>'} --iter ${hechas + 1} --files "<el diff completo>" --extra-round; la aprueba una persona en la ventana de permiso.`);
+      process.exit(2);
+    }
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
   }
   appendLog('gates.log', { name: 'reviewed-tree', status: 'ok', story: marker.storyId || null, quien, vuelta: v.etiqueta, papeleo: papeleo.length, deMain: deMain.length,
-    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}) });
-  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}.`);
+    ...(movidos.length ? { comentarios_movidos: movidos.length } : {}), ...(sinCodigo.length ? { sin_codigo: sinCodigo.length } : {}) });
+  console.error(`✓ ${quien}: lo que se guarda es lo revisado (${huellas.join(' · ')})${papeleo.length ? `; papeleo cambiado después, que no cuenta: ${papeleo.slice(0, 5).join(', ')}${papeleo.length > 5 ? '…' : ''}` : ''}${deMain.length ? `; lo que trajo main sin tocar la corrida: ${deMain.slice(0, 5).join(', ')}${deMain.length > 5 ? '…' : ''}` : ''}${movidos.length ? `; sólo se movieron comentarios: ${movidos.join(', ')}` : ''}${sinCodigo.length ? `; lo que no se ejecuta (pruebas, imágenes, la guía de la historia), que no pide otra vuelta: ${sinCodigo.slice(0, 5).join(', ')}${sinCodigo.length > 5 ? '…' : ''}` : ''}.`);
 }
 
 /** `{ sellos, copias }` por repo de una vuelta congelada. */
@@ -1149,16 +1139,8 @@ const esFecha = (t) => /^\d{4}-\d{2}-\d{2}$/.test(String(t || '')) && sumarDias(
  * su carpeta git común, la que comparten todas sus carpetas de trabajo). El aviso de la deuda vencida la busca ahí
  * cuando la carpeta de trabajo de la corrida ya se borró. Sin git, `{}`: el aviso dice que no pudo mirar.
  */
-function dondeViveLaHistoria(storyPath) {
-  try {
-    const dir = path.dirname(storyPath);
-    const [raiz, comun] = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel', '--git-common-dir'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).trim().split('\n');
-    return { storyRel: path.relative(fs.realpathSync(raiz), fs.realpathSync(storyPath)), repoCommon: path.resolve(dir, comun) };
-  } catch (_e) {
-    return {};
-  }
-}
+// dónde vive la historia (su ruta en su copia y la carpeta git común): una sola versión, en lib/reviewed-diff.js
+function dondeViveLaHistoria(storyPath) { return require('./reviewed-diff.js').dondeViveLaHistoria(storyPath); }
 
 function deudaDeLaMatriz(marker, matrix) {
   const er = (marker.expectedRed || {}).acmatrix;

@@ -568,6 +568,11 @@ const SECCION_DE_SEGUIMIENTOS = /^Review Follow-ups \(Advisors\)$/i;
 const SECCION_DE_CRITERIOS = /^Acceptance Criteria\b/i;
 const CAMPO_DE_LA_TANDA = /^(\s+)(status|acs_pending|tasks_pending|tests_pending)\s*:/;
 const MARCA = /\s*`?@runtime-exempt\(.*$/;
+// la marca de un criterio que saca la pantalla, como palabra suelta: cambiar `@pantalla`, o una marca pegada a otra
+// palabra, cuenta
+const MARCA_DE_PANTALLA = /\s+`?@sin-pantalla`?(?=\s|$|[.,;:)])/gi;
+// las claves de un renglón del enlace `followed_up_by:` (story-format.md §1.2)
+const CLAVE_DEL_ENLACE = /^\s*(?:-\s+)?(?:id|date|type|summary|reason)\s*:/;
 const BLOQUE = /^\s*(```|~~~)/;
 // lo que corta el motivo partido de una marca: un renglón en blanco, sin sangría, otro criterio o elemento, un bloque
 const CORTA_EL_MOTIVO = /^\s*$|^\S|^\s*(\d+\.|[-*+])\s|^\s*(```|~~~)/;
@@ -583,11 +588,19 @@ function sinPapeleoDeLaHistoria(txt) {
   let enPipelines = false;
   let enArchivos = false;      // `files_to_modify` / `files_to_create`: sumar o sacar una prueba no cambia lo revisado
   let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  let enEnlace = false;        // `followed_up_by:`: el enlace a la historia que la sigue, que escribe el arnés
   const { isTestPath } = require('./atdd-order.js');
   for (const [i, l] of lineas.entries()) {
     if (enFrontmatter) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
-      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); enArchivos = /^files_to_(modify|create)\s*:/.test(l); campoDeLaTanda = null; }
+      // una lista escrita a la misma sangría que su campo (`- id: …`) sigue siendo del campo
+      if (/^\S/.test(l) && !(enEnlace && /^- /.test(l))) {
+        enPipelines = /^pipelines\s*:/.test(l); enArchivos = /^files_to_(modify|create)\s*:/.test(l); campoDeLaTanda = null;
+        enEnlace = /^followed_up_by\s*:/.test(l);
+      }
+      // dentro del enlace, sólo sus claves: otra clave escondida ahí (un `files_to_create:` sangrado) cuenta
+      if (enEnlace && !/^followed_up_by\s*:/.test(l) && !CLAVE_DEL_ENLACE.test(l)) enEnlace = false;
+      if (enEnlace) continue;
       // un archivo de prueba de la lista de archivos (el mismo criterio de «qué es una prueba» que el orden de ATDD): las
       // vueltas lo suman al escribir la prueba de un hallazgo. Un archivo de código, o cualquier otro campo, sigue contando
       if (enArchivos) {
@@ -623,6 +636,8 @@ function sinPapeleoDeLaHistoria(txt) {
         // la marca sola en su renglón: el renglón entero es papeleo, y su motivo puede seguir abajo
         if (!sinMarca.trim()) { motivoAbierto = true; continue; }
       }
+      // la marca `@sin-pantalla` de un criterio la pone «Probar en vivo»: papeleo
+      sinMarca = sinMarca.replace(MARCA_DE_PANTALLA, '');
     }
     out.push(sinMarca.replace(/^(\s*[-*]\s*)\[[ xX]\]/, '$1[ ]'));
   }
@@ -655,6 +670,19 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * lib/review-change-policy.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la
  * opción, la salida no trae ese campo.
  */
+/**
+ * Lo que cuenta del archivo de intención de la historia (`<historia>.intent.md`): su encabezado (el objetivo y los
+ * resultados, lo que guía al agente), sin su estado. El cuerpo (las tablas de preguntas abiertas y decisiones reservadas,
+ * con sus respuestas) es el registro de lo que se preguntó y se decidió: papeleo. Sin encabezado, el archivo entero.
+ */
+function encabezadoDeLaIntencion(txt) {
+  const lineas = String(txt).split('\n');
+  if (lineas[0] !== '---') return String(txt);
+  const fin = lineas.indexOf('---', 1);
+  if (fin < 0) return String(txt);
+  return lineas.slice(1, fin).filter((l) => !/^status\s*:/.test(l)).join('\n');
+}
+
 function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
@@ -679,6 +707,7 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  const intencion = storyRel && /\.md$/.test(storyRel) ? storyRel.replace(/\.md$/, '.intent.md') : null;
   // la guía de la prueba a mano de ESTA historia, que qa-guide.js arma desde ella (`<su carpeta qa>/<historia>-guia-qa.html`)
   // y se regenera con cada vuelta. Sólo ésa: otra `-guia-qa.html` del repo puede ser una página que la app sirve
   let guiaDeLaHistoria = null;
@@ -718,6 +747,11 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = leer(treeA, rel);
       const b = leer(treeB, rel);
       esPapeleo = a !== null && b !== null && sinPapeleoDeLaHistoria(a) === sinPapeleoDeLaHistoria(b);
+    } else if (intencion && rel === intencion) {
+      // el archivo de intención de la historia: cuenta su encabezado; las respuestas de sus tablas son papeleo
+      const a = leer(treeA, rel);
+      const b = leer(treeB, rel);
+      esPapeleo = a !== null && b !== null && encabezadoDeLaIntencion(a) === encabezadoDeLaIntencion(b);
     } else if (rel === estadoDelSprint) {
       // el estado del sprint: sólo el renglón de la historia de la corrida, con el número que dice la historia de ahora
       const clave = claveDeLaHistoria(leer(treeB, storyRel));
@@ -875,6 +909,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
+  encabezadoDeLaIntencion,
   seal, puntoComunConMain, baseDelPase, archivosDeCodigo, listaDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };

@@ -258,3 +258,26 @@ test('Inicio_CadaFilaDiceSuGravedadYSusNoches', () => {
   assert.match(seccion('en'), /<span>paquete-a1 · critical · 7 nights — <a href="\/mantenimiento">followed in its work item<\/a><\/span>/);
   assert.deepStrictEqual(['critical', 'CRÍTICA', 'high', 'moderate', 'baja', 'rara', null].map(decisions.gravedadNormal), ['critical', 'critical', 'high', 'medium', 'low', null, null]);
 });
+
+// 🔴 Falla con: la ficha «Tareas cerradas con la vulnerabilidad viva» enlazaba el pull request de la ficha (el que abrió
+//    la noche al detectarla), no la tarea que se cerró. Habla de una tarea y lleva a otra cosa (A91, recorrido F21).
+test('A91 Decisiones_TareaCerradaConVivas_NombraLaTareaYNoElPullRequest', (t) => {
+  const clon = fs.mkdtempSync(path.join(os.tmpdir(), 'decisiones-'));
+  t.after(() => fs.rmSync(clon, { recursive: true, force: true }));
+  const escribir = (rel, cont) => { const p = path.join(clon, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, typeof cont === 'string' ? cont : JSON.stringify(cont)); };
+  // la forma con que la escribe la noche (daily-summary.js: ficha, proyecto, pedido, clase)
+  escribir(`.dashboard/dependencias/dependencias-${HOY}.json`, { resumen: { rubros: {
+    nuevos: { valor: [] }, aceptadas_sin_resolver: { valor: [] }, rechazadas_sin_deuda: { valor: [] },
+    pedidos_cerrados_con_vivas: { valor: [{ ficha: 'aa11bb22', proyecto: 'Producto X', pedido: 4321, clase: 'arreglado' }] } } } });
+  escribir('inbox/dependencies/promoted/aa11bb22.yaml', 'id: aa11bb22\nveredicto: util\npaquete: pkg-cuatro\nseveridad: high\nnoches: 6\npr: 204\npedidos:\n  - Producto X: 4321\n');
+  const m = sources.construirDesdeClon(clon, { ahora: AHORA });
+  const d = decisions.decisiones(m, { operationsRepo: ADO }).find((x) => x.rubro === 'pedidos_cerrados_con_vivas');
+  assert.ok(d, 'la ficha está en la lista');
+  assert.strictEqual(d.enlace, null, 'no lleva al pull request de la ficha');
+  assert.strictEqual(d.sinLugar, 'tarea_cerrada');
+  const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
+  const seccion = html.split('id="decidir-pedidos_cerrados_con_vivas"')[1].split('</section>')[0];
+  assert.doesNotMatch(seccion, /pull request/i, 'no habla de un pull request');
+  assert.match(seccion, /4321/, 'nombra la tarea que se cerró');
+  assert.match(seccion, /Producto X/, 'con su proyecto');
+});

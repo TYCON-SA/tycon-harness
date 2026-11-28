@@ -9,7 +9,8 @@
  * de mentira (scripts/tests/lib/fake-platform/), que demuestra que el núcleo no pide nada de Azure; después con el
  * conector real de GitHub contra el gh de mentira. Un `az` espía en el PATH anota si alguien lo llamó. Sin red.
  */
-const test = require('node:test');
+// partida en partes (scripts/tests/suite-parts.json): la foto de llamadas a az es una prueba por suite, repartidas
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -21,6 +22,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const CAPA = path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js');
 const FAKE = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-platform');
 const FAKE_GH = path.join(ROOT, 'scripts', 'tests', 'lib', 'fake-gh.js');
+const GOLDEN = path.join(ROOT, 'scripts', 'tests', 'lib', 'record-platform-golden.js');
 const SHA = 'a'.repeat(40);
 
 const dirs = [];
@@ -132,6 +134,12 @@ test('E2E_GithubOnly_NoAzNoAdoMessages @story-8.85 @ac-26', () => {
   }
 });
 
+function sinCorredor() {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  return env;
+}
+
 const huella = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 
 test('Migration_AzureOrg_SameConfigSameGolden @story-8.85 @ac-27', () => {
@@ -163,13 +171,22 @@ test('Migration_AzureOrg_SameConfigSameGolden @story-8.85 @ac-27', () => {
   const campo = corre([path.join(ROOT, 'scripts', 'lib', 'platform', 'work-item-field.js'), 'get', historia]);
   assert.match(campo.stdout, /4321/, `el campo viejo se sigue leyendo: ${campo.stdout}${campo.stderr}`);
   assert.deepStrictEqual(archivos.map(huella), antes, 'ningún archivo de configuración cambia');
-  // la foto de llamadas a az de cada flujo, contra la de la Task 0; sin la marca del corredor de pruebas, que haría que
-  // las suites anidadas le reporten a este proceso en vez de correr solas (y sin llamadas la foto sale vacía)
-  const sinCorredor = { ...process.env };
-  delete sinCorredor.NODE_TEST_CONTEXT;
-  const golden = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tests', 'lib', 'record-platform-golden.js'), 'compare'], { cwd: ROOT, env: sinCorredor, encoding: 'utf8', timeout: 900000 });
-  assert.strictEqual(golden.status, 0, `la foto de llamadas a az cambió: ${golden.stdout}${golden.stderr}`);
+  // los comandos az escritos en el núcleo y en las integraciones, contra la foto de la Task 0 (la de cada suite, abajo)
+  const golden = spawnSync(process.execPath, [GOLDEN, 'compare', '--without-suites'], { cwd: ROOT, env: sinCorredor(), encoding: 'utf8', timeout: 120000 });
+  assert.strictEqual(golden.status, 0, `la foto de comandos az cambió: ${golden.stdout}${golden.stderr}`);
 });
+
+// La foto de llamadas a az de cada suite que corre contra el az de mentira, una prueba por suite: así se reparten entre
+// las partes del archivo y ninguna parte corre las seis suites de un tirón. Sin la marca del corredor de pruebas, que
+// haría que las suites anidadas le reporten a este proceso en vez de correr solas (y sin llamadas la foto sale vacía).
+// Las que comparan su propia foto cada vez que corren (SELF_CHECKED) no se vuelven a correr acá.
+const { SUITES: FOTOS, SELF_CHECKED } = require(GOLDEN);
+for (const suite of FOTOS.filter((s) => !SELF_CHECKED.includes(s))) {
+  test(`Migration_AzureOrg_SameGolden_${suite} @story-8.85 @ac-27`, () => {
+    const r = spawnSync(process.execPath, [GOLDEN, 'compare', '--suite', suite], { cwd: ROOT, env: sinCorredor(), encoding: 'utf8', timeout: 600000 });
+    assert.strictEqual(r.status, 0, `la foto de llamadas a az de ${suite} cambió: ${r.stdout}${r.stderr}`);
+  });
+}
 
 test('Migration_InstalledHooksAndSettings_OldPathsReplaced @story-8.85 @ac-27', () => {
   const home = tmp('casa-');
