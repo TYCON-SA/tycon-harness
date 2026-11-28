@@ -2003,6 +2003,46 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
   });
 });
 
+// 🔴 Falla con (A212): las otras formas con que Git Bash escribe en la misma ruta, medidas en Windows (todas escriben):
+// `/./c/…`, `///c/…`, `/tmp/../c/…`, una relativa que sube más allá de la unidad, el prefijo largo `\\?\C:\…`, el recurso
+// administrativo de la propia máquina (`//localhost/c$/…`) y el nombre corto de una carpeta (`PLAN-R~1`). Con cualquiera,
+// una escritura al estado de la corrida pasaba sin que el freno la viera.
+test('EscrituraAlEstado_OtrasFormasDeWindows_Frena', { skip: process.platform !== 'win32' && 'las formas de ruta de Windows sólo se miden en Windows' }, () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const barras = (p) => p.split('\\').join('/');
+  const bashDe = (p) => `/${p[0].toLowerCase()}${barras(p).slice(2)}`;
+  const resto = barras(res).slice(3);
+  const subir = '../'.repeat(repo.split(/[\\/]/).length + 2);
+  // el nombre corto de la carpeta `plan-review`, si la unidad los crea
+  const corto = (() => {
+    // sin comillas: Node las escaparía al pasarle el argumento a cmd (la carpeta temporal no tiene blancos)
+    const r = require('child_process').spawnSync('cmd', ['/c', `for %I in (${path.join(E, 'plan-review')}) do @echo %~sI`], { encoding: 'utf8' });
+    const c = String(r.stdout || '').trim().replace(/"/g, '');
+    return c && c !== path.join(E, 'plan-review') ? c : null;
+  })();
+  const formas = [`/.${bashDe(res)}`, `//${bashDe(res)}`, `/tmp/..${bashDe(res)}`, `${subir}${bashDe(res).slice(1)}`,
+    `'\\\\?\\${res}'`, `//localhost/${res[0].toLowerCase()}$/${resto}`, `//127.0.0.1/${res[0].toLowerCase()}$/${resto}`,
+    `//localhost//${res[0].toLowerCase()}$/${resto}`, `//127.0.0.2/${res[0].toLowerCase()}$/${resto}`, `/proc/self/root${bashDe(res)}`,
+    `'\\??\\${res}'`];
+  if (corto) formas.push(`'${path.join(corto, 's1', 's1.resultado.json')}'`);
+  conEnv(SIN_REGISTRO, () => {
+    for (const f of formas) {
+      const r = bash.handle(ev(`echo x > ${f}`), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(f));
+    }
+    // desde una carpeta de Git Bash sin unidad, una relativa que llega a la unidad
+    for (const c of [`cd / && echo x > ${bashDe(res).slice(1)}`, `cd /tmp && echo x > ..${bashDe(res)}`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+  });
+});
+
 // 🔴 Lo que en Windows sí escribe en el estado o en el arnés instalado: la ruta entre comillas (bash conserva las barras
 // invertidas), con barras normales (`C:/…`) o en la forma de Git Bash (`/c/…`). Las tres son el mismo archivo y tienen
 // que frenar como en Mac. Sin comillas y con barras invertidas, bash se come las barras y el comando escribe en otro lado:
