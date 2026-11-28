@@ -1416,7 +1416,24 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
   // `$HOME` sólo lo expande quien ya lo expandía (los destinos de una escritura): acá no cambia qué se expande
   if (homeVariable) expanded = expanded.replace(/^\$\{?HOME\}?(?=\/|$)/, os.homedir());
   expanded = nativePath(expanded, platform);
-  return P.isAbsolute(expanded) ? expanded : P.resolve(nativePath(cwd, platform), expanded);
+  if (P.isAbsolute(expanded)) return expanded;
+  return platform === 'win32' ? relativaDeGitBash(expanded, nativePath(cwd, platform)) : P.resolve(nativePath(cwd, platform), expanded);
+}
+
+/**
+ * Una ruta relativa en Windows, resuelta como la resuelve Git Bash, que es con lo que corre el comando: contra la carpeta
+ * en su forma de Git Bash (`C:\lab` es `/c/lab`), donde subir más allá de la unidad se queda en la raíz y desde la raíz
+ * cada unidad es una carpeta con su letra. Node la resuelve distinto (`..` se queda en `C:\`, y `c\x` desde `C:\` es
+ * `C:\c\x`): medido en Windows, `../../../../c/Windows/x` desde `C:\lab` y `c/Windows/x` desde la raíz escriben en
+ * `C:\Windows\x`.
+ */
+function relativaDeGitBash(rel, cwd) {
+  const unidad = /^([A-Za-z]):[\\/]?(.*)$/.exec(cwd);
+  if (!unidad) return path.win32.resolve(cwd, rel);
+  const relPosix = rel.split('\\').join('/');
+  if (!unidad[2] && /^[A-Za-z](?:\/|$)/.test(relPosix)) return nativePath(`/${relPosix}`, 'win32');
+  const carpeta = `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;
+  return nativePath(path.posix.resolve(carpeta, relPosix), 'win32');
 }
 
 

@@ -18,12 +18,37 @@
  */
 const path = require('path');
 
-/** La ruta en su forma nativa. Fuera de Windows, o si no es un texto con algo, la devuelve tal cual. */
+/** Los nombres con que una ruta de red nombra a la propia máquina (su recurso administrativo `c$` es la unidad). */
+function estaMaquina(nombre) {
+  const n = String(nombre).toLowerCase().replace(/^\[|\]$/g, '');
+  let propio = '';
+  try { propio = require('os').hostname().toLowerCase(); } catch (_) { /* sin nombre de equipo */ }
+  return ['localhost', '127.0.0.1', '::1', '.'].includes(n) || (propio && n === propio);
+}
+
+/**
+ * La ruta en su forma nativa. Fuera de Windows, o si no es un texto con algo, la devuelve tal cual.
+ * En Windows, además de `C:\…`, `C:/…` y `/c/…`, las otras formas que llegan a la misma unidad (medido con Git Bash):
+ * el prefijo largo (`\\?\C:\…`, `\\.\C:\…`), el recurso administrativo de la propia máquina (`\\localhost\c$\…`,
+ * `//127.0.0.1/c$/…`) y la forma de Git Bash con `.`, `..` o barras repetidas (`/./c/…`, `///c/…`, `/tmp/../c/…`), que
+ * bash colapsa antes de escribir.
+ */
 function nativePath(p, platform = process.platform) {
   if (platform !== 'win32' || typeof p !== 'string' || !p) return p;
-  // `/c/a/b` y `/cygdrive/c/a/b`: una barra, UNA letra, y otra barra o el final. `//servidor/x` (red) no entra.
-  const drive = /^[\\/](?:cygdrive[\\/])?([A-Za-z])(?:[\\/](.*))?$/.exec(p);
-  const native = path.win32.normalize(drive ? `${drive[1]}:\\${drive[2] || ''}` : p);
+  let s = p;
+  // el prefijo largo: `\\?\C:\…` y `\\.\C:\…` son `C:\…`; `\\?\UNC\servidor\x` es `\\servidor\x`
+  const largo = /^[\\/]{2}[?.][\\/](?:([A-Za-z]:)(.*)|UNC[\\/](.*))$/i.exec(s);
+  if (largo) s = largo[1] ? `${largo[1]}${largo[2] || '\\'}` : `\\\\${largo[3]}`;
+  // el recurso administrativo de la propia máquina: `\\localhost\c$\x` es `C:\x`
+  const adm = /^[\\/]{2}([^\\/]+)[\\/]([A-Za-z])\$(?:[\\/](.*))?$/.exec(s);
+  if (adm && estaMaquina(adm[1])) s = `${adm[2]}:\\${adm[3] || ''}`;
+  // la forma de Git Bash: una barra al principio (o tres o más: dos exactas son una ruta de red), con `.`, `..` y barras
+  // repetidas colapsadas como las colapsa bash
+  if (/^\//.test(s) && !/^\/\/[^/]/.test(s)) s = require('path').posix.normalize(s.replace(/^\/+/, '/'));
+  // `/c/a/b`, `/cygdrive/c/a/b` y `/proc/cygdrive/c/a/b`: una barra, UNA letra, y otra barra o el final. `//servidor/x`
+  // (red) no entra.
+  const drive = /^[\\/](?:(?:proc[\\/])?cygdrive[\\/])?([A-Za-z])(?:[\\/](.*))?$/.exec(s);
+  const native = path.win32.normalize(drive ? `${drive[1]}:\\${drive[2] || ''}` : s);
   // la letra de la unidad, siempre en mayúscula: `c:/a/b` y `/c/a/b` son el mismo archivo y tienen que dar el mismo texto
   return native.replace(/^[a-z]:/, (unit) => unit.toUpperCase());
 }
