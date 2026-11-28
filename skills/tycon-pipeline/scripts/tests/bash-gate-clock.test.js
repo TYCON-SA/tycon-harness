@@ -49,8 +49,9 @@ process.exit(0);
 `;
 
 /**
- * La entrada viene de un archivo: 1 MB por el canal que arma `spawnSync` deja al freno esperando la lectura de vez en
- * cuando, también sin hilos y sin reloj, y esa espera no es lo que se prueba acá.
+ * La entrada viene de un archivo: por el canal que arma `spawnSync`, en macOS, la lectura a veces no se entera del
+ * cierre de la entrada (T9). El freno ya no espera ese cierre, pero el análisis de juguete lee hasta el final, y esa
+ * espera no es lo que se prueba acá.
  */
 function conEntrada(dir, texto, correr) {
   const ruta = path.join(dir, `entrada-${process.hrtime.bigint()}`);
@@ -286,4 +287,45 @@ test('T7b BashGateClock_RealGate_SlowStepIsNamed — el freno de verdad dice en 
   const r = f.correr('git stash list', { TYCON_BASH_GATE_TIMEOUT_S: '24' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(f.registro(), /on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 24 s; el paso más lento: mirando un stash \((1[2-9]\d\d\d|[2-9]\d{4}) ms\)/);
+});
+
+// 🔴 Falla con: el freno espera el cierre de la entrada aunque ya tenga el pedido entero. En macOS, la lectura
+// bloqueante de un socket unix a veces no se despierta cuando el que escribe cierra su lado: todo el texto leído y la
+// lectura dormida hasta el corte del reloj (1 de ~100 corridas con 1 MB por
+// `spawnSync`, y 1 de ~10.000 con dos sockets y nada más). Acá el que escribe no cierra nunca: es lo que ve el freno
+// cuando ese aviso se pierde, y pasa siempre.
+test('T9 BashGateClock_InputWithoutClose_StillDecides @DEF-8.308-espera-de-lectura-1mb — con el pedido entero y sin el cierre de la entrada, el freno decide igual', async (t) => {
+  const f = freno(t);
+  const { spawn } = require('child_process');
+  const base = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_') && k !== 'CLAUDE_CODE_SESSION_ID') base[k] = v;
+  // `corte`: dónde se parte el pedido; el segundo tramo va medio segundo después, cuando el freno ya leyó el primero
+  const sinCerrar = (command, corte = 7) => new Promise((resolve) => {
+    const hijo = spawn(process.execPath, [GATE], {
+      cwd: f.repo, env: { ...base, HOME: f.home, USERPROFILE: f.home, TYCON_NO_RUN_CHANGE: '1', TYCON_BASH_GATE_TIMEOUT_S: '20' },
+    });
+    let stdout = '';
+    let stderr = '';
+    hijo.stdout.on('data', (d) => { stdout += d; });
+    hijo.stderr.on('data', (d) => { stderr += d; });
+    hijo.stdin.on('error', () => { /* el freno puede salir sin leer el resto */ });
+    // el pedido entero, en dos tramos, y la entrada queda abierta hasta que el freno sale
+    const texto = JSON.stringify({ tool_name: 'Bash', session_id: 's-reloj', cwd: f.repo, tool_input: { command } });
+    hijo.stdin.write(texto.slice(0, corte));
+    setTimeout(() => hijo.stdin.write(texto.slice(corte)), 500);
+    const tope = setTimeout(() => hijo.kill('SIGKILL'), 40000);
+    hijo.on('close', (status, signal) => { clearTimeout(tope); hijo.stdin.destroy(); resolve({ status, signal, stdout, stderr }); });
+  });
+  let r = await sinCerrar('ls -la');
+  assert.deepStrictEqual([r.status, r.stdout, r.stderr], [0, '', ''], 'un comando que lee pasa');
+  r = await sinCerrar('rm specs/story-1.1.md');
+  sinCorte(r, f.registro(), 'sin el cierre de la entrada');
+  r = await sinCerrar(`rm specs/story-1.1.md # ${'a'.repeat(1024 * 1024)}`);
+  sinCorte(r, f.registro(), 'sin el cierre, con 1 MB');
+  // el primer tramo termina en una llave que no cierra el pedido (la de `tool_input`), y otro dentro del comando: el
+  // freno espera el resto en vez de decidir con un pedido cortado
+  r = await sinCerrar('rm specs/story-1.1.md', -1);
+  sinCorte(r, f.registro(), 'cortado en la llave de adentro');
+  r = await sinCerrar('rm specs/story-1.1.md # {a}', -3);
+  sinCorte(r, f.registro(), 'cortado en una llave del comando');
 });
