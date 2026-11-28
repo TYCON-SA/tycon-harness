@@ -1345,6 +1345,25 @@ test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
   assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
 });
 
+// A124 (recorrido del sitio): el recuadro «Consumo de la conversación principal» dice el total (entrada + salida + caché
+// nueva) y debajo lo reparte por paso con la misma cuenta. En la demo, el reparto lo inventaba aparte y sumaba casi el
+// triple del total.
+// 🔴 Falla con: una ejecución de la demo cuyos pasos (más lo que cae fuera de todo paso) no suman su total.
+test('A124 Demo_ConsumoPorPaso_SumaElTotal: en cada ejecución de la demo, los pasos suman el total del recuadro', () => {
+  const D = require('../site/demo/data.js');
+  // la ejecución simple es la de las capturas de la guía (2.76-Capturas_MismosDatos cuida que no cambie sin rehacerlas):
+  // se mide la completa, la que muestra el sitio demo con sus pasos
+  for (const completo of [true]) {
+    for (const esquema of [1, 2]) {
+      const v = JSON.parse(D.volcadoDeEjecucion('s-demo', new Date('2026-11-20T10:00:00Z'), { story: '1.1', repo: 'Producto-X/FrontEnd', completo, esquema }));
+      const k = v.consumo;
+      const total = k.tokens.in + k.tokens.out + k.tokens.cache_new;
+      const pasos = Object.values(k.por_paso).reduce((a, n) => a + n, 0) + (k.fuera_de_ventana || 0);
+      assert.strictEqual(pasos, total, `completo ${completo}, esquema ${esquema}: los pasos suman ${pasos} y el total es ${total}`);
+    }
+  }
+});
+
 // 🔴 Falla con: el sitio demo muestra máquinas al día como «una versión del arnés anterior a la que manda la huella» (A163).
 test('A163_Demo_LasMaquinasAlDiaMandanSuHuella — sin huella queda sólo la de la versión vieja, con el motivo de siempre', () => {
   const D = DATOS();

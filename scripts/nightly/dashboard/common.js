@@ -141,4 +141,9 @@ const DENOMINADORES = Object.freeze({
   entradasDeCodigo: 'entradas de código', reposConCierres: 'repos con cierres', productosDeclarados: 'productos declarados',
 });
 
-module.exports = { medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, umbralValido, motivoUmbral, chip, ficha, CSS_BASE, CSS_CHIPS, DENOMINADORES };
+// La forma de comparar el nombre de un producto entre fuentes que lo escriben distinto: la lista de la organización
+// («Producto X»), el vigilante y la deuda de pipelines (`producto-x`), los repos (`Producto_X`). Sin mayúsculas, sin
+// espacios, guiones ni guiones bajos. Sólo para comparar: lo que se muestra es el nombre de la lista.
+const claveDeProducto = (nombre) => String(nombre == null ? '' : nombre).toLowerCase().replace(/[\s_-]+/g, '');
+
+module.exports = { claveDeProducto, medida, noMedida, ratio, mediana, pct, num1, edadDias, edadTexto, esc, GLIFO, juzgar, umbralValido, motivoUmbral, chip, ficha, CSS_BASE, CSS_CHIPS, DENOMINADORES };
