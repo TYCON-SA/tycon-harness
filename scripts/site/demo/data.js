@@ -212,7 +212,8 @@ function volcadoCompleto(sid, inicio, { story, repo, pasos, rojo, esquema }) {
   const porTipo = llegoARevisores ? { ...REVISORES_POR_TIPO } : {};
   return JSON.stringify({
     archivedAt: m(130),
-    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/acme/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
+    // la carpeta de trabajo es la de un dev, no una «acme»: el arnés lee esas como laboratorio (así se llaman sus pruebas)
+    marker: { storyId: story, storyPath: `/home/dev/proyectos/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/proyectos/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
       ...(esquema === 2 ? { stepScheme: 2 } : {}), stepsCompleted: ids, stepsPending: [], stepTimings: tiempos,
       iterations: llegoARevisores ? { 1: { ts: m(60) }, 2: { ts: m(85) } } : {} },
     gates: [

@@ -1374,3 +1374,15 @@ test('A127-A128 Demo_LasEjecucionesCuadranConSuMaquinaYSusPasos', () => {
   assert.match(aviso, /versión anterior del arnés/);
   assert.doesNotMatch(aviso, /Las ejecuciones de antes/);
 });
+
+// 🔴 Falla con (A136, recorrido F21): en el sitio demo las ejecuciones vivían en una carpeta «acme», que el arnés lee como
+//    laboratorio (sus pruebas se llaman así): el desplegable de producto decía «(laboratorio)» en todas, como si fueran
+//    ensayos y no trabajo de un producto.
+test('A136 Demo_LasEjecucionesSonDeUnProductoNoDeLaboratorio', () => {
+  const D = DATOS();
+  const R = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs.js'));
+  const b = D.blobsDelBuzon(AHORA_FIJO, { completo: true });
+  const corridas = Object.entries(b).filter(([k]) => /^[^/]+\/[0-9a-f-]{36}\.json$/.test(k)).map(([, v]) => JSON.parse(v));
+  assert.ok(corridas.length >= 4);
+  for (const c of corridas) assert.strictEqual(R.esLaboratorio(c.marker.repoPath), false, `${c.marker.storyId}: ${c.marker.repoPath} no es de laboratorio`);
+});
