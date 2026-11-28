@@ -474,7 +474,9 @@ function handleCarrilEHistoria(event, opts = {}) {
         }
         continue;
       }
-      const escritos = escritosDelGuion(g);
+      // el revisado (los bytes de main en otra copia) no se lee entero: lo que escribe ya pasó la revisión de main, y sus
+      // argumentos cuentan como destinos (una constancia entre ellos frena)
+      const escritos = g.revisado ? { rutas: [], armadosSinSaber: true } : escritosDelGuion(g);
       const resolver = (t) => resolveTarget(t, cwd, process.platform, { homeVariable: true });
       // un destino que arma de un modo que no se lee (`argparse`, un desempaquetado) puede ser cualquier argumento
       const abs = [...escritos.rutas, ...(escritos.armadosSinSaber ? g.argv : [])].map(resolver);
