@@ -51,8 +51,6 @@ const CAPTURAS = [
   { nombre: 'proyectos', sitio: 'normal', quien: LEAD, ruta: '/proyectos', espera: 'Cómo va cada producto' },
   { nombre: 'arnes', sitio: 'normal', quien: LEAD, ruta: '/arnes', espera: 'Cómo está el arnés' },
   { nombre: 'como-trabaja', sitio: 'normal', quien: LEAD, ruta: '/como-trabaja', espera: 'Tu organización' },
-  { nombre: 'ayuda-persona', sitio: 'normal', quien: ANA, ruta: '/ayuda', espera: 'Problemas comunes' },
-  { nombre: 'ayuda-quien-mantiene', sitio: 'normal', quien: LEAD, ruta: '/ayuda#las-recetas', espera: 'Las recetas' },
   { nombre: 'configuracion-personas', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-personas', pasos: 'config', espera: 'Quién entra al sitio' },
   { nombre: 'configuracion-confirmar-maquina', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-personas', pasos: 'config', espera: 'Por confirmar' },
   { nombre: 'configuracion-repos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-repos', pasos: 'config', espera: 'Dónde vive cada repo' },
