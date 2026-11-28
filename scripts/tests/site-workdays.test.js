@@ -110,7 +110,8 @@ test('T28 Sitio_TokensNoMedidos_ConMotivo @story-8.209 @ac-17', () => {
   assert.strictEqual(c.tokens, null);
   const html = WD().htmlTabla(t, 'es');
   assert.match(html, /tokens no medidos/);
-  assert.match(html, /title="una conversación no se pudo leer \(EACCES\)"/);
+  // el motivo, a la vista (antes sólo al pasar el mouse: A102)
+  assert.match(html, /tokens no medidos: una conversación no se pudo leer \(EACCES\)/);
 });
 
 // el sitio demo en este proceso; la vista se elige con su cookie
@@ -521,4 +522,30 @@ test('OH17 Costo_EscrituraDeCache_ConSuPrecio — se cobra con el precio de su p
   const v = WD().validarDia(malo, '2026-11-08');
   assert.ok(v.ok);
   assert.strictEqual(v.tokens.porModelo, null);
+});
+
+// 🔴 Falla con (A102-A104, recorrido F21): «tokens no medidos» sin motivo a la vista (sólo al pasar el mouse); el total
+//    contaba «1 máquina sin medir» por una que tenía horas y le faltaban los tokens; los tokens de la semana no avisaban
+//    que faltaba un día; la columna «Persona» nombraba máquinas sin dueño como si fueran personas; y las barras de tokens
+//    usaban el color de la primera máquina del gráfico de horas.
+test('A102-A104 Horas_LoQueNoSeMidioDiceQuéYPorQué', () => {
+  const sinTokens = dia('2026-11-08', { tokens: { medido: false, motivo: 'una conversación no se pudo leer' } });
+  const t = WD().armarTabla(WD().leerJornadas(espejo({
+    'maquina-a': Object.fromEntries(DIAS5.map((d) => [d, dia(d)])),
+    'maquina-b': { ...Object.fromEntries(DIAS5.map((d) => [d, dia(d)])), '2026-11-08': sinTokens },
+  })), { ayer: '2026-11-09' });
+  const tabla = WD().htmlTabla(t, 'es');
+  assert.match(tabla, /tokens no medidos: una conversación no se pudo leer/, 'el motivo, a la vista');
+  const fila8 = tabla.split('<th scope="row">2026-11-08</th>')[1].split('</tr>')[0];
+  assert.doesNotMatch(fila8, /máquina sin medir/, 'tiene horas: no es una máquina sin medir');
+  assert.match(fila8, /1 máquina sin tokens medidos/);
+  // una máquina con dueño y otra sin: la que no tiene persona no se presenta como persona
+  const r = WD().resumen(t, { machines: { 'maquina-a': { person: 'Ana' } } });
+  const html = WD().htmlResumen(r, 'es');
+  assert.match(html, /1 día de tokens sin medir/, 'los tokens de la semana avisan que les falta un día');
+  assert.match(html, /maquina-b · sin persona asignada/, 'la máquina sin dueño se dice máquina');
+  assert.doesNotMatch(html, /<th scope="row">maquina-b<div/);
+  const semanas = WD().htmlSemanas(r, 'es');
+  assert.doesNotMatch(semanas.split('Tokens sin caché, por semana')[1] || '', /var\(--serie-1\)/, 'las barras de tokens no son del color de una persona');
+  assert.match(semanas, /maquina-b · sin persona asignada/, 'la leyenda tampoco la llama persona');
 });
