@@ -1835,3 +1835,16 @@ test('T11 2.83-QuePaso_SinNombreLoCuenta @story-2.83 @ac-14 — las ejecuciones 
     assert.match(fila(en, 'ejecuciones', EJ_MIXTA.id).que_paso, / Sessions: Carrizo-4 \(2 runs without a name\)\.$/);
   });
 });
+
+// 🔴 Falla con (A116, A119; recorrido F21): «Arreglos en curso» remitía al historial de decisiones aunque la página no lo
+//    tuviera; y una vulnerabilidad con una sola tarea esperando su cierre decía «1 tareas».
+test('A116-A119 Mantenimiento_NoRemiteALoQueNoEstaYConcuerda', { timeout: 60000 }, async () => {
+  const ficha = 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto Y: 5003\n';
+  const repos = JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm' }] });
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ h, lead }) => {
+    const texto = (await h.pedir('/mantenimiento', { cookie: lead })).texto;
+    assert.doesNotMatch(texto, /1 tareas/);
+    assert.match(texto, /<summary>1 tarea<\/summary>/);
+    if (!/Historial de decisiones/.test(texto)) assert.doesNotMatch(texto, /historial de decisiones/i, 'no remite a un bloque que no está');
+  });
+});
