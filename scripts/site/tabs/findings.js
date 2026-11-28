@@ -921,7 +921,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const enCierre = v.tareas.filter((t) => t.vigente === false);
       const cierre = enCierre.length ? `<div class="m-cierre">${esc(T(idioma, 'mant.vuln.esperanCierre'))}<ul>${enCierre.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul></div>` : '';
       const tareas = v.tareas.length === 1 && !cierre ? tareaDeVuln(v.tareas[0])
-        : v.tareas.length ? `<details class="m-tareas"><summary>${esc(T(idioma, 'mant.marcha.tareas', { n: v.tareas.length }))}</summary><ul>${vigentes.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul>${cierre}</details>`
+        : v.tareas.length ? `<details class="m-tareas"><summary>${esc(v.tareas.length === 1 ? T(idioma, 'mant.marcha.tareaUna') : T(idioma, 'mant.marcha.tareas', { n: v.tareas.length }))}</summary><ul>${vigentes.map((t) => `<li>${tareaDeVuln(t)}</li>`).join('')}</ul>${cierre}</details>`
           : esc(v.motivo ? T(idioma, 'mant.vuln.sinTarea', { motivo: T(idioma, `mant.sinTarea.${v.motivo}`) }) : T(idioma, 'mant.vuln.sinTareaSinMotivo'));
       return `<li class="m-vuln">${sev ? `<span class="m-sev sev-${sev}">${esc(T(idioma, `mant.vuln.${sev}`))}</span> ` : ''}<b>${esc(v.paquete)}</b> <span class="m-meta">${esc(meta.join(' · '))}</span> <span class="m-tarea">${tareas}</span></li>`;
     };
@@ -936,7 +936,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
         + `<p class="m-deuda q-note">${esc(T(idioma, 'mant.vuln.deuda'))} ${ayuda('deuda')}</p>`
       : '';
     const marcha = m.cuentas.marcha
-      ? `<details class="m-bloque m-marcha"><summary>${esc(T(idioma, 'mant.marcha.titulo', { n: m.cuentas.marcha }))}</summary><p class="m-intro">${esc(T(idioma, 'mant.marcha.intro'))} ${ayuda('tarea')}</p>`
+      ? `<details class="m-bloque m-marcha"><summary>${esc(T(idioma, 'mant.marcha.titulo', { n: m.cuentas.marcha }))}</summary><p class="m-intro">${esc(T(idioma, m.decididas.length ? 'mant.marcha.intro' : 'mant.marcha.introSinHistorial'))} ${ayuda('tarea')}</p>`
         + (m.marcha.arreglos.length ? `<ul class="m-lista">${m.marcha.arreglos.map(arreglo).join('')}</ul>` : '') + `${vulns}</details>`
       : '';
 

@@ -756,3 +756,24 @@ test('T67 2.79-Prolijidad_ListasSingularYSinFalta @story-2.79 @ac-56 @ac-57 @ac-
   }
   assert.strictEqual(t('es', 'fichas.falta'), 'sin dato');
 });
+
+// 🔴 Falla con (A115, A117, A118, A119; recorrido F21): Arnés no decía cuántos casos rojos del banco son nuevos (el Inicio
+//    sí); «1 casos rojos»; el renglón de un pull request de la persona arrancaba con «·» y sin su proyecto; los estados de
+//    la plataforma («Active», «New») y «story» sin traducir.
+test('A115-A119 Vistas_BancoNuevosYRenglonesDeLaPersona', () => {
+  const lineas = views.filasArnes(modeloCompleto({ banco: leida({ rojos: ['caso-uno'], total: 10, ayer: { fecha: '2026-10-14', rojos: [] } }) }), { ahora: AHORA });
+  const banco = lineas.find((l) => l.clave === 'banco').texto;
+  assert.match(banco, /1 nuevo desde anoche/, 'dice cuántos son nuevos, como el Inicio');
+  assert.match(banco, /1 caso rojo, de 10/, 'en singular');
+  const pr = views.renglonDePr({ numero: 101, proyecto: 'Producto X', repo: 'FrontEnd', dias: 5, enlace: 'https://dev.example/pr/101' }, 'es');
+  assert.doesNotMatch(pr[1], /^·/, 'no arranca con un signo suelto');
+  assert.match(pr[1], /^Producto X \/ FrontEnd · 5 días$/);
+  const ped = views.renglonDePedido({ id: 5002, titulo: 'pkg-uno con una vulnerabilidad alta', tipo: 'Bug', estado: 'New', dias: 1, enlace: 'https://dev.example/wi/5002' }, 'es');
+  assert.match(ped[1], /pkg-uno con una vulnerabilidad alta · error · nuevo · 1 día/, 'el tipo y el estado, en castellano');
+  const enIngles = views.renglonDePedido({ id: 5001, titulo: 'Paginar', tipo: 'Tarea', estado: 'Active', dias: 2, enlace: 'https://dev.example/wi/5001' }, 'en');
+  assert.match(enIngles[1], /Paginar · task · active · 2 days/, 'y en inglés');
+  const raro = views.renglonDePedido({ id: 9, titulo: null, tipo: 'Riesgo', estado: 'Mitigado', dias: 1, enlace: null }, 'es');
+  assert.match(raro[1], /Riesgo · Mitigado/, 'uno que no se conoce va como lo dice la plataforma');
+  assert.doesNotMatch(raro[1], /^#9 ·/, 'sin título tampoco queda un signo suelto');
+  assert.doesNotMatch(require(path.join(H.SITE, 'texts.js')).t('es', 'inicio.vigilante_aceptadas_sin_story'), /story/);
+});
