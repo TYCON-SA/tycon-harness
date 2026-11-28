@@ -644,6 +644,8 @@ assert d['valor']==13 and d['medidos']==13, d   # CUENTA de frenadas (7+6), no u
 det=d['detalle']
 assert 'test-scope-guard: frenó 7, lo saltearon 4, de 12' in det, det
 assert 'safety-guard: frenó 6, lo saltearon 0, de 6' in det, det   # cero escapes REALES, no «no medido»
+# A142: el desglose también como datos (el sitio lo muestra en los dos idiomas; el detalle es texto en castellano)
+assert d['partes']==[{'clave':'frenaron','n':13},{'clave':'saltearon','n':4},{'clave':'avisaron','n':0}], d.get('partes')
 " "$FR" 2>/dev/null \
   && ok "C-38 el total es una CUENTA (13 frenadas) y la proporción vive por freno, con su denominador; el que nunca se saltea dice 0" || mal "C-38 frenos=$FR"
 grep -q 'El total es una cuenta, no un porcentaje' "$T/o.html" \
@@ -726,6 +728,8 @@ assert 'Prod / B' in det and 'faltan 3' in det, det
 assert '1 de 2' not in det and '50' not in det, det          # B no se dibuja
 assert x['valor'] == 1, x                                     # repos comparables, no una proporción global
 assert 'Prod / C' not in det or 'no guarda' in det, det
+# A142: el desglose como datos, sin nombres de repos ni proporciones sumadas: cuántos comparables vuelven menos
+assert x['partes'] == [{'clave': 'vuelve_menos', 'n': 1}, {'clave': 'no_vuelve_menos', 'n': 0}], x.get('partes')
 print('ok')
 PY2
 )"
@@ -752,6 +756,7 @@ t = open(sys.argv[1]).read(); i = t.find('\n{')
 d, _ = json.JSONDecoder().raw_decode(t[i+1:] if i >= 0 else t)
 x = d['extra']['rework_por_carril']
 assert x['estado'] == 'medido' and '4 de 5' in x['detalle'] and '1 de 5' in x['detalle'], x
+assert x['partes'] == [{'clave': 'vuelve_menos', 'n': 0}, {'clave': 'no_vuelve_menos', 'n': 1}], x.get('partes')
 PY2
 rm -rf "$T"
 
@@ -774,6 +779,7 @@ import json,sys
 d=json.loads(sys.argv[1])
 assert d['estado']=='medido' and d['valor']==12, d
 assert 'pipeline: 5' in d['detalle'] and 'adhoc: 4' in d['detalle'] and 'ninguno: 3' in d['detalle'], d
+assert d['partes']==[{'clave':'pipeline','n':5},{'clave':'adhoc','n':4},{'clave':'ninguno','n':3}], d.get('partes')
 " "$CA" 2>/dev/null && ok "C-43 12 commits: pipeline 5 · adhoc 4 · ninguno 3" || mal "C-43 carriles=$CA"
 grep -q 'fuera de una sesión no se ven' "$T/o.html" && ok "C-43 el pie dice que los commits fuera de sesión no se miden" || mal "C-43 falta la nota de fuera de sesión"
 grep -q 'CLIENTE-X' "$T/o.html" "$T/j.out" && mal "C-43 la story llegó a la página" || ok "C-43 la story nunca sale"
