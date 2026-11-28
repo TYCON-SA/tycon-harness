@@ -73,6 +73,7 @@ test('resolveTarget: las relativas en Windows, como las resuelve Git Bash', () =
   assert.strictEqual(gate.resolveTarget('../proc/self/root/cygdrive/c/Windows/Temp/a.txt', '\\tmp', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'y subiendo a otra forma de la unidad');
   assert.strictEqual(gate.resolveTarget('../..', 'C:\\lab', 'win32'), '\\', 'un `cd` que sube más allá de la unidad queda en la raíz de Git Bash');
   assert.strictEqual(gate.resolveTarget('c/Windows/Temp/a.txt', gate.resolveTarget('../..', 'C:\\lab', 'win32'), 'win32'), 'C:\\Windows\\Temp\\a.txt', 'y desde ahí la letra es la unidad');
+  assert.strictEqual(gate.resolveTarget('..\\..\\..\\Windows\\Temp\\a.txt', 'C:\\lab', 'win32'), 'C:\\Windows\\Temp\\a.txt', 'con contrabarras sube como Windows y no sale de la unidad');
   assert.strictEqual(gate.resolveTarget('s/repo/a.md', 'C:\\', 'win32'), 'C:\\s\\repo\\a.md', 'parado en `C:\\` (= /c), una carpeta de una letra no es otra unidad');
   assert.strictEqual(gate.resolveTarget('../x/a.txt', 'C:\\lab\\fixture', 'win32'), 'C:\\lab\\x\\a.txt', 'una relativa común, igual que antes');
 });

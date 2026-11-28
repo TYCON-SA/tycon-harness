@@ -1417,7 +1417,7 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
   if (homeVariable) expanded = expanded.replace(/^\$\{?HOME\}?(?=\/|$)/, os.homedir());
   expanded = nativePath(expanded, platform);
   if (P.isAbsolute(expanded)) return expanded;
-  return platform === 'win32' ? relativaDeGitBash(expanded, nativePath(cwd, platform)) : P.resolve(nativePath(cwd, platform), expanded);
+  return platform === 'win32' ? relativaDeGitBash(expanded, nativePath(cwd, platform), String(target).includes('\\')) : P.resolve(nativePath(cwd, platform), expanded);
 }
 
 /**
@@ -1427,11 +1427,12 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
  * `C:\c\x`): medido en Windows, `../../../../c/Windows/x` desde `C:\lab` y `c/Windows/x` desde la raíz escriben en
  * `C:\Windows\x`.
  */
-function relativaDeGitBash(rel, cwd) {
+function relativaDeGitBash(rel, cwd, conContrabarras = false) {
   const unidad = /^([A-Za-z]):[\\/]?([\s\S]*)$/.exec(cwd);
   // una carpeta de Git Bash sin unidad (`cd /` da `\`, `cd /tmp` da `\tmp`): bash resuelve desde ella con barras
   const deBash = !unidad && /^[\\/](?![\\/])/.test(cwd);
-  if (!unidad && !deBash) return path.win32.resolve(cwd, rel);
+  // con contrabarras, Git Bash la toma por una ruta de Windows: sube como Windows y nunca sale de la unidad
+  if ((!unidad && !deBash) || (unidad && conContrabarras)) return path.win32.resolve(cwd, rel);
   const relPosix = rel.split('\\').join('/');
   // `/c/a/b` → `C:\a\b`, sin depender de la lib de rutas (un skill instalado a medias corre sin ella)
   const nativa = (r) => {
