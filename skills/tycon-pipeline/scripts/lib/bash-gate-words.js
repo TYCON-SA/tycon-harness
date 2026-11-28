@@ -370,6 +370,145 @@ function cierreDeParentesis(s, i) {
   return -1;
 }
 
+// las palabras de bloque detrás de las que empieza un comando: `if (( a > b ))`, `for ((i=0;i<3;i++))`
+const PALABRA_DE_BLOQUE = /(?:^|[\s;&|(){}!])(if|elif|while|until|then|do|else|time|for)$/;
+// cuántos `!`, `{`, `(` o palabras de bloque seguidos se miran hacia atrás
+const HONDO_DE_POSICION = 32;
+
+/**
+ * Si `t[p]` está donde el shell espera un comando (`{}`, o `{ for: true }` detrás de `for`; null si no): al principio,
+ * detrás de `;`, `&`, `|` o un renglón, o detrás de un `!`, `{`, `(` o palabra de bloque que también lo están; nunca
+ * detrás de `$(` (`$(((2/2)))` es una cuenta de la ruta, no un comando: se lee con lo de su palabra)
+ * (en `echo ! ((…))` el `!` es un argumento). Nunca escapado ni detrás de una redirección (`>|`, `<&`, `<(`).
+ */
+function dondeEmpiezaUnComando(t, p, hondo = 0) {
+  if (hondo > HONDO_DE_POSICION) return null;
+  let k = p;
+  while (k > 0 && (t[k - 1] === ' ' || t[k - 1] === '\t')) k--;
+  if (k === 0) return {};
+  const antes = t[k - 1];
+  const dos = t[k - 2] || '';
+  if (dos === '\\') return null;
+  if (antes === '\n' || antes === ';') return {};
+  if (antes === '&' || antes === '|') return /[<>&|]/.test(dos) && !(antes === dos) ? null : {};
+  if (antes === '(') {
+    if (/[$<>=]/.test(dos)) return null;
+    return dondeEmpiezaUnComando(t, k - 1, hondo + 1);
+  }
+  if (antes === '!' || antes === '{') return /[\s;&|()]/.test(dos) || k === 1 ? dondeEmpiezaUnComando(t, k - 1, hondo + 1) : null;
+  const m = PALABRA_DE_BLOQUE.exec(t.slice(Math.max(0, k - 7), k));
+  if (!m) return null;
+  const r = dondeEmpiezaUnComando(t, k - m[1].length, hondo + 1);
+  return r && { for: m[1] === 'for' };
+}
+
+/**
+ * El comando con cada cuenta sin `$` que no corre nada (`(( a > b ))`, `for ((i=0;i<3;i++))`) en blanco: su `>` compara.
+ * Sólo para el comando de la herramienta Bash (`cuentas`): en `dash`, `ash`, el `sh` de Linux o PowerShell, `((…))` son
+ * dos paréntesis y lo de adentro corre, así que nunca para lo anidado ni un guion. Sólo donde empieza un comando, fuera
+ * de comillas y heredocs, y si `adentroDeUnaCuenta` (de bash-gate-targets.js, que la pasa) la lee como cuenta (`((cp a b) )` y `(( $(cp a b) ))` no). Lo de al
+ * lado (`(( 1 )) > f`) se sigue leyendo; las posiciones no cambian.
+ */
+function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
+  const t = String(texto);
+  if (!t.includes('((')) return t;
+  const es = posicionesDeComando(t);
+  let out = '';
+  let hecho = 0;
+  for (let p = t.indexOf('(('); p >= 0; p = t.indexOf('((', p + 1)) {
+    if (p < hecho || !es[p]) continue;
+    const donde = dondeEmpiezaUnComando(t, p);
+    if (!donde) continue;
+    const fin = cierreDeParentesis(t, p);
+    // (detrás de `for`, las tres cuentas van separadas por `;`: bash y zsh no corren nada de lo de adentro)
+    if (fin < 0 || adentroDeUnaCuenta(t, p, fin, { sinPesos: true, conPuntoYComa: Boolean(donde.for) }) === null) continue;
+    out += t.slice(hecho, p) + ' '.repeat(fin - p + 1);
+    hecho = fin + 1;
+    p = fin;
+  }
+  return out + t.slice(hecho);
+}
+
+/**
+ * El comando con un `;` detrás de la cabecera de cada `for ((…))` que no lo tiene: `for ((i=0;i<1;i++)) do cp a b`,
+ * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. En todo
+ * el texto, también entre comillas y en comentarios: un `for ((` que no abre un comando es un error del shell y no corre
+ * nada, y el de un `"$(…)"`, una función, un `case` o un `<(…)` sí corre; lo citado sigue siendo texto para quien lo lee.
+ * El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda igual.
+ * Cada cabecera con su propio cierre. Un `for ((` citado (`: 'for (('`) cierra donde no debe y su `;` puede cortar
+ * argumentos: por eso `variantesConSeparador` da también una versión por cada cabecera sola.
+ */
+function puntosDeSeparador(t) {
+  // dónde va cada `;`, y si reemplaza un blanco
+  const puntos = new Map();
+  // (también con la cabecera partida en dos renglones: `for \⏎((…))`)
+  if (t.includes('((')) for (const m of t.matchAll(/(?<![\w$.-])for(?:[ \t]|\\\r?\n)*\(\(/g)) {
+    const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
+    if (fin < 0) continue;
+    let k = fin + 1;
+    while (t[k] === ' ' || t[k] === '\t') k++;
+    // ya separado, o cierra lo de afuera
+    if (k >= t.length || /[;\n&|)]/.test(t[k])) continue;
+    puntos.set(fin + 1, k > fin + 1);
+  }
+  // (los del `for ((`, aparte: sólo ellos cuentan para el tope que frena)
+  puntos.delFor = new Set(puntos.keys());
+  require('./bash-gate-blocks.js').puntosDeOtrasCabeceras(t, puntos, t.includes(')') ? posicionesDeComando(t) : null);
+  return puntos;
+}
+
+function conPuntos(t, puntos, cuales) {
+  let out = t;
+  for (const p of [...cuales].sort((a, b) => b - a)) out = out.slice(0, p) + ';' + out.slice(puntos.get(p) ? p + 1 : p);
+  return out;
+}
+
+function conSeparadorTrasElFor(texto) {
+  const t = String(texto);
+  const puntos = puntosDeSeparador(t);
+  return puntos.size ? conPuntos(t, puntos, puntos.keys()) : t;
+}
+
+// hasta cuántas cabeceras se lee una versión por cada una sola
+const TOPE_DE_CABECERAS = 24;
+// hasta cuántos puntos de las otras cabeceras (`puntosDeOtrasCabeceras`) se lee una versión por cada uno solo
+const TOPE_DE_OTROS_SOLOS = 8;
+
+/**
+ * Las versiones del comando con el `;` de `conSeparadorTrasElFor` que hay que leer además de la de tal cual: con todas
+ * las cabeceras y, si son varias, con cada una sola (hasta `TOPE_DE_CABECERAS`). Un `for` real con un señuelo citado
+ * en su cuerpo (`for ((…)) do rm $(: 'for ((') h.md`) se ve en la de su cabecera sola. Vacía si no hay ninguna.
+ */
+function variantesConSeparador(texto) {
+  const t = String(texto);
+  // con renglones partidos por una barra (`i\⏎f (true) then cp …`), también las del comando con los renglones juntos,
+  // como los junta el shell: la de juntos sola, si no tiene puntos, no hace falta (es la de tal cual)
+  if (/\\\r?\n/.test(t)) {
+    // (no adentro del cuerpo de un heredoc: su barra del final es texto)
+    const cuerpo = require('./bash-gate-blocks.js').cuerposDeHeredoc(t);
+    const juntos = t.replace(/\\\r?\n/g, (m, en) => (cuerpo[en] ? m : ''));
+    const deJuntos = variantesSinJuntar(juntos);
+    const propias = variantesSinJuntar(t);
+    if (!deJuntos.length) return propias;
+    return Object.assign([...propias, ...deJuntos], { demasiadas: Boolean(propias.demasiadas || deJuntos.demasiadas) });
+  }
+  return variantesSinJuntar(t);
+}
+
+function variantesSinJuntar(t) {
+  const puntos = puntosDeSeparador(t);
+  if (!puntos.size) return [];
+  // (con más cabeceras `for ((` que el tope, `demasiadas`: el freno frena sin leerlas)
+  if (puntos.delFor.size > TOPE_DE_CABECERAS) return Object.assign([conPuntos(t, puntos, puntos.keys())], { demasiadas: true });
+  const out = [conPuntos(t, puntos, puntos.keys())];
+  if (puntos.size <= 1) return out;
+  // con más puntos de las otras cabeceras que `TOPE_DE_OTROS_SOLOS` (un heredoc que escribe código, un texto con muchos
+  // paréntesis), una versión por cada cabecera `for ((` sola y no por cada punto: cada una es una lectura entera
+  const solos = puntos.size - puntos.delFor.size > TOPE_DE_OTROS_SOLOS ? puntos.delFor : puntos.keys();
+  for (const p of solos) out.push(conPuntos(t, puntos, [p]));
+  return out;
+}
+
 /**
  * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
  * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
@@ -1359,4 +1498,13 @@ function guionDeSedSinEfectos(guion) {
 }
 
 
-module.exports = { RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
+// las opciones de PowerShell que llevan el comando, con las abreviaturas que acepta (`-c`, `-com`, `-cwa`, `/Command`)
+const COMANDO_DE_POWERSHELL = /^(?:--?|\/)(?:c|co|com|comm|comma|comman|command|commandwithargs|cwa)$/i;
+// y las que lo llevan en base64 de UTF-16 (`-e`, `-ec`, `-enc`, `-EncodedCommand`)
+const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)$/i;
+// las redirecciones de entrada (`<f`, `<<< x`, `<<EOF`, `< $(mktemp)`, `<&0`), las de un descriptor con nombre (`{fd}>`) y los `<(…)`/`>(…)`
+const REDIRECCION_DE_ENTRADA_O_PROCESO = /(?<![^\s])\{[A-Za-z_]\w*\}(?=[<>])|[<>]\((?:[^()]|\([^()]*\))*\)|(?<![^\s])\d*(?:<<<|<<-?|<>|<&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|\$\([^()]*\)|[^\s;&|()<>]+)?/g;
+// y la que corre un guion (`-f`, `-File`)
+const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
+
+module.exports = { variantesConSeparador, TOPE_DE_CABECERAS, COMANDO_DE_POWERSHELL, COMANDO_CODIFICADO_DE_POWERSHELL, REDIRECCION_DE_ENTRADA_O_PROCESO, ARCHIVO_DE_POWERSHELL, sinCuentasSueltas, conSeparadorTrasElFor, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };

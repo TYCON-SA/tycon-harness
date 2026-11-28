@@ -25,7 +25,7 @@ const { resolveSessionId } = require('./session-id.js');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { GUION_ESCRIBE, NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
+const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, variantesConSeparador, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
 const { CD_DEL_TRAMO, conCarpetasNombradas, conCarpetasPorTramo } = require('./bash-gate-folders.js');
 const { ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { carpetasDeLosCd, carpetasDeLosCdDeConstancias, destinosArmados, extractWriteTargets, heredocs, quitarCuerposDeHeredoc, scriptsInline, tramos } = require('./bash-gate-targets.js');
@@ -765,12 +765,19 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
 // los guiones del arnés que corre la coordinadora escriben su estado.
 function coordinadoraPorConsola(event, opts = {}) {
   if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  // (las lecturas de más del freno, las del `;` de `variantesConSeparador`, no vuelven a juzgar: el click del dueño a un
+  // comando exacto vale una vez, y acá ya se leyeron todas)
+  if (event?.comandoTalCual != null) return null;
   const original = event?.tool_input?.command;
   if (!original) return null;
-  const cmd = sinMayoresQueNoRedirigen(original);
   const baseCwd = nativePath(event?.cwd || process.cwd());
   const archivos = () => {
     const out = [];
+    // tal cual y con el `;` detrás de los `for ((…))`
+    for (const cmd of new Set([original, ...variantesConSeparador(original)].map(sinMayoresQueNoRedirigen))) archivosDe(cmd, out);
+    return [...new Set(out)];
+  };
+  const archivosDe = (cmd, out) => {
     const soloAbsolutos = cdSinResolver(cmd);
     const absoluta = (raw) => {
       const v = String(expandirRuta(cmd, raw).valor);
@@ -803,7 +810,6 @@ function coordinadoraPorConsola(event, opts = {}) {
         if (abs) out.push(abs);
       }
     }
-    return [...new Set(out)];
   };
   return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'coordination-writes.js')).judge({
     sessionId: event.session_id, files: archivos, home: opts.home, stateDir: opts.stateDir, installedRoots: opts.installedRoots,

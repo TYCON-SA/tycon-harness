@@ -22,9 +22,10 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
-const { variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
-const { ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
+const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, variantesConSeparador, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
+const { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
+const { adentroDeUnaCuenta, ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
+const { findsEnSustituciones, tramosConSustituciones } = require('./bash-gate-blocks.js');
 
 /**
  * La carpeta contra la que se resuelven los destinos relativos del comando. Sólo una forma se sigue:
@@ -157,7 +158,7 @@ function resolverCd(cmd, baseCwd) {
  */
 function destinosBorrados(cmd) {
   const out = [];
-  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
@@ -220,7 +221,7 @@ function deshacenEnBloque(cmd) {
   const larga = (w, nombre, minimo) => w.length >= minimo && w.startsWith('--') && nombre.startsWith(w.split('=')[0]);
   // una opción corta dentro de un grupo (`-qf`); el valor de `-m`, `-b`, `-C` no cuenta: va en la palabra siguiente
   const corta = (lista, letra) => lista.some((w) => /^-[a-zA-Z]+$/.test(w) && w.slice(1).includes(letra));
-  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
@@ -377,7 +378,7 @@ function borradosProfundos(cmd) {
   const ver = (texto, nivel) => {
     for (const d of destinosBorrados(texto)) out.push(d);
     for (const raw of origenesMovidos(texto)) out.push({ raw });
-    for (const tramo of tramos(texto)) {
+    for (const tramo of tramosConSustituciones(texto)) {
       const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
       const lee = new RegExp(`^${LECTORES_DE_FIND}`);
       const borraEnFind = words.some((w, k) => w === '-delete' || (/^-exec(?:dir)?$/.test(w) && !lee.test(words[k + 1] || '')));
@@ -896,16 +897,8 @@ function sinCuerposDeTexto(cmd) {
   return out + s.slice(hasta);
 }
 
-// una palabra del shell entera: también con `$'…'`, `$"…"` y con tramos citados pegados (`'a'"'"'b'` es `a'b`)
-const PALABRA_CON_ANSI = /(?:\$'(?:\\[\s\S]|[^'\\])*'|'[^']*'|\$?"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
-// la palabra que un `<<<` da a la entrada
+// la palabra que un `<<<` da a la entrada (`PALABRA_CON_ANSI`, de bash-gate-expansions.js)
 const CADENA_A_LA_ENTRADA = new RegExp(`<<<[ \\t]*(${PALABRA_CON_ANSI.source})`);
-/** Las palabras de un tramo como las lee el shell, con sus comillas, sus escapes y los `$'…'` resueltos. */
-function palabrasConAnsi(tramo) {
-  return (String(tramo).match(PALABRA_CON_ANSI) || []).map((w) => w.replace(/\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|\$?"((?:\\.|[^"\\])*)"|\\(.)/g,
-    (m, ansi, simple, doble, escapado) => (ansi !== undefined ? ansiC(ansi) : simple !== undefined ? simple
-      : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
-}
 
 /**
  * El cuerpo de un shell con `-c` y lo que lo sigue (sus `$0`, `$1`…), leídos como el shell: `bash -c $'…'` y
@@ -925,6 +918,7 @@ function cuerpoDelShell(tramo) {
   return String(w[j]).replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
     .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' '));
 }
+
 /**
  * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
@@ -933,6 +927,10 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
+  // con un `for ((`, también lo que corre adentro del comando con el `;` detrás de las cabeceras: el cuerpo de un
+  // `for ((…)) do …` sin `;` antes del `do` es un comando (`variantesConSeparador`). El comando de arriba con el `;` no
+  // es un anidado: lo lee la segunda lectura del freno (`handle`)
+  if (hondo === 0) for (const v of variantesConSeparador(cmd)) out.push(...comandosAnidados(v, 1, valores).slice(1));
   // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
   // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
   // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.
@@ -961,7 +959,11 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   // un `$(…)` conserva su cuerpo. Lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como
   // argumento, no (la mira su programa)
   const original = String(cmd);
-  for (const m of sinSimples.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(original.slice(m.index + 2, m.index + m[0].length - 1));
+  // (una cuenta que no corre nada, `$(( a > b ))`, queda en blanco: `adentroDeUnaCuenta`)
+  for (const m of sinSimples.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) {
+    const fin = m.index + m[0].length - 1;
+    sumarUno(adentroDeUnaCuenta(original, m.index, fin) ?? original.slice(m.index + 2, fin));
+  }
   for (const m of sinSimples.matchAll(/`([^`]*)`/g)) sumarUno(original.slice(m.index + 1, m.index + m[0].length - 1));
   // los `cd` de antes en el mismo comando también valen para lo que corre adentro (`bash -c "cd specs && sh -c '…'"`): el
   // cuerpo anidado se mira con ellos delante
@@ -1020,6 +1022,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // comando. Lo de arriba sigue: las palabras de este lector no cortan lo que aquél sí lee
     const cuerpo = cuerpoDelShell(tramo);
     if (cuerpo !== null) for (const b of cuerpoConValores(cuerpo, asignados)) sumarConCd(b);
+    // lo que corre PowerShell con `-Command` (`pwsh -Command '((cp a h.md))'`)
+    const dePowerShell = cuerpoDePowerShell(tramo);
+    if (dePowerShell !== null) for (const b of cuerpoConValores(dePowerShell, asignados)) sumarConCd(b);
     // `busybox` y `toybox` corren el programa que les sigue (`busybox rm h.md`, `sudo busybox sh -c '…'`): se mira el
     // tramo sin ellos, con lo que vale afuera
     if (w.some((x) => /^(?:\S*\/)?(?:busybox|toybox)$/.test(x))) {
@@ -1097,7 +1102,7 @@ function guionesDeShellEscritos(cmd, bases) {
   if (!escritos.length) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const out = [];
-  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
     const c = words[0] === '.' || words[0] === 'source' ? 'source' : nombreDeComando(words[0]);
     if (!['source', 'sh', 'bash', 'zsh', 'dash', 'ksh'].includes(c)) continue;
@@ -1152,7 +1157,7 @@ function guionesDeShellEnDisco(cmd, bases, instalados = [], tope = 256 * 1024, t
     } catch (_) { texto = ''; }
     out.push({ archivo, texto, grande: st.size > tope });
   };
-  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     // la entrada desde un archivo (`sh < g.sh`), antes de sacar las redirecciones
     const entrada = /(?<![<\d])<(?![<(&])\s*((?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s;&|<>()])+)/.exec(tramo);
     let words = palabras(sinPalabrasDelShell(String(tramo).replace(/(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^\s;&|()<>]+)?/g, ' '))).filter((w) => w !== '');
@@ -1306,6 +1311,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
       if (previo !== undefined && previo.trimEnd().endsWith('\\')) lista[lista.length - 1] = `${previo} ${t}`;
       else lista.push(t);
     }
+    out.push(...findsEnSustituciones(texto, absoluta));
     lista.forEach((tramo, k) => {
       // sinPalabrasDelShell se come el `xargs` con sus opciones: acá sólo se sacan los prefijos y las palabras del shell
       let antes = pelarEnv(tramo).resto.trim();

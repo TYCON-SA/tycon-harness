@@ -24,7 +24,7 @@ const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { FORMAS_DE_ESCRIBIR, logHookError } = require('./bash-gate-net.js');
-const { ANTES_DEL_PROGRAMA, ARGUMENTOS_DE_LECTURA, ARGUMENTO_CON_NOMBRE, CLASES_POSIX, CORCHETE_TOPE, MODO_SOLO_LEE, OPEN_LLAMADA, PREFIJO, SOLO_VARIABLE, argumentosDeLlamada, guionDeSedSinEfectos, nativePath, noSeLeeElPrograma, palabras, palabrasDelComando, posicionesDeComando, sinComillasDeLosBordes, sinEscapesDeComillas, sinGrupo, sinRedireccionesDelante, ultimosArgumentos } = require('./bash-gate-words.js');
+const { COMANDO_DE_POWERSHELL, COMANDO_CODIFICADO_DE_POWERSHELL, REDIRECCION_DE_ENTRADA_O_PROCESO, ARCHIVO_DE_POWERSHELL, ANTES_DEL_PROGRAMA, ARGUMENTOS_DE_LECTURA, ARGUMENTO_CON_NOMBRE, CLASES_POSIX, CORCHETE_TOPE, MODO_SOLO_LEE, OPEN_LLAMADA, PREFIJO, SOLO_VARIABLE, argumentosDeLlamada, guionDeSedSinEfectos, nativePath, noSeLeeElPrograma, palabras, palabrasDelComando, posicionesDeComando, sinComillasDeLosBordes, sinEscapesDeComillas, sinGrupo, sinRedireccionesDelante, ultimosArgumentos } = require('./bash-gate-words.js');
 
 // Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
 // el archivo: se juntan la primera vez que se piden) y las de estos
@@ -1111,6 +1111,11 @@ function shellLeeEntrada(tramo) {
   const words = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((w) => w !== '');
   const programa = nombreDeComando(words[0]);
   if (programa === 'source' || programa === '.') return LA_ENTRADA_COMO_ARCHIVO.test(words.slice(1).find((w) => w !== '--') || '');
+  // PowerShell: con `-Command -` o `-File -`, o sin ninguno de los dos (sin saber qué opción lleva valor, se lee la entrada)
+  if (programa === 'pwsh' || programa === 'powershell') {
+    const i = words.findIndex((w, k) => k > 0 && (COMANDO_DE_POWERSHELL.test(w) || ARCHIVO_DE_POWERSHELL.test(w)));
+    return i < 0 || words[i + 1] === '-';
+  }
   if (!SHELLS_QUE_LEEN_COMANDOS.has(programa)) return false;
   for (let i = 1; i < words.length; i++) {
     if (/^-[A-Za-z]*c/.test(words[i])) return false;
@@ -1458,4 +1463,35 @@ function entradasAlternativas(words, asignados) {
   return { alternativas, pasado: vs.some((v) => v.pasado) };
 }
 
-module.exports = { TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };
+// una palabra del shell entera: también con `$'…'`, `$"…"` y con tramos citados pegados (`'a'"'"'b'` es `a'b`)
+const PALABRA_CON_ANSI = /(?:\$'(?:\\[\s\S]|[^'\\])*'|'[^']*'|\$?"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
+
+/** Las palabras de un tramo como las lee el shell, con sus comillas, sus escapes y los `$'…'` resueltos. */
+function palabrasConAnsi(tramo) {
+  return (String(tramo).match(PALABRA_CON_ANSI) || []).map((w) => w.replace(/\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|\$?"((?:\\.|[^"\\])*)"|\\(.)/g,
+    (m, ansi, simple, doble, escapado) => (ansi !== undefined ? ansiC(ansi) : simple !== undefined ? simple
+      : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
+}
+
+
+/**
+ * Lo que corre `pwsh` o `powershell` con `-Command` (o `-c`, `-cwa`, `-EncodedCommand`): las palabras que siguen,
+ * juntas, como las junta PowerShell (`pwsh -Command cp a b` corre `cp a b`). null sin esa opción. Se lee como un comando
+ * más, y como lo lee el freno en la herramienta PowerShell: `((cp a b))` copia.
+ */
+function cuerpoDePowerShell(tramo) {
+  // (sin las redirecciones del tramo, fuera de comillas: `pwsh -c 'cp a b' 2>&1` no copia a `1`, ni `</dev/null` a él)
+  const resto = sinPalabrasDelShell(pelarEnv(tramo).resto);
+  const es = posicionesDeComando(resto);
+  const sinEntradas = resto.replace(REDIRECCION_DE_ENTRADA_O_PROCESO, (m, en) => (es[en] ? ' '.repeat(m.length) : m));
+  const w = palabrasConAnsi(sinRedireccionesDeSalida(sinEntradas)).filter((x) => x !== '');
+  let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+  while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command', 'busybox', 'toybox'].includes(nombreDeComando(w[k0]))) k0++;
+  if (!['pwsh', 'powershell'].includes(nombreDeComando(w[k0]))) return null;
+  const i = w.findIndex((x, k) => k > k0 && (COMANDO_DE_POWERSHELL.test(x) || COMANDO_CODIFICADO_DE_POWERSHELL.test(x)));
+  if (i < 0 || w[i + 1] === undefined || w[i + 1] === '-') return null;
+  if (COMANDO_CODIFICADO_DE_POWERSHELL.test(w[i])) return Buffer.from(w[i + 1], 'base64').toString('utf16le');
+  return w.slice(i + 1).join(' ');
+}
+
+module.exports = { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };

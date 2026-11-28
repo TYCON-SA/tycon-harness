@@ -949,3 +949,195 @@ test('T46 CarpetaQueCumple_ConMuchasCarpetas @A50 — pasado el tope de carpetas
   frena(c, 'for d in $(find . -type d -name specs); do rm -rf "$d"; done');
   pasa(c, 'find aaa -name specs -exec rm -rf {} +');
 });
+
+// T47 Cuenta_EntreComillas_NoEsUnDestino @S247d
+// 🔴 Falla con: el `>` de una cuenta `$(( a > b ))`, con o sin comillas, leído como una redirección (frenaba con la palabra
+// de después como destino), o con lo que corre adentro de la cuenta, con una sustitución que sólo parece una cuenta
+// (`$((cp …) )`) o con una cuenta que zsh corre como comandos (`$((cp … && : `: \(`))`), dejado de leer.
+test('T47 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compara; lo que corre adentro se sigue leyendo', () => {
+  const c = corral();
+  for (const cmd of [`echo "$(( x > ${H} ? 1 : 0 ))"`, `echo $(( x > ${H} ))`, `n="$(( 3 > ${H} ))"`,
+    `echo "$(( $(( x > ${H} )) + 1 ))"`, `echo "$(( x >= ${H} ))" | cat`]) pasa(c, cmd);
+  for (const cmd of [
+    `echo "$(( $(cp README.md ${H}) ))"`, `echo "$(( \`cp README.md ${H}\` ))"`, `echo $(( $(cp README.md ${H}) + 1 ))`,
+    `echo "$((cp README.md ${H}) )"`, `echo "$((cp README.md ${H}); (true))"`, `echo "$(( 1 ))" > ${H}`,
+    `echo "$(( "x" > ${H} ))"`, `echo "$(( a[$(cp README.md ${H})] ))"`, `echo "$(( x )) $(cp README.md ${H})"`,
+    `echo "$(( x ; cp README.md ${H} ))"`, `echo "$(( <(cp README.md ${H}) ))"`,
+    // zsh corre como comandos una cuenta que no puede leer y que tiene una sustitución adentro (revisión de Fable)
+    `echo $((cp README.md ${H} && : \`: \\(\`))`, `echo "$((cat README.md > ${H} && : \`: \\(\`))"`,
+    `x=$((cp README.md ${H} && : \`: \\(\`))`, `echo "$(( \${x:-$(cp README.md ${H})} ))"`,
+    // el valor de una variable adentro de una cuenta se lee como otra cuenta, y puede correr un comando (vuelta 3 de Fable)
+    `x='a[$(cp README.md ${H})]'; echo $(( $x ))`, `x='a[$(cp README.md ${H})]'; echo "$(( \${x} + 1 ))"`,
+  ]) frena(c, cmd);
+  // la barra de una cuenta en la ruta destino divide, no es una carpeta (vuelta 3 de Fable): una historia por su contenido
+  fs.writeFileSync(path.join(c.dir, 'specs', 'hist.md'), '---\nstory: "1.3"\nepic: "1"\ntitle: "z"\nstatus: in-progress\n---\n\n# z\n');
+  fs.mkdirSync(path.join(c.dir, '1'));
+  for (const cmd of ['cp README.md $(( 2 / 2 ))/../specs/hist.md', 'echo x | tee $(( 2 / 2 ))/../specs/hist.md',
+    'echo x > $((2/2))/../specs/hist.md']) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `frena: ${JSON.stringify(cmd)}\n${r.stderr}`);
+  }
+  // una cuenta adentro de la ruta destino es parte de esa palabra (revisión de Fable de la A216): frena como una
+  // historia nueva escrita por consola
+  for (const cmd of [
+    'cp README.md specs/story-1.$((0+1)).md', 'mv README.md specs/story-1.$((0+1)).md', 'echo x > specs/story-1.$((0+1)).md',
+    'echo x >> specs/story-$((0+1)).1.md', 'echo x | tee specs/story-1.$((0+1)).md', 'cp README.md specs/story-1.$(( 0 + 1 )).md',
+    'echo x > "specs/story-1.$(( 0 + 1 )).md"', 'echo x > specs/story-1.$(( 2 > 1 )).md', 'echo "$(( a > b ))" > specs/story-1.$((0+1)).md',
+  ]) {
+    const r = correr(c, cmd);
+    assert.strictEqual(r.salida, 2, `frena: ${JSON.stringify(cmd)}\n${r.stderr}`);
+    assert.match(r.stderr, /story-[\d.]*\$\(\(/, `nombra la ruta con la cuenta: ${JSON.stringify(cmd)}`);
+  }
+});
+
+// T48 CuentaSinPesos_NoEsUnDestino @A213
+// 🔴 Falla con: el `>` o el `<` de una cuenta sin `$`, `(( a > b ))` o `for ((i=0;i<3;i++))`, leído como una redirección
+// (frenaba con la palabra de después como destino), o con una escritura de verdad al lado de la cuenta, o adentro de un
+// subshell que sólo se parece a una cuenta, dejada de leer.
+test('T48 CuentaSinPesos_NoEsUnDestino @A213 — el > de (( … )) compara; lo que escribe al lado se sigue leyendo', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, '1'));
+  for (const cmd of [`(( x > ${H} ))`, `(( i++ ))`, `if (( x >= ${H} )); then echo si; fi`,
+    `for ((i=0;i<${H};i++)); do echo $i; done`, `(( x > ${H} )) && echo si`, `while (( x < ${H} )); do break; done`,
+    `echo a; (( x > ${H} ))`, `! (( x > ${H} ))`, `for ((i=5;i>${H};i--)); do echo $i; done`, `{ (( x > ${H} )); }`,
+    `until (( x > ${H} )); do break; done`, `time (( x > ${H} ))`, `(((x > ${H})))`,
+    `if true; then (( x > ${H} )); fi`, `! (( x > ${H} )) || echo no`, `if ! (( x > ${H} )); then :; fi`]) pasa(c, cmd);
+  for (const cmd of [`(( 1 )) > ${H}`, `echo $(( 1 > 0 )) > ${H}`, `( cat README.md > ${H} )`,
+    `((cat README.md > ${H}) )`, `( (cat README.md > ${H}) )`, `((cat README.md) > ${H})`, `(( x > 0 )); cp README.md ${H}`,
+    `((cat README.md > ${H}); (true))`, `for ((i=0;i<1;i++)); do cp README.md ${H}; done`,
+    `(( $(cp README.md ${H}) ))`, `(( \`cp README.md ${H}\` ))`, `(( a[$(cp README.md ${H})] ))`,
+    `(( x > 0 )) > ${H}`, `cat <((x > ${H}))`, `{ (( x )) > ${H}; }`, `echo $( (( 1 )) > ${H} )`, `echo hi >|((x > ${H}))`,
+    `\\((x > ${H}))`, `cat <( ((1)) ) > ${H}`, `(( "x" > ${H} ))`, `(( x > ${H} ; cp README.md ${H} ))`,
+    `if ((1)); then cat README.md > ${H}; fi`, `for ((cat README.md > ${H}; 0; )) ; do :; done; cp README.md ${H}`,
+    // en `sh` de Linux, `dash` o `ash`, `((…))` son dos subshells y lo de adentro corre: lo anidado no se lee como cuenta
+    // (revisión de Fable)
+    `dash -c '((cp README.md ${H}))'`, `dash -c '(( x > ${H} ))'`, `ash -c '((cp README.md ${H}))'`, `sh -c '(( x > ${H} ))'`,
+    `xargs dash -c '(( x > ${H} ))'`, `dash <<'EOF'\n(( x > ${H} ))\nEOF`,
+    // el `!`, el `{`, el `(` o la palabra de bloque de delante tienen que abrir un comando: detrás de `echo` son argumentos
+    `( ( noglob echo ! ((x > ${H}))`, `( ( noglob echo if ((x > ${H}))`, `( ( noglob echo (((x > ${H})))`,
+    `( ( noglob : for ((a; cp README.md ${H}; b))`, `echo { ((x > ${H}))`, `echo do ((x > ${H}))`,
+    // el `((` pegado a `$(` es la cuenta `$(((…)))` de la ruta destino, no un comando (revisión de Fable de la mezcla)
+    `echo x > $(((2/2)))/../${H}`, `echo x >> $(((2/2)))/../${H}`, `echo x &> $(((2/2)))/../${H}`,
+  ]) frena(c, cmd);
+  // en PowerShell (y en lo que corre Monitor) `((x > f))` escribe: la cuenta se lee así sólo en la herramienta Bash
+  for (const herramienta of ['PowerShell', 'Monitor']) {
+    const base = {};
+    for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_')) base[k] = v;
+    const r = spawnSync(process.execPath, [GATE], {
+      input: JSON.stringify({ tool_name: herramienta, session_id: 's-anidados', cwd: c.dir, tool_input: { command: `(( x > ${H} ))` } }),
+      env: { ...base, HOME: c.home, USERPROFILE: c.home, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8', timeout: 15000,
+    });
+    assert.strictEqual(r.status, 2, `frena en ${herramienta}\n${r.stderr}`);
+  }
+});
+
+// T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216
+// 🔴 Falla con: lo que corre PowerShell con `-Command` (o `-c`) sin leer como un comando más (`pwsh -Command
+// '((cp a h.md))'` copiaba a la historia), o el cuerpo de un `for ((…))` sin `;` antes del `do` (o del `{`, o sin nada
+// en zsh) leído como argumentos del `for`.
+test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentro corre; las cuentas que no escriben pasan', () => {
+  const c = corral();
+  for (const cmd of [`pwsh -Command '((cp README.md ${H}))'`, `pwsh -Command "((cp README.md ${H}))"`,
+    `pwsh -c 'cp README.md ${H}'`, `powershell -Command '(cp README.md ${H})'`, `pwsh -NoProfile -Command '((cp README.md ${H}))'`,
+    `pwsh.exe -command 'cp README.md ${H}'`, `/usr/local/bin/pwsh -Command 'cp README.md ${H}'`, `pwsh -Command cp README.md ${H}`,
+    `pwsh -Command '((x > ${H}))'`, `pwsh -NonInteractive -c "Copy-Item README.md ${H}"`, `pwsh -cwa 'cp README.md ${H}'`,
+    `for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `for ((i=0;i<1;i++))do cp README.md ${H}; done`,
+    `for ((i=0;i<1;i++)) { cp README.md ${H}; }`, `for ((i=0;i<1;i++)) cp README.md ${H}`, `for (( ; ; )) do cp README.md ${H}; break; done`,
+    `bash -c 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`, `for ((i=0;i<1;i++)) do mv README.md ${H}; done`,
+    `if true; then for ((i=0;i<1;i++)) do cp README.md ${H}; done; fi`, `for ((i=0;i<1;i++)) do rm ${H}; done`,
+    `bash -c "for ((i=0;i<1;i++)) do rm ${H}; done"`, `pwsh -Command "rm ${H}"`,
+    `pwsh -EncodedCommand ${Buffer.from(`cp README.md ${H}`, 'utf16le').toString('base64')}`,
+    // (revisión de Fable) las redirecciones de afuera no son destinos de la copia; las variables de afuera valen; la entrada
+    `pwsh -Command 'cp README.md ${H}' 2>/dev/null`, `pwsh -Command 'cp README.md ${H}' 2>&1 | tail -5`,
+    `F=${H}; pwsh -c "cp README.md $F"`, `F=${H}; pwsh -c 'rm $F'`, `echo 'cp README.md ${H}' | pwsh -Command -`,
+    `pwsh <<'EOF'\ncp README.md ${H}\nEOF`,
+    // el `for` en una función, un `case`, un `<(…)`, un `"$(…)"`, tres anidados, detrás de un comentario con apóstrofo
+    `f() { for ((i=0;i<1;i++)) do cp README.md ${H}; done; }; f`, `case x in x) for ((i=0;i<1;i++)) do cp README.md ${H}; done;; esac`,
+    `cat <(for ((i=0;i<1;i++)) do cp README.md ${H}; done)`, `x="$(for ((i=0;i<1;i++)) do cp README.md ${H}; done)"`,
+    `for ((i=0;i<1;i++)) do for ((j=0;j<1;j++)) do for ((k=0;k<1;k++)) do cp README.md ${H}; done; done; done`,
+    `# don't\nfor ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    // (segunda vuelta de Fable) un `for ((` citado o fuera de lugar no corta los argumentos; las entradas de afuera de pwsh
+    `rm $(: $(: 'for ((')) ${H}`, `cp README.md $(: "$(: 'for ((')") ${H}`, `cat README.md | tee $(: $(: '# for ((')) ${H}`,
+    `touch fora; cp for((a)) ${H}`, `pwsh -c 'cp README.md ${H}' </dev/null`, `pwsh -c 'cp README.md ${H}' <<< x`,
+    `pwsh -c 'cp README.md ${H}' > >(cat)`, `pwsh -c 'cp README.md ${H}' {fd}>/tmp/x`,
+    // (tercera vuelta) se lee tal cual y con el `;`: ni un `for ((` citado corta argumentos ni uno real se esconde
+    `cp README.md $(: $(: $'\\'' '; for ((' )) ${H}`, `rm \${x} for((a))(N) ${H}`, `echo $'it\\'s' ; for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `echo a\\ #; for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `x=\${y/ #/}; for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `cat <<'E-1'\ndon't\nE-1\nfor ((i=0;i<1;i++)) do cp README.md ${H}; done`, `repeat 1 for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
+    `pwsh -c 'cp README.md ${H}' <<EOF\ndatos\nEOF`, `pwsh -c 'cp README.md ${H}' < $(mktemp)`,
+    // (cuarta vuelta) un `for ((` citado antes y un `))` citado después no saltean al `for` de verdad
+    `: 'for ((' ; for ((i=0;i<1;i++)) do rm ${H}; done; : '))' x`, `# for ((\nfor ((i=0;i<1;i++)) do rm ${H}; done # )) x`,
+    `: 'for ((' ; : 'for ((' ; for ((i=0;i<1;i++)) do cp README.md ${H}; done; : '))' x ; : '))' y`,
+    // (quinta vuelta) ni con el señuelo adentro del cuerpo de un `for` real sin `;`
+    `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((')) ${H}; done`, `for ((i=0;i<1;i++)) do cp README.md $(: "$(: 'for ((')") ${H}; done`,
+    `for ((i=0;i<1;i++)) { rm $(: $(: 'for ((')) ${H}; }`, `bash -c 'for ((i=0;i<1;i++)) do rm $(: $(: "for ((")) ${H}; done'`,
+    // (sexta vuelta) una lectura por cada cabecera sola: ni comillas en la cuenta real ni señuelos con comillas pares
+    `for ((i=0;i<$(echo "it's" | wc -l);i++)) do cp README.md ${H}; done`, `for ((i=0;i<1;i++ $(: \\') )) do rm ${H}; done`,
+    `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((' \\' )) ${H}; done`, `: 'for ((' \\' ; for ((i=0;i<1;i++)) do rm $(: ')' ')' ) ${H}; done`,
+    `for ((i=0;i<1;i++)) do for ((j=0;j<1;j++)) do rm $(: $(: 'for ((')) ${H}; done; done`,
+    // con más cabeceras sin `;` que el tope no se lee qué corre: frena
+    `${'for ((i=0;i<1;i++)) do echo $i; done; '.repeat(25)}cp README.md ${H}`,
+    // (séptima vuelta) la cabecera partida en dos renglones
+    `for \\\n((i=0;i<1;i++)) do cp README.md ${H}; done`,
+  ]) frena(c, cmd);
+  for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
+    `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
+    `pwsh -Command 'cp README.md notas.txt'`, `pwsh -Command '((x > notas.txt))'`, `echo "pwsh -Command 'cp README.md ${H}'"`,
+    `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`, `echo 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`,
+    `pwsh -Command 'Get-Content README.md' 2>&1 | tail -5`, `pwsh -File script.ps1 <<'EOF'\nhola\nEOF`,
+    // nueve bucles sin `;` que no escriben, o nueve `for ((` en un texto, se leen (el tope es 24)
+    `${'for ((i=0;i<3;i++)) do echo $i; done; '.repeat(9)}echo fin`, `grep -c ${"-e 'for ((a)) b' ".repeat(9)}README.md`,
+    // (un texto pegado a su opción, `-m'…'`, o un comentario que copian literalmente un `for ((…)) do cp … h.md` pueden
+    // frenar: la lectura con el `;` es en todo el texto, el lado seguro)
+  ]) pasa(c, cmd);
+});
+
+// T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218
+// 🔴 Falla con: el `;`, el `|` o el salto de renglón de adentro de un `$(…)` cortando el `rm` de afuera (`rm $(: # x⏎)
+// h.md` dejaba la historia en otro tramo), o el cuerpo de un bloque sin `;` antes del `then`/`do` (`if (true) then cp …`,
+// `while (true) do …`, `for x do …`, `if [[ … ]] then …`, y en zsh `for x (a) cp …`, `foreach`, `repeat 1 cp …`) leído
+// como argumentos de la condición.
+test('T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218 — lo de después corre; lo que no escribe pasa', () => {
+  const c = corral();
+  for (const cmd of [`rm $(: $(: # x\n)) ${H}`, `rm $(: $(# x\n)) ${H}`, `rm $(: # x\n) ${H}`, `rm $(:\n) ${H}`,
+    `rm $(: ; :) ${H}`, `rm $(: | cat) ${H}`, `rm \`: ; :\` ${H}`, `rm "$(: ; :)" ${H}`, `rm <(: ; :) ${H}`,
+    `git rm $(:\n) ${H}`, `git checkout -- $(: ; :) ${H}`, `rm -f $(: && :) ${H}`,
+    `if (true) then cp README.md ${H}; fi`, `if { true; } then cp README.md ${H}; fi`,
+    `while (true) do cp README.md ${H}; break; done`, `until (false) do cp README.md ${H}; break; done`,
+    `for x do cp README.md ${H}; done`, `select x do cp README.md ${H}; done`, `if [[ 1 ]] then cp README.md ${H}; fi`,
+    `while [[ 1 ]] do rm ${H}; done`, `for x (1) cp README.md ${H}`, `for x (a b) { cp README.md ${H}; }`,
+    `foreach x (a) cp README.md ${H}; end`, `repeat 1 cp README.md ${H}`, `while (true) { cp README.md ${H}; break; }`,
+    `if true; then :; elif (true) then cp README.md ${H}; fi`, `x=$(if (true) then cp README.md ${H}; fi)`,
+    `echo "$(while (true) do rm ${H}; break; done)"`, `bash -c 'if (true) then cp README.md ${H}; fi'`,
+    `sh -c "for x do rm ${H}; done"`, `! (true) || if (true) then rm ${H}; fi`, `if (true) then rm $(: # x\n) ${H}; fi`,
+    `case a in (a) cp README.md ${H};; esac`,
+    // (primera vuelta de Fable) paréntesis citados en la condición, `case` sin `(`, redirección delante, pegado, partido,
+    // detrás de `fi`/`esac`, en una función o un brazo de `case`, varios nombres, otras sustituciones, `dd` y `find`
+    `if (grep -q "f(" README.md; true) then cp README.md ${H}; fi`, `if (: ")") then cp README.md ${H}; fi`,
+    `case a in a) cp README.md ${H};; esac`, `case a in (a) >/dev/null cp README.md ${H};; esac`,
+    `for x (a) >/dev/null cp README.md ${H}`, `for x (a) &>/dev/null cp README.md ${H}`, `if(true) then cp README.md ${H}; fi`,
+    `i\\\nf (true) then cp README.md ${H}; fi`, `repeat \\\n1 cp README.md ${H}`, `if { (true) } then cp README.md ${H}; fi`,
+    `if case a in a) ;; esac then cp README.md ${H}; fi`, `if if true; then true; fi then cp README.md ${H}; fi`,
+    `if false; then if true; then :; fi else cp README.md ${H}; fi`, `f() for x do cp README.md ${H}; done; f a`,
+    `set -- a; case a in a) for x do cp README.md ${H}; done;; esac`, `for x y (a b) cp README.md ${H}`,
+    `repeat "$(echo 1)" cp README.md ${H}`, `rm $(: # )\n) ${H}`, `rm \${x:-;} ${H}`, `rm $[1|1] ${H}`, `rm =(: ; :) ${H}`,
+    `dd if=README.md $(: ; :) of=${H}`, `find specs -name 'story-1.1.md' $(: ; :) -delete`,
+    `find specs $(: ; :) -name 'story-1.1.md' -exec rm {} +`,
+    // (segunda vuelta) el `dd` de siempre sigue frenando
+    `dd if=README.md bs=$((512*2)) of=${H}`, `dd if=$(echo $(echo README.md)) of=${H}`,
+  ]) frena(c, cmd);
+  for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `(( a > b ))`, `echo "$(( a > b ))"`, `if (true) then echo hola; fi`,
+    `while (true) do echo x; break; done`, `for x do echo $x; done`, `for x (1) echo $x`, `repeat 2 echo hola`,
+    `git commit -m "if (true) then cp README.md ${H}; fi"`, `echo 'while (true) do rm ${H}; done'`, `echo $(: # x\n) hola`,
+    `cat $(: ; :) ${H}`, `echo $(rm x; :) ${H}`, `rm notas.txt $(: ; :) README.md`,
+    // un texto con muchos paréntesis no son cabeceras: no llega al tope
+    `git commit -m "${'fix (A218) algo '.repeat(40)}"`, `echo "${'si (x) entonces '.repeat(40)}"`,
+    `(cd specs && cat story-1.1.md) 2>&1 | tail`, `(cd /tmp; ls) && echo ok`, `f() { echo hi; }; f`, `echo $((1+(2*3))) fin`,
+    // (primera vuelta de Fable) código escrito con un heredoc, una tabla con paréntesis en un texto: no llegan al tope
+    `cat > notas.txt <<'EOF'\n${'if (a) {\n  x();\n} else {\n  y();\n}\n'.repeat(13)}EOF`,
+    `echo "${'| (0) algo |\n'.repeat(13)}" > notas.txt`, `node -e "${'const f = (a) => a; '.repeat(25)}"`,
+    // (segunda vuelta) un `#` citado no es un comentario; el cuerpo de un heredoc es texto, también su barra del final
+    `gh pr comment 12 --body "cierra #12" --repo=x/y\ngit commit -m "nota\n\nrm ${H} no se puede"`,
+    `cat > notas.txt <<'EOF'\nEjemplo: if (true) then rm ${H}; fi\ncurl a \\\nEOF`,
+  ]) pasa(c, cmd);
+});

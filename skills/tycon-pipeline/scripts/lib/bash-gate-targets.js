@@ -23,7 +23,7 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
+const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, variantesConSeparador, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinCuentasSueltas, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
 const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 
 /**
@@ -95,13 +95,14 @@ function programaEntre(piezas, info = null) {
  *  - los strings entre comillas que NO son el token inmediato tras `>`/`>>`/`tee` (`-m "..."`, `-e "..."`,
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
-function stripNonCommandText(s, hondo = 0) {
+function stripNonCommandText(s, hondo = 0, { cuentas = false } = {}) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
   // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
   // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo. Un carácter
   // nulo no llega al shell, y sale antes de marcar los cuerpos sacados (las marcas se borran al final)
   const sinNulos = String(s || '').split(MARCA_DE_CUERPO).join('');
-  const t = conComentariosApagados(quitarCuerposDeHeredoc(sinNulos, true));
+  const sinCuerpos = conComentariosApagados(quitarCuerposDeHeredoc(sinNulos, true));
+  const t = cuentas ? sinCuentasSueltas(sinCuerpos, adentroDeUnaCuenta) : sinCuerpos;
   return vaciarCitados(t, hondo).replace(RENGLON_DE_MARCA, '');
 }
 
@@ -170,6 +171,44 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
     else if (c === ')' && --hondo === 0) return j;
   }
   return -1;
+}
+
+// lo que puede llevar una cuenta: nombres, números (`16#ff`), operadores, paréntesis y corchetes; no `$`: el valor de una
+// variable adentro de una cuenta se lee como otra cuenta, y puede correr un comando (`x='a[$(cp …)]'; echo $(( $x ))`)
+const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]#.]/;
+
+/**
+ * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`) que no corre nada, su texto entre
+ * `$(` y el último `)` en blanco: el `>` de una cuenta compara, no escribe. Es una cuenta, como la lee el shell, si el
+ * `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una sustitución. null si
+ * no es una cuenta o si lleva algo más que nombres, números, operadores y otras cuentas así: una sustitución, una
+ * variable (`$x`, `${x}`), comillas, una barra invertida, un `;`, un renglón, `<(`. Ahí se lee como antes, como un comando: zsh corre
+ * como comandos una cuenta que no puede leer y que tiene una sustitución adentro (`$((cp a b && : `: \(`))`).
+ */
+function adentroDeUnaCuenta(t, i, fin, { sinPesos = false, conPuntoYComa = false } = {}) {
+  if (sinPesos) i--;
+  else if (t[i] !== '$') return null;
+  if (t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
+  let out = '';
+  let hondo = 0;
+  for (let j = i + 2; j < fin; j++) {
+    const ch = t[j];
+    if (ch === '$' && t[j + 1] === '(') {
+      // otra cuenta adentro, si tampoco corre nada
+      const f = cierreDeUnaSustitucion(t, j);
+      if (f <= j || f >= fin || adentroDeUnaCuenta(t, j, f) === null) return null;
+      out += ' '.repeat(f - j + 1);
+      j = f;
+      continue;
+    }
+    // (los `;` que separan las tres cuentas de `for ((a; b; c))`, sólo con `conPuntoYComa`)
+    if (ch === ';' && conPuntoYComa && hondo === 1) { out += ' '; continue; }
+    if (!LETRA_DE_CUENTA.test(ch) || ((ch === '<' || ch === '>') && t[j + 1] === '(')) return null;
+    if (ch === '(') hondo++;
+    else if (ch === ')' && --hondo === 0 && j !== fin - 1) return null;
+    out += ' ';
+  }
+  return hondo === 0 ? out : null;
 }
 
 /**
@@ -243,8 +282,10 @@ function leerCitados(t, hondo) {
   const comandos = [];
   // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
   // un comando, y el de las sustituciones de adentro
+  // (una cuenta que no corre nada queda en blanco: `adentroDeUnaCuenta`)
   const sustitucion = (desde, fin) => {
-    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(t.slice(desde, fin), true)), hondo + 1);
+    const cuenta = adentroDeUnaCuenta(t, desde - 2, fin);
+    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(cuenta ?? t.slice(desde, fin), true)), hondo + 1);
     comandos.push(r.texto, ...r.comandos);
     return r.texto;
   };
@@ -255,9 +296,13 @@ function leerCitados(t, hondo) {
     if (fin === -1) { agregar(t.slice(i)); break; }
     if (fin > i) {
       // en el texto de afuera, lo de adentro vaciado como antes: un pedazo roto adentro (una comilla o un `$(` sin
-      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte
+      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte. Una cuenta que no corre nada queda como
+      // está, en una sola palabra y sin sus `<` `>` `|` `&` (comparan, no redirigen) ni su `/` (divide: no es una carpeta): es parte de la palabra de afuera
+      // (`cp a specs/story-1.$((0+1)).md` escribe esa historia)
       const abre = c === '`' ? 1 : 2;
-      agregar(t.slice(i, i + abre) + vaciarConExpresion(sustitucion(i + abre, fin)) + t[fin]);
+      const adentro = vaciarConExpresion(sustitucion(i + abre, fin));
+      const cuenta = adentroDeUnaCuenta(t, i, fin) !== null;
+      agregar(cuenta ? t.slice(i, fin + 1).replace(/[\s<>|&;/]/g, '_') : t.slice(i, i + abre) + adentro + t[fin]);
       i = fin;
       continue;
     }
@@ -298,16 +343,20 @@ const ANTES_DEL_CD_COMPLEJO = /['"`(){}|<>#\\]|\$\(|(?:^|[^&])&(?!&)|\b(?:if|the
  * tiene continuaciones de renglón, también unidos como los une el shell (`cp a \` y `b` abajo es `cp a b`): cuentan los
  * destinos de las dos lecturas, así unir los renglones nunca hace ver menos que no unirlos.
  */
-function extractWriteTargets(cmd, { keep = null } = {}) {
+function extractWriteTargets(cmd, { keep = null, cuentas = false } = {}) {
   const out = new Set();
-  const raw = String(cmd || '');
-  const s = stripNonCommandText(raw);
-  const lecturas = [s];
-  // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
-  const unidos = sinContinuaciones(s, { sinCuerpos: true });
-  if (unidos !== s) lecturas.push(unidos);
-  for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
-  destinosPorElPartidor(raw, keep, out);
+  // tal cual y, con un `for ((`, también con el `;` detrás de las cabeceras: el cuerpo de un `for ((…)) do …` sin `;`
+  // antes del `do` es un comando (`variantesConSeparador`). Cuentan los destinos de todas
+  const tal = String(cmd || '');
+  for (const raw of [tal, ...variantesConSeparador(tal)]) {
+    const s = stripNonCommandText(raw, 0, { cuentas });
+    const lecturas = [s];
+    // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
+    const unidos = sinContinuaciones(s, { sinCuerpos: true });
+    if (unidos !== s) lecturas.push(unidos);
+    for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
+    destinosPorElPartidor(raw, keep, out, 0, { cuentas });
+  }
   return [...out];
 }
 
@@ -318,13 +367,13 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
  * citado con blancos, `TS=$(date) cp …`), y se suma a ella: nunca se ve menos. Sin el partidor (una instalación a
  * medias) no agrega nada y quedan las otras lecturas.
  */
-function destinosPorElPartidor(raw, keep, out, hondo = 0) {
+function destinosPorElPartidor(raw, keep, out, hondo = 0, { cuentas = false } = {}) {
   const p = partidorComun();
   if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
   // un destino que es la salida de un comando (`"$(mktemp -d)"`, `$(pwd)/a`) no se sabe sin correrlo: esta lectura no lo
   // suma, como las de antes, que tampoco lo leían; lo que corre adentro se lee como su propio tramo
   const sumar = (t) => { if (t && !/^\/dev\//.test(t) && !/\$\(|`/.test(t)) out.add(t); };
-  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw))) {
+  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw), 0, { cuentas })) {
     const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
     for (const r of c.redirections) if (r.write && r.target != null) sumar(palabraConAnsi(r.target));
     const info = {};
@@ -361,8 +410,9 @@ const HONDO_DE_SUSTITUCIONES = 8;
  * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
  * (`2>&1`, `&>f`, `<&0`). Una sola pasada: una comilla o una sustitución sin cerrar se lleva el resto en el mismo tramo.
  */
-function tramosDelShell(texto, hondo = 0) {
-  const s = String(texto);
+function tramosDelShell(texto, hondo = 0, { cuentas = false } = {}) {
+  // (con `cuentas`, una cuenta sin `$` que no corre nada queda en blanco: `sinCuentasSueltas`)
+  const s = cuentas ? sinCuentasSueltas(texto, adentroDeUnaCuenta) : String(texto);
   const out = [];
   // el tramo que se arma, y sus dos últimas letras sueltas (sin escapar ni citadas; vacía detrás de otra cosa): mirar la
   // punta del tramo armado lo recompone entero cada vez
@@ -371,10 +421,11 @@ function tramosDelShell(texto, hondo = 0) {
   const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
   const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
   // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
-  // las otras lecturas
+  // las otras lecturas. Una cuenta que no corre nada queda en blanco (`adentroDeUnaCuenta`)
   const adentro = (desde, fin) => {
     if (hondo >= HONDO_DE_SUSTITUCIONES) return;
-    for (const t of tramosDelShell(s.slice(desde, fin), hondo + 1)) out.push(t);
+    const cuenta = adentroDeUnaCuenta(s, desde - 2, fin);
+    for (const t of tramosDelShell(cuenta ?? s.slice(desde, fin), hondo + 1, { cuentas })) out.push(t);
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -534,8 +585,10 @@ function destinosDeEscritura(raw, s, keep, out) {
 
   // 6) dd of=… y truncate … <file>: dos escritores que, sin esta extracción, permitirían escribir el estado
   //    del pipeline esquivando esta puerta.
-  const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
-  while ((m = reDd.exec(s))) out.add(m[2]);
+  // (la de siempre, y la que deja pasar un `$(…)` con `;` adentro: `dd if=a $(: ; :) of=f`)
+  for (const reDd of [/\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g, /\bdd\b(?:\$\([^()\n]*\)|\$(?!\()|[^\n|;&$])*?\bof=(['"]?)([^\s'"]+)\1/g]) {
+    while ((m = reDd.exec(s))) out.add(m[2]);
+  }
   for (const seg of splitSegments(s)) {
     // el programa por su nombre, y la lectura de siempre (el nombre al principio, detrás de variables y `sudo`)
     for (const comando of new Set([desdeElPrograma(sinRedireccionesDelante(seg)), sinRedireccionesDelante(seg)])) {
@@ -1509,4 +1562,4 @@ function modoDeLectura(cambios = {}) {
   return { leerComentarios, apagoAlgo, soloDecidir };
 }
 
-module.exports = { desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };
+module.exports = { adentroDeUnaCuenta, desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };
