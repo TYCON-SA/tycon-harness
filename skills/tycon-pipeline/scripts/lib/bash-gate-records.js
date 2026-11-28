@@ -25,11 +25,15 @@ const { resolveSessionId } = require('./session-id.js');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { GUION_ESCRIBE, NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
-const { CD_DEL_TRAMO, conCarpetasNombradas, conCarpetasPorTramo, ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
+const { BORRA_O_MUEVE, CORRE_ARCHIVO, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas } = require('./bash-gate-words.js');
+const { CD_DEL_TRAMO, HEREDOC_ENTERO, conCarpetasNombradas, conCarpetasPorTramo, ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { carpetasDeLosCd, carpetasDeLosCdDeConstancias, destinosArmados, extractWriteTargets, heredocs, quitarCuerposDeHeredoc, scriptsInline, tramos } = require('./bash-gate-targets.js');
 const { FOR_IN, anidadosHasta, carpetasDelComando, cdInicial, comandosAnidados, comandosPorOtroPrograma, cwdDelComando, destinosBorrados, destinosDeCopia, destinosDeGuionDeSed, editaEnSitio, guionesDeShellEscritos, guionesDeShellEnDisco, movidosFueraDeMd, palabrasDelEditor, sedsLiterales, sinCuerposDeTexto, todoCorreDespuesDelCd } = require('./bash-gate-commands.js');
 const { cdSinResolver, conLosCdDeSiempre, destinosDeLaCoordinadora, destinosResueltos, palabrasDelBucleSiFueraSoloSeLee, sinMayoresQueNoRedirigen } = require('./bash-gate-scripts.js');
+
+// la familia de vi redefinida por una función o un alias, o con las variables que le dan órdenes al arrancar
+// (o el `PATH`/`HOME` de dónde lo busca y qué lee al arrancar, también citados: `export "VIMINIT"=…`)
+const EDITOR_REDEFINIDO = /(?:^|[\s;&|(])(?:function[ \t]+(?:vi|vim|nvim|gvim|rvim|view|vimdiff)\b|(?:vi|vim|nvim|gvim|rvim|view|vimdiff)[ \t]*\([ \t]*\)|alias[ \t]+(?:vi|vim|nvim|gvim|rvim|view|vimdiff)=)|\b(?:VIMINIT|EXINIT|MYVIMRC|VIMRUNTIME|VIM|PATH|HOME|XDG_CONFIG_HOME)['"]?=/;
 
 /**
  * Las constancias de cambio de control que el comando pone por otro camino que el guion: lo que deja una copia, un
@@ -167,6 +171,25 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // entra a un shell por tubería, por `<<<`, por un guion escrito antes o leído con `read`)
   const ejecuta = ejecutaTexto(cmd);
   if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
+  // lo mismo con el cuerpo de un heredoc: lo que imprime un `$(cat <<EOF … EOF)` (o `tee`, `sed`, `cat -`…) lo puede
+  // correr un `eval`, un `sh -c` o una variable que se corre después. Quedan afuera los que el freno ya sabe que son texto
+  // (`sinCuerposDeTexto`: la marca entre comillas y un `cat` a un archivo, un mensaje de `git commit` o de `gh`)
+  // (también una sustitución en el lugar del programa, que corre lo que imprime: `$(cat <<EOF`)
+  if (ejecuta || /(?:^|[;&|({\n])\s*(?:[A-Za-z_]\w*=\S*[ \t]+)*(?:\$\(|`)/.test(String(cmd))) {
+    for (const t of [...new Set([cmd, ...comandosPorOtroPrograma(cmd, cwd)])]) {
+      // con el lector que abre también adentro de comillas (`eval "$(cat <<EOF`); la marca con barra (`<<\EOF`) es la
+      // marca entre comillas
+      const sinTexto = sinCuerposDeTexto(String(t).replace(/<<(-?)[ \t]*\\([A-Za-z_]\w*)/g, "<<$1'$2'"));
+      // con otro heredoc en el mismo renglón no se sabe de cuál es cada texto: todo lo que sigue a ese renglón cuenta. El
+      // de un intérprete (`python3 - <<'EOF'`) es su programa, no comandos del shell: lo mira el lector de programas
+      const deUnInterprete = (antes) => CORRE_ARCHIVO.test(nombreDeComando(palabras(sinPalabrasDelShell(String(tramos(antes).pop() || '').replace(/^[\s"'`$(]+/, ''))).filter((x) => x !== '')[0] || '') || '');
+      const cuerpos = [...sinTexto.matchAll(HEREDOC_ENTERO)].filter((m) => m[5].includes('<<') || !deUnInterprete(m[2]))
+        .map((m) => (m[5].includes('<<') ? sinTexto.slice(m.index + m[0].length - m[6].length - m[7].length) : m[6]));
+      for (const b of new Set(cuerpos)) {
+        if (b.trim()) todos.push(...comandosAnidados(b).flatMap((sub) => tramos(sub)).flatMap((x) => x.split(/(?<![&>|])&(?![&>])/)));
+      }
+    }
+  }
   // un guion de shell que ya está en el disco y el comando corre (`sh g.sh`, `. g.sh`, `./g.sh`, `bash -s < g.sh`): sus
   // renglones se miran como comandos de la consola, en la carpeta del comando; también los guiones que él corre. Uno que
   // no se lee entero cuenta si nombra una constancia
@@ -302,10 +325,15 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       // redirección de entrada en el comando, un heredoc). Con cualquiera de ellos, un `:w!` la escribe igual
       // Sólo valen las banderas que no escriben ni leen órdenes (`-R`, `-M`, `-n`, `-b`…): cualquier otra opción (`-i`,
       // `-V9<archivo>`, `-c:w`) la saca de sólo lectura
+      // `view` ya es `vim -R`
       const soloMira = ['vi', 'vim', 'nvim', 'gvim', 'rvim', 'view', 'vimdiff'].includes(c)
-        && args.some((w) => /^-[A-Za-z]*[RM][A-Za-z]*$/.test(w) && !w.startsWith('--'))
+        && (c === 'view' || args.some((w) => /^-[A-Za-z]*[RM][A-Za-z]*$/.test(w) && !w.startsWith('--')))
         && args.every((w) => !w.startsWith('-') && !w.startsWith('+') ? true : /^-[RMnNbylZXg]+$/.test(w))
-        && !/[|<]/.test(String(cmd));
+        && !/[|<]/.test(String(cmd))
+        // y si es el editor de verdad: sin una ruta relativa (`./view`), sin una función con su nombre ni las variables
+        // que le dan órdenes al arrancar (`VIMINIT`, `EXINIT`)
+        && (!words[0].includes('/') || words[0].startsWith('/'))
+        && !EDITOR_REDEFINIDO.test(String(cmd));
       if (!soloMira) out.push(...lecturas.flatMap((conValor) => posicionales(args, conValor)).filter((w) => !w.startsWith('+')).filter(es));
       if (c !== 'touch') {
         // `+'w x'` llega como dos palabras: el `+` solo y la orden
