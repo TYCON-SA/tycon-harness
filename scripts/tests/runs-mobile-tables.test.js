@@ -33,3 +33,21 @@ test('M1 Celular_LasReglasDeTarjetasSoloTocanLaTablaPrincipal — las tablas del
   assert.match(bloque, /\.tabla>table\{display:block/, 'la tabla principal sigue en tarjetas');
   assert.match(bloque, /\.fila-det>td\{display:block/, 'la celda del detalle sigue ocupando el ancho');
 });
+
+// 🔴 Falla con: «Controles» con sus columnas de ancho fijo en el celular. Medido a 360 px en un navegador: las cinco
+// columnas de números suman 301 px en una caja de 280, y el nombre del control queda con ancho 0, escrito encima de los
+// números. Y una ruta larga de «Archivos que tocó» se pasa de su caja si no se corta.
+// Las reglas van en un bloque propio DESPUÉS de las de base de esas tablas: con la misma especificidad gana la última, y
+// puestas antes no se aplicaban (medido: el nombre seguía en 0 px).
+test('M2 Celular_ControlesSeArmaSegunSuContenido_YLosNombresLargosSeCortan', () => {
+  const texto = fs.readFileSync(RUNS, 'utf8');
+  const i = texto.indexOf('@media (max-width:640px){table.mt');
+  assert.ok(i >= 0, 'falta el bloque de celular de las tablas del detalle');
+  const base = texto.indexOf('table.mt.ctls{table-layout:fixed');
+  const cols = texto.indexOf('table.mt.ctls col.c-veces{width:');
+  assert.ok(base >= 0 && cols >= 0 && i > base && i > cols, 'el bloque va después de las reglas de base de Controles');
+  const bloque = texto.slice(i, texto.indexOf('}}', i) + 2);
+  assert.match(bloque, /table\.mt\.ctls\{table-layout:auto\}/, 'en el celular, Controles no tiene columnas fijas');
+  assert.match(bloque, /table\.mt\.ctls col\[class\]\{width:auto\}/, 'ni anchos fijos por columna (le gana a col.c-…)');
+  assert.match(bloque, /table\.mt td:first-child\{overflow-wrap:anywhere\}/, 'el nombre o la ruta se corta');
+});

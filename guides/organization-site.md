@@ -823,7 +823,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   sale de la misma tabla: «hoy: gemma4:31b-cloud», o «sin modelo cargado para este nivel», que no deja proponer (de
   noche no hay dev, así que «el del dev» no vale). Pasar de Ollama a Haiku es elegir Anthropic en esa fila. La fila
   dice también el nombre de la variable secreta que el pipeline de la noche necesita (`OLLAMA_API_KEY` o
-  `ANTHROPIC_API_KEY`); la llave se crea en el pipeline y nunca pasa por el perfil. Sin la fila, la noche no corre.
+  `ANTHROPIC_API_KEY`); la llave se crea en el pipeline y nunca pasa por el perfil. Sin la fila, la noche corre igual, pero no redacta con un modelo: ni
+  los aprendizajes, ni las propuestas de hallazgos, ni los temas de la oficina.
 - **Dónde corren las pruebas completas antes de sumar un cambio** (antes de mergear: de sumarlo a la rama principal): en la máquina o en el servidor, repo por repo, un renglón por repo
   (✎ abre sus datos). Un repo sin pipeline de pruebas completas dice qué pasa con su regla. Queda en
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.

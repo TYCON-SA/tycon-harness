@@ -135,6 +135,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line-strong)}
 .cambios .ruta{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink);overflow-wrap:anywhere}
 .cambios .mas{color:var(--good);font-family:"IBM Plex Mono",monospace;font-size:11px}.cambios .menos{color:var(--crit);font-family:"IBM Plex Mono",monospace;font-size:11px}
 table.mt.arch{margin-bottom:10px}table.mt.arch td.num{text-align:right;white-space:nowrap}
+/* en el celular, las tablas del detalle entran en su caja: «Controles» sin columnas fijas (cinco de números suman más
+   que la pantalla y el nombre quedaba en 0) y el nombre o la ruta se corta. Va después de las reglas de base: si no, le
+   ganan */
+@media (max-width:640px){table.mt.ctls{table-layout:auto}table.mt.ctls col[class]{width:auto}table.mt th,table.mt td{padding-left:3px;padding-right:3px}table.mt td:first-child{overflow-wrap:anywhere}}
 ol.cz{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
 ol.cz summary{cursor:pointer;font-size:11.5px}.cz-t{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-3)}.cz-p{font-size:10.5px;color:var(--ink-3)}
 .cz-sin{font-size:11.5px;padding-left:14px}.cz-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3);margin:6px 0 2px}

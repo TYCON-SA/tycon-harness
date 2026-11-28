@@ -2160,7 +2160,7 @@ const TEXTOS = {
   'pantalla.permitidosAyuda': { es: 'separados por coma; vacío, cualquiera', en: 'comma-separated; empty, any' },
   'pantalla.elProcesoDeLaNoche': { es: 'El proceso de la noche', en: 'The nightly process' },
   'pantalla.nocheProveedor': { es: 'Proveedor', en: 'Provider' },
-  'pantalla.nocheSinConfigurar': { es: 'sin configurar: la noche corre, pero no redacta con un modelo (los aprendizajes, las propuestas de hallazgos)', en: 'not set: the nightly run runs, but does not write with a model (learnings, finding proposals)' },
+  'pantalla.nocheSinConfigurar': { es: 'sin configurar: la noche corre, pero no redacta con un modelo (aprendizajes, propuestas de hallazgos, temas de la oficina)', en: 'not set: the nightly run runs, but does not write with a model (learnings, finding proposals, office topics)' },
   'pantalla.nocheSinProveedor': { es: 'sin configurar', en: 'not set' },
   'pantalla.nocheHoy': { es: 'hoy: {modelo}', en: 'today: {modelo}' },
   'pantalla.nocheSinModelo': { es: 'sin modelo cargado para este nivel', en: 'no model loaded for this level' },

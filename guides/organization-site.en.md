@@ -834,7 +834,8 @@ be, to copy it and open the request by hand.
   level», which blocks proposing (at night there is no dev, so «the dev's» does not apply). Switching from Ollama to
   Haiku is choosing Anthropic in that row. The row also names the secret variable the nightly pipeline needs
   (`OLLAMA_API_KEY` or `ANTHROPIC_API_KEY`); the key is created in the pipeline and never goes through the profile.
-  Without the row, the nightly run does not run.
+  Without the row, the nightly run still runs, but does not write with a model: no learnings, no finding proposals and
+  no office topics.
 - **Where the full tests run on merge**: on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
