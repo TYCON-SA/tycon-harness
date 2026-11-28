@@ -158,7 +158,7 @@ test('T14 Versiones_AlDiaAtrasadaSinNoticiasNoMedido @story-2.29 @ac-13 — cont
   assert.strictEqual(por['maq-a'].estado, 'al_dia');
   assert.strictEqual(por['maq-a'].dia, '2026-10-15');
   assert.strictEqual(por['maq-b'].estado, 'atrasada');
-  assert.match(por['maq-b'].texto, /la imagen puede estar atrasada/);
+  assert.match(por['maq-b'].texto, /si el sitio mismo no está al día, puede haber una más nueva/);
   assert.strictEqual(por['maq-c'].estado, 'sin_noticias');
   assert.match(por['maq-c'].texto, /sin noticias desde 2026-09-30/);
   assert.strictEqual(por['maq-d'].estado, 'no_medido');
@@ -741,7 +741,12 @@ test('T30 Umbrales_SinMarcaDelNocturno_SoloLectura @story-2.29 @ac-11', async ()
     await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
       const u = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'umbrales');
       assert.strictEqual(Boolean(u.soloLectura), soloLectura, JSON.stringify(u));
-      if (soloLectura) assert.match(u.motivo, /tu nocturno todavía no lee este archivo/);
+      // el motivo dice qué pasa y qué hacer, sin la ruta de la marca ni la palabra «nocturno» (A178)
+      if (soloLectura) {
+        assert.match(u.motivo, /la máquina que corre la noche todavía no lee este archivo/);
+        assert.match(u.motivo, /actualizá el arnés en esa máquina/);
+        assert.doesNotMatch(u.motivo, /\.dashboard\/|applied-config|nocturno/);
+      }
     });
   }
 });
@@ -1126,6 +1131,9 @@ async function pantallaConPestanas({ secciones, extras = {}, hash = '', idioma =
   const panelDe = (id) => dentro(app).filter((n) => n.attrs.role === 'tabpanel').find((p) => dentro(p).some((x) => x.attrs.id === id));
   return { app, tabs, visibles, panelDe, resumen: app.hijos[0], llamadas, creados };
 }
+// las firmas retiradas (ya no apagan nada) van juntas en un renglón sin selectores (A184): las pruebas que recorren el
+// catálogo firma por firma las saltean
+const esRetirada = (id) => /\(retirada/.test(String((require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((f) => f.id === id) || {}).approves || ''));
 const SEC = (id, extra = {}) => Object.assign({ id, titulo: id, repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: {}, problems: [], avisos: [] }, extra);
 const TODAS = ['sitio', 'personas', 'responsables', 'repos', 'despliegues', 'paridad', 'ado', 'canal', 'espera', 'umbrales', 'respuesta', 'modelos', 'suites', 'integraciones', 'hilos', 'actualizacion', 'instalacion'];
 
@@ -4150,7 +4158,7 @@ test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
   // perfil vacío: una fila por firma, ninguna marcada, y ninguna máquina
   let p = await pantallaFalsa([seccionPerfil('aprobaciones', {})]);
   assert.strictEqual(p.error, null);
-  for (const f of SIG.SIGNATURES) {
+  for (const f of SIG.SIGNATURES.filter((x) => !esRetirada(x.id))) {
     const sel = selectorDeFirma(p, f.id);
     assert.ok(sel, `la firma ${f.id} tiene su fila`);
     assert.strictEqual(sel.value || '', '', `${f.id}: de fábrica, a la ventana`);
@@ -6076,7 +6084,7 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   const nivel = (p, id) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${id}`);
   const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
   const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'compare-waiver'] } })]);
-  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS) {
+  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS.filter((x) => !esRetirada(x.id))) {
     assert.deepStrictEqual(valores(nivel(p, l.id)), ['1', '2', '3'].slice(l.level - 1), `${l.id}: sólo desde su nivel para arriba`);
   }
   assert.ok(valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'la rutina se ofrece para delegar');
@@ -6285,7 +6293,9 @@ test('T64 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido @story-2.79 @ac-53 — un
   let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['escape:no-deep-review'] } })]);
   assert.strictEqual(p.error, null);
   const filas = nodos(p).filter((n) => n.attrs['data-firma-grupo']);
-  assert.strictEqual(filas.length, grupos.size, 'una fila por firma, no por forma');
+  // las retiradas van juntas en un renglón (A184): cuentan por cuántas firmas junta
+  const enRetiradas = Number((nodos(p).find((n) => n.attrs['data-firma-retiradas']) || { attrs: {} }).attrs['data-firma-retiradas'] || 0);
+  assert.strictEqual(filas.length + enRetiradas, grupos.size, 'una fila por firma, no por forma');
   const fila = filas.find((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
   assert.ok(fila, 'la fila del pase adversarial');
   const dentro = p.todo(fila);
@@ -6475,7 +6485,8 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel,
       if (n.attrs['data-nivel-bloque']) { actual = Number(n.attrs['data-nivel-bloque']); continue; }
       assert.strictEqual(actual, grupos.get(n.attrs['data-firma-grupo']), `${idioma}: ${n.attrs['data-firma-grupo']} va en el bloque de su nivel`);
     }
-    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length, grupos.size, `${idioma}: todas las firmas`);
+    const enRetiradas = Number((nodos.find((n) => n.attrs['data-firma-retiradas']) || { attrs: {} }).attrs['data-firma-retiradas'] || 0);
+    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length + enRetiradas, grupos.size, `${idioma}: todas las firmas (las retiradas, juntas)`);
     // la matriz corta, igual a la de la guía
     const matriz = nodos.find((n) => n.attrs['data-matriz'] === 'corta');
     assert.ok(matriz, `${idioma}: la matriz corta está arriba de los bloques`);
@@ -6551,7 +6562,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
     const dentro = p.todo(tablas[0]);
     const filas = dentro.filter((n) => n.attrs.role === 'row');
     const filaDe = (sel) => filas.find((r) => r !== filas[0] && p.todo(r).includes(sel));
-    for (const l of SIG.LEVELS) {
+    for (const l of SIG.LEVELS.filter((x) => !esRetirada(x.id))) {
       const sels = nodos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${l.id}`);
       assert.strictEqual(sels.length, 1, `${idioma}: ${l.id}, exactamente un selector de nivel`);
       assert.ok(dentro.includes(sels[0]), `${idioma}: ${l.id}, en la tabla única`);
@@ -6566,7 +6577,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
     assert.strictEqual(suelta.attrs['data-firma-grupo'], undefined, `${idioma}: sin grupo de firma`);
     // la misma firma con un solo nombre: en una fila que cubre una sola cosa, el selector de nivel se llama como la fila
     const grupos = new Map();
-    for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
+    for (const f of SIG.SIGNATURES.filter((x) => !esRetirada(x.id))) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
     for (const [k, fs] of grupos) {
       const cubre = k.split(',');
       const cabeza = fs.find((f) => f.id === k) || fs[0];
@@ -7231,4 +7242,202 @@ test('8.176-Textos_ConUnClickOEnSuTerminal @story-8.176 @ac-7', () => {
   }
   assert.ok(!/en su terminal; esto no lo cambia/.test(guias.es + textos.t('es', 'pantalla.firmaDelegadaAviso')), 'el aviso viejo ya no está');
   assert.ok(!/at their terminal; this does not change that/.test(guias.en + textos.t('en', 'pantalla.firmaDelegadaAviso')), 'ni en inglés');
+});
+
+// 🔴 mutación: la ficha «Secciones sin cambios N de M» sin decir qué son las que faltan: las sólo para mirar parecen
+// secciones con cambios pendientes (A180).
+test('A180 FichaSeccionesAlDia_DiceQueSonLasQueFaltan — las sólo para mirar se nombran, no parecen cambios pendientes', async () => {
+  const secs = TODAS.map((id) => SEC(id, id === 'ado' || id === 'umbrales' ? { soloLectura: true, motivo: 'x' } : {}));
+  const r = await pantallaConPestanas({ secciones: secs });
+  const textoDe = (n) => [n.textContent || '', ...(n.hijos || []).map(textoDe)].join(' ');
+  const kpis = [];
+  const walk = (x) => { if (/\bkpi\b/.test(x.attrs.class || '')) kpis.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.resumen);
+  const ficha = kpis.find((k) => /Secciones al día/.test(textoDe(k)));
+  assert.ok(ficha, `la ficha se llama como en la Ayuda: ${kpis.map(textoDe).join(' | ')}`);
+  const t = textoDe(ficha);
+  assert.match(t, /15 de 17/);
+  assert.match(t, /sólo para mirar/, 'dice qué son las dos que faltan');
+});
+
+// 🔴 mutación: las tablas de modelos de OpenAI, Ollama y Cursor sin título propio (el proveedor sólo aparecía debajo), o
+// la ayuda con «inherit» como palabra del texto (A183).
+test('A183 ModelosPorProveedor_CadaTablaConSuTitulo — el nombre del proveedor va arriba de su tabla', async () => {
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)), hash: '#tab-claude' });
+  const todos = [];
+  const walk = (x, padre) => { todos.push({ x, padre }); (x.hijos || []).forEach((h) => walk(h, x)); };
+  walk(r.app, null);
+  const tablas = todos.filter(({ x }) => x.attrs['data-proveedor']);
+  assert.ok(tablas.length >= 4, `las tablas por proveedor: ${tablas.length}`);
+  for (const { x, padre } of tablas) {
+    const i = padre.hijos.indexOf(x);
+    const antes = padre.hijos[i - 1] || {};
+    assert.ok(/\bprov-t\b/.test(antes.attrs && antes.attrs.class || '') && antes.textContent === x.attrs['aria-label'], `la tabla de ${x.attrs['data-proveedor']} lleva su título arriba`);
+  }
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.doesNotMatch(TX.t('es', 'pantalla.porProveedorAyuda'), /«inherit»/, 'en castellano, «el del dev»; inherit sólo como lo que dice el archivo');
+});
+
+// 🔴 mutación: los selectores de «Cómo trabaja el agente» con ancho fijo de 13em, que cortan la opción elegida
+// («sin configurar (la noche», «el equivalente de cada r») (A182).
+test('A182 SelectoresDeModelos_NoCortanLaOpcion — crecen desde 13em hasta el ancho de su celda', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const regla = (css.match(/\.tabla2\.modelos select\.corto\{[^}]*\}/) || [''])[0];
+  assert.ok(regla, 'la regla está');
+  assert.doesNotMatch(regla, /(^|[{;])width:13em/, 'sin ancho fijo');
+  assert.match(regla, /min-width:13em/);
+  assert.match(regla, /width:auto/);
+});
+
+// 🔴 mutación: en el celular la barra de las partes de Configuración se desliza de costado sin decirlo y dos pestañas
+// quedan fuera de la vista (A179): en pantalla angosta las pestañas bajan de renglón y se ven todas.
+test('A179 Celular_PestanasDeConfiguracionSeVenTodas — en pantalla angosta bajan de renglón', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.match(angosta, /\.pestanas\{[^}]*flex-wrap:wrap/, 'las pestañas bajan de renglón');
+  assert.match(angosta, /\.pestanas\{[^}]*overflow-x:visible/, 'y no se esconden de costado');
+});
+
+// 🔴 mutación: el título y la etiqueta de «Quién ve las oficinas» con la misma frase (A187), o el estado de una máquina
+// atrasada hablando de «la imagen» sin decir cuál (A191).
+test('A187 A191 Personas_OficinasSinFraseRepetida_YVersionDiceContraQue', async () => {
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)) });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const titulo = todos.find((n) => /\bsub-t\b/.test(n.attrs.class || '') && /Quién ve las oficinas/.test(n.textContent));
+  assert.ok(titulo, 'el título está');
+  const etiquetas = todos.filter((n) => n.tag === 'label' && /oficinas|las ven|Pueden verlas/i.test(n.textContent));
+  assert.ok(etiquetas.length, 'el selector tiene su etiqueta');
+  for (const e of etiquetas) assert.notStrictEqual(e.textContent, titulo.textContent, 'la etiqueta no repite el título');
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.doesNotMatch(TX.t('es', 'org.atrasada', { version: '1.2' }), /la imagen/, 'dice contra qué compara');
+  assert.match(TX.t('es', 'org.atrasada', { version: '1.2' }), /versión que conoce el sitio \(1\.2\)/);
+});
+
+// 🔴 mutación: un revisor sin nombre en castellano de un paquete de la organización rotulado «revisor del arnés» (A185).
+test('A185 Revisores_DelPaqueteNoSonDelArnes — el revisor de un paquete sin nombre en castellano dice que es del paquete', async () => {
+  const sec = { ...secModelos({}), extras: { hoy: MOD_DEFAULTS, revisores: [], porPaquete: [
+    { paquete: null, revisores: [{ id: 'arnes-sin-nombre-x', fabrica: null }] },
+    { paquete: 'acme-api', revisores: [{ id: 'acme-api-reviewer', fabrica: null }] },
+  ] } };
+  const t = (await compacta(sec)).textoDe('modelos');
+  assert.match(t, /acme-api-reviewer[^|]*\| revisor del paquete \(sin nombre en castellano\)/);
+  assert.doesNotMatch(t, /acme-api-reviewer[^|]*\| revisor del arnés/);
+  assert.match(t, /arnes-sin-nombre-x[^|]*\| revisor del arnés \(sin nombre en castellano\)/, 'el del arnés sigue diciéndolo');
+});
+
+// 🔴 mutación: el campo de la cobertura vacío sin su «75 (de fábrica)», o el del pase con otra forma que los demás
+// («De fábrica: 6»), así el valor de fábrica no se ve igual en todos (A188).
+test('A188 Campos_DicenSuValorDeFabrica — cobertura «75 (de fábrica)», cambio chico «6 (de fábrica)»', async () => {
+  const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura', 'paseAdversarial'].map((id) => SEC(id)), hash: '#tab-claude' });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const campo = (ruta) => todos.find((n) => n.tag === 'input' && n.attrs['data-path'] === ruta);
+  assert.ok(campo('coverage.min_touched_lines_pct'), 'el campo de la cobertura está');
+  assert.strictEqual(campo('coverage.min_touched_lines_pct').attrs.placeholder, '75 (de fábrica)');
+  assert.ok(campo('deep_review.small_max_files'), 'el del cambio chico está');
+  assert.strictEqual(campo('deep_review.small_max_files').attrs.placeholder, '6 (de fábrica)');
+});
+
+// 🔴 mutación: la Ayuda que pone «Lo que trae la organización» debajo de Repos y productos, cuando está en la pestaña
+// Instalación y actualización (A189).
+test('A189 Ayuda_LoQueTraeLaOrganizacion_EnSuPestana — la guía la manda a Instalación y actualización', () => {
+  for (const [archivo, bloque, pestana] of [['organization-site.md', 'Lo que trae la organización', 'Instalación y actualización'], ['organization-site.en.md', 'What the organization provides', 'Installation and updates']]) {
+    const texto = fs.readFileSync(path.join(ROOT, 'guides', archivo), 'utf8');
+    const parrafo = (texto.split(/\n\s*\n/).find((p) => p.includes(`**${bloque}**`)) || '').replace(/\s+/g, ' ');
+    assert.ok(parrafo, `${archivo}: el párrafo está`);
+    assert.ok(parrafo.includes(pestana), `${archivo}: dice que está en ${pestana}`);
+  }
+});
+
+// 🔴 mutación: «Qué versión del arnés tiene cada máquina» diciendo siempre «se actualizan solas al arrancar», también con
+// la opción de fábrica, que pregunta a cada dev (A190).
+test('A190 Versiones_DiceComoSeActualizanSegunLaOpcion — «solas» sólo con update.apply auto', async () => {
+  const texto = async (apply) => {
+    const secs = TODAS.map((id) => SEC(id, id === 'actualizacion' ? { borrador: apply ? { update: { apply } } : {} } : {}));
+    const r = await pantallaConPestanas({ secciones: secs, hash: '#tab-instalacion' });
+    const todos = [];
+    const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+    walk(r.app);
+    return (todos.find((n) => /La que informó cada una/.test(n.textContent || '')) || {}).textContent || '';
+  };
+  assert.match(await texto('auto'), /Se actualizan solas al arrancar/);
+  for (const apply of [null, 'ask']) {
+    const t = await texto(apply);
+    assert.ok(t, `${apply}: el texto está`);
+    assert.doesNotMatch(t, /solas/, `${apply}: no dice que se actualizan solas`);
+    assert.match(t, /le pregunta a su dev/);
+  }
+});
+
+// 🔴 mutación: «2 productos con algo para mirar» cuando es una sola diferencia vista desde los dos lados, o el rótulo
+// «Producto X · productos» sin decir que «productos» es el grupo (A186).
+test('A186 Paridad_CuentaDiferencias_YNombraElGrupo — una diferencia vista de los dos lados es una', async () => {
+  const vista = { texto: 'medida', fecha: '2026-11-27', unidad: 'productos', definicion: { rasgos: [{ id: 'escaneo', que: 'escaneo' }] }, declaradas: [], productos: [
+    { producto: 'Producto X', grupos: ['productos'], faltan: [{ rasgo: 'escaneo' }], tiene: [], vencidas: [] },
+    { producto: 'Producto Y', grupos: ['productos'], faltan: [], tiene: [{ rasgo: 'escaneo' }], vencidas: [] },
+  ] };
+  const secs = TODAS.map((id) => SEC(id, id === 'paridad' ? { vista } : {}));
+  const r = await pantallaConPestanas({ secciones: secs, hash: '#tab-repos' });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const textos = todos.map((n) => n.textContent || '').filter(Boolean);
+  assert.ok(textos.some((t) => /^1 diferencia, que se ve en 2 productos/.test(t)), `el resumen cuenta la diferencia: ${textos.filter((t) => /algo para mirar|diferencia/.test(t)).join(' | ')}`);
+  assert.ok(!textos.some((t) => /2 productos con algo para mirar/.test(t)));
+  assert.ok(textos.includes('Producto X (grupo: productos)'), 'el rótulo dice que es el grupo');
+});
+
+// 🔴 mutación: en «Quién firma cada cosa», dos formas de la misma firma con el mismo rótulo («se pide con su comando» dos
+// veces), sin decir cuál es cuál (A184).
+test('A184 Firmas_FormasRepetidas_DicenCualEsCual — cada forma con su comando cuando hay dos del mismo tipo', async () => {
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: {} })]);
+  assert.strictEqual(p.error, null);
+  const fila = p.todo(p.sec('aprobaciones')).find((n) => n.attrs['data-firma-grupo'] === 'lost-run');
+  assert.ok(fila, 'la fila de dar por perdida una ejecución');
+  const rotulos = p.todo(fila).filter((n) => /\bforma\b/.test(n.attrs.class || '')).map((n) => (n.hijos[0] && n.hijos[0].textContent) || '');
+  assert.ok(rotulos.length >= 3, `sus formas: ${rotulos.join(' | ')}`);
+  assert.strictEqual(new Set(rotulos).size, rotulos.length, `cada forma se distingue: ${rotulos.join(' | ')}`);
+  assert.ok(rotulos.some((r) => /como deuda/.test(r)), 'con lo que aprueba esa forma, sin su id');
+});
+
+// 🔴 mutación: en el celular, Umbrales sin los títulos VERDE y ROJO (la cabecera escondida): quedan dos números sueltos
+// (A179). La cabecera se ve con la misma forma que los renglones, así cada título queda arriba de su valor.
+test('A179b Celular_UmbralesConSusTitulos — la cabecera no se esconde en pantalla angosta', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.doesNotMatch(angosta, /\.thr\.h\{display:none\}/, 'la cabecera de Umbrales no se esconde');
+  // y los selectores de los modelos no quedan en un ancho fijo que corta la opción («el suyo, sin ca»)
+  assert.doesNotMatch(angosta, /\.tabla2\.modelos select\.corto\{width:12em\}/);
+  assert.match(angosta, /\.tabla2\.modelos select\.corto\{[^}]*max-width:100%/);
+});
+
+// 🔴 mutación: en el celular, el desplegable del modelo de cada revisor en una columna angosta que corta lo elegido («el
+// suyo, sin ca») (A206): baja a su propio renglón, con todo el ancho.
+test('A206 Celular_RevisoresConElDesplegableEntero — el desplegable de cada revisor ocupa el renglón', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.match(angosta, /\.tabla2\.revisores \.r > \.acc\{[^}]*grid-column:1\/-1/);
+});
+
+// 🔴 mutación: las firmas «(retirada: ya no apaga nada)» listadas como cualquier otra, una fila cada una (A184, decisión
+// del dueño: juntas en un renglón). Una retirada con un valor guardado conserva su fila, para poder quitarlo.
+test('A184b Firmas_RetiradasJuntasEnUnRenglon — un solo renglón al final; la guardada conserva su fila', async () => {
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  const retiradas = SIGS.SIGNATURES.filter((f) => /\(retirada/.test(f.approves));
+  assert.ok(retiradas.length >= 2, 'hay firmas retiradas en el catálogo');
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: {} })]);
+  const nodos = p.todo(p.sec('aprobaciones'));
+  for (const f of retiradas) assert.ok(!nodos.some((n) => n.attrs['data-firma-grupo'] === f.covers.join(',')), `${f.id}: sin fila propia`);
+  const renglon = nodos.find((n) => n.attrs['data-firma-retiradas']);
+  assert.ok(renglon, 'el renglón de las retiradas está');
+  const texto = p.todo(renglon).map((n) => n.textContent || '').join(' ');
+  assert.match(texto, /Retiradas/);
+  assert.match(texto, /apagar el freno de seguridad para un comando/);
+  assert.doesNotMatch(texto, /TYCON_|escape:/, 'sin ids');
+  // guardada en «sólo del dueño»: conserva su fila
+  const g = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { owner_only: [retiradas[0].id] } })]);
+  assert.ok(g.todo(g.sec('aprobaciones')).some((n) => n.attrs['data-firma-grupo'] === retiradas[0].covers.join(',')), 'la guardada tiene su fila');
 });

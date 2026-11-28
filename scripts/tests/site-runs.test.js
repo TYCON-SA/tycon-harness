@@ -1360,7 +1360,7 @@ test('2.60-T11 FrasesDeLaCasa_CadaRama @story-2.60 @ac-1 @ac-3 — los tramos fu
 
 test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce sólo los campos de la casa', () => {
   // lo de afuera que coincide con un molde: un producto, una story, el título, los asuntos de los commits, un archivo
-  const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la story' },
+  const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la historia' },
     cambios: { titulo: 'antes, el login fallaba', commits: [{ h: 'a', s: 'pruebas' }, { h: 'b', s: 'fix: el pedido queda confirmado' }],
       archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'la conversación no se pudo leer (Z_DATA_ERROR)' },
     tramos: [{ nombre: 'Revisores + Hallazgos' }] };
@@ -2478,5 +2478,139 @@ test('T-A46 Cambios_ADemanda_LaFilaTieneTope_PorPersonaYEntera_YSeSueltaSiElPedi
     const [, , recibe] = await Promise.all([delante, seVa, espera]);
     assert.ok(recibe && !recibe.cancelado && !recibe.ocupado, `el que se quedó: ${JSON.stringify(recibe)}`);
     assert.strictEqual(bajadas.length, 2, `se bajaron las dos: ${bajadas.length}`);
+  });
+});
+
+// 🔴 mutación: el detalle con «Trabajo · espera · entre pasos» que no suma lo que dice «duró», sin decir dónde está lo
+// que falta (lo que no se pudo partir y lo que queda fuera de los pasos anotados).
+test('A129 Detalle_LaDuracionCierra_DiceLoQueQuedaFuera — trabajo, espera y entre pasos más lo que queda fuera suman lo que duró', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    const MIN = 60000;
+    const conTiempos = (dur, t) => sinTags(c.w.__detalle({ ...det, dur_ms: dur, tiempos: { estado: 'medida', motivo: null, trabajo_medido: true, estimados: [], ...t } }));
+    // 2 h que se reparten 32 + 8 + 18 = 58 min: los otros 62 min se dicen
+    const falta = conTiempos(120 * MIN, { trabajo_ms: 32 * MIN, espera_humana_ms: 8 * MIN, entre_pasos_ms: 18 * MIN, sin_repartir_ms: 0 });
+    assert.match(falta, /Trabajo 32 min · espera 8 min · entre pasos 18 min · fuera de los pasos 62 min/);
+    // lo que no se pudo partir entra en lo que queda fuera
+    assert.match(conTiempos(120 * MIN, { trabajo_ms: 32 * MIN, espera_humana_ms: 8 * MIN, entre_pasos_ms: 18 * MIN, sin_repartir_ms: 20 * MIN }), /fuera de los pasos 62 min/);
+    // si cierra (menos de un minuto de diferencia), no se agrega nada
+    assert.doesNotMatch(conTiempos(58 * MIN + 20000, { trabajo_ms: 32 * MIN, espera_humana_ms: 8 * MIN, entre_pasos_ms: 18 * MIN, sin_repartir_ms: 0 }), /fuera de los pasos/);
+    // con la espera sin medir no se puede saber cuánto queda fuera: no se inventa
+    assert.doesNotMatch(conTiempos(120 * MIN, { trabajo_ms: 32 * MIN, espera_humana_ms: null, entre_pasos_ms: 18 * MIN, sin_repartir_ms: 0 }), /fuera de los pasos/);
+  });
+});
+
+// 🔴 mutación: las barras del consumo por paso con el número interno de la fila (0 a 9) delante del nombre: no es el de
+// «Cómo trabaja» (01 a 11), así que «el paso 8» nombra dos pasos distintos según la pestaña.
+test('A130 Detalle_PasosPorNombre_SinNumeroInterno — el consumo por paso nombra cada paso sin el número de la fila', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const html = c.w.__detalle((await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json);
+    const barras = (html.match(/<div class="b"><span>[^<]*<\/span>/g) || []);
+    assert.ok(barras.length >= 2, `las barras del consumo por paso: ${barras.length}`);
+    for (const b of barras) assert.doesNotMatch(b, /<span>\d+ /, `sin el número interno: ${b}`);
+    assert.ok(barras.some((b) => b.includes('<span>Arranque</span>')), 'el paso, por su nombre');
+  });
+});
+
+// 🔴 mutación: la ficha de los tokens de una ejecución sin decir que deja afuera a los revisores (en el detalle consumen
+// aparte, a veces más del doble): quien la lee cree que una ejecución cuesta eso.
+test('A133 FichaTokens_DiceQueDejaAfueraALosRevisores — la mediana es de la conversación principal y lo dice', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const c = await clienteDelSitio(h, await entrar(LEAD));
+    c.w.__aplicar();
+    const fichas = c.nodos.fichas.innerHTML;
+    const ficha = fichas.split('<div class="tile').find((x) => x.includes('Tokens de una ejecución (mediana)')) || '';
+    assert.ok(ficha, 'la ficha está');
+    assert.match(sinTags(ficha), /sólo la conversación principal: los revisores consumen aparte/);
+  });
+});
+
+// 🔴 mutación: la ficha de la noche que cuenta los bloqueos de TODO el registro de controles (también el commit y los
+// ganchos) llamada «control del pipeline», como la columna Controles de la tabla, que cuenta sólo los de cada ejecución.
+test('A132 FichaBloqueos_NoSeConfundeConLosControlesDeLaTabla — dice de qué registro cuenta y que no es la columna', () => {
+  const TX = require(path.join(__dirname, '..', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) {
+    const titulo = TX.t(idioma, 'ficha.bloqueos.titulo');
+    assert.doesNotMatch(titulo, /del pipeline|pipeline control/, `${idioma}: el título no es el de la columna`);
+  }
+  assert.match(TX.t('es', 'ficha.bloqueos.titulo'), /registro de controles/);
+  assert.match(TX.t('es', 'ficha.bloqueos.paraQue'), /no es la columna Controles/);
+  assert.match(TX.t('en', 'ficha.bloqueos.paraQue'), /not the Controls column/);
+});
+
+// 🔴 mutación: el subtítulo del detalle como «mejora — el nombre del archivo de la story», que se lee como un texto de
+// relleno: la fuente tiene que decir que es de dónde salió el título.
+test('A146 Detalle_SubtituloDiceDeDondeSalio — «mejora (según el nombre del archivo de la historia)»', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    const html = c.w.__detalle({ ...det, descripcion: { texto: 'mejora', fuente: 'el nombre del archivo de la historia' } });
+    const sub = (html.match(/<div class="det-desc">[\s\S]*?<\/div>/) || [''])[0];
+    assert.match(sinTags(sub), /mejora \(según el nombre del archivo de la historia\)/);
+    assert.doesNotMatch(sub, / — /);
+  });
+  // la fuente, en castellano, dice «historia»
+  const RT = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'runs-texts.js'));
+  const textos = JSON.stringify(RT);
+  assert.ok(!/el nombre del archivo de la story|el título de la story/.test(textos), 'la fuente en castellano dice «historia»');
+});
+
+// 🔴 mutación: las marcas del eje de la línea de tiempo en horas con un decimal redondeado («1,3 h» por 1 h 15′).
+test('A149 LineaDeTiempo_MarcasEnHorasYMinutos — «1 h 15′», nunca «1,3 h»', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    const svg = c.w.__detalle({ ...det, dur_ms: 120 * 60000 });
+    const marcas = (svg.match(/font-size="10" fill="var\(--ink-3\)">[^<]*<\/text>/g) || []).map((x) => x.replace(/^[^>]*>|<\/text>$/g, ''));
+    assert.ok(marcas.includes('1 h 15′'), `las marcas: ${marcas.join(', ')}`);
+    assert.ok(marcas.includes('2 h'), 'la hora entera, sin minutos');
+    assert.ok(!marcas.some((m) => /\d[.,]\d h/.test(m)), `sin horas con decimales: ${marcas.join(', ')}`);
+  });
+});
+
+// 🔴 mutación: en inglés, el nombre técnico entre paréntesis que repite el mismo nombre («tests (tests)», «builds
+// (build)»), o «a test or the build that did not pass and were fixed».
+test('A151 Ingles_ControlesSinNombreRepetido_YConcordancia — «tests», no «tests (tests)»; otro nombre sí lleva el técnico', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = `${await entrar(DEV_A)}; sitio-idioma=en`;
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const html = c.w.__detalle((await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json);
+    assert.doesNotMatch(html, /tests \(tests\)|builds \(build\)/, 'sin el mismo nombre entre paréntesis');
+    assert.match(html, />tests</);
+  });
+  const RT = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'runs-texts.js'));
+  const en = JSON.stringify(RT);
+  assert.ok(!/did not pass and were fixed/.test(en), 'concordancia: «did not pass and was fixed»');
+});
+
+// 🔴 mutación: el recuadro de consumo con un renglón «modelos:» vacío cuando la ejecución no trae ningún modelo (A145).
+test('A145 Consumo_SinModelos_SinRenglonVacio — sin modelos no hay renglón «modelos:»; con uno, sí', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    assert.strictEqual(det.consumo.estado, 'medido', 'la ejecución tiene consumo');
+    const conModelos = (por) => c.w.__detalle({ ...det, consumo: { ...det.consumo, por_modelo: por } });
+    assert.doesNotMatch(conModelos({}), /<p class="kv">modelos: <\/p>/, 'sin modelos, sin el renglón vacío');
+    assert.doesNotMatch(conModelos({}), />modelos: </);
+    assert.match(conModelos({ 'claude-opus-5-5': { respuestas: 3 } }), /modelos: claude-opus-5-5 3/);
   });
 });

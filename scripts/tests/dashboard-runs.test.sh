@@ -1171,7 +1171,7 @@ assert 'no tiene su conversación guardada' in c['sin_hilo']['motivo'], c['sin_h
 assert '_texto' not in json.dumps(m) and 'CODIGO_SEMBRADO' not in json.dumps(m)
 # la descripción: el título de la story con hilo; sin hilo, nada inventado (el archivo se llama story-2.1.md)
 d={x['cambios']['estado']: x.get('descripcion') for x in m['corridas']}
-assert d['leido']=={'texto':'TITULO SEMBRADO de la story','fuente':'el título de la story'}, d
+assert d['leido']=={'texto':'TITULO SEMBRADO de la story','fuente':'el título de la historia'}, d
 assert d['sin_hilo'] is None, d
 # la columna «archivos»: el número con hilo; sin hilo una raya con motivo, nunca 0
 import re; h=open(sys.argv[2],encoding='utf8').read(); ar=re.findall(r'<td class=\"ar\">(.*?)</td>',h)
