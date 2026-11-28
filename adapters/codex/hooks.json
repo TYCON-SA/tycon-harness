@@ -507,7 +507,7 @@
     },
     {
       "log": "PreToolUse · Agent|Task|Workflow — SOLO Claude Code (un pase lanzado sin el pipeline pasa por el turno de tarea pesada)",
-      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-23, fila 126 a): agile-pass-turn.js avisa a una sesión de Claude Code sin el pipeline que lanza un pase adversarial (todo Workflow, o un Agent que se dice adversarial) sin el turno de tarea pesada que da la coordinadora. Codex no tiene las herramientas Agent ni Workflow (sus subagentes no pasan por un evento que el arnés vea) y no coordina, así que de su lado no hay lanzamiento que mirar y el gancho no se registra.",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-11-23, fila 126 a): agile-pass-turn.js frena a una sesión de Claude Code sin el pipeline que lanza un pase adversarial (todo Workflow, o un Agent que se dice adversarial) sin el turno de tarea pesada que da la coordinadora. Codex no tiene las herramientas Agent ni Workflow (sus subagentes no pasan por un evento que el arnés vea) y no coordina, así que de su lado no hay lanzamiento que mirar y el gancho no se registra.",
       "scripts": [
         "agile-pass-turn.js"
       ]

@@ -2896,7 +2896,7 @@
       "requiere": []
     },
     {
-      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase, el aviso con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
+      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase (el revisor único de historias no), el freno con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
       "raiz": "arnes",
       "ruta": "tests/agile-pass-turn.test.js",
       "requiere": []

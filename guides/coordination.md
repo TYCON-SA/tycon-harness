@@ -403,17 +403,17 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
   `--to <sesión>`, la reserva es de esa sesión: lanza lo reservado (su pase sin el pipeline, el punto que sigue) y su
   portón toma el turno sin otro «arrancá», aunque estuviera en la fila. Es para una cosa por vez: si su portón ya corre,
-  el gancho del pase lo avisa; con el pase en vuelo, nada frena a su portón, así que la sesión no lo corre hasta que el
+  el gancho del pase lo frena; con el pase en vuelo, nada frena a su portón, así que la sesión no lo corre hasta que el
   pase termine. Las demás sesiones esperan hasta que se suelte.
 - **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
   un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
   05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
   lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
   adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
-  (`reserve --for "<qué>" --to <sesión>`), o si con esa reserva ya corre su portón, avisa a la sesión y a la persona con
-  quién tiene el turno, y lo anota en `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
-  gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
-  apaga.
+  (`reserve --for "<qué>" --to <sesión>`), o si con esa reserva ya corre su portón, frena el lanzamiento, dice a la sesión
+  y a la persona quién tiene el turno y cómo pedirlo, y lo anota en `gates.log` (`agile-pass-turn`). Un error al leer el
+  turno o la designación no frena: queda anotado como no medido. No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline.
+  `TYCON_AGILE_PASS_TURN=0` lo apaga.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
@@ -1187,7 +1187,7 @@ la de un producto. Cada una, con su porqué.
 | No abrir más cuando lo que espera la revisión de la persona llega a su tope | aviso | `open` y el freno de sesiones de fondo abren igual, lo dicen y anotan el renglón `review-cap`; lo no medido no frena. Pasa a freno con un commit, cuando los renglones lo justifiquen. |
 | Con la fila de la suite larga no se abren sesiones para programar | nadie | Qué trabajo pide suite es criterio; `status` muestra quién espera turno. |
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
-| Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
+| Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. En una ejecución, lanzar el pase sin consultar el portón no lo frena nada. El de una sesión sin ejecución (un arreglo rápido) lo frena `agile-pass-turn.js` si no tiene el turno, pero no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
 | Las sesiones de fondo quietas se cierran o reciben trabajo | aviso | El aviso de cada turno de la coordinadora, pasados 15 minutos. |
 | Una sesión se cierra sin nada pendiente | freno | `close` no cierra si falta algo o si no pudo mirarlo. `claude stop` y `claude rm` a mano no pasan por él, y otro worktree que haya dejado la sesión no lo ve. |
 | Un pedido listo no queda sin encolar | aviso | El aviso de cada turno de la coordinadora, pasados 10 minutos, y el del arranque. Sólo en GitHub. |
