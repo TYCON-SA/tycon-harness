@@ -23,6 +23,7 @@ const os = require('os');
 const path = require('path');
 
 const led = require('../lib/advisor-ledger.js');
+const { conCarpetaPersonal } = require('./lib/fake-home.js');
 const { readMarkerFile, attribution } = require('../lib/repo-attrib.js');
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'led-')); }
@@ -133,9 +134,8 @@ test('query — cuenta los spawns vivos que quedaron sin repo (los previos al ar
 
 test('attribution — el marker manda: aporta repo Y story', () => {
   const home = tmp();
-  const prev = process.env.HOME;
-  process.env.HOME = home;
-  try {
+  // HOME y USERPROFILE juntas: en Windows os.homedir() lee USERPROFILE (A80)
+  conCarpetaPersonal(home, () => {
     const dir = path.join(home, '.claude', '.tycon-pipeline', 'active');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'sid.json'), JSON.stringify({ storyId: '7.6', repoPath: '/r/Extensions' }));
@@ -146,19 +146,17 @@ test('attribution — el marker manda: aporta repo Y story', () => {
     assert.equal(m.storyId, '7.6');
     assert.equal(attribution('sid', '/tmp').story, '7.6');
     assert.equal(attribution('sid', '/tmp').repo, '/r/Extensions');
-  } finally { process.env.HOME = prev; }
+  });
 });
 
 test('attribution — un marker sin storyId no se usa (no inventa atribución)', () => {
   const home = tmp();
-  const prev = process.env.HOME;
-  process.env.HOME = home;
-  try {
+  conCarpetaPersonal(home, () => {
     const dir = path.join(home, '.claude', '.tycon-pipeline', 'active');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'sid2.json'), JSON.stringify({ repoPath: '/r/X' }));
     assert.equal(readMarkerFile('sid2'), null);
-  } finally { process.env.HOME = prev; }
+  });
 });
 
 // ── El clon descartable es el MISMO repo ─────────────────────────────────────────────────────

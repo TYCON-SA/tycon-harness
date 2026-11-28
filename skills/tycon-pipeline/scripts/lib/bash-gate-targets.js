@@ -659,11 +659,12 @@ function scriptsInline(cmd) {
 /**
  * Las opciones de un intérprete hasta su guion: `{ enLinea, desde, modulos, precargas }`. `enLinea` si el programa va
  * en la línea (`-c`, `-e`: lo ve `scriptsInline`), `desde` la primera palabra que ya no es opción, `modulos` lo que se
- * corre como módulo (`python3 -m x`) y `precargas` los guiones que se cargan antes (`node -r ./p.js`). Cada familia lee
+ * corre como módulo (`python3 -m x`), `precargas` los guiones que se cargan antes (`node -r ./p.js`) y `pruebas` si es
+ * `node --test` (cada archivo que sigue es un guion que corre). Cada familia lee
  * sus opciones agrupadas y con el valor pegado (`-Wignore`, `-mx`, `-Ilib`, `--require=./p.js`).
  */
 function opcionesDelInterprete(familia, words, i) {
-  const r = { enLinea: false, desde: words.length, modulos: [], precargas: [] };
+  const r = { enLinea: false, desde: words.length, modulos: [], precargas: [], pruebas: false };
   for (; i < words.length; i++) {
     const w = words[i];
     if (w === '--') { r.desde = i + 1; return r; }
@@ -672,6 +673,7 @@ function opcionesDelInterprete(familia, words, i) {
       const largo = /^(--[\w-]+)(?:=(.*))?$/.exec(w);
       const nombre = largo ? largo[1] : w;
       if (['-e', '-p', '--eval', '--print'].includes(nombre) || /^-[A-Za-z]*[ep]$/.test(w)) r.enLinea = true;
+      if (nombre === '--test') r.pruebas = true;
       if (['-r', '--require', '--import', '--loader', '--experimental-loader'].includes(nombre)) {
         const v = largo && largo[2] != null ? largo[2] : words[++i];
         if (v) r.precargas.push(v);

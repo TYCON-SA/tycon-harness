@@ -16,14 +16,20 @@
  * su marcador). La coordinadora se reconoce igual que en `grant` y `reserve` (heavy-turn.js coordinator): si ella no
  * puede dar el turno (TYCON_SUITE_TURN=0, o el perfil sin el rol), no hay a quién mandar la sesión y el gancho calla.
  *
- * Sin turno avisa, al modelo y a la persona, con quién tiene el turno. Cada aviso o lanzamiento con turno queda en
- * gates.log (`agile-pass-turn`: la herramienta, la sesión y el resultado, sin el pedido). Ante cualquier error, calla y
- * anota `no-medido`. Codex no tiene estas herramientas (adapters/codex/hooks.json). Off: TYCON_AGILE_PASS_TURN=0.
+ * Sin turno FRENA el lanzamiento y dice, al modelo y a la persona, con quién está el turno y cómo pedirlo: varios pases
+ * a la vez dejan la máquina sin procesos, y un aviso no los separaba. Cada freno o lanzamiento con turno queda en
+ * gates.log (`agile-pass-turn`: la herramienta, la sesión y el resultado, sin el pedido).
+ * Codex no tiene estas herramientas (adapters/codex/hooks.json). Off: TYCON_AGILE_PASS_TURN=0 (el freno de mano no
+ * deja apagarlo desde el arranque de la consola: scripts/lib/env-switches.json).
  *
- * Frenar lo decide el dueño con esa medición. `MODO = 'block'` ya cambia la decisión (`freno`, con el mismo motivo) y lo
- * que se anota, pero la salida sigue siendo un aviso: para frenar hace falta además la salida `permissionDecision: deny`
- * en `main` y `effect: blocks` en scripts/setup/hooks-list.json (apply-hooks.test.js T11). Con esa declaración el
- * aplicador lo lanza como freno, que falla cerrado si Node falla: hasta entonces, un aviso no puede trabar un lanzamiento.
+ * Un error al leer la máquina (el turno, la designación, las ejecuciones) NO frena: calla y anota `no-medido`, que sale
+ * al arrancar con las fallas de los controles. Frenar ahí trabaría todo lanzamiento de agentes por un archivo de
+ * coordinación ilegible, y lo que este freno cuida (no llenar la máquina de procesos) no justifica eso. Si Node mismo
+ * falla (o es más viejo que el piso y la máquina no tiene el Node del arnés), el aplicador lo lanza como freno
+ * (`effect: blocks` en scripts/setup/hooks-list.json) y falla cerrado como los demás frenos: ahí frena todo Agent, Task
+ * y Workflow hasta arreglar Node. Sin tiempo máximo: un freno que se agota deja pasar, y se agotaría justo con la máquina
+ * cargada, que es lo que cuida.
+ * `MODO = 'warn'` vuelve al aviso de antes.
  */
 const fs = require('fs');
 const os = require('os');
@@ -31,10 +37,14 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const NOMBRE = 'agile-pass-turn';
-// 'warn' avisa; 'block' frena. Lo cambia el dueño con la medición de gates.log en la mano.
-const MODO = 'warn';
+// 'warn' avisa; 'block' frena (la forma vigente: el aviso no separaba los pases).
+const MODO = 'block';
 const HERRAMIENTAS_DE_AGENTE = new Set(['Agent', 'Task']);
 const DICE_PASE = /adversari/i;
+// el revisor único de historias (tycon-create-story lo lanza al cerrar una historia): un solo agente de sólo lectura, no
+// un pase pesado. Se exceptúa por su nombre EXACTO: un tipo parecido sigue contando, y con una descripción que dice
+// «adversarial» también
+const REVISOR_DE_HISTORIAS = 'tycon-story-adversarial-reviewer';
 // el «para qué» de un turno tomado para lanzar un pase o un Workflow (heavy-turn.js take --what …)
 const PARA_UN_PASE = /\b(pase|adversari\w*|workflow)\b/i;
 
@@ -46,6 +56,7 @@ function esPase(toolName, toolInput) {
   if (toolName === 'Workflow') return true;
   if (!HERRAMIENTAS_DE_AGENTE.has(toolName)) return false;
   const i = toolInput && typeof toolInput === 'object' ? toolInput : {};
+  if (i.subagent_type === REVISOR_DE_HISTORIAS) return DICE_PASE.test(String(i.description || ''));
   return DICE_PASE.test(`${i.description || ''}\n${i.subagent_type || ''}`);
 }
 
@@ -64,6 +75,10 @@ function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
   const r = d.reserva();
   const que = toolName === 'Workflow' ? 'un Workflow (un abanico de agentes)' : 'un pase adversarial';
   if (g && g.to === sid) return { status: 'con-turno', message: null };
+  // el turno que ya tiene esta sesión, tomado para un pase o un Workflow, es el de lo que lanza (se toma y después se
+  // lanza), también con la reserva: se mira antes que ella, que si no frenaría a la sesión por su propio pase
+  const propios = d.propios ? d.propios(sid) : [];
+  if (propios.some((p) => PARA_UN_PASE.test(String(p.what || '')))) return { status: 'con-turno', message: null };
   if (r && r.to === sid) {
     // la reserva es para una cosa por vez: si el portón de esta sesión ya tomó el turno con ella, el pase espera
     const propias = d.propias(sid);
@@ -72,11 +87,9 @@ function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
       + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
     return { status: modo === 'block' ? 'freno' : 'aviso', message };
   }
-  // el turno que ya tiene esta sesión: tomado para un pase o un Workflow, es el de lo que lanza (se toma y después se
-  // lanza); tomado para otra cosa (su portón), lanzar el pase encima serían dos ejecuciones grandes de una sesión
-  const propios = d.propios ? d.propios(sid) : [];
+  // el turno que ya tiene esta sesión, tomado para otra cosa (su portón): lanzar el pase encima serían dos ejecuciones
+  // grandes de una sesión
   if (propios.length) {
-    if (propios.some((p) => PARA_UN_PASE.test(String(p.what || '')))) return { status: 'con-turno', message: null };
     const message = `Lanzás ${que}, pero el turno de esta sesión es para ${propios.map((p) => p.texto).join(' y ')}: es para una cosa por vez. Lanzalo cuando termine.`
       + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
     return { status: modo === 'block' ? 'freno' : 'aviso', message };
@@ -87,7 +100,7 @@ function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
     ...(r ? [`la reserva de la coordinadora para «${r.what}»${r.toSession ? ` de ${r.toSession}` : ''}`] : []),
   ];
   const message = `Lanzás ${que} sin el turno de tarea pesada de esta máquina. ${quien.length ? `Lo tiene: ${quien.join(' · ')}.` : 'Nadie lo tiene, pero la coordinadora no te lo dio.'} `
-    + 'Pedile turno a la coordinadora (te lo da con heavy-turn.js grant --to <sesión>, o reserve --for "<qué>" --to <sesión>) y lanzalo cuando te lo dé: varios pases a la vez dejan la máquina sin procesos.'
+    + `Pedile turno a la coordinadora (te lo da con heavy-turn.js grant --to ${sid}, o reserve --for "<qué>" --to ${sid}) y lanzalo cuando te lo dé: varios pases a la vez dejan la máquina sin procesos.`
     + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
   return { status: modo === 'block' ? 'freno' : 'aviso', message };
 }
@@ -126,18 +139,19 @@ function anotar(home, fila) {
  * El evento entero: `{ fila, salida }` (lo que se anota en gates.log y lo que se imprime), o null si no hay nada que
  * decir. `leer()` da los lectores de la máquina: se piden sólo para un pase, con el gancho prendido.
  */
-function responder(ev, env, leer) {
+function responder(ev, env, leer, modo = MODO) {
   if (env.TYCON_AGILE_PASS_TURN === '0' || !ev || typeof ev !== 'object') return null;
   const toolName = ev.tool_name;
   if (!esPase(toolName, ev.tool_input)) return null;
   const sid = ev.session_id || env.CLAUDE_CODE_SESSION_ID || null;
   let r;
-  try { r = decidir({ toolName, toolInput: ev.tool_input, sid }, leer()); } catch (e) {
+  try { r = decidir({ toolName, toolInput: ev.tool_input, sid, modo }, leer()); } catch (e) {
     return { fila: { sessionId: sid, tool: toolName, status: 'no-medido', why: String((e && e.code) || (e && e.message) || e).slice(0, 160) }, salida: null };
   }
   if (r.status === 'fuera') return null;
-  // sólo avisa, también en 'block': frenar es otra salida y otra declaración (ver la cabecera)
-  const salida = r.message ? { systemMessage: `⚠️ ${r.message}`, hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: r.message } } : null;
+  let salida = null;
+  if (r.message && r.status === 'freno') salida = { systemMessage: `⛔ ${r.message}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: r.message } };
+  else if (r.message) salida = { systemMessage: `⚠️ ${r.message}`, hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: r.message } };
   return { fila: { sessionId: sid, tool: toolName, status: r.status }, salida };
 }
 

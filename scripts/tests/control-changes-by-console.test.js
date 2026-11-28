@@ -406,6 +406,83 @@ test('BaseControls_ConstanciaAMano_EnvoltoriosYPwd', () => {
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });
 
+// 🔴 Falla con: el texto que sale de un `$(cat <<EOF … EOF)` (o entre comillas invertidas) y corre un `eval`, un
+// `sh -c` o una variable que después corre `eval`: el cuerpo del heredoc es lo que se corre. O `view`, que sólo mira
+// el archivo como `vim -R`, frenado de más.
+test('BaseControls_ConstanciaAMano_SalidaDeUnHeredocQueSeCorre', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-salida-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.writeFileSync(path.join(repo, 'x.json'), '{}\n');
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const frenan = [
+    `eval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<'EOF'\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<"EOF"\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<-EOF\n\ttouch ${F}\n\tEOF\n)"`,
+    `eval "$(cat <<EOF\ncp x.json .github/control-changes/\nEOF\n)"`,
+    `eval $(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `eval \`cat <<EOF\ntouch ${F}\nEOF\n\``,
+    `bash -c "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `sh -c "$(cat <<'EOF'\ncd .tycon && touch control-changes.jsonl\nEOF\n)"`,
+    `x="$(cat <<EOF\ntouch ${F}\nEOF\n)"; eval "$x"`,
+    // lo que encontró el pase adversarial: otros lectores del heredoc, comillas en el cuerpo, la marca con barra, una
+    // sustitución como programa, otros que corren el texto
+    `eval "$(cat <<'EOF'\ntouch '${F}'\nEOF\n)"`,
+    `eval "$(cat <<EOF\necho "it's" && cp x.json .github/control-changes/a.json\nEOF\n)"`,
+    `eval "$(cat - <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(/bin/cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(tee <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(sed '' <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<EOF | cat\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<EOF # nota\ntouch ${F}\nEOF\n)"`,
+    `eval "$(true; cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(\ncat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<\\EOF\ntouch ${F}\nEOF\n)"`,
+    `eval ''"$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `echo 'no' # '\neval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `echo alias tee=x; eval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `trap "$(cat <<EOF\ntouch ${F}\nEOF\n)" EXIT`,
+    `set -- "$(cat <<EOF\ntouch ${F}\nEOF\n)"; eval "$1"`,
+    `$(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `bash <<'OUT'\neval "$(cat <<EOF\ntouch ${F}\nEOF\n)"\nOUT`,
+    `VIMINIT='au VimEnter * wq!' view ${F}`,
+    `view() { touch "$1"; }; view ${F}`,
+    `ln -s /usr/bin/touch view; ./view ${F}`,
+    // la segunda vuelta del pase
+    `function view { touch "$1"; }; view ${F}`,
+    `ln -s /usr/bin/touch view; PATH=.:$PATH view ${F}`,
+    `printf 'au VimEnter * wq!\\n' > .vimrc; HOME=$PWD view ${F}`,
+    `export "VIMINIT"='au VimEnter * wq!'; view ${F}`,
+    `x=1 $(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `eval "$(cat <<A; cat <<B\necho hi\nA\ntouch ${F}\nB\n)"`,
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    `view ${F}`,
+    `view .github/control-changes/abc.json`,
+    `eval "$(cat <<EOF\nls ${F}\nEOF\n)"`,
+    `x="$(cat <<EOF\ntouch ${F}\nEOF\n)"; echo "$x"`,
+    `echo "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `git commit -m "$(cat <<'EOF'\nfix: touch ${F} ya frena\nEOF\n)"`,
+    `git commit -m "$(cat <<EOF\nfix: cp x.json .github/control-changes/ ya frena\nEOF\n)"`,
+    `gh pr create --title t --body "$(cat <<'EOF'\nfrena touch ${F}\nEOF\n)"`,
+    `git commit -F - <<'EOF'\nfix: eval con touch ${F} ya frena\nEOF`,
+    `cat > /tmp/notas.md <<'EOF'\ntouch ${F}\nEOF\nbash -c 'echo listo'`,
+    `/usr/bin/view ${F}`,
+    // el cuerpo de un intérprete es su programa: un texto que nombra la escritura no es un comando del shell
+    `node - <<'EOF'\nconsole.log('\`touch ${F}\`')\nEOF`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
 // Un repo de verdad: `origin/main` adelante de `main`, una rama sin constancias y otra que trae una.
 function repoConRamas() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-ramas-'));

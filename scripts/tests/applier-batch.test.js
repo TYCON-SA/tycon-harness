@@ -382,3 +382,20 @@ process.exitCode = require(${JSON.stringify(BATCH)}).main(process.argv.slice(2))
   assert.strictEqual(res.complete, false, 'el resultado que quedó dice que no terminó');
   assert.strictEqual(res.steps.p.rc, separate({ script: 'tycon-config', args: ['get', 'install.profile'], env: {} }, b).rc, 'y trae el paso que sí corrió, con lo mismo que sale suelto');
 });
+
+// 🔴 Falla con: el paso tycon-home que sólo contesta --claude-dir. El aplicador de Windows preguntaría la carpeta del
+// estado con un Node aparte en cada arranque, o la fijaría en la carpeta de Claude Code aunque la máquina viva en la casa
+// propia (donde la leen los guiones).
+test('T4 Batch_TyconHome_StateDir — la carpeta del estado, la de la regla: la de siempre o la de la casa propia', () => {
+  const tycon = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  const [comun] = twoHomes('statedir-comun', sane);
+  const [propia] = twoHomes('statedir-propia', (h) => fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true }));
+  for (const h of [comun, propia]) {
+    const r = batch([{ id: 'sd', script: 'tycon-home', args: ['--state-dir'] }], h);
+    assert.strictEqual(r.rc, 0, r.stderr);
+    assert.strictEqual(r.res.steps.sd.rc, 0, r.res.steps.sd.stderr);
+    assert.strictEqual(r.res.steps.sd.stdout, tycon.stateDir(h));
+  }
+  assert.strictEqual(batch([{ id: 'sd', script: 'tycon-home', args: ['--state-dir'] }], propia).res.steps.sd.stdout, path.join(propia, '.tycon', 'state'));
+  assert.strictEqual(batch([{ id: 'x', script: 'tycon-home', args: ['--other'] }], comun).res.steps.x.rc, 2, 'otra pregunta, no');
+});

@@ -708,9 +708,17 @@ test('OwnerWindow_Coordinadora_VentanaEnSuPestana (T22)', (t) => {
 });
 
 test('OwnerWindow_Delegado_SinVentana (T23)', (t) => {
+  // la vuelta extra pasado el tope es de nivel 2: aunque el perfil la nombre, la delegación no la firma y va a la ventana
+  {
+    const casa = casaConDesignada(t);
+    const cmd = `node ${PIPELINE} smart-reloop --iter 3 --extra-round --for-session ses-a`;
+    const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion: delegacionReal() });
+    assert.notStrictEqual(r.decision, 'allow', `${cmd}: la vuelta extra no se delega: ${r.texto}`);
+    assert.notStrictEqual(r.via, 'delegacion', 'no la firma la delegación');
+    assert.ok(!vigentes(casa).some((x) => x.via === 'delegacion'), 'no queda un registro firmado por delegación');
+  }
   for (const [cmd, firma, argv] of [
     [PLAN, 'plan-approval', PLAN_ARGV],
-    [`node ${PIPELINE} smart-reloop --iter 3 --extra-round --for-session ses-a`, 'extra-round', [PIPELINE, 'smart-reloop', '--iter', '3', '--extra-round', '--for-session', 'ses-a']],
   ]) {
     const casa = casaConDesignada(t);
     const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion: delegacionReal() });

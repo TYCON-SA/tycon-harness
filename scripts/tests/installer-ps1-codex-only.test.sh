@@ -61,8 +61,8 @@ lab TYCON_HARNESS_CLAUDE=off TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_SHARED_DONE
 [ "$RC" = 0 ] && ok "T1 el aplicador de Windows sin Claude Code sale 0" || no "T1 salió $RC: $(tail -4 "$T/t1.out" | tr '\n' ' ' | cut -c1-400)"
 # el refresco y la subida van de fondo
 for _ in $(seq 1 40); do grep -q refresco-azure "$H/corrio.txt" 2>/dev/null && grep -q subida-al-buzon "$H/corrio.txt" 2>/dev/null && break; sleep 0.25; done
-# (el de sqlite3 lo lanza el .ps1 con el pwsh.exe de Windows: acá no corre, ni con Claude Code; su sello lo mide T3)
-for f in check-engram-version refresco-azure subida-al-buzon; do
+# el de sqlite3 corre con el PowerShell 7 de la misma consola (acá, el pwsh de esta máquina); su sello lo mide T3
+for f in check-engram-version ensure-sqlite3 refresco-azure subida-al-buzon; do
   grep -qx "$f" "$H/corrio.txt" 2>/dev/null && ok "T1 corrió $f" || no "T1 no corrió $f: $(tr '\n' ' ' < "$H/corrio.txt" 2>/dev/null)"
 done
 grep -q 'puntero' "$P/AGENTS.md" 2>/dev/null && ok "T1 dejó el AGENTS.md puntero en el repo del proyecto" || no "T1 sin AGENTS.md puntero: $(grep -i agents "$T/t1.out" | head -2 | tr '\n' ' ')"

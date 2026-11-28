@@ -724,3 +724,38 @@ test('T32 8.164 @story-8.164 @ac-8 — el gancho borra la carpeta de una sesión
   assert.ok(fs.existsSync(otra), r2.stdout);
   assert.doesNotMatch(r2.stdout, /sesiones del agente que ya no viven/);
 });
+
+// 🔴 Falla con: en Linux, una carpeta temporal donde vive el ejecutable de un proceso o una librería que tiene cargada,
+// sin un archivo abierto ni la carpeta de trabajo ahí: la lista de lo que está en uso no la nombra y el barrido la borra.
+test('T30 en Linux, lo que está en uso incluye el ejecutable y las librerías cargadas de cada proceso', { skip: WIN }, () => {
+  const { fromProc } = require(HOOK);
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'proc-falso-'));
+  try {
+    const p = path.join(raiz, '4242');
+    fs.mkdirSync(path.join(p, 'fd'), { recursive: true });
+    fs.symlinkSync('/home/u/trabajo', path.join(p, 'cwd'));
+    fs.symlinkSync('/tmp/herramienta-AbC123/bin/app', path.join(p, 'exe'));
+    fs.writeFileSync(path.join(p, 'maps'), [
+      '55d1c000-55d1d000 r--p 00000000 08:01 1234   /tmp/herramienta-AbC123/bin/app',
+      '7f00a000-7f00b000 r-xp 00000000 08:01 5678   /tmp/libs-XyZ789/libcosa.so.1',
+      '7f00c000-7f00d000 rw-p 00000000 00:00 0      [heap]',
+      '7f00e000-7f00f000 rw-p 00000000 00:00 0',
+      '',
+    ].join('\n'));
+    const enUso = fromProc(raiz);
+    assert.ok(enUso, 'leyó el /proc de prueba');
+    assert.ok(enUso.has('/home/u/trabajo'), 'la carpeta de trabajo, como antes');
+    assert.ok(enUso.has('/tmp/herramienta-AbC123/bin/app'), 'el ejecutable');
+    assert.ok(enUso.has('/tmp/libs-XyZ789/libcosa.so.1'), 'la librería cargada');
+    assert.ok(![...enUso].some((x) => !x.startsWith('/')), 'sólo rutas absolutas: [heap] y las anónimas no cuentan');
+    // una ruta con espacios seguidos queda tal cual, y un ejecutable borrado se nombra sin « (deleted)», como en maps
+    const q = path.join(raiz, '4343');
+    fs.mkdirSync(path.join(q, 'fd'), { recursive: true });
+    fs.symlinkSync('/home/u/otro', path.join(q, 'cwd'));
+    fs.symlinkSync('/tmp/viejo-Qw12Er/app (deleted)', path.join(q, 'exe'));
+    fs.writeFileSync(path.join(q, 'maps'), '7f00a000-7f00b000 r-xp 00000000 08:01 5678 /tmp/con  dos-Pp99Zz/lib.so\n');
+    const otro = fromProc(raiz);
+    assert.ok(otro.has('/tmp/con  dos-Pp99Zz/lib.so'), `la ruta con dos espacios, tal cual: ${JSON.stringify([...otro])}`);
+    assert.ok(otro.has('/tmp/viejo-Qw12Er/app'), 'el ejecutable borrado, sin « (deleted)»');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});

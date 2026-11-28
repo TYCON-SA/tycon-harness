@@ -387,9 +387,12 @@
       "raiz": "arnes",
       "ruta": "tests/work-items.test.sh",
       "requiere": [],
+      "__gate": "integrations/** y scripts/tests/lib/** porque compara su foto de llamadas a az (la del conector de Azure DevOps y el az de mentira): antes la miraba platform-github-only, con esos mismos disparadores.",
       "gate_only_when_touching": [
         "scripts/nightly/**",
-        "scripts/lib/**"
+        "scripts/lib/**",
+        "integrations/**",
+        "scripts/tests/lib/**"
       ]
     },
     {
@@ -815,6 +818,12 @@
       "requiere": []
     },
     {
+      "__nota": "dónde escribe un unzip para el freno de guardar: listar, probar o mandar a la salida no escribe, y extraer escribe en la carpeta de -d o en la del shell. Aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-archive.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el pedido sin preparar que no es de la historia dice la salida (la coordinadora cierra la ejecución con el comando exacto); aparte de save-brake.test.js, que es de las suites bajadas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake-way-out.test.js",
@@ -1217,6 +1226,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un guion grande de otra copia del arnés con los mismos bytes que main en la misma ruta es lo revisado y pasa; cambiado, en otra ruta o igual a un commit que no está en main, frena. Con node --test cada archivo nombrado es un guion, no sólo el primero.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-reviewed-copy.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La segunda capa del freno de escrituras por consola: lo protegido que un comando cambió vuelve a lo que tenía la foto de antes, comparado por contenido, salvo lo que escribe marker.js solo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-after.test.js",
@@ -1305,6 +1320,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/smart-reloop-blindness.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-cap-holes.test.js",
       "requiere": []
     },
     {
@@ -2896,7 +2916,7 @@
       "requiere": []
     },
     {
-      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase, el aviso con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
+      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase (el revisor único de historias no), el freno con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
       "raiz": "arnes",
       "ruta": "tests/agile-pass-turn.test.js",
       "requiere": []
@@ -4041,9 +4061,23 @@
       "requiere": []
     },
     {
-      "__nota": "Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (corre las seis suites de la foto) y la instalación no duplica ganchos.",
+      "__nota": "Parte 1 de 2 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada suite de la foto; work-items.test.sh compara la suya cada vez que corre) y la instalación no duplica ganchos.",
       "raiz": "arnes",
-      "ruta": "tests/platform-github-only.test.js",
+      "ruta": "tests/platform-github-only.p1.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/lib/**",
+        "integrations/**",
+        "scripts/nightly/**",
+        "scripts/hooks/**",
+        "scripts/setup/**",
+        "scripts/tests/lib/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada suite de la foto; work-items.test.sh compara la suya cada vez que corre) y la instalación no duplica ganchos.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-github-only.p2.test.js",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/lib/**",
@@ -4888,6 +4922,12 @@
       "requiere": []
     },
     {
+      "__nota": "A24 (S1-S10): el freno de producción sabe cuándo arrancó la sesión aunque `ps` hable castellano o la sesión aparezca con el nombre de su versión; y si no lo sabe, revisa todos los snapshots y le pregunta al shell de login en vivo, en vez de cerrar la puerta para siempre. Con un `ps` de mentira y un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-session-start.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.9, tanda E (T58): la story de retiro existe con followup_of a la 8.9 y a la 8.12, trae lo que pide el AC 54, las dos padres tienen su followed_up_by y epics.md la registra con los números del termómetro. Sin specs/ (copia pública), no mide.",
       "raiz": "arnes",
       "ruta": "tests/retirement-story.test.js",
@@ -5078,6 +5118,12 @@
       "__nota": "story 8.36 (T1-T3): la tanda del aplicador (scripts/setup/applier-batch.js) corre varios pasos de Node en un solo proceso. Cada paso de la lista cerrada (skills-dir, tycon-config, legacy-names, apply-hooks), en una HOME de juguete con cada estado que el aplicador conoce, contesta igual que su llamada suelta: código, salida, salida de error y lo que deja en el disco; también juntos, en el orden del aplicador. Un paso que tira o llama a process.exit cuenta como un Node caído y el resto corre; uno fuera de la lista: sale 2 sin correr nada. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/applier-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Lo que el arranque de Windows corre como el del .sh: el lanzador en orden (scripts/lib/run-in-order.js) corre la recolección de hallazgos antes de la subida y uno que falla no corta el otro; la recolección con --log agrega su salida al registro y no escribe en la consola; un programa que no se encuentra por su nombre corre con el Node del lanzador. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-startup-batch.test.js",
       "requiere": []
     },
     {

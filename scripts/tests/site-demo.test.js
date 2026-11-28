@@ -30,7 +30,9 @@ const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.p
 // El resumen (sha256 del JSON con las claves ordenadas) de lo que las capturas de la guía armaban en línea, medido con el
 // guion de antes de mover los datos y a esta misma hora: si los datos movidos dan el mismo resumen, las capturas salen iguales.
 const AHORA_FIJO = Date.parse('2026-10-22T15:30:00Z');
-const RESUMEN_DE_LAS_CAPTURAS = 'cef71fb65e5da931de9ac58dae3564f1723300c7ba3d18f88612edc97fb3fd31';
+// A166: el repo de operaciones del demo pasó a vivir donde lo pone el sitio (su propio proyecto): el resumen cambia y las
+// capturas de Configuración se regeneran con site-guide-captures.js
+const RESUMEN_DE_LAS_CAPTURAS = 'f31d2e60e3aeb181e1f73854e49ab08e56e803cbd3dff41fcb9fbee97f1d2981';
 const canonico = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));
 
 test('2.76-Capturas_MismosDatos', () => {
@@ -1341,4 +1343,93 @@ test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
   assert.deepStrictEqual(vivos, [], `quedaron vivos: ${vivos.join(', ')}`);
   // y ningún cierre de las pruebas de arriba se colgó (se anotan en vez de tapar el rojo de su prueba)
   assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
+});
+
+// 🔴 Falla con: el sitio demo muestra máquinas al día como «una versión del arnés anterior a la que manda la huella» (A163).
+test('A163_Demo_LasMaquinasAlDiaMandanSuHuella — sin huella queda sólo la de la versión vieja, con el motivo de siempre', () => {
+  const D = DATOS();
+  const P = require(path.join(ROOT, 'scripts', 'lib', 'people.js'));
+  const dir = tmp('demo-huella-');
+  for (const [rel, texto] of Object.entries(D.blobsDelBuzon(AHORA_FIJO, { completo: true, version: P.MACHINE_ID_SINCE }))) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), texto);
+  }
+  const r = P.leerCorreosInformados(dir);
+  const sin = Object.keys(r.maquinas).filter((m) => !r.maquinas[m].machine_id).sort();
+  assert.deepStrictEqual(sin, ['mac-bruno'], JSON.stringify(r.maquinas));
+  assert.ok(!('machine_id_motivo' in r.maquinas['mac-bruno']), 'la de bruno tiene una versión de antes de la huella');
+  const huellas = Object.values(r.maquinas).map((m) => m.machine_id).filter(Boolean);
+  assert.strictEqual(new Set(huellas).size, huellas.length, 'cada máquina, su huella');
+});
+
+// 🔴 Falla con: el demo pone el repo de operaciones en GitHub en «Dónde vive cada repo» y enlaza la lista de la revisión
+// de dependencias a otra plataforma, dentro del proyecto de un producto (A166); o muestra tareas de la revisión de las
+// ejecuciones sin decir a qué organización y proyecto van (A164).
+test('A164_A166_Demo_OperacionesYTareas_DicenLoMismoEnTodaLaPantalla', () => {
+  const D = DATOS();
+  const P = require(path.join(SITE, 'demo', 'platform-answers.js')).plataformaDeEjemplo();
+  const { web, ...remoto } = P.remotos.operaciones;
+  assert.deepStrictEqual(D.REPOS.operations, remoto, 'team-repos.json y el remoto del sitio, el mismo repo');
+  assert.ok(web.includes(`/${encodeURIComponent(remoto.project)}/`), web);
+  const productos = Object.keys(P.pipelines);
+  assert.ok(!productos.includes(remoto.project), `operaciones en el proyecto de un producto: ${remoto.project}`);
+  const ops = D.operaciones({ ahora: AHORA_FIJO, completo: true });
+  const conf = ops['operations.json'] || ops;
+  const wi = (conf.work_items) || {};
+  assert.ok(wi.org && wi.project, `work_items sin organización o proyecto: ${JSON.stringify(wi)}`);
+  assert.ok(productos.includes(wi.project), wi.project);
+});
+
+// 🔴 Falla con: los datos del demo se contradecían entre pestañas (A91-A93, recorrido F21). Inicio decía que la tarea de
+//    pkg-cuatro se cerró y Mantenimiento que nunca la tuvo (la ficha no traía `pedidos:` ni `repos:`); las dos fichas del
+//    vigilante tenían el mismo producto y una regla que el sitio no conoce, y se leían como la misma ficha en dos lugares;
+//    la Tarea 5002 la tenía Ana en su Inicio y en Mantenimiento «asignada a: no se sabe todavía».
+test('A91-A93 Demo_LasFichasYLosResumenesDeLaNocheDicenLoMismo', () => {
+  const D = DATOS();
+  const a = D.operaciones({ ahora: AHORA_FIJO, completo: true });
+  const hoy = '2026-10-22';
+  const ficha = (rel) => a[rel] || null;
+  const escalar = (txt, clave) => ((new RegExp(`^${clave}:[ \\t]*(.*)$`, 'm').exec(txt || '') || [])[1] || '').replace(/^["']|["']$/g, '');
+  const fichaDep = (id) => ['pending', 'promoted', 'archived'].map((c) => ficha(`inbox/dependencies/${c}/${id}.yaml`)).find(Boolean);
+  const dep = a[`.dashboard/dependencias/dependencias-${hoy}.json`].resumen.rubros;
+  for (const x of dep.pedidos_cerrados_con_vivas.valor) {
+    assert.ok(Number.isInteger(x.pedido) && x.proyecto, `la forma que escribe la noche (ficha, proyecto, pedido): ${JSON.stringify(x)}`);
+    const f = fichaDep(x.ficha || x.id);
+    assert.match(f, new RegExp(`^pedidos:\\n(?:[ \\t]+-[^\\n]*\\n)*[ \\t]+- ${x.proyecto}: ${x.pedido}\\n`, 'm'), `la ficha ${x.ficha} tiene la tarea que se cerró`);
+  }
+  // una vulnerabilidad que se sigue dice en qué repos vive: sin eso, Mantenimiento dice «en 0 repos»
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => /^inbox\/dependencies\/(pending|promoted)\//.test(k))) {
+    assert.match(txt, /^repos:\n[ \t]+- \S/m, `${rel} dice en qué repos vive el paquete`);
+  }
+  // cada ficha del resumen del vigilante es la del mismo producto y la misma regla, y la regla es una que el sitio nombra
+  const vig = a[`.dashboard/vigilante/vigilante-${hoy}.json`].resumen.rubros;
+  const titulos = new Set();
+  for (const x of [...vig.pendientes.valor, ...vig.aceptadas_sin_story.valor]) {
+    const f = ['pending', 'promoted'].map((c) => ficha(`inbox/watcher/${c}/${x.id}.yaml`)).find(Boolean);
+    assert.strictEqual(escalar(f, 'producto'), x.producto, `${x.id}: el mismo producto en el resumen y en la ficha`);
+    assert.strictEqual(escalar(f, 'regla'), x.regla, `${x.id}: la misma regla`);
+    assert.ok(['deriva', 'goteo', 'desagregacion', 'latido'].includes(x.regla), `${x.id}: una regla que el sitio nombra (${x.regla})`);
+    titulos.add(`${x.producto}:${x.regla}`);
+  }
+  assert.strictEqual(titulos.size, vig.pendientes.valor.length + vig.aceptadas_sin_story.valor.length, 'dos fichas no se leen como la misma');
+  // la tarea que alguien tiene asignada en su Inicio, en Mantenimiento con quien la tiene
+  for (const p of a[`.dashboard/assigned/assigned-${hoy}.json`].pedidos.filter((x) => x.dependencias)) {
+    const conTarea = Object.entries(a).find(([k, txt]) => k.startsWith('inbox/dependencies/') && new RegExp(`- ${p.proyecto}: ${p.id}\\n`).test(txt));
+    assert.ok(conTarea, `la tarea ${p.id} es de una ficha`);
+    // la noche anota el nombre que muestra la plataforma (nunca un correo), o <alguien> si el nombre es un correo
+    const quien = (new RegExp(`^[ \\t]+- "${p.id}: ([^"]+)"`, 'm').exec(conTarea[1].split(/^asignados:\n/m)[1] || '') || [])[1];
+    assert.ok(quien && quien !== '<nadie>' && !quien.includes('@'), `la ficha dice a quién está asignada la ${p.id}, como la anota la noche: ${quien}`);
+  }
+  // A96: una vulnerabilidad que lleva N noches se detectó hace N días, no ayer
+  const diaDe = (n) => new Date(AHORA_FIJO - n * 864e5).toISOString().slice(0, 10);
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => k.startsWith('inbox/dependencies/'))) {
+    const noches = Number(escalar(txt, 'noches'));
+    assert.strictEqual(escalar(txt, 'detectado'), diaDe(noches), `${rel}: detectada hace ${noches} noches`);
+  }
+  // A99: la tarea que creó la noche para un arreglo no es una tarea de otra cosa que alguien tiene asignada
+  const asignadas = new Map(a[`.dashboard/assigned/assigned-${hoy}.json`].pedidos.map((x) => [String(x.id), x]));
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => k.startsWith('inbox/runs-review/'))) {
+    const n = (/^pedido:[ \t]*(\d+)/m.exec(txt) || /^[ \t]+id:[ \t]*(\d+)/m.exec(txt) || [])[1];
+    if (n) assert.ok(!asignadas.has(n), `${rel}: su tarea ${n} no es «${(asignadas.get(n) || {}).titulo}»`);
+  }
 });
