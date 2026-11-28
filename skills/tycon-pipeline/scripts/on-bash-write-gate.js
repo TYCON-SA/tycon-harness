@@ -390,6 +390,9 @@ function handleCarrilEHistoria(event, opts = {}) {
   // por ruta real (un enlace al estado). Frena de más un comodín escrito en la casa o en la carpeta del arnés.
   const zonas = () => [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
   const zonaQueAlcanzaElComodin = (abs) => {
+    // un `$(…)` o comillas invertidas no es un comodín: es un destino sin resolver, que juzga la opción B (y el lector
+    // lo corta en el primer blanco: `$(date +%F).log` llega como `$(date`)
+    if (/\$\(|`/.test(String(abs))) return null;
     const partes = String(abs).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
@@ -411,8 +414,29 @@ function handleCarrilEHistoria(event, opts = {}) {
       } else if (hondo > 0 && (ch === '/' || ch === '\\')) barraEnGrupo = true;
     }
     if (hondo > 0 && barraEnGrupo && anidado) llaveRara = true;
-    const fijo = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..') ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
-    for (const z of zonas()) if (isInside(z, fijo) || isInside(fijo, z)) return z;
+    const sube = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..');
+    const fijo = sube ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
+    const resto = partes.slice(i).filter(Boolean);
+    // `**` y `(a|b)` de zsh (o un `(` sin cerrar: el `|` corta la palabra) llegan a cualquier profundidad
+    const anda = resto.some((p) => p.includes('**') || /\([^)]*(?:\||$)/.test(p));
+    const sinMay = process.platform === 'darwin' || process.platform === 'win32';
+    const igual = (a1, b1) => (sinMay ? String(a1).toLowerCase() === String(b1).toLowerCase() : a1 === b1);
+    // un tramo del patrón puede nombrar ese tramo de la zona: llaves y paréntesis cuentan como `*` (de más, nunca de menos)
+    const puedeNombrar = (seg, comp) => {
+      const patron = seg.replace(/\{[^{}]*\}/g, '*').replace(/\([^()]*\)?/g, '*').replace(/[{}]/g, '*');
+      if (!/[*?[]/.test(patron)) return igual(seg, comp);
+      try { const re = comodinDelShell(sinMay ? patron.toLowerCase() : patron); return re.test(sinMay ? comp.toLowerCase() : comp); } catch { return true; }
+    };
+    for (const z of zonas()) {
+      if (!z) continue;
+      if (isInside(z, fijo)) return z;
+      if (!isInside(fijo, z)) continue;
+      if (sube || anda) return z;
+      // la zona queda a `rel` tramos del tramo fijo: el patrón llega si tiene esa cantidad o más y cada tramo puede nombrar
+      // el de la zona (`*.log` en la casa no nombra `.tycon`; `est?do` sí nombra `estado`)
+      const rel = P.relative(fijo, z).split(P.sep).filter(Boolean);
+      if (resto.length >= rel.length && rel.every((comp, k) => puedeNombrar(resto[k], comp))) return z;
+    }
     // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)
     let enDisco = String(abs);
     // de adentro hacia afuera (`{x,l{1..1}}`), con tope: cada vuelta saca un nivel
@@ -677,7 +701,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       return texto.slice(desde, k);
     };
     // el destino con las variables que tienen una asignación en el comando reemplazadas por su texto (cuatro niveles), y
-    // además ese texto suelto: `C=.claude; D=~/$C/x` se lee `~/.claude/x`
+    // además ese texto suelto: `C=.x; D=~/$C/y` se lee `~/.x/y`
     const textoDe = (t) => {
       const valorDe = new Map();
       for (const a of asigs) valorDe.set(a.nombre, String(a.valor));
