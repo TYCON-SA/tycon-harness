@@ -24,6 +24,8 @@ const SCRIPTS = path.join(__dirname, '..');
 // la ruta tal cual.
 const enBash = (p) => (process.platform === 'win32' ? `'${p}'` : p);
 const conBarras = (p) => (process.platform === 'win32' ? String(p).split('\\').join('/') : p);
+// La misma ruta en la forma de Git Bash (`C:\\a` → `/c/a`)
+const deGitBash = (p) => `/${String(p)[0].toLowerCase()}${conBarras(p).slice(2)}`;
 // La misma ruta aunque la carpeta temporal se nombre distinto (en Windows, `TEMP` o `Temp` según quién la arma): por la
 // carpeta real y, en Windows, sin mayúsculas
 const mismaRuta = (a, b) => {
@@ -1099,6 +1101,13 @@ test('T32b Freno_DeshacerEnBloque', { skip: SIN_GIT_T32B }, () => {
     // con código cambiado, deshacerlo en bloque frena y nombra el archivo
     fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 2;\n');
     assert.match(frena('git reset --hard'), /src[\\/]a\.ts/);
+    // 🔴 el ensayo de un find que borra código no ve de menos: un comodín que en la carpeta de la sesión cumple un solo
+    // archivo (en Windows, el find de Git lanzado desde node lo expandía y buscaba ese nombre), y en Windows el
+    // arranque de Git Bash (`/c/…`), cuyas rutas caían fuera del repo
+    fs.writeFileSync(path.join(repo, 'suelto.ts'), 'x\n');
+    frena("find src -name '*.ts' -delete");
+    if (process.platform === 'win32') frena(`find ${deGitBash(repo)}/src -name '*.ts' -delete`);
+    fs.rmSync(path.join(repo, 'suelto.ts'));
     frena('git reset --hard HEAD');
     frena('git reset --merge');
     frena('git stash');
@@ -2007,7 +2016,6 @@ test('EscrituraAlEstado_FormasDeWindows_Frena', { skip: process.platform !== 'wi
   const S = path.join(repo, 'falso.json');
   fs.writeFileSync(S, '{}');
   const arnes = path.join(SCRIPTS, '..', '..', '..');
-  const deGitBash = (p) => `/${p[0].toLowerCase()}${conBarras(p).slice(2)}`;
   const formas = (p) => [`'${p}'`, `"${p}"`, conBarras(p), deGitBash(p)];
   const { tree } = mkInstalled();
   conEnv(SIN_REGISTRO, () => {
