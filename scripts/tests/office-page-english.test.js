@@ -250,3 +250,18 @@ test('T-icono Running_Tests_Icon_IsNotACheckMark — el ícono de quien corre pr
   assert.ok(FX.prueba, 'quien corre pruebas tiene su ícono');
   assert.doesNotMatch(FX.prueba, /[✓✔☑✅]/u, `el ícono de «Corriendo pruebas» es «${FX.prueba}»`);
 });
+
+// 🔴 Falla con: el pie de «Las sesiones» siempre a la vista. Explica «Prometido» y el color de la diferencia, y en el
+// recorrido del sitio del 27/11 ninguna sesión mostraba ninguno de los dos.
+test('T-pie Footer_OnlyWhenSomeSessionShowsPromisedOrDifference — el pie sale sólo si hay algo que explicar', () => {
+  const m = /const conPrometido=([^\n]*);\n/.exec(CODE);
+  assert.ok(m, 'page.js decide con conPrometido si el pie hace falta');
+  const finTxt = (a) => a.fin || null;
+  const conPrometido = new Function('finTxt', `return ${m[1]};`)(finTxt);
+  assert.strictEqual(conPrometido([]), false);
+  assert.strictEqual(conPrometido([{ fin: { hora: '14:20' } }, { nombre: 'x' }]), false, 'sin prometido ni diferencia, no hace falta');
+  assert.strictEqual(conPrometido([{ estimadaIso: '2026-11-28T14:00:00Z' }]), true, 'una con prometido');
+  assert.strictEqual(conPrometido([{ fin: { hora: '14:20', dif: '+20 min', cls: 'late' } }]), true, 'una con diferencia');
+  assert.match(CODE, /function renderCrew\(\)\{[^\n]*foot"\)\.hidden=!conPrometido\(agents\)/, 'la oficina local lo usa');
+  assert.match(CODE, /\$\("foot"\)\.hidden=!oficinas\.size\|\|!\[\.\.\.oficinas\.values\(\)\]\.some\(o=>conPrometido\(/, 'el sitio también');
+});

@@ -183,6 +183,8 @@ const SITE=(()=>{try{const u=new URL(RAIZ.dataset.site||"");return u.protocol===
 setData(DATA);
 // el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
 const finTxt=a=>a.fin||null;
+// el pie de «Las sesiones» explica «Prometido» y el color de la diferencia: sólo sale si alguna sesión muestra uno
+const conPrometido=lista=>(lista||[]).some(a=>!!(a&&(a.estimadaIso||(finTxt(a)&&finTxt(a).dif))));
 // los pendientes: cinco columnas siempre, del estado real y del tablero de la coordinadora. Todo va como texto, nunca como HTML
 // cómo va una tarjeta de «En curso», de lo que ya dice su hora: lo calcula la oficina, con su margen de 15 minutos. Sin hora, nada
 function estadoDeHora(i){const h=i.hora||"";if(i.espera||/^espera\b|parada/.test(h))return ["Esperando","#d19a00"];if(/tarde|se pasó|estaba para/.test(h))return ["Pasada de la hora","#e5534b"];if(/en hora|antes$/.test(h))return ["En hora","#2fa866"];return null}
@@ -334,7 +336,7 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
       bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);pie();sec.appendChild(d);})}
-function renderCrew(){const crew=document.getElementById("crew");pintarTarjetas(crew,agents,abrirSesion);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
+function renderCrew(){const crew=document.getElementById("crew");document.getElementById("foot").hidden=!conPrometido(agents);pintarTarjetas(crew,agents,abrirSesion);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
 // «Cerradas», al final de «Las sesiones»: las de Claude cuyo proceso ya no existe. «Quitar» borra su archivo de estado y
 // está sólo en la oficina viva de la máquina: en el sitio la foto no trae el id
 function cerradasJunto(crew){let g=crew.nextElementSibling;if(!g||!g.classList.contains("cerradas-grupo")){g=el("div","cerradas-grupo");crew.after(g)}return g}
@@ -1104,7 +1106,7 @@ function arrancarOficinas(){
   // lo que repinta desde afuera de la conexión: si falla, se dice en la página, no sólo en la consola
   const seguro=f=>{try{f()}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
   // cortada antes del primer mensaje y sin reintento: no hay nada cargando, y el aviso dice por qué
-  function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size;vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
+  function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size||![...oficinas.values()].some(o=>conPrometido(o.foto&&o.foto.agents));vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
   function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18;
     // en el orden del sitio, el mismo con que se eligen las salas: no en el de llegada, que cambia con lo que la página vio antes
     const orden=[...new Set([...oficinas.keys(),...fichas.keys()])].filter(id=>fichas.has(id)),cards=orden.map(id=>fichas.get(id).card);
