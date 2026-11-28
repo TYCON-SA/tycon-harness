@@ -29,13 +29,13 @@ function regla(texto, selector) {
 const px = (decl, prop) => { const m = decl.match(new RegExp(`(?:^|;)${prop}:(\\d+)px`)); return m ? Number(m[1]) : null; };
 
 /** Arma la página de ejecuciones con una sola ejecución que arranca en `inicio` y devuelve el detalle que dibuja el cliente. */
-function detalleDe(inicio, tz) {
+function detalleDe(inicio, tz, extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'runs-site-layout-'));
   try {
     const runs = path.join(dir, 'runs');
     fs.mkdirSync(runs);
     const sid = 'bbbbbbbb-0000-4000-8000-000000000001';
-    fs.writeFileSync(path.join(runs, `${sid}.json`), DATOS.volcadoDeEjecucion(sid, inicio, { story: '1.4', repo: 'Producto-X/FrontEnd' }));
+    fs.writeFileSync(path.join(runs, `${sid}.json`), JSON.stringify({ ...JSON.parse(DATOS.volcadoDeEjecucion(sid, inicio, { story: '1.4', repo: 'Producto-X/FrontEnd' })), ...extra }));
     const html = path.join(dir, 'o.html');
     const g = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js'), '--view', 'runs', '--runs-dir', runs, '--output', html], { encoding: 'utf8' });
     assert.strictEqual(g.status, 0, g.stderr);
@@ -63,7 +63,8 @@ process.stdout.write(window.__detalle(JSON.parse(modelo).corridas[0]));
 // 🔴 Falla con: el detalle con la fecha y la hora en UTC mientras la fila de la misma ejecución dice el día anterior (a las
 // 21 h de Argentina ya es el día siguiente en UTC).
 test('A135 Detalle_FechaYHoraDelNavegador_IgualQueLaFila', () => {
-  const det = detalleDe('2026-11-26T00:00:00Z', 'America/Argentina/Buenos_Aires');
+  const firmas = { estado: 'leido', ilegibles: 0, recortadas: 0, lineas: [{ cuando: '2026-11-26T00:30:00.000Z', firma: 'plan-approval', nivel: 1, via: 'click', delegada: false, quien: 'persona', pedida_por: null, razon: 'dale' }] };
+  const det = detalleDe('2026-11-26T00:00:00Z', 'America/Argentina/Buenos_Aires', { firmas });
   const sub = (det.match(/<div class="mono sub">([^<]*)<\/div>/) || [])[1];
   assert.ok(sub, 'el detalle tiene su renglón de fecha');
   assert.doesNotMatch(sub, /UTC/, `la fecha del detalle no va en UTC: ${sub}`);
@@ -73,6 +74,9 @@ test('A135 Detalle_FechaYHoraDelNavegador_IgualQueLaFila', () => {
     const d = new Date('2026-11-26T00:00:00Z');
     const dia = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
     assert.ok(sub.startsWith(`${dia} 21:00`), `el día y la hora locales, con el formato de la columna de la tabla («${dia} 21:00»): ${sub}`);
+    // la hora de cada firma, también la del navegador
+    const firmasHtml = (det.match(/<ul class="nopaso firmas">([\s\S]*?)<\/ul>/) || [])[1] || '';
+    assert.match(firmasHtml, /<span class="np-t">21:30<\/span>/, `la firma de las 00:30 UTC dice 21:30: ${firmasHtml.slice(0, 200)}`);
   } finally { if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev; }
 });
 
@@ -112,8 +116,10 @@ test('A138 Detalle_AnchoDeLaCajaDeLaTabla', () => {
   const t = fs.readFileSync(RUNS, 'utf8');
   assert.match(regla(t, '.tabla'), /container-type:inline-size/, 'la caja de la tabla es la medida del detalle');
   const det = regla(t, '.det');
-  assert.match(det, /width:100cqw/, 'el detalle mide lo que se ve de la tabla');
-  assert.doesNotMatch(det, /100vw/, 'y no el ancho de la ventana');
+  const anchos = det.match(/(?:^|;)width:[^;]+/g) || [];
+  assert.match(anchos[anchos.length - 1] || '', /width:100cqw$/, 'el detalle mide lo que se ve de la tabla (la última declaración gana)');
+  // un navegador sin cqw descarta esa declaración y se queda con la anterior, el ancho de la ventana
+  assert.ok(anchos.length === 2 && /100vw/.test(anchos[0]), 'con el ancho de la ventana como respaldo, antes');
 });
 
 // 🔴 Falla con: la hoja del sitio que achica todo gráfico de Ejecuciones a su caja (`min-width:0 !important`): en el

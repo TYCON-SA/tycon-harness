@@ -1821,7 +1821,7 @@ td.frenos{white-space:normal;min-width:110px}.f{display:inline-block;margin-bott
 .nd{color:var(--ink-3);font-style:italic;font-size:11.5px}
 tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}tbody tr[data-i]{cursor:pointer}
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
-.det{position:sticky;left:0;width:100cqw;box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
+.det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));width:100cqw;box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
 /* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
 @media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block;min-width:0}.tabla>table>thead{display:none}.tabla>table>tbody{display:block}
