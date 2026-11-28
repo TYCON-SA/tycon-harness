@@ -318,22 +318,24 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
     aceptadas_sin_resolver: { valor: [{ id: 'f2', paquete: 'pkg-dos' }], motivo: null },
     rechazadas_sin_deuda: { valor: [{ id: 'f3', paquete: 'pkg-tres' }], motivo: null },
     vivas_por_proyecto: { valor: [{ proyecto: 'Producto X', ids: ['f1', 'f2'] }], motivo: null },
-    pedidos_cerrados_con_vivas: { valor: [{ id: 'f4', paquete: 'pkg-cuatro' }], motivo: null } } } };
+    // la forma con que la escribe la noche (daily-summary.js): la ficha, el proyecto y la tarea que se cerró
+    pedidos_cerrados_con_vivas: { valor: [{ ficha: 'f4', proyecto: 'Producto X', pedido: 5003, clase: 'arreglado' }], motivo: null } } } };
   f[`.dashboard/vigilante/vigilante-${hoy}.json`] = { fecha: hoy, generado: `${hoy}T05:30:00Z`, productos: { 'producto-x': { ok: true }, 'producto-y': { ok: true } }, hallazgos: [{ id: 'v1' }], nuevos: 1, repetidos: 0, resumen: { rubros: {
-    pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'errores-500' }], motivo: null },
-    aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'lentitud' }], motivo: null } } } };
+    pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'deriva' }], motivo: null },
+    aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'goteo' }], motivo: null } } } };
   // las fichas, en el formato de cada fuente: la pestaña Mantenimiento las muestra.
   // Las pendientes van sin `pr:`: con el pedido de la noche abierto se deciden ahí, no en el sitio
   const conPr = (pr) => (pr ? `pr: ${pr}\n` : '');
   const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
-  const fichaVig = (id, pr, veredicto, regla, extra = '') => `id: ${id}\nfuente: vigilante\ncausa: producto-x:${regla}\nfecha: ${ayer}\nproducto: producto-x\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
+  const fichaVig = (id, pr, veredicto, regla, extra = '', producto = 'producto-x') => `id: ${id}\nfuente: vigilante\ncausa: ${producto}:${regla}\nfecha: ${ayer}\nproducto: ${producto}\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
   Object.assign(f, {
-    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, 'aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\npedidos:\n  - Producto X: 5002\n'),
-    'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5),
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: ${ANA}"\n`),
+    'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5, 'repos:\n  - Producto X/FrontEnd\n'),
     'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
-    'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6),
-    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'errores-500', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
-    'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'lentitud'),
+    // la tarea de pkg-cuatro se cerró y el paquete sigue: la ficha la tiene (la que el Inicio dice cerrada)
+    'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6, 'repos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5003\n'),
+    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'deriva', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
+    'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'goteo', '', 'producto-y'),
   });
   const CYCLE = require('../../nightly/findings/cycle.js');
   const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),

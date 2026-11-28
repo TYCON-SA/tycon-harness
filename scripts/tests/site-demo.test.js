@@ -1342,3 +1342,43 @@ test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
   // y ningún cierre de las pruebas de arriba se colgó (se anotan en vez de tapar el rojo de su prueba)
   assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
 });
+
+// 🔴 Falla con: los datos del demo se contradecían entre pestañas (A91-A93, recorrido F21). Inicio decía que la tarea de
+//    pkg-cuatro se cerró y Mantenimiento que nunca la tuvo (la ficha no traía `pedidos:` ni `repos:`); las dos fichas del
+//    vigilante tenían el mismo producto y una regla que el sitio no conoce, y se leían como la misma ficha en dos lugares;
+//    la Tarea 5002 la tenía Ana en su Inicio y en Mantenimiento «asignada a: no se sabe todavía».
+test('A91-A93 Demo_LasFichasYLosResumenesDeLaNocheDicenLoMismo', () => {
+  const D = DATOS();
+  const a = D.operaciones({ ahora: AHORA_FIJO, completo: true });
+  const hoy = '2026-10-22';
+  const ficha = (rel) => a[rel] || null;
+  const escalar = (txt, clave) => ((new RegExp(`^${clave}:[ \\t]*(.*)$`, 'm').exec(txt || '') || [])[1] || '').replace(/^["']|["']$/g, '');
+  const fichaDep = (id) => ['pending', 'promoted', 'archived'].map((c) => ficha(`inbox/dependencies/${c}/${id}.yaml`)).find(Boolean);
+  const dep = a[`.dashboard/dependencias/dependencias-${hoy}.json`].resumen.rubros;
+  for (const x of dep.pedidos_cerrados_con_vivas.valor) {
+    assert.ok(Number.isInteger(x.pedido) && x.proyecto, `la forma que escribe la noche (ficha, proyecto, pedido): ${JSON.stringify(x)}`);
+    const f = fichaDep(x.ficha || x.id);
+    assert.match(f, new RegExp(`^pedidos:\\n(?:[ \\t]+-[^\\n]*\\n)*[ \\t]+- ${x.proyecto}: ${x.pedido}\\n`, 'm'), `la ficha ${x.ficha} tiene la tarea que se cerró`);
+  }
+  // una vulnerabilidad que se sigue dice en qué repos vive: sin eso, Mantenimiento dice «en 0 repos»
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => /^inbox\/dependencies\/(pending|promoted)\//.test(k))) {
+    assert.match(txt, /^repos:\n[ \t]+- \S/m, `${rel} dice en qué repos vive el paquete`);
+  }
+  // cada ficha del resumen del vigilante es la del mismo producto y la misma regla, y la regla es una que el sitio nombra
+  const vig = a[`.dashboard/vigilante/vigilante-${hoy}.json`].resumen.rubros;
+  const titulos = new Set();
+  for (const x of [...vig.pendientes.valor, ...vig.aceptadas_sin_story.valor]) {
+    const f = ['pending', 'promoted'].map((c) => ficha(`inbox/watcher/${c}/${x.id}.yaml`)).find(Boolean);
+    assert.strictEqual(escalar(f, 'producto'), x.producto, `${x.id}: el mismo producto en el resumen y en la ficha`);
+    assert.strictEqual(escalar(f, 'regla'), x.regla, `${x.id}: la misma regla`);
+    assert.ok(['deriva', 'goteo', 'desagregacion', 'latido'].includes(x.regla), `${x.id}: una regla que el sitio nombra (${x.regla})`);
+    titulos.add(`${x.producto}:${x.regla}`);
+  }
+  assert.strictEqual(titulos.size, vig.pendientes.valor.length + vig.aceptadas_sin_story.valor.length, 'dos fichas no se leen como la misma');
+  // la tarea que alguien tiene asignada en su Inicio, en Mantenimiento con quien la tiene
+  for (const p of a[`.dashboard/assigned/assigned-${hoy}.json`].pedidos.filter((x) => x.dependencias)) {
+    const conTarea = Object.entries(a).find(([k, txt]) => k.startsWith('inbox/dependencies/') && new RegExp(`- ${p.proyecto}: ${p.id}\\n`).test(txt));
+    assert.ok(conTarea, `la tarea ${p.id} es de una ficha`);
+    assert.match(conTarea[1], new RegExp(`^asignados:\\n(?:[ \\t]+-[^\\n]*\\n)*[ \\t]+- "${p.id}: ${p.asignado}"`, 'm'), `la ficha dice a quién está asignada la ${p.id}`);
+  }
+});
