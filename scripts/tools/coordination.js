@@ -2981,7 +2981,9 @@ const LAUNCHED_KEEP_MS = 24 * 3600000;
 const LAUNCHED_EARLY_MS = 5000;
 const LAUNCHED_LATE_MS = LAUNCH_TIMEOUT_MS + 60000;
 const launchedFile = (home) => path.join(coordinationDir(home), 'launched.json');
-const realDir = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(String(p)); } };
+// la variante nativa corrige las mayúsculas a las del disco (y en Windows, los nombres cortos): la común deja las que
+// llegaron, y `c:\lab\proyecto` no era `C:\lab\proyecto` aunque sean la misma carpeta
+const realDir = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(String(p)); } };
 
 /** Los renglones de `launched.json`, tal como están. Sin archivo, vacío; roto o que no es una lista, tira con su motivo. */
 function readLaunched(home) {
@@ -3564,7 +3566,7 @@ function folderGaps(dir, opts) {
   const onBranch = branch.code === 0;
   const slots = workSlots.list({ home: opts.home, env: opts.env, arnes: opts.arnes, repo: dir });
   if (!slots.ok) unknown.push(`no pude mirar si ${dir} es un puesto fijo (${slots.message})`);
-  const slot = slots.ok ? slots.slots.find((s) => fs.realpathSync(top.out) === s.path) : null;
+  const slot = slots.ok ? slots.slots.find((s) => realDir(top.out) === realDir(s.path)) : null;
   // un puesto que la sesión soltó y ahora ocupa otra sesión viva, que arrancó después, ya no es suyo: lo de ahora (los
   // cambios, la rama, el puesto tomado) es de la otra, y lo suyo son las ramas que dejó ahí antes de que la otra llegara.
   // Sin el registro que diga que lo soltó, o con la rama de ahora entre las suyas, se mira todo como siempre.
@@ -3787,7 +3789,7 @@ function close(opts = {}) {
   if (s.alive && s.status !== 'idle') missing.push(`está trabajando (${oneLine(s.status) || 'sin estado'})`);
   // la sesión viva que arrancó después en su misma carpeta: si la carpeta es un puesto fijo, lo heredó. Sin una así, la
   // que arrancó antes y está ahí ahora: puede haber llegado al puesto después de la suelta (lo dice el registro)
-  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const real = realDir;
   const others = s.cwd && Number.isFinite(s.startedAt)
     ? [...sessions.entries()].filter(([o, x]) => o !== sid && x.alive && x.cwd && Number.isFinite(x.startedAt) && real(x.cwd) === real(s.cwd)).map(([, x]) => x)
     : [];
