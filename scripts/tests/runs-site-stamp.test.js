@@ -25,3 +25,20 @@ test('S2 SelloDelSitio_SinVersion_DiceDesconocida — nunca el rótulo solo', ()
   assert.match(sello({ sitio: { rol: 'maintainer', version: null }, idioma: 'es' }), /UTC · versión del sitio desconocida/);
   assert.match(sello({ sitio: { rol: 'maintainer' }, idioma: 'en' }), /UTC · site version unknown/);
 });
+
+// 🔴 Falla con: «el arnés en seis preguntas: sus fichas, en Arnés», y Arnés agrupa sus fichas en cuatro: las otras dos
+// preguntas están en Proyectos (recorrido del sitio del 27/11). El encabezado nombra cada pestaña que tiene preguntas.
+test('S3 Eyebrow_SeisPreguntas_NombraDondeEstan — cada pestaña con preguntas, en los dos idiomas', () => {
+  const C = require(path.join(__dirname, '..', 'site', 'tabs', 'cards.js'));
+  const { TEXTOS } = require(path.join(__dirname, '..', 'site', 'texts.js'));
+  assert.strictEqual(C.PREGUNTAS.length, 6, 'el encabezado dice «seis»');
+  const fuente = require('fs').readFileSync(path.join(__dirname, '..', 'site', 'tabs', 'cards.js'), 'utf8');
+  const pestanas = new Set([...fuente.matchAll(/pregunta: \d, pestana: '([a-z]+)'/g)].map((m) => m[1]).filter((p) => p !== 'corridas'));
+  assert.ok(pestanas.size >= 2, `las pestañas con preguntas: ${[...pestanas]}`);
+  for (const idioma of ['es', 'en']) {
+    const m = /<p class="eyebrow">([\s\S]*?)<\/p>|class="eyebrow"[^>]*>([\s\S]*?)<\/(?:p|div)>/.exec(R.cabecera(M, { sitio: { rol: 'maintainer', version: '1' }, idioma }));
+    assert.ok(m, 'la cabecera trae el eyebrow');
+    const texto = (m[1] || m[2]).replace(/<[^>]+>/g, '');
+    for (const p of pestanas) assert.ok(texto.includes(TEXTOS[`pestana.${p}`][idioma]), `${idioma}: «${texto}» no nombra ${TEXTOS[`pestana.${p}`][idioma]}`);
+  }
+});
