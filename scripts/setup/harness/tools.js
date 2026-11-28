@@ -285,6 +285,9 @@ function codexPieces({ tree, home = os.homedir(), env = process.env } = {}) {
   if (rec.problem) out.teamRecordProblem = `el registro de los revisores de la capa en Codex no se lee (${rec.problem}): sus archivos no se cuentan ni se quitan solos`;
   else if (!rec.codex_home || path.resolve(rec.codex_home) === path.resolve(dir)) for (const rel of Object.keys(rec.files).sort()) if (isFile(path.join(dir, ...rel.split('/')))) add(rel);
   for (const rel of ['hooks.json', 'config.toml']) if (isFile(path.join(dir, rel))) add(rel);
+  // las reglas que prohíben borrar la raíz o la carpeta personal (build/deploy-codex-rules.js): sólo si el archivo dice que
+  // es del arnés; uno con el mismo nombre que no lo dice es de la persona
+  try { if (fs.readFileSync(path.join(dir, 'rules', 'harness-deny.rules'), 'utf8').startsWith('# harness-deny: ')) add('rules/harness-deny.rules'); } catch (_) { /* no está */ }
   const roots = skillRoots({ tree, home });
   let names = [];
   try { names = fs.readdirSync(path.join(dir, 'skills')).sort(); } catch (_) { names = []; }

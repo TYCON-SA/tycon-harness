@@ -748,9 +748,31 @@ test('AdhocScreen_TiposYConfiguracion_NoSonPantalla_PackageJsonSi (A72)', (t) =>
   // lo que sigue contando en ese repo: package.json, una .tsx, y lo que no es tipo ni configuración de herramientas, o
   // vive en una carpeta de la aplicación
   const siguen = ['web/package.json', 'web/src/components/Combo.tsx', 'web/src/styles/app.css', 'web/public/logo.png', 'web/src/utils/fecha.ts',
-    'web/.storybook/preview.ts', 'web/src/components/Combo.d.ts', 'web/src/navigation/menu.config.ts', 'app/tipos.d.ts', 'app/layout.config.ts',
-    'web/src/features/.tycon/pantalla.ts'];
+    'web/.storybook/preview.ts', 'web/src/components/Combo.d.ts', 'web/src/navigation/menu.config.ts', 'app/tipos.d.ts', 'app/layout.config.ts'];
   carril(h, { files: [...fs_, ...siguen.map((rel) => escribir(r, rel, '{}\n'))] });
   const ps = revisar(leerCarril(h), [r]).pantallas;
   for (const rel of siguen) assert.ok(ps.some((p) => p.endsWith(rel)), `${rel} sigue contando: ${ps.join(', ')}`);
+});
+
+// 🔴 Falla con: la carpeta del arnés reconocida sólo en la raíz. En un repo con varias aplicaciones, cada una tiene su
+//    `.advisors/` (gestion/.advisors/dod-runtime/…) y su captura frenaba el guardar de un carril sin pantalla
+//    (seguimiento de la A72). Una .tsx dentro de esas carpetas sigue contando.
+test('AdhocScreen_EvidenciaDelArnesAnidada_NoEsPantalla (A72b)', (t) => {
+  const r = repo(t, 'FrontEnd');
+  const h = home(t);
+  const tipos = escribir(r, 'gestion/src/types/deuda.d.ts', 'export type Deuda = { id: number };\n');
+  const anidadas = ['gestion/.advisors/dod-runtime/merge-critical-main-captures-20261026T192213Z/01-pantalla.png',
+    'gestion/.advisors/dod-runtime/Captura de pantalla 2026-11-27 a las 17.30.12.png', 'gestion/.tycon/estado.json',
+    'apps/panel/.engram/manifest.json'];
+  for (const rel of anidadas) escribir(r, rel, rel.endsWith('.png') ? PNG : '{}\n');
+  carril(h, { files: [tipos] });
+  const ps = revisar(leerCarril(h), [r]).pantallas;
+  assert.deepStrictEqual(ps.filter((p) => /\.(advisors|tycon|engram)\//.test(p)), [], `tomó la evidencia anidada por pantalla: ${ps.join(', ')}`);
+  escribir(r, 'gestion/.tycon/Raro.tsx', '<p>hola</p>\n');
+  // sólo esas tres carpetas, con su punto y entera: una que se les parece sigue contando
+  const parecidas = ['gestion/.advisorsX/vista.ts', 'gestion/x.tycon/vista.ts', 'gestion/tycon/vista.ts', 'gestion/.engram-viejo/vista.ts'];
+  for (const rel of parecidas) escribir(r, rel, 'export const v = 1;\n');
+  const despues = revisar(leerCarril(h), [r]).pantallas;
+  assert.ok(despues.some((p) => p.endsWith('Raro.tsx')), 'una .tsx sigue contando');
+  for (const rel of parecidas) assert.ok(despues.some((p) => p.endsWith(rel)), `${rel} sigue contando: ${despues.join(', ')}`);
 });

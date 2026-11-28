@@ -1140,3 +1140,11 @@ test('OH9 OperationsConfig_SitePrices — cada modelo con sus tres precios, la f
     assert.deepStrictEqual(paths(m), esperado, JSON.stringify(site));
   }
 });
+
+test('OH18 OperationsConfig_PrecioDeEscrituraDeCache — los dos precios de escritura de caché son opcionales y números de cero en adelante', () => {
+  const precio = (extra = {}) => ({ lectura: 4, escritura: 20, cache: 0.2, fuente: 'https://precios.example/claude', fecha: '2026-11-27', ...extra });
+  const bueno = OPS.parse(JSON.stringify(opsWithSite({ prices: { 'claude-opus-5-5': precio({ cache_escrita_5m: 5, cache_escrita_1h: 8 }) } })));
+  assert.deepStrictEqual(bueno.problems, []);
+  const malo = OPS.parse(JSON.stringify(opsWithSite({ prices: { 'claude-opus-5-5': precio({ cache_escrita_5m: -1, cache_escrita_1h: '8' }) } })));
+  assert.deepStrictEqual(paths(malo), ['site.prices.claude-opus-5-5.cache_escrita_1h', 'site.prices.claude-opus-5-5.cache_escrita_5m']);
+});

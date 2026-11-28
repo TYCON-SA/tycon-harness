@@ -1293,6 +1293,21 @@ test('T20 RunSuites_PortableSuite_CiEnvironment — el resto del ambiente de la 
   assert.ok(fs.existsSync(path.join(f.root, 'amb.json')), 'y la suite corrió igual');
 });
 
+// 🔴 Falla con: la portable hereda las variables que mudan las casas de quien corre el portón (`TYCON_HOME`,
+//    `CODEX_HOME`, `CLAUDE_CONFIG_DIR`). La CI arma el ambiente de cero y no las tiene. Con `TYCON_HOME` puesto, el
+//    lector de la carpeta del estado salía de la HOME vacía mientras la puerta de producción se quedaba en ella, y
+//    prod-firewall T21 dejaba el estado en dos lugares sólo dentro del portón (issue #1855).
+test('T20f RunSuites_PortableSuite_NoHomeOverrides — la portable no hereda TYCON_HOME, CODEX_HOME ni CLAUDE_CONFIG_DIR de quien corre (issue #1855)', () => {
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/casas.test.js', requiere: [] }] });
+  f.escribir('arnes', 'tests/casas.test.js', `require('fs').writeFileSync(${JSON.stringify(path.join(f.root, 'casas.json'))},JSON.stringify({home:process.env.HOME,tycon:process.env.TYCON_HOME??null,codex:process.env.CODEX_HOME??null,claude:process.env.CLAUDE_CONFIG_DIR??null}));`);
+  const ajena = path.join(f.root, 'casa-de-quien-corre');
+  const r = runWith(f, { env: { TYCON_HOME: path.join(ajena, '.tycon'), CODEX_HOME: path.join(ajena, '.codex'), CLAUDE_CONFIG_DIR: path.join(ajena, '.claude') } });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const a = JSON.parse(fs.readFileSync(path.join(f.root, 'casas.json'), 'utf8'));
+  assert.notStrictEqual(a.home, process.env.HOME, 'corrió con su HOME vacía');
+  assert.deepStrictEqual({ tycon: a.tycon, codex: a.codex, claude: a.claude }, { tycon: null, codex: null, claude: null }, 'ninguna casa de quien corre llega a la HOME vacía');
+});
+
 // El árbol armado del privado vive en la carpeta temporal: las HOME bajo su `.advisors/` quedarían en ella, y hay suites
 // que tratan esa carpeta como «de prueba» (un destino «fuera de lo temporal» bajo la HOME dejaría de serlo). El portón
 // declara otra raíz para las HOME, fuera de la carpeta temporal; sin declararla, van bajo el repo como siempre.

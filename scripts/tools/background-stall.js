@@ -37,7 +37,15 @@ const { spawnSync } = require('child_process');
 // a la vez es una tarea colgada, y avisa media hora antes que la espera de 41 minutos que lo motivó.
 const STALL_MS = 15 * 60000;
 const SAMPLE_AFTER_MS = 5 * 60000;
+// una muestra de los procesos por minuto alcanza para un umbral de quince, y en Windows cada lectura cuesta un segundo
+const SAMPLE_EVERY_MS = 60000;
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish', 'sandbox-exec', 'bwrap']);
+// en Windows la herramienta corre sus comandos por el bash de Git o por PowerShell
+const SHELLS_WINDOWS = new Set(['bash', 'sh', 'pwsh', 'powershell']);
+// la lista de procesos de Windows, con el tiempo de CPU (en unidades de 100 ns): el número, el padre y el nombre del
+// programa, nunca la línea de comando
+const CONSULTA_WINDOWS = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object "
+  + 'ProcessId,ParentProcessId,KernelModeTime,UserModeTime,Name | ConvertTo-Json -Compress';
 const COMANDO = /^b[a-z0-9]+\.output$/;
 const CIERRE = /\[(exited with code -?\d+|killed|process exited while detached[^\]]*)\]\s*$/;
 const ESTADO = 'background-activity.json';
@@ -55,7 +63,8 @@ function centesimas(t) {
  * Windows no hay `ps`). Se le pide número, padre, CPU y programa, nunca la línea de comando; del programa sólo queda si
  * es una consola.
  */
-function processes({ run = spawnSync } = {}) {
+function processes({ run = spawnSync, platform = process.platform } = {}) {
+  if (platform === 'win32') return processesWindows(run);
   let r;
   try { r = run('ps', ['-A', '-o', 'pid=,ppid=,time=,comm='], { windowsHide: true, encoding: 'utf8', timeout: 3000 }); } catch (e) { return { problem: `los procesos (${e.message})` }; }
   if (!r || r.error || r.status !== 0) return { problem: `los procesos (${(r && r.error && r.error.message) || `ps salió con ${r && r.status}`})` };
@@ -65,6 +74,31 @@ function processes({ run = spawnSync } = {}) {
     if (m) list.push({ pid: Number(m[1]), ppid: Number(m[2]), cpu: centesimas(m[3]), shell: SHELLS.has(path.basename(m[4].split(' ')[0]).replace(/^-/, '')) });
   }
   return list.length ? { list } : { problem: 'los procesos (ps no devolvió ninguno)' };
+}
+
+/**
+ * Los procesos en Windows, que no tiene `ps`: PowerShell de su ruta fija, sin ventana y sin las variables con que .NET o
+ * un PowerShell 7 cargan otro código. Tarda alrededor de un segundo: se lee sólo con una tarea que lleva rato sin salida.
+ */
+function processesWindows(run) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (/^(PSModulePath$|COR_|CORECLR_|COMPLUS_|DOTNET_)/i.test(k)) delete env[k];
+  let r;
+  try {
+    // la carpeta de Windows de la máquina (otra unidad o carpeta si se instaló así); sin ella, la de siempre
+    const raiz = /^[a-zA-Z]:\\[^"<>|*?]*$/.test(process.env.SystemRoot || '') ? process.env.SystemRoot : 'C:\\Windows';
+    r = run(path.win32.join(raiz, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', CONSULTA_WINDOWS],
+      { windowsHide: true, encoding: 'utf8', timeout: 15000, maxBuffer: 64 * 1024 * 1024, env });
+  } catch (e) { return { problem: `los procesos (${e.message})` }; }
+  if (!r || r.error || r.status !== 0 || !r.stdout) return { problem: `los procesos (${(r && r.error && r.error.message) || `PowerShell salió con ${r && r.status}`})` };
+  let datos;
+  try { datos = JSON.parse(String(r.stdout).replace(/^\uFEFF/, '')); } catch (_) { return { problem: 'los procesos (PowerShell no devolvió la lista)' }; }
+  const list = (Array.isArray(datos) ? datos : [datos]).filter((p) => p && Number.isInteger(p.ProcessId) && Number.isInteger(p.ParentProcessId)).map((p) => ({
+    pid: p.ProcessId, ppid: p.ParentProcessId,
+    cpu: Math.floor(((Number(p.KernelModeTime) || 0) + (Number(p.UserModeTime) || 0)) / 100000),
+    shell: SHELLS_WINDOWS.has(String(p.Name || '').toLowerCase().replace(/\.exe$/, '')),
+  }));
+  return list.length ? { list } : { problem: 'los procesos (PowerShell no devolvió ninguno)' };
 }
 
 /** Las consolas que la sesión `pid` abrió, con todo lo que cuelga de ellas. */
@@ -96,19 +130,33 @@ function signature(pid, list) {
  */
 // la carpeta de Claude Code de un repo se llama como la de la persona: el nombre lo dice tycon-home.js
 const CLAUDE = path.basename(require('../setup/harness/tycon-home.js').claudeDir(require('os').homedir())).replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
-function taskDirs(sid, root, cwd) {
+function taskDirs(sid, root, cwd, { platform = process.platform } = {}) {
   if (!cwd) return [];
   const slug = (p) => String(p).replace(/[^a-zA-Z0-9]/g, '-');
   const raices = new Set([slug(cwd)]);
   const aislada = new RegExp(`^(.*?)[/\\\\]${CLAUDE}[/\\\\]worktrees[/\\\\]`).exec(String(cwd));
   if (aislada) raices.add(slug(aislada[1]));
-  return [...raices].map((s) => path.join(root, s, sid, 'tasks')).filter((d) => { try { return fs.statSync(d).isDirectory(); } catch (_) { return false; } });
+  // en Windows la unidad puede venir escrita con otra caja que la de la carpeta que creó Claude Code
+  if (platform === 'win32') for (const r of [...raices]) { const m = /^([a-zA-Z])(-.*)$/.exec(r); if (m) { raices.add(m[1].toUpperCase() + m[2]); raices.add(m[1].toLowerCase() + m[2]); } }
+  // una misma carpeta por dos nombres (un disco que no distingue mayúsculas) se cuenta una vez
+  const vistas = new Set();
+  return [...raices].map((s) => path.join(root, s, sid, 'tasks')).filter((d) => {
+    let st;
+    try { st = fs.statSync(d); } catch (_) { return false; }
+    if (!st.isDirectory()) return false;
+    // un disco que no da número de nodo (FAT, una carpeta de red) da 0 en todas: ahí no se puede saber, y no se saca
+    if (!st.ino) return true;
+    const id = `${st.dev}:${st.ino}`;
+    if (vistas.has(id)) return false;
+    vistas.add(id);
+    return true;
+  });
 }
 
 /** Los comandos de fondo abiertos de la sesión: `[{ id, mtimeMs }]`. */
-function openTasks(sid, root, cwd) {
+function openTasks(sid, root, cwd, { platform = process.platform } = {}) {
   const out = [];
-  for (const d of taskDirs(sid, root, cwd)) {
+  for (const d of taskDirs(sid, root, cwd, { platform })) {
     let names = [];
     try { names = fs.readdirSync(d).filter((n) => COMANDO.test(n)); } catch (_) { continue; }
     for (const n of names) {
@@ -130,8 +178,10 @@ function openTasks(sid, root, cwd) {
   return out;
 }
 
-const defaultRoot = () => {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+// la carpeta temporal de Claude Code: /tmp/claude-<número de usuario>; en Windows, %TEMP%\claude
+const defaultRoot = ({ platform = process.platform, tmpdir = require('os').tmpdir(), getuid = process.getuid } = {}) => {
+  if (platform === 'win32') return path.join(tmpdir, 'claude');
+  const uid = typeof getuid === 'function' ? getuid() : null;
   return uid == null ? null : path.join('/tmp', `claude-${uid}`);
 };
 
@@ -165,6 +215,18 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
     if (Object.keys(previo).length) guardar(archivo, {}, problems);
     return [];
   }
+  const acusar = (s, desde, out) => {
+    const salida = Math.max(...s.tasks.map((t) => t.mtimeMs));
+    const quieta = now - Math.max(desde, salida);
+    if (quieta >= STALL_MS) out.push({ sid: s.sid, minutes: Math.floor(quieta / 60000), tasks: s.tasks.length });
+  };
+  // con todas muestreadas hace menos de un minuto, se usa lo guardado y no se leen los procesos
+  const fresca = (e) => e && Number.isFinite(e.seen) && e.seen <= now && now - e.seen < SAMPLE_EVERY_MS;
+  if (conTareas.every((s) => fresca(previo[s.sid]))) {
+    const out = [];
+    for (const s of conTareas) if (!previo[s.sid].sinConsola && Number.isFinite(previo[s.sid].at)) acusar(s, previo[s.sid].at, out);
+    return out;
+  }
   const ps = readProcesses();
   if (ps.problem) { problems.push(ps.problem); return []; }
   const nuevo = {};
@@ -172,17 +234,15 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
   for (const s of conTareas) {
     // cada comando de fondo corre en una consola de la sesión: sin ninguna, no corre ninguno, y lo que sigue abierto es
     // el archivo de una tarea que se cortó sin su renglón de cierre
-    if (!consoles(s.pid, ps.list).length) continue;
+    if (!consoles(s.pid, ps.list).length) { nuevo[s.sid] = { sinConsola: true, seen: now }; continue; }
     const sig = signature(s.pid, ps.list);
     const antes = previo[s.sid];
     const desde = antes && antes.sig === sig && Number.isFinite(antes.at) ? antes.at : now;
-    nuevo[s.sid] = { sig, at: desde };
-    const salida = Math.max(...s.tasks.map((t) => t.mtimeMs));
-    const quieta = now - Math.max(desde, salida);
-    if (quieta >= STALL_MS) out.push({ sid: s.sid, minutes: Math.floor(quieta / 60000), tasks: s.tasks.length });
+    nuevo[s.sid] = { sig, at: desde, seen: now };
+    acusar(s, desde, out);
   }
   guardar(archivo, nuevo, problems);
   return out;
 }
 
-module.exports = { stalled, signature, consoles, openTasks, processes, centesimas, STALL_MS, SAMPLE_AFTER_MS };
+module.exports = { stalled, signature, consoles, openTasks, processes, centesimas, defaultRoot, STALL_MS, SAMPLE_AFTER_MS };

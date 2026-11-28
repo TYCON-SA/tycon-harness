@@ -2,7 +2,7 @@
 /**
  * build/deploy-codex-all.js — el ÚNICO punto de entrada del despliegue del lado Codex.
  *
- * Corre los cuatro deployers (generate --deploy · hooks · mcp · skills) con UNA política de
+ * Corre los cinco deployers (generate --deploy · hooks · mcp · skills · reglas) con UNA política de
  * detección de cambios, de silencio y de error, invocado por los DOS instaladores
  * (install-tycon-hooks.sh y .ps1). Una sola entrada evita cuatro llamadas con cuatro políticas
  * distintas, un `--check` ignorado y una corrida entera en cada arranque; y evita que el espejo
@@ -71,6 +71,7 @@ const STEPS = [
   { name: 'deploy-codex-hooks.js', script: 'deploy-codex-hooks.js', args: [], que: 'los hooks del lado Codex quedaron viejos' },
   { name: 'deploy-codex-mcp.js', script: 'deploy-codex-mcp.js', args: [], que: 'los servidores MCP del lado Codex quedaron viejos' },
   { name: 'deploy-shared-skills.js', script: 'deploy-shared-skills.js', args: [], que: 'los skills del lado Codex quedaron viejos' },
+  { name: 'deploy-codex-rules.js', script: 'deploy-codex-rules.js', args: [], que: 'las reglas que le prohíben a Codex borrar la raíz o la carpeta personal quedaron viejas' },
 ];
 
 function git(repo, ...args) {
@@ -146,6 +147,8 @@ function fingerprint(env = process.env) {
       const interp = dh.harnessInterpreter ? dh.harnessInterpreter(env) : { prefix: 'node' };
       if (interp.prefix && interp.prefix !== 'node') own = { n: interp.prefix };
     } catch (e) { own = { n: `error:${(e && e.message) || e}` }; }
+    // apagar las reglas que prohíben borrar la raíz o la carpeta personal (deploy-codex-rules.js) redespliega, para sacarlas
+    if (env.TYCON_NO_DENY_RULES === '1') own.nd = 1;
     integ = JSON.stringify({ i: act.integrations || null, d: act.dropped.map((x) => `${x.event}:${x.spec}`), a: act.aviso || null, ...own });
   } catch (e) { integ = `error:${(e && e.message) || e}`; }
   return [
@@ -167,6 +170,13 @@ function outputsPresent() {
     // config.toml (los servidores MCP y writable_roots) también es salida: sin él, `apply`/`startup` darían el despliegue
     // por «al día» y nunca lo repondrían
     if (!fs.existsSync(path.join(CODEX_HOME, 'config.toml'))) return false;
+    // las reglas que prohíben borrar la raíz o la carpeta personal (deploy-codex-rules.js), salvo apagadas a propósito:
+    // apagadas, el archivo falta a propósito y no se redespliega en cada arranque
+    const rules = path.join(BUILD, 'deploy-codex-rules.js');
+    if (fs.existsSync(rules)) {
+      const R = require(rules);
+      if (R.wanted(process.env) && !fs.existsSync(R.rulesFile(CODEX_HOME))) return false;
+    }
     return true;
   } catch { return false; }
 }
@@ -270,6 +280,7 @@ function selftest() {
     ['el fingerprint incluye los 5 insumos', fingerprint().split('|').length === 5],
     // apagar una integración sin tocar ningún repo cambia la huella
     ['apagar una integración cambia el fingerprint', fingerprint({ ...process.env, TYCON_NIGHTLY: '1' }) !== fingerprint({ ...process.env, TYCON_NIGHTLY: '0' })],
+    ['apagar las reglas de borrado cambia el fingerprint', fingerprint({ ...process.env, TYCON_NO_DENY_RULES: '1' }) !== fingerprint({ ...process.env, TYCON_NO_DENY_RULES: '0' })],
   ];
   let bad = 0;
   for (const [n, ok] of checks) { console.log(`${ok ? '✅' : '❌'} selftest-deploy-all: ${n}`); if (!ok) bad++; }

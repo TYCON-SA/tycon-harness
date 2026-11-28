@@ -39,9 +39,11 @@
 //                          "dark": "invert" | "keep" },       qué hacer con él en el tema oscuro (por defecto, invertirlo)
 //               "prices": { "<modelo>": { "lectura": <n>,    opcional — los precios del costo estimado de la pestaña
 //                   "escritura": <n>, "cache": <n>,          «Horas y tokens», en dólares por millón de tokens (lectura:
-//                   "fuente": "https://…",                   la entrada sin caché; escritura: la salida; cache: la lectura
-//                   "fecha": "AAAA-MM-DD" } } },             de caché), con la página de donde salió cada uno y el día en
-//                                                            que se tomó. Un modelo sin precio no se cuenta como cero
+//                   "cache_escrita_5m": <n>,                 la entrada sin caché; escritura: la salida; cache: la lectura
+//                   "cache_escrita_1h": <n>,                 de caché; cache_escrita_*: la escritura de caché de 5 minutos
+//                   "fuente": "https://…",                   y de 1 hora, opcionales), con la página de donde salió cada
+//                   "fecha": "AAAA-MM-DD" } } },             uno y el día en que se tomó. Un modelo sin precio no se
+//                                                            cuenta como cero
 //     "work_items": { "type": <tipo de work item>,             opcional — el pedido de una vulnerabilidad: su tipo; si
 //                                                            no existe en un proyecto, va su elemento de backlog
 //         "fixed_fields": { <campo>: texto | número },        los campos de todos los pedidos de ese tipo
@@ -119,8 +121,10 @@ const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
 const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations', 'offices', 'prices'];
 // los precios del costo estimado: tres números por modelo, en dólares por millón, con su fuente y su fecha
-const PRICE_KEYS = ['lectura', 'escritura', 'cache', 'fuente', 'fecha'];
+const PRICE_KEYS = ['lectura', 'escritura', 'cache', 'cache_escrita_5m', 'cache_escrita_1h', 'fuente', 'fecha'];
 const PRICE_PARTS = ['lectura', 'escritura', 'cache'];
+// la escritura de caché de 5 minutos y de 1 hora: opcionales (sin ellas, esa parte del costo no se cuenta y se dice)
+const PRICE_OPTIONAL_PARTS = ['cache_escrita_5m', 'cache_escrita_1h'];
 // el nombre de un modelo como lo escriben las conversaciones (claude-opus-5-5, gpt-5.6-terra, kimi-k2.7-code:cloud): la
 // misma forma que sube cada máquina (scripts/lib/transcript-tokens.js)
 const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
@@ -299,6 +303,9 @@ function pricesProblems(prices) {
     problems.push(...siteKeyProblems(p, PRICE_KEYS, at));
     for (const k of PRICE_PARTS) {
       if (typeof p[k] !== 'number' || !Number.isFinite(p[k]) || p[k] < 0) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un número de cero en adelante: dólares por millón de tokens' });
+    }
+    for (const k of PRICE_OPTIONAL_PARTS) {
+      if (p[k] !== undefined && (typeof p[k] !== 'number' || !Number.isFinite(p[k]) || p[k] < 0)) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un número de cero en adelante: dólares por millón de tokens' });
     }
     if (!siteUrlOk(p.fuente)) problems.push({ path: `${at}.fuente`, message: 'tiene que ser la dirección https:// de la página de precios de donde salió' });
     problems.push(...dayProblems(p.fecha, `${at}.fecha`));

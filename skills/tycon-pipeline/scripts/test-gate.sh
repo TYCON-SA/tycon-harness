@@ -1510,7 +1510,13 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
   _tg_her=0
   TYCON_MAIN_CHECK=1 node "$SCRIPT_DIR/lib/inherited-reds.js" apply "$REPO_RUN" "$RESULTS_DIR/suites.json" ${_TG_HEREDADOS_ARGS[@]+"${_TG_HEREDADOS_ARGS[@]}"} || _tg_her=$?
   if [[ "$_tg_her" == "0" ]]; then
-    echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    # las que no se reproducen solas se dicen aparte: no estaban rojas antes, y la validación del pedido no las perdona
+    _tg_norep="$(node -e 'try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write((((j.base_check || {}).suites) || []).filter((s) => s && s.verdict === "no-reproduce").map((s) => s.ruta).join(", ")); } catch (_) {}' "$RESULTS_DIR/suites.json" 2>/dev/null)"
+    if [[ -n "$_tg_norep" ]]; then
+      echo "🟡 [test-gate] rojas en la corrida completa que pasan solas en la base y en la rama: $_tg_norep — no se le cobran al cambio, pero no estaban rojas antes: mirá qué corrió al lado; si la validación del pedido las da rojas, son de la historia" >&2
+    else
+      echo "🟡 [test-gate] todo lo rojo ya estaba rojo antes del cambio, en el nocturno de esta mañana o en la base (arriba, cuáles): avisa y no frena, igual que en la validación del pedido" >&2
+    fi
     ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo rojo ya estaba rojo antes del cambio: avisa, no frena")' ) >&2 \
       || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
     SUITE_EXIT=0

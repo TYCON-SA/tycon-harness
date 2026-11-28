@@ -538,3 +538,40 @@ test('OH13 Tokens_NombreDeModeloRaro_VaASinModelo — un nombre con espacio, «/
   prepare(w, at('2026-11-10 09:00'));
   assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens.por_modelo, { sin_modelo: { lectura: 6, escritura: 6, cache: 6 }, 'kimi-k2.7-code:cloud': { lectura: 4, escritura: 4, cache: 4 } });
 });
+
+// ── O-horas-cache: la escritura de caché de Claude, aparte y por plazo ─────────────────────────────────────────────
+
+test('OH16 Tokens_EscrituraDeCache_PorPlazo — la escritura de caché de 5 minutos y de 1 hora va aparte en el reparto, dentro de la lectura', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const dir = path.join(w.home, '.claude', 'projects', '-proyecto-de-juguete');
+  fs.mkdirSync(dir, { recursive: true });
+  const linea = (i, local, u) => JSON.stringify({ type: 'assistant', timestamp: iso(local), uuid: `c16-${i}`, message: { id: `msg-c16-${i}`, model: 'claude-opus-5-5', usage: u } });
+  fs.writeFileSync(path.join(dir, 'c16.jsonl'), `${[
+    linea(0, '2026-11-09 09:00', { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 50, cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 40 } }),
+    linea(1, '2026-11-09 09:10', { input_tokens: 2, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 30, cache_creation: { ephemeral_1h_input_tokens: 30 } }),
+    // sin desglose: la escritura se queda en la lectura, sin plazo inventado
+    linea(2, '2026-11-09 09:20', { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 7 }),
+  ].join('\n')}\n`);
+  fs.utimesSync(path.join(dir, 'c16.jsonl'), new Date(at('2026-11-09 10:00')), new Date(at('2026-11-09 10:00')));
+  prepare(w, at('2026-11-10 09:00'));
+  const d = dayFile(w, '2026-11-09');
+  assert.strictEqual(d.v, 2);
+  assert.deepStrictEqual(d.tokens.por_modelo, { 'claude-opus-5-5': { lectura: 95, escritura: 3, cache: 100, cache_escrita_5m: 10, cache_escrita_1h: 70 } });
+  assert.strictEqual(d.tokens.lectura, 95, 'los totales de siempre no cambian');
+});
+
+test('OH19 Tokens_DesgloseQueNoCierra_SeDescarta — un desglose de plazos mayor que la escritura de caché declarada no se anota', () => {
+  const w = world();
+  opened(w, '2026-11-09', '2026-11-09 08:00');
+  const dir = path.join(w.home, '.claude', 'projects', '-proyecto-de-juguete');
+  fs.mkdirSync(dir, { recursive: true });
+  const linea = (i, u) => JSON.stringify({ type: 'assistant', timestamp: iso('2026-11-09 09:00'), uuid: `c19-${i}`, message: { id: `msg-c19-${i}`, model: 'claude-opus-5-5', usage: u } });
+  fs.writeFileSync(path.join(dir, 'c19.jsonl'), `${[
+    linea(0, { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 0, cache_creation: { ephemeral_1h_input_tokens: 500 } }),
+    linea(1, { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10 } }),
+  ].join('\n')}\n`);
+  fs.utimesSync(path.join(dir, 'c19.jsonl'), new Date(at('2026-11-09 10:00')), new Date(at('2026-11-09 10:00')));
+  prepare(w, at('2026-11-10 09:00'));
+  assert.deepStrictEqual(dayFile(w, '2026-11-09').tokens.por_modelo, { 'claude-opus-5-5': { lectura: 14, escritura: 2, cache: 0, cache_escrita_1h: 10 } });
+});
