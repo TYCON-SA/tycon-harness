@@ -7396,3 +7396,14 @@ test('A184 Firmas_FormasRepetidas_DicenCualEsCual — cada forma con su comando 
   assert.strictEqual(new Set(rotulos).size, rotulos.length, `cada forma se distingue: ${rotulos.join(' | ')}`);
   assert.ok(rotulos.some((r) => /como deuda/.test(r)), 'con lo que aprueba esa forma, sin su id');
 });
+
+// 🔴 mutación: en el celular, Umbrales sin los títulos VERDE y ROJO (la cabecera escondida): quedan dos números sueltos
+// (A179). La cabecera se ve con la misma forma que los renglones, así cada título queda arriba de su valor.
+test('A179b Celular_UmbralesConSusTitulos — la cabecera no se esconde en pantalla angosta', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.doesNotMatch(angosta, /\.thr\.h\{display:none\}/, 'la cabecera de Umbrales no se esconde');
+  // y los selectores de los modelos no quedan en un ancho fijo que corta la opción («el suyo, sin ca»)
+  assert.doesNotMatch(angosta, /\.tabla2\.modelos select\.corto\{width:12em\}/);
+  assert.match(angosta, /\.tabla2\.modelos select\.corto\{[^}]*max-width:100%/);
+});

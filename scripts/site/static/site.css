@@ -405,7 +405,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .tabla2 .h{display:none}
   .tabla2.pedidos .h{display:contents}
   .tabla2.modelos{grid-template-columns:max-content minmax(0,1fr)}
-  .tabla2.modelos select.corto{width:12em}
+  .tabla2.modelos select.corto{width:auto;min-width:0;max-width:100%}
   /* la equivalencia del modelo se parte en el teléfono: entera, corría la página de costado */
   .tabla2.modelos .equiv{white-space:normal}
   .tabla2.modelos .r > .que{grid-column:1/-1;border-bottom:0;padding-bottom:0}
@@ -425,7 +425,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .tabla2.firmas .r > .formas .muted{padding-top:4px}
   .tabla2.integ .r > .que{border-bottom:0;padding-bottom:0}
   .tabla2.integ .r > .sel{justify-content:flex-end}
-  .thr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.thr > :first-child{grid-column:1/-1;font-weight:600}.thr.h{display:none}
+  .thr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.thr > :first-child{grid-column:1/-1;font-weight:600}.thr.h > :first-child{display:none}
   .renglones li{grid-template-columns:minmax(0,1fr)}.renglones .acc{grid-row:auto;grid-column:1;justify-content:flex-start}
   .renglones .acc input{width:100%}
   .form-block{padding:16px}
