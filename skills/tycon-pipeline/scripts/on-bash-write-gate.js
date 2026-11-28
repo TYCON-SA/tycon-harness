@@ -263,8 +263,8 @@ function paso(texto) {
  * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: si el comando tiene un `for ((`, se lee
  * otra vez con un `;` detrás de cada cabecera (`conSeparadorTrasElFor`, en todo el texto), y frena si cualquiera de las
  * dos lecturas frena. La de tal cual ve lo que el `;` cortaría (un `for ((` citado en un argumento); la otra, el `for`
- * en cualquier lugar donde corra. La segunda sólo decide, y la aprobación del dueño a un comando exacto se busca con el
- * que llegó (`comandoTalCual`).
+ * en cualquier lugar donde corra. La segunda sólo decide y no vuelve a juzgar lo de la coordinadora, que ya leyó las
+ * dos versiones con el click del dueño al comando que llegó (`comandoTalCual`).
  */
 function handle(event, opts = {}) {
   const r = handleConComentarios(event, opts);

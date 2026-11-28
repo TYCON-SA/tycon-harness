@@ -1041,6 +1041,9 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     `echo a\\ #; for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `x=\${y/ #/}; for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
     `cat <<'E-1'\ndon't\nE-1\nfor ((i=0;i<1;i++)) do cp README.md ${H}; done`, `repeat 1 for ((i=0;i<1;i++)) do cp README.md ${H}; done`,
     `pwsh -c 'cp README.md ${H}' <<EOF\ndatos\nEOF`, `pwsh -c 'cp README.md ${H}' < $(mktemp)`,
+    // (cuarta vuelta) un `for ((` citado antes y un `))` citado después no saltean al `for` de verdad
+    `: 'for ((' ; for ((i=0;i<1;i++)) do rm ${H}; done; : '))' x`, `# for ((\nfor ((i=0;i<1;i++)) do rm ${H}; done # )) x`,
+    `: 'for ((' ; : 'for ((' ; for ((i=0;i<1;i++)) do cp README.md ${H}; done; : '))' x ; : '))' y`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,

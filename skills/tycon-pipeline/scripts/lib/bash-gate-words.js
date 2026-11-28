@@ -435,26 +435,27 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
  * el texto, también entre comillas y en comentarios: un `for ((` que no abre un comando es un error del shell y no corre
  * nada, y el de un `"$(…)"`, una función, un `case` o un `<(…)` sí corre; lo citado sigue siendo texto para quien lo lee.
  * El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda igual.
+ * Cada cabecera con su propio cierre: un `for ((` citado antes (`: 'for (('`), que cierra donde no debe, no saltea a
+ * la de verdad.
  */
 function conSeparadorTrasElFor(texto) {
   const t = String(texto);
   const cabecera = /(?<![\w$.-])for[ \t]*\(\(/g;
   if (!t.includes('((')) return t;
-  let out = '';
-  let hecho = 0;
+  // dónde va cada `;`, y si reemplaza un blanco
+  const puntos = new Map();
   for (const m of t.matchAll(cabecera)) {
-    const f = m.index;
-    if (f < hecho) continue;
-    const fin = cierreDeParentesis(t, f + m[0].length - 2);
+    const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
     if (fin < 0) continue;
     let k = fin + 1;
     while (t[k] === ' ' || t[k] === '\t') k++;
     // ya separado, o cierra lo de afuera
     if (k >= t.length || /[;\n&|)]/.test(t[k])) continue;
-    out += t.slice(hecho, fin + 1) + ';' + t.slice(k > fin + 1 ? fin + 2 : fin + 1, k);
-    hecho = k;
+    puntos.set(fin + 1, k > fin + 1);
   }
-  return out + t.slice(hecho);
+  let out = t;
+  for (const p of [...puntos.keys()].sort((a, b) => b - a)) out = out.slice(0, p) + ';' + out.slice(puntos.get(p) ? p + 1 : p);
+  return out;
 }
 
 /**

@@ -486,3 +486,20 @@ test('T14 Coordinadora_ClickDelDueno_PasaUnaVez @story-8.212 @ac-3', (t) => {
   // Edit y Write no tienen este camino: lo que cambian lo hace una sesión
   assert.ok(negada(editar(toy, path.join(toy.repo, 'guias', 'x.md'))));
 });
+
+// 🔴 Falla con: un comando con un `for ((…))` que el freno lee dos veces (tal cual y con un `;` detrás de la cabecera)
+//    y que gasta el click en la primera lectura y se niega en la segunda; o el cuerpo de un `for ((…)) do …` sin `;`
+//    que cambia un repo sin el click.
+test('T14b Coordinadora_ClickDelDueno_ConForDeCuenta_PasaUnaVez @A216', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  let respuesta = { ok: false, motivo: 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' };
+  const con = (c) => conEnv(SOLO_ESTE, () => BASH.handle({ hook_event_name: 'PreToolUse', session_id: COORD, tool_name: 'Bash', tool_input: { command: c }, cwd: toy.raiz },
+    { ...opts(toy), casa: toy.casa, buscarAprobacion: () => respuesta, herramienta: { pid: 4242, inicio: 'jue 21 nov 10:00' } }));
+  assert.ok(negada(con('for ((i=0;i<1;i++)) do cp acme/x.md acme/a.md; done')), 'el cuerpo del for, sin el click, se niega');
+  const cmd = 'for ((i=0;i<1;i++)) do echo $i; done; git -C acme switch main';
+  assert.ok(negada(con(cmd)), 'sin el click, se niega');
+  respuesta = { ok: true, aprobacion: { id: 'click-for' }, via: 'click' };
+  assert.strictEqual(con(cmd), null, 'con el click del dueño, pasa una vez');
+  assert.ok(fs.existsSync(path.join(toy.estado, 'owner-approvals', 'usadas', 'click-for')), 'el click quedó usado');
+});
