@@ -1006,3 +1006,26 @@ test('T48 CuentaSinPesos_NoEsUnDestino @A213 — el > de (( … )) compara; lo q
     assert.strictEqual(r.status, 2, `frena en ${herramienta}\n${r.stderr}`);
   }
 });
+
+// T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216
+// 🔴 Falla con: lo que corre PowerShell con `-Command` (o `-c`) sin leer como un comando más (`pwsh -Command
+// '((cp a h.md))'` copiaba a la historia), o el cuerpo de un `for ((…))` sin `;` antes del `do` (o del `{`, o sin nada
+// en zsh) leído como argumentos del `for`.
+test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentro corre; las cuentas que no escriben pasan', () => {
+  const c = corral();
+  for (const cmd of [`pwsh -Command '((cp README.md ${H}))'`, `pwsh -Command "((cp README.md ${H}))"`,
+    `pwsh -c 'cp README.md ${H}'`, `powershell -Command '(cp README.md ${H})'`, `pwsh -NoProfile -Command '((cp README.md ${H}))'`,
+    `pwsh.exe -command 'cp README.md ${H}'`, `/usr/local/bin/pwsh -Command 'cp README.md ${H}'`, `pwsh -Command cp README.md ${H}`,
+    `pwsh -Command '((x > ${H}))'`, `pwsh -NonInteractive -c "Copy-Item README.md ${H}"`, `pwsh -cwa 'cp README.md ${H}'`,
+    `for ((i=0;i<1;i++)) do cp README.md ${H}; done`, `for ((i=0;i<1;i++))do cp README.md ${H}; done`,
+    `for ((i=0;i<1;i++)) { cp README.md ${H}; }`, `for ((i=0;i<1;i++)) cp README.md ${H}`, `for (( ; ; )) do cp README.md ${H}; break; done`,
+    `bash -c 'for ((i=0;i<1;i++)) do cp README.md ${H}; done'`, `for ((i=0;i<1;i++)) do mv README.md ${H}; done`,
+    `if true; then for ((i=0;i<1;i++)) do cp README.md ${H}; done; fi`, `for ((i=0;i<1;i++)) do rm ${H}; done`,
+    `bash -c "for ((i=0;i<1;i++)) do rm ${H}; done"`, `pwsh -Command "rm ${H}"`,
+    `pwsh -EncodedCommand ${Buffer.from(`cp README.md ${H}`, 'utf16le').toString('base64')}`,
+  ]) frena(c, cmd);
+  for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
+    `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,
+    `pwsh -Command 'cp README.md notas.txt'`, `pwsh -Command '((x > notas.txt))'`, `echo "pwsh -Command 'cp README.md ${H}'"`,
+    `git commit -m "for ((i=0;i<1;i++)) do cp README.md ${H}; done"`]) pasa(c, cmd);
+});

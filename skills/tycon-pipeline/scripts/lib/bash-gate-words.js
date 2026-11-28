@@ -430,6 +430,33 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
 }
 
 /**
+ * El comando con un `;` detrás de la cabecera de cada `for ((…))` que no lo tiene: `for ((i=0;i<1;i++)) do cp a b`,
+ * `…))do`, `…)) { cp a b; }` y, en zsh, `…)) cp a b` corren lo de después como un comando, igual que con `;`. Sólo donde
+ * empieza un comando (`dondeEmpiezaUnComando`), fuera de comillas y heredocs. El primer blanco de detrás se cambia por
+ * el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda como está.
+ */
+function conSeparadorTrasElFor(texto) {
+  const t = String(texto);
+  if (!/\bfor[ \t]*\(\(/.test(t)) return t;
+  const es = posicionesDeComando(t);
+  let out = '';
+  let hecho = 0;
+  for (const m of t.matchAll(/\bfor[ \t]*\(\(/g)) {
+    const f = m.index;
+    if (f < hecho || !es[f] || !dondeEmpiezaUnComando(t, f)) continue;
+    const fin = cierreDeParentesis(t, f + m[0].length - 2);
+    if (fin < 0) continue;
+    let k = fin + 1;
+    while (t[k] === ' ' || t[k] === '\t') k++;
+    // ya separado, o cierra lo de afuera
+    if (k >= t.length || /[;\n&|)]/.test(t[k])) continue;
+    out += t.slice(hecho, fin + 1) + ';' + t.slice(k > fin + 1 ? fin + 2 : fin + 1, k);
+    hecho = k;
+  }
+  return out + t.slice(hecho);
+}
+
+/**
  * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
  * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
  */
@@ -1418,4 +1445,4 @@ function guionDeSedSinEfectos(guion) {
 }
 
 
-module.exports = { sinCuentasSueltas, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
+module.exports = { sinCuentasSueltas, conSeparadorTrasElFor, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };

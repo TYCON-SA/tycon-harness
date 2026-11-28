@@ -1458,4 +1458,35 @@ function entradasAlternativas(words, asignados) {
   return { alternativas, pasado: vs.some((v) => v.pasado) };
 }
 
-module.exports = { TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };
+// una palabra del shell entera: también con `$'…'`, `$"…"` y con tramos citados pegados (`'a'"'"'b'` es `a'b`)
+const PALABRA_CON_ANSI = /(?:\$'(?:\\[\s\S]|[^'\\])*'|'[^']*'|\$?"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
+
+/** Las palabras de un tramo como las lee el shell, con sus comillas, sus escapes y los `$'…'` resueltos. */
+function palabrasConAnsi(tramo) {
+  return (String(tramo).match(PALABRA_CON_ANSI) || []).map((w) => w.replace(/\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|\$?"((?:\\.|[^"\\])*)"|\\(.)/g,
+    (m, ansi, simple, doble, escapado) => (ansi !== undefined ? ansiC(ansi) : simple !== undefined ? simple
+      : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
+}
+
+// las opciones de PowerShell que llevan el comando, con las abreviaturas que acepta (`-c`, `-com`, `-cwa`, `/Command`)
+const COMANDO_DE_POWERSHELL = /^(?:--?|\/)(?:c|co|com|comm|comma|comman|command|commandwithargs|cwa)$/i;
+// y las que lo llevan en base64 de UTF-16 (`-e`, `-ec`, `-enc`, `-EncodedCommand`)
+const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)$/i;
+
+/**
+ * Lo que corre `pwsh` o `powershell` con `-Command` (o `-c`, `-cwa`, `-EncodedCommand`): las palabras que siguen,
+ * juntas, como las junta PowerShell (`pwsh -Command cp a b` corre `cp a b`). null sin esa opción. Se lee como un comando
+ * más, y como lo lee el freno en la herramienta PowerShell: `((cp a b))` copia.
+ */
+function cuerpoDePowerShell(tramo) {
+  const w = palabrasConAnsi(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
+  let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+  while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command', 'busybox', 'toybox'].includes(nombreDeComando(w[k0]))) k0++;
+  if (!['pwsh', 'powershell'].includes(nombreDeComando(w[k0]))) return null;
+  const i = w.findIndex((x, k) => k > k0 && (COMANDO_DE_POWERSHELL.test(x) || COMANDO_CODIFICADO_DE_POWERSHELL.test(x)));
+  if (i < 0 || w[i + 1] === undefined || w[i + 1] === '-') return null;
+  if (COMANDO_CODIFICADO_DE_POWERSHELL.test(w[i])) return Buffer.from(w[i + 1], 'base64').toString('utf16le');
+  return w.slice(i + 1).join(' ');
+}
+
+module.exports = { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, TOPE_DE_VARIANTES, variantesDeVariables, entradasAlternativas, MAS_OPCIONES_CON_VALOR, opcionesDelEnvoltorio, palabraConAnsi, cpMvDest, destinosDeCpMv, programaEscrito, interpreteDe, abreParaEscribir, algunOpenEscribe, sedConEfectos, comodinSimple, ensayarSeds, estadosDelEncabezado, FORMAS_DE_ESCRIBIR_RE, ESCRIBE, nombreDeComando, LECTORES_DE_XARGS, ANTES_DEL_ENV, ENVOLTORIOS_CON_VALOR, pelarEnv, TOPE_DE_CARPETAS_DE_CD, PALABRA_ENTERA, palabrasEnteras, sinCierreDeGrupo, destinoDeLaCopia, posicionales, palabraDelShell, parchesDePatch, parcheNombraConstancia, yaHayOrigin, constanciasDeOtraRama, archivoDeTar, contenidoDelArchivo, nombresDeConstancia, PALABRA_DEL_SHELL, sinPalabrasDelShell, sinRedireccionesDeSalida, HEREDOC_ENTERO, GRUPO_O_CONTROL, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, REDIRECCION_A_DESCRIPTOR, LEE_EL_CUERPO_COMO_TEXTO, ansiC, EXPANSION_DE_VARIABLE, SHELLS_CON_DASH_C, cuerpoConValores, sinComillasPegadas, partidorComun, ejecutaTexto, citados, posicionesFueraDeComillas, dentroDeUnRepo, conGuiones, OPCIONES_CON_VALOR, argumentosDeCopia, corcheteDelShell, comodinDelShell, expandirComodin, mdAdentro, SHELLS_QUE_LEEN_COMANDOS, LECTORES_DE_HISTORIA, XARGS_CON_VALOR, PALABRA_ANTES_DE_XARGS, REDIRECCION, guionDelShell, moverCds, formatoDePrintf, LA_ENTRADA_COMO_ARCHIVO, shellLeeEntrada, renglonesDelShell, FIN_DE_EXEC, citarParaElShell, cumplePatronDeFind, ordenesDeFind, ordenesDeXargs, marcaDeXargs, PARALLEL_CON_VALOR, ordenesDeParallel, sinComentarioAlFinal, sinCierre, NO_VA_FUERA_DEL_FOR, estadoDeHistoria, seguidos, CUERPOS_A_JUZGAR, inlineStoryText, resolveTarget, conCarpetaDelComando, alcanzadasPorFind };

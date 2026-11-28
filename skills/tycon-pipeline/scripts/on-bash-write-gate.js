@@ -209,7 +209,7 @@ const { resolveSessionId } = require('./lib/session-id.js');
 const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
-const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
+const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, conSeparadorTrasElFor, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
 const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
@@ -259,7 +259,12 @@ function paso(texto) {
   try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
 }
 
-function handle(event, opts = {}) {
+function handle(evento, opts = {}) {
+  // el cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: cada lectura lo ve con el `;`
+  // (`conSeparadorTrasElFor`)
+  const original = evento?.tool_input?.command;
+  const separado = typeof original === 'string' ? conSeparadorTrasElFor(original) : original;
+  const event = separado === original ? evento : { ...evento, tool_input: { ...evento.tool_input, command: separado } };
   modoDeLectura({ apagoAlgo: false });
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !modoDeLectura().apagoAlgo) return r;
