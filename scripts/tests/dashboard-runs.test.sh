@@ -2591,6 +2591,12 @@ grep -qF '@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{displa
   && ok "A139 en el celular, las reglas de la tabla no desarman la del detalle" || mal "A139 las reglas del celular alcanzan a las tablas del detalle"
 grep -qF '.shell .corridas .tl svg{min-width:600px !important;max-width:none}' "${CSS_SITIO}" \
   && ok "A139 la línea de tiempo no se achica en el celular" || mal "A139 la línea de tiempo se achica al ancho del celular"
+# A147-A148: en el sitio, --good y --warn son colores de relleno (claros sobre blanco): el texto de la columna Pasos va con
+# su color de texto; los rótulos de las semanas no van en letra de 9,5.
+grep -qF '.ok9{color:var(--good-ink,var(--good))}.parcial{color:var(--warn-ink,var(--warn))}' "${CSS_RUNS}" \
+  && ok "A148 la columna Pasos con el color de texto de cada estado" || mal "A148 la columna Pasos sigue con el color de relleno"
+! grep -qF 'font-size="9.5" fill="var(--ink-3)">'"'"' + semanaVisib' "${CSS_RUNS}" \
+  && ok "A147 los rótulos de las semanas no van en letra de 9,5" || mal "A147 los rótulos de las semanas siguen en 9,5"
 
 # ── A157 · el filtro de Ejecuciones bajo el grupo de un producto ─────────────────────────────────
 T=$(mktemp -d)
