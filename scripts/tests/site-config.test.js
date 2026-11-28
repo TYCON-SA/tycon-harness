@@ -7365,3 +7365,21 @@ test('A190 Versiones_DiceComoSeActualizanSegunLaOpcion — «solas» sólo con u
     assert.match(t, /le pregunta a su dev/);
   }
 });
+
+// 🔴 mutación: «2 productos con algo para mirar» cuando es una sola diferencia vista desde los dos lados, o el rótulo
+// «Producto X · productos» sin decir que «productos» es el grupo (A186).
+test('A186 Paridad_CuentaDiferencias_YNombraElGrupo — una diferencia vista de los dos lados es una', async () => {
+  const vista = { texto: 'medida', fecha: '2026-11-27', unidad: 'productos', definicion: { rasgos: [{ id: 'escaneo', que: 'escaneo' }] }, declaradas: [], productos: [
+    { producto: 'Producto X', grupos: ['productos'], faltan: [{ rasgo: 'escaneo' }], tiene: [], vencidas: [] },
+    { producto: 'Producto Y', grupos: ['productos'], faltan: [], tiene: [{ rasgo: 'escaneo' }], vencidas: [] },
+  ] };
+  const secs = TODAS.map((id) => SEC(id, id === 'paridad' ? { vista } : {}));
+  const r = await pantallaConPestanas({ secciones: secs, hash: '#tab-repos' });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const textos = todos.map((n) => n.textContent || '').filter(Boolean);
+  assert.ok(textos.some((t) => /^1 diferencia, que se ve en 2 productos/.test(t)), `el resumen cuenta la diferencia: ${textos.filter((t) => /algo para mirar|diferencia/.test(t)).join(' | ')}`);
+  assert.ok(!textos.some((t) => /2 productos con algo para mirar/.test(t)));
+  assert.ok(textos.includes('Producto X (grupo: productos)'), 'el rótulo dice que es el grupo');
+});

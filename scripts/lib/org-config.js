@@ -2487,10 +2487,13 @@ ${trabajandoJs}
     var conAlgo = (v.productos || []).filter(function (p) { return (p.faltan || []).length || (p.tiene || []).length || (p.vencidas || []).length; });
     var enOrden = (v.productos || []).length - conAlgo.length;
     var porRepo = v.unidad === 'repos';
-    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + T(porRepo ? 'pantalla.repo3' : 'pantalla.producto3') + (conAlgo.length === 1 ? '' : 's') + T('pantalla.conAlgoParaMirar') + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T(porRepo ? 'pantalla.reposCoincidenConLosDemas' : 'pantalla.productosCoincidenConLosDemas') })));
+    // una diferencia vista desde los dos lados (a uno le falta, otro la tiene) es una sola: se cuentan los rasgos
+    var difs = {}; conAlgo.forEach(function (p) { (p.faltan || []).concat(p.tiene || [], p.vencidas || []).forEach(function (x) { if (x && x.rasgo) difs[x.rasgo] = true; }); });
+    var nDif = Object.keys(difs).length || conAlgo.length;
+    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? T(nDif === 1 ? 'pantalla.paridadUnaDif' : 'pantalla.paridadNDif', { n: nDif, m: conAlgo.length, unidad: T(porRepo ? (conAlgo.length === 1 ? 'pantalla.paridadRepo' : 'pantalla.paridadRepos') : (conAlgo.length === 1 ? 'pantalla.paridadProducto' : 'pantalla.paridadProductos')) }) + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T(porRepo ? 'pantalla.reposCoincidenConLosDemas' : 'pantalla.productosCoincidenConLosDemas') })));
     var prods = el('ul', { class: 'renglones' });
     conAlgo.forEach(function (p) {
-      prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
+      prods.appendChild(el('li', {}, el('span', { class: 'quien', text: T('pantalla.paridadQuien', { producto: p.producto, grupos: p.grupos.join(', ') }) }),
         el('span', { class: 'dato', text: T('pantalla.leFalta') + lista(p.faltan, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.haceAlgoQueLosDemas') + lista(p.tiene, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.aceptadas') + lista(p.declaradas, function (x) { return queDe(x.rasgo) + T('pantalla.hasta') + x.revision + ')'; }, T('pantalla.ninguna2')) + T('pantalla.vencidas') + lista(p.vencidas, function (x) { return queDe(x.rasgo) + ' (' + x.revision + ')'; }, T('pantalla.ninguna2')) })));
     });
     if (conAlgo.length) box.appendChild(prods);
