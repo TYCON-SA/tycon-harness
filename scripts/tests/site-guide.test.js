@@ -64,10 +64,10 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis; y, en Cloud Run, que el sitio renueva cada 10 minutos la conexión de cada máquina para
 // que Oficinas no quede vacía tras desplegar (SITE_OFFICE_RECONNECT_MINUTES); y su párrafo «Al día» (la plataforma
-// cloudrun del actualizador).
+// cloudrun del actualizador); y el nombre del ajuste «Los cambios de quien mantiene el sitio», como en la pantalla (A171).
 const HUELLA_INSTALACION = {
-  es: 'b7ca7316ad30b373729ce10c5f3008ca2b09abaf05f1430514ec338c37f59551',
-  en: '1f9133978a31d1380697a3cd848fa8fc5efb8d00c5de6b9ba2f10a09da760207',
+  es: '7b451e641095c6bce929ba6681639db41d773604ddd3d5d58c3e0944327b8e12',
+  en: 'f3c680e105f5435255687fdd42840aca9dcde6cbc5ef629f0d3f391d81daf87b',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -285,8 +285,8 @@ test('Guia_PermisoCandadoYRefresco @story-2.38 @ac-8 — lo que el dueño pidió
 
 test('T12 Guia_LosCambiosSeAplicanSolos @story-2.39 @ac-11 — la opción, su permiso, su registro y el orden para encenderla', () => {
   for (const [lado, f, inst, opcion, apagada] of [
-    ['es', GUIA, INSTALACION.es, '**Los cambios de un mantenedor**', /viene apagada/i],
-    ['en', GUIA_EN, INSTALACION.en, '"A maintainer\'s changes"', /off by default/i],
+    ['es', GUIA, INSTALACION.es, '**Los cambios de quien mantiene el sitio**', /viene apagada/i],
+    ['en', GUIA_EN, INSTALACION.en, '"The changes of a site maintainer"', /off by default/i],
   ]) {
     const t = leer(f);
     const i = t.indexOf(`\n## ${inst}`);

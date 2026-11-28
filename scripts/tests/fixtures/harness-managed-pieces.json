@@ -50,6 +50,7 @@
     { "kind": "hook", "id": "PostToolUseFailure:tycon-pipeline/scripts/on-bash-write-after.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:tycon-pipeline/scripts/on-advisor-run.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-advisor-run.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/on-advisor-cap.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SubagentStop:tycon-pipeline/scripts/on-advisor-done.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:tycon-pipeline/scripts/on-stop-dod-gate.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:response-style-meter.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

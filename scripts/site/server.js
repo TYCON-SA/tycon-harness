@@ -774,13 +774,16 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
         if (reintento.unref) reintento.unref();
       }
     },
-    cerrar: () => new Promise((resolve) => {
+    cerrar: async () => {
       if (reintento) clearTimeout(reintento);
       try { fuentes.detener(); } catch { /* nada */ }
-      if (centro) centro.detener();
-      server.close(() => resolve());
-      if (server.closeAllConnections) server.closeAllConnections();
-    }),
+      // primero las oficinas: sus cierres tienen que salir antes de que el proceso termine
+      if (centro) await centro.detener();
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        if (server.closeAllConnections) server.closeAllConnections();
+      });
+    },
   };
 }
 

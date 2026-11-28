@@ -453,3 +453,14 @@ test('T36 Imagen_TraeLaOficina — @story-8.171 @ac-17c', () => {
   const tab = [...fs.readFileSync(path.join(H.SITE, 'tabs', 'offices.js'), 'utf8').matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1]);
   assert.ok(tab.every((r) => !/tools\/office\.js/.test(r)), `la pestaña no carga office.js: ${tab}`);
 });
+
+// 🔴 Falla con: con la máquina sin conexión, una sesión «parada · sin novedades» se contaba en «esperan o libres»: lo que
+//    se ve es de antes del corte y nadie sabe si está disponible (A105, recorrido F21).
+test('A105 Pestana_SinConexion_NadieSeCuentaDisponible', () => {
+  const P = decisiones();
+  const foto = { agents: [{ nombre: 'Hugo', estado: 'parada' }, { nombre: 'Iris', estado: 'libre' }, { nombre: 'Juan', estado: 'trabajando' }] };
+  assert.strictEqual(P.resumenDeOficina(foto).esperanOLibres, 2, 'conectada, como siempre');
+  const sin = P.resumenDeOficina(foto, { sinConexion: true });
+  assert.strictEqual(sin.esperanOLibres, null, 'sin conexión no se sabe quién está libre');
+  assert.strictEqual(sin.sesiones, 3, 'las sesiones que se vieron por última vez se siguen contando');
+});

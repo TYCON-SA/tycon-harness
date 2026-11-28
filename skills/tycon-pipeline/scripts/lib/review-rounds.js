@@ -4,7 +4,8 @@
  *
  * Una vuelta es un número de iteración que llegó a lanzar revisores: la foto que el arnés toma al lanzar el último
  * (`marker.iterations[N]`). Al llegar al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona
- * (una vuelta extra con su ok, o eximirlo); lo demás queda como deuda visible y el recorrido sigue.
+ * (una vuelta extra con la firma del dueño, o eximirlo); lo demás queda como deuda visible y el recorrido sigue. La
+ * vuelta extra no es trámite ni se delega.
  *
  *   · `tope({ repo, env, home, stateDir })`: `{ value, source, problems }`. `review.max_rounds` del repo
  *     (`.tycon/advisors.yaml`, lo commiteado: bajar el tope afloja y aflojar exige commit) › la organización
@@ -231,15 +232,6 @@ function resumen(lista) {
   return lista.map((a) => `${a.regla}${a.file ? ` en ${a.file}` : ''}${a.resumen ? ` — ${a.resumen}` : ''}`);
 }
 
-// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
-// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y ningún cartel puede decir que la
-// aprueba una persona. Sin poder leer el perfil, no lo es.
-function vueltaExtraDeTramite() {
-  try {
-    return !!require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
-  } catch (_) { return false; }
-}
-
 /** La línea del cierre. Con `noMirado` (no se pudieron leer los hallazgos) no dice «nada»: dice que no se pudo mirar. */
 function linea({ n, max, abiertos: ab, noMirado }) {
   if (noMirado) return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); lo abierto no lo pude mirar: ${noMirado}.`;
@@ -252,4 +244,4 @@ function linea({ n, max, abiertos: ab, noMirado }) {
   return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); quedó abierto: ${partes.length ? partes.join('; ') : 'nada'}.`;
 }
 
-module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, vueltaExtraDeTramite, linea };
+module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };

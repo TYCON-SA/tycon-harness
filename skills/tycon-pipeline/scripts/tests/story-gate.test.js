@@ -1980,3 +1980,20 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
     assert.match(r.reason, /harness/);
   });
 });
+
+// 🔴 Falla con (A214): el valor de una variable guardaba los escapes del shell (`stat\e`) y el freno juzgaba una ruta que
+// bash no escribe: bash los quita al asignar y escribe en la carpeta de estado
+test('EscrituraAlEstado_ConEscapesEnLaVariable_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const conEscape = `${E.slice(0, -1)}\\${E.slice(-1)}`;
+  conEnv(SIN_REGISTRO, () => {
+    for (const c of [`F=${conEscape}/plan-review/s1/s1.resultado.json; echo x > $F`, `F=${conEscape}; echo x > $F/plan-review/s1/s1.resultado.json`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+  });
+});
