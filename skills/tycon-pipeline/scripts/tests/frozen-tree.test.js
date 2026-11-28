@@ -1286,7 +1286,7 @@ test('PrepareCommit_PastTheCap_RestoreToReviewed: pasado el tope, los comandos p
   assert.strictEqual(r.status, 2, salida(r));
   assert.match(salida(r), /Pasaste el tope de 1 vuelta/, salida(r));
   assert.match(salida(r), /historia de arreglo/);
-  assert.match(salida(r), /--extra-round[^\n]*(\n[^\n]*)?el dueño/);
+  assert.match(salida(r), /--extra-round[^\n]*(\n[^\n]*)?una persona/);
   const comandos = salida(r).split('\n').map((l) => l.trim()).filter((l) => /^git -C /.test(l));
   assert.ok(comandos.some((l) => / stash push --include-untracked /.test(l)), salida(r));
   // los comandos, tal cual y con el shell, guardan el cambio y vuelven a lo revisado; el `$` no se expande

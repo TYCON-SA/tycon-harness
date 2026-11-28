@@ -772,7 +772,7 @@ function cmdSmartReloop(cmd, args) {
     result.rerun = chicos;
     result.rerun_count = chicos.length;
     result.no_code_delta = false;
-    result.rerun_reasons = chicos.map((name) => ({ name, reason: 'vuelta extra firmada por el dueño: alguien mira lo cambiado' }));
+    result.rerun_reasons = chicos.map((name) => ({ name, reason: 'vuelta extra firmada por una persona: alguien mira lo cambiado' }));
   }
   // Lo que se revisa, congelado: sin sello o sin copia, la vuelta no se lanza.
   const horaDelSello = new Date().toISOString();

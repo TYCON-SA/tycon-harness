@@ -451,6 +451,13 @@
     "ganchos": [],
     "del_pipeline": true
   },
+  "on-advisor-cap.js": {
+    "tipo": "exigencia",
+    "motivo": "Protege la firma del dueño: pasado el tope de vueltas, lanzar a mano un revisor fuera de la vuelta abierta sería una vuelta más sin su firma. Va sólo en el perfil completo.",
+    "review_before": "2027-11-27",
+    "estado": "propuesta",
+    "ganchos": ["on-advisor-cap.js"]
+  },
   "unreviewed-code": {
     "tipo": "exigencia",
     "motivo": "Protege las constancias: código cambiado después de la revisión no entra sin revisar.",

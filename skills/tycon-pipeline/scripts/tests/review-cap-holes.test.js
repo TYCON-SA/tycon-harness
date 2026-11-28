@@ -18,7 +18,9 @@ process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim()
 
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+// el que anota los lanzamientos (en los dos perfiles) y el freno del tope (sólo en el completo)
 const HOOK = path.join(SCRIPTS, 'on-advisor-run.js');
+const FRENO = path.join(SCRIPTS, 'on-advisor-cap.js');
 const SID = 'test-holes';
 const RUN = '9.8-20261020000000';
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
@@ -65,10 +67,17 @@ function laboratorio({ fotos = [1, 2, 3], servidas = [1, 2, 3], abierta = true }
   for (const k of ['TYCON_REVIEW_MAX_ROUNDS', 'TYCON_GUIDES_DIR', 'NODE_TEST_CONTEXT', 'TYCON_SPAWN_GOVERNANCE']) delete env[k];
   const lab = { repo, home, story, run, served, state, markerFile, env };
   lab.pipeline = (args, envExtra = {}) => spawnSync(process.execPath, [PIPELINE, ...args], { encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra } });
-  lab.hook = (agente, envExtra = {}) => spawnSync(process.execPath, [HOOK], {
+  const gancho = (archivo, agente, envExtra) => spawnSync(process.execPath, [archivo], {
     encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra },
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: SID, cwd: repo, tool_input: { subagent_type: agente, prompt: 'revisá' } }),
   });
+  // los dos ganchos del lanzamiento, como en el perfil completo: si el freno niega, lo que se ve es su salida
+  lab.hook = (agente, envExtra = {}) => {
+    const freno = gancho(FRENO, agente, envExtra);
+    const anota = gancho(HOOK, agente, envExtra);
+    return freno.status === 2 ? freno : anota;
+  };
+  lab.soloAnota = (agente, envExtra = {}) => gancho(HOOK, agente, envExtra);
   lab.marcador = (cambio) => { const m = JSON.parse(fs.readFileSync(markerFile, 'utf8')); cambio(m); fs.writeFileSync(markerFile, JSON.stringify(m)); };
   lab.registro = (lineas) => {
     fs.mkdirSync(path.join(state, 'advisor-runs'), { recursive: true });
@@ -177,6 +186,17 @@ test('CapHoles_ManualLaunchAtCap_Denied (T6)', () => {
   let lanzados = [];
   try { lanzados = fs.readFileSync(path.join(lab.state, 'advisor-runs', `${SID}.jsonl`), 'utf8').split('\n').filter(Boolean); } catch (_) { lanzados = []; }
   assert.equal(lanzados.length, 0, 'un lanzamiento negado no se registra como lanzado');
+});
+
+test('CapHoles_PerfilMinimo_SinFreno_NoCuentaComoLanzado (T20)', () => {
+  // sin el freno (perfil mínimo), el que anota deja correr al revisor pero no lo anota: no cuenta como revisado
+  const lab = laboratorio();
+  const r = lab.soloAnota('tycon-plugin-security-basics');
+  assert.equal(r.status, 0, 'el que anota nunca bloquea');
+  let lanzados = [];
+  try { lanzados = fs.readFileSync(path.join(lab.state, 'advisor-runs', `${SID}.jsonl`), 'utf8').split('\n').filter(Boolean); } catch (_) { lanzados = []; }
+  assert.equal(lanzados.length, 0, 'el lanzamiento fuera de la vuelta abierta no se registra');
+  assert.ok(!lab.gates().some((g) => g.name === 'review-cap-launch-denied'), 'sin el freno, no se anota un freno');
 });
 
 test('CapHoles_ManualLaunchNotReviewer_Allowed (T7)', () => {

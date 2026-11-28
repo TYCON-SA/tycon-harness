@@ -555,8 +555,8 @@ function comprobarLoRevisado(marker, quien) {
         if (seguidos.length && sello) console.error(`     git -C ${citar(repo)} restore --source=${sello} --staged --worktree -- ${seguidos.map(citar).join(' ')}`);
       }
       console.error('  (b) Llevarlo a una historia de arreglo (followup_of: esta historia): lo mismo que (a), y de lo guardado sale para esa historia.');
-      console.error(`  (c) Una vuelta extra, que firma el dueño (no la coordinadora ni como trámite): pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'}`);
-      console.error(`      --repo ${marker.repoPath || '<repo>'} --iter ${hechas + 1} --files "<el diff completo>" --extra-round; el dueño lo aprueba en la ventana de permiso.`);
+      console.error(`  (c) Una vuelta extra, que firma una persona (no la coordinadora ni como trámite): pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'}`);
+      console.error(`      --repo ${marker.repoPath || '<repo>'} --iter ${hechas + 1} --files "<el diff completo>" --extra-round; la aprueba una persona en la ventana de permiso.`);
       process.exit(2);
     }
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);

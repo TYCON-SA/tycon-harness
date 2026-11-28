@@ -342,7 +342,7 @@ test('Cap_VueltaExtra_LaFirmaElDueno: con el perfil que la lista, ni trámite ni
     assert.equal(b.status, 3, b.stderr);
     assert.doesNotMatch(b.stderr, /firma de trámite|la da el arnés/);
     assert.doesNotMatch(b.stderr, /sin ventana/);
-    assert.match(b.stderr, /--extra-round[^\n]*el dueño lo aprueba en la ventana de permiso/);
+    assert.match(b.stderr, /--extra-round[^\n]*una persona lo aprueba en la ventana de permiso/);
     assert.match(b.stderr, /waive-critical/);
     const d = tope(con, ['--extra-round', '--delegated']);
     assert.match(d.stderr, /--delegated ya no la autoriza/);
@@ -395,7 +395,7 @@ test('T80b Close_VueltaExtra_LaFirmaElDueno: el freno del cierre no la ofrece co
       const a = cierre(laboratorio({ fotos: [1, 2], findings }));
       assert.notEqual(a.status, 0, a.stderr);
       assert.match(a.stderr, /SEC-C1/);
-      assert.match(a.stderr, /Lo decide el dueño: arreglarlo/);
+      assert.match(a.stderr, /Lo decide una persona: arreglarlo/);
       assert.match(a.stderr, /que le pide el permiso en la ventana de permiso/);
       assert.doesNotMatch(a.stderr, /trámite/);
     } finally { fs.rmSync(perfil, { force: true }); }

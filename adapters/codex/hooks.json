@@ -221,6 +221,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-cap.js"
+          },
+          {
+            "type": "command",
             "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js"
           }
         ]
@@ -355,6 +359,7 @@
       "log": "PreToolUse · Task|Agent (claude) ↔ collaborationspawn_agent (codex)",
       "verdict": "VERIFICADO 2026-08-22 (sonda E2): el spawn de subagentes en Codex es la tool collaborationspawn_agent con tool_input.task_name (underscoreado). SubagentStart NO sirve para el ledger: su payload trae agent_id + agent_type='default' sin el nombre — la apuesta del inventario §A.2 quedó REVERTIDA con evidencia. on-advisor-run.js acepta las tres tools y des-underscorea el task_name.",
       "scripts": [
+        "on-advisor-cap.js",
         "on-advisor-run.js"
       ]
     },

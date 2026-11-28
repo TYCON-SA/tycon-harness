@@ -611,13 +611,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
   if (args.extraRound && args.delegated) {
-    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: el dueño lo aprueba en la ventana de permiso, o en su terminal con --terminal.\n`;
+    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: lo aprueba una persona en la ventana de permiso, o en su terminal con --terminal.\n`;
   }
   if (args.extraRound) {
     // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
-    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba el dueño en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba una persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
     // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
     const rt = require('./rethink.js');
     const antes = () => {
@@ -647,12 +647,12 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
   } else if (conCambios) {
     renglones.push(`   No quedó nada abierto, pero ${cambiosSinRevisar.motivo}. «Preparar el pull request» lo frena: volvé a lo revisado (te da los`);
-    renglones.push('   comandos), llevalo a una historia de arreglo, o pedí la vuelta extra con --extra-round, que el dueño aprueba en la ventana de permiso.');
+    renglones.push('   comandos), llevalo a una historia de arreglo, o pedí la vuelta extra con --extra-round, que aprueba una persona en la ventana de permiso.');
   } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el pull request».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y el dueño lo aprueba en la ventana de permiso');
+    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y una persona lo aprueba en la ventana de permiso');
     renglones.push('       (o lo corre en su terminal con --terminal). No es trámite ni la firma la coordinadora por delegación.');
     renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
@@ -674,9 +674,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
  */
 function fotoAlLanzar(iter, horaDelSello) {
   if (estadoPipeline.paraOtra) return;
+  // sin una corrida en marcha (un pedido de revisores suelto) no hay vuelta que fotografiar: nada que avisar
+  let enMarcha = null;
+  try { enMarcha = readSessionMarkerStrict().marcador; } catch (_e) { enMarcha = null; }
+  if (!enMarcha) return;
   const n = parseInt(iter, 10) || 1;
   try {
-    require('child_process').execFileSync(process.execPath, [path.join(__dirname, '..', 'marker.js'), 'snapshot-iter', String(n), '--at-launch', '--at', horaDelSello], {
+    require('child_process').execFileSync(process.execPath, [path.join(estadoPipeline.SCRIPTS_DIR, 'marker.js'), 'snapshot-iter', String(n), '--at-launch', '--at', horaDelSello], {
       windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000,
     });
   } catch (e) {
