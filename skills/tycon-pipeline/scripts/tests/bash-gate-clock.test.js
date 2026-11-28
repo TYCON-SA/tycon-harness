@@ -328,4 +328,7 @@ test('T9 BashGateClock_InputWithoutClose_StillDecides @DEF-8.308-espera-de-lectu
   sinCorte(r, f.registro(), 'cortado en la llave de adentro');
   r = await sinCerrar('rm specs/story-1.1.md # {a}', -3);
   sinCorte(r, f.registro(), 'cortado en una llave del comando');
+  // una llave sin par dentro de una cadena, con comillas escapadas: no cuenta para saber si el pedido terminó
+  r = await sinCerrar('rm specs/story-1.1.md # "{" \\"[');
+  sinCorte(r, f.registro(), 'con una llave sin par dentro de una cadena');
 });
