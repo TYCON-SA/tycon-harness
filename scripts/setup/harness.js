@@ -4915,7 +4915,7 @@ function cmdRollback(ctx) {
     reconcileToolsAfterRestore(ctx, state, lines => lines.forEach((l) => log(`rollback: ${l}`)));
     // una copia de antes del retiro del nombre viejo devuelve lo que lo nombra: sin el enlace, eso quedaría roto
     let legacyBack = null;
-    try { legacyBack = restoreLegacyIfUsed(ctx, state.tree); } catch (e) { legacyBack = `no pude reponer el nombre viejo del lugar (${e.message}): harness.js relocate muda lo restaurado al lugar`; }
+    try { legacyBack = restoreLegacyIfUsed(ctx, state.tree, state); } catch (e) { legacyBack = `no pude reponer el nombre viejo del lugar (${e.message}): harness.js relocate muda lo restaurado al lugar`; }
     if (legacyBack) log(legacyBack);
     // sólo si los árboles se movieron cambia lo registrado: una vuelta atrás frenada (una fuente en otra rama, con commits
     // propios) no re-registra ese clon como la versión instalada
@@ -4962,21 +4962,34 @@ function cmdRollback(ctx) {
  * nombre, el lugar resuelve a un clon y lo restaurado lo usa fuera de los permisos (los hooks, la línea de CLAUDE.md: lo que cuenta doctor), se
  * crea el enlace viejo hacia el lugar, como lo dejaban las versiones de antes del retiro. Lo demás (una carpeta, un
  * archivo, un enlace que ya está, sólo permisos) no se toca. La regla del lugar no lo vuelve a retirar mientras eso lo
- * use; `relocate` lo muda y entonces sí. Devuelve la línea para la persona, o null.
+ * use; `relocate` lo muda y entonces sí. El enlace repuesto queda anotado en `state.managed`, como lo anota el aplicador:
+ * un `uninstall` enseguida lo saca. Cuando no lo repone y lo restaurado puede necesitarlo (no se pudo contar lo
+ * registrado, o el nombre viejo es un enlace colgado que lo restaurado usa), lo dice. Devuelve la línea para la persona,
+ * o null.
  */
-function restoreLegacyIfUsed(ctx, tree) {
+function restoreLegacyIfUsed(ctx, tree, state = null) {
   const lp = PLACE.legacyPlacePath(ctx.home);
-  if (kindOf(lp)) return null;
+  const k = kindOf(lp);
+  const colgado = k === 'link' && !real(lp);
+  if (k && !colgado) return null;
   const note = path.join(mod('tycon-home').stateDir(ctx.home), 'legacy-place-retired.json');
-  if (!fs.existsSync(note)) return null;
+  if (!colgado && !fs.existsSync(note)) return null;
   const place = linkPath(ctx.home);
   const target = real(place);
   if (!target || !isHarnessClone(target)) return null;
   const R = placeFacts(ctx, tree).registered;
-  if (!R || R.problem || !R.total || R.files.every((x) => x.count === x.permissions)) return null;
+  const sinTocar = (motivo, siguiente = 'harness.js relocate lo muda al lugar') => `lo restaurado puede nombrar el nombre viejo ${tildePath(ctx, lp)} y no lo repuse (${motivo}): ${siguiente}`;
+  // sin poder contar, relocate tampoco puede: lo que sigue es mirar el árbol
+  if (!R || R.problem) return sinTocar(`no pude contar lo registrado${R && R.problem ? `: ${R.problem}` : ''}`, 'harness.js doctor dice qué le falta al árbol');
+  if (!R.total || R.files.every((x) => x.count === x.permissions)) return null;
+  const list = R.files.filter((x) => x.count > x.permissions).map((x) => x.file).join(', ');
+  if (colgado) return sinTocar(`es un enlace colgado y lo usa ${list}`);
   fs.symlinkSync(place, lp, isWin(ctx) ? 'junction' : 'dir');
   try { fs.unlinkSync(note); } catch (_) { /* no estaba */ }
-  const list = R.files.filter((x) => x.count > x.permissions).map((x) => x.file).join(', ');
+  if (state) {
+    state.managed = mod('managed').merge(Array.isArray(state.managed) ? state.managed : [],
+      [{ kind: 'link', where: lp, id: PLACE.LEGACY_PLACE_NAME }], { version: state.version && state.version.number, present: () => true });
+  }
   return `repuse el nombre viejo ${tildePath(ctx, lp)} → ${tildePath(ctx, place)}: lo restaurado lo usa (${list}); harness.js relocate lo muda al lugar, y después el nombre se retira solo`;
 }
 

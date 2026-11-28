@@ -264,6 +264,9 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   assert.ok(PLACE.samePath(path.resolve(path.dirname(legacyOf(v.h)), fs.readlinkSync(legacyOf(v.h))), placeOf(v.h)), 'el viejo repuesto no apunta al lugar');
   assert.strictEqual(fs.realpathSync(legacyOf(v.h)), fs.realpathSync(v.C), 'el viejo repuesto no resuelve al árbol');
   assert.match(rb.all, new RegExp(`repuse el nombre viejo`), `la vuelta atrás no dice que lo repuso: ${rb.all}`);
+  // …queda anotado como pieza, como lo anota el aplicador: un uninstall enseguida lo saca y no queda colgado
+  const managed = readJson(stateFile(v.h)).managed || [];
+  assert.ok(managed.some((p) => p.kind === 'link' && p.id === PLACE.LEGACY_PLACE_NAME && PLACE.samePath(p.where, legacyOf(v.h))), `el enlace repuesto no quedó anotado: ${JSON.stringify(managed.filter((p) => p.kind === 'link'))}`);
   // …la regla del lugar ya no lo retira (lo usa la línea de CLAUDE.md) y doctor lo cuenta, sin rojo
   retire(v);
   assert.ok(exists(legacyOf(v.h)), 'la regla del lugar retiró el viejo con la línea de CLAUDE.md por él');
@@ -271,6 +274,9 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   let j = null;
   try { j = JSON.parse(doc.out); } catch (_) { j = null; }
   assert.ok(j && j.registered_by_legacy && j.registered_by_legacy.total > 0 && !(j.fail || []).length, `doctor: ${doc.out.slice(0, 400)}`);
+  // …y un uninstall lo saca: no queda el nombre viejo colgado
+  const un = harness(v.h, v.C, ['uninstall', '--yes']);
+  assert.ok(!exists(legacyOf(v.h)), `uninstall dejó el nombre viejo repuesto: ${un.all.slice(-600)}`);
   // (2) uno que la persona borró a mano (sin la nota del retiro) no vuelve, aunque lo restaurado lo nombre
   const y = installed('vuelta-borrado-a-mano');
   assert.strictEqual(harness(y.h, y.C, ['relocate']).rc, 0);
@@ -287,4 +293,13 @@ test('T25r Rollback_ToCopyBeforeRetirement_RestoresLegacyLinkOnlyIfUsed', () => 
   const b2 = snapshots(x.h).find((n) => manifest(x.h, n).reason === 'relocate');
   harness(x.h, x.C, ['rollback', '--to', b2]);
   assert.ok(!fs.lstatSync(legacyOf(x.h)).isSymbolicLink() && fs.readFileSync(path.join(legacyOf(x.h), 'mio.txt'), 'utf8') === 'mío\n', 'la vuelta atrás pisó una carpeta real con el nombre viejo');
+  // (4) el nombre viejo es un enlace colgado y lo restaurado lo usa: no se toca, pero se dice
+  const w = installed('vuelta-colgado');
+  assert.strictEqual(harness(w.h, w.C, ['relocate']).rc, 0);
+  fs.unlinkSync(legacyOf(w.h)); fs.symlinkSync(path.join(w.h, 'no-existe'), legacyOf(w.h));
+  const bw = snapshots(w.h).find((n) => manifest(w.h, n).reason === 'relocate');
+  const rbw = harness(w.h, w.C, ['rollback', '--to', bw]);
+  assert.ok(fs.readFileSync(w.m.files.claudeMd, 'utf8').includes(OLD_IMPORT), `(4) CLAUDE.md no volvió (la prueba no reproduce el caso): ${rbw.all}`);
+  assert.match(rbw.all, /no lo repuse \(es un enlace colgado/, `(4) la vuelta atrás calló el viejo colgado: ${rbw.all}`);
+  assert.strictEqual(fs.readlinkSync(legacyOf(w.h)), path.join(w.h, 'no-existe'), '(4) tocó el enlace colgado');
 });
