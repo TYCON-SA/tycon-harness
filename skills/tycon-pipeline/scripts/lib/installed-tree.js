@@ -23,12 +23,16 @@ const SIBLINGS = ['team', 'third-party', 'previous'];
  * de un enlace sube desde el destino del enlace, y un enlace roto se sigue hasta su destino aunque todavía no exista.
  * Lo que no existe se agrega tal cual.
  */
+// En Windows, la versión nativa: expande los nombres cortos (`TYCON~1` es `.tycon`) y da las mayúsculas reales. La de
+// JavaScript los deja tal cual, y una escritura por `~/TYCON~1/state/…` no se veía adentro del estado
+const real = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
+
 function realPath(p, depth = 0) {
   const s = String(p);
   const abs = path.isAbsolute(s) ? s : `${process.cwd()}${path.sep}${s}`;
   const root = path.parse(abs).root;
   let cur = root;
-  try { cur = fs.realpathSync(root); } catch (_) { /* la raíz queda como vino */ }
+  try { cur = real(root); } catch (_) { /* la raíz queda como vino */ }
   for (const part of abs.slice(root.length).split(/[\\/]+/)) {
     if (!part || part === '.') continue;
     if (part === '..') { cur = path.dirname(cur); continue; }
@@ -38,7 +42,7 @@ function realPath(p, depth = 0) {
 }
 
 function follow(p, depth) {
-  try { return fs.realpathSync(p); } catch (_) { /* no existe, o es un enlace roto */ }
+  try { return real(p); } catch (_) { /* no existe, o es un enlace roto */ }
   let st = null;
   try { st = fs.lstatSync(p); } catch (_) { return p; }
   if (!st.isSymbolicLink() || depth >= 40) return p;
