@@ -1047,6 +1047,12 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     // (quinta vuelta) ni con el señuelo adentro del cuerpo de un `for` real sin `;`
     `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((')) ${H}; done`, `for ((i=0;i<1;i++)) do cp README.md $(: "$(: 'for ((')") ${H}; done`,
     `for ((i=0;i<1;i++)) { rm $(: $(: 'for ((')) ${H}; }`, `bash -c 'for ((i=0;i<1;i++)) do rm $(: $(: "for ((")) ${H}; done'`,
+    // (sexta vuelta) una lectura por cada cabecera sola: ni comillas en la cuenta real ni señuelos con comillas pares
+    `for ((i=0;i<$(echo "it's" | wc -l);i++)) do cp README.md ${H}; done`, `for ((i=0;i<1;i++ $(: \\') )) do rm ${H}; done`,
+    `for ((i=0;i<1;i++)) do rm $(: $(: 'for ((' \\' )) ${H}; done`, `: 'for ((' \\' ; for ((i=0;i<1;i++)) do rm $(: ')' ')' ) ${H}; done`,
+    `for ((i=0;i<1;i++)) do for ((j=0;j<1;j++)) do rm $(: $(: 'for ((')) ${H}; done; done`,
+    // con más cabeceras sin `;` que el tope no se lee qué corre: frena
+    `${'for ((i=0;i<1;i++)) do echo $i; done; '.repeat(9)}cp README.md ${H}`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `for ((i=5;i>${H};i--)) do echo $i; done`,
     `for ((i=0;i<${H};i++)) { echo $i; }`, `for ((i=0;i<${H};i++))do echo $i; done`, `pwsh -Command 'Get-Content README.md'`,

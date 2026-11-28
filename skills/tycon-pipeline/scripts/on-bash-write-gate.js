@@ -209,7 +209,7 @@ const { resolveSessionId } = require('./lib/session-id.js');
 const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
-const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, conSeparadorTrasElFor, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
+const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, TOPE_DE_CABECERAS, variantesConSeparador, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
 const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
@@ -261,23 +261,29 @@ function paso(texto) {
 
 /**
  * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: si el comando tiene un `for ((`, se lee
- * otra vez con un `;` detrás de cada cabecera (`conSeparadorTrasElFor`, en todo el texto), y frena si cualquiera de las
- * dos lecturas frena. La de tal cual ve lo que el `;` cortaría (un `for ((` citado en un argumento); la otra, el `for`
- * en cualquier lugar donde corra. La segunda sólo decide y no vuelve a juzgar lo de la coordinadora, que ya leyó las
- * dos versiones con el click del dueño al comando que llegó (`comandoTalCual`).
+ * también con el `;` detrás de las cabeceras (`variantesConSeparador`: con todas y con cada una sola), y frena si
+ * cualquiera de las lecturas frena. La de tal cual ve lo que un `;` cortaría (un `for ((` citado en un argumento); las
+ * otras, el `for` donde corra, también con un señuelo citado en su cuerpo. Con más cabeceras sin `;` que el tope, frena
+ * sin leerlas. Las de más sólo deciden y no vuelven a juzgar lo de la coordinadora, que ya leyó todas las versiones con
+ * el click del dueño al comando que llegó (`comandoTalCual`).
  */
 function handle(event, opts = {}) {
   const r = handleConComentarios(event, opts);
   if (r && r.block) return r;
   const original = event?.tool_input?.command;
-  const separado = typeof original === 'string' ? conSeparadorTrasElFor(original) : original;
-  if (separado === original) return r;
-  paso('la lectura con un ; detrás de cada for (( ))');
+  const variantes = typeof original === 'string' ? variantesConSeparador(original) : [];
+  if (!variantes.length) return r;
+  if (variantes.demasiadas) {
+    return { block: `⛔ tycon-pipeline — DEMASIADOS for (( )) SIN «;»\n\n  El comando tiene más de ${TOPE_DE_CABECERAS} cabeceras \`for ((…))\` sin \`;\` antes del \`do\`: no se puede leer qué corre cada cuerpo.\n  Poné el \`;\` (\`for ((…)); do\`) o partilo en comandos más chicos.\n` };
+  }
+  paso('las lecturas con un ; detrás de los for (( ))');
   const antes = modoDeLectura().soloDecidir;
   modoDeLectura({ soloDecidir: true });
   try {
-    const conSeparador = handleConComentarios({ ...event, comandoTalCual: original, tool_input: { ...event.tool_input, command: separado } }, opts);
-    if (conSeparador && conSeparador.block) return conSeparador;
+    for (const v of variantes) {
+      const conSeparador = handleConComentarios({ ...event, comandoTalCual: original, tool_input: { ...event.tool_input, command: v } }, opts);
+      if (conSeparador && conSeparador.block) return conSeparador;
+    }
   } finally {
     modoDeLectura({ soloDecidir: antes });
   }

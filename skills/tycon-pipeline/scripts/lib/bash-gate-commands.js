@@ -22,7 +22,7 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, conSeparadorTrasElFor, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
+const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, variantesConSeparador, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
 const { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
 const { adentroDeUnaCuenta, ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
@@ -926,11 +926,10 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
-  // con un `for ((`, también lo que corre adentro del comando con un `;` detrás de cada cabecera: el cuerpo de un
-  // `for ((…)) do …` sin `;` antes del `do` es un comando (`conSeparadorTrasElFor`). El comando de arriba con el `;` no
+  // con un `for ((`, también lo que corre adentro del comando con el `;` detrás de las cabeceras: el cuerpo de un
+  // `for ((…)) do …` sin `;` antes del `do` es un comando (`variantesConSeparador`). El comando de arriba con el `;` no
   // es un anidado: lo lee la segunda lectura del freno (`handle`)
-  const separado = hondo === 0 ? conSeparadorTrasElFor(cmd) : cmd;
-  if (separado !== cmd) out.push(...comandosAnidados(separado, hondo, valores).slice(1));
+  if (hondo === 0) for (const v of variantesConSeparador(cmd)) out.push(...comandosAnidados(v, 1, valores).slice(1));
   // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
   // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
   // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.

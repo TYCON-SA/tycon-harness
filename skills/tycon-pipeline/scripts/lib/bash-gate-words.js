@@ -435,31 +435,53 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
  * el texto, también entre comillas y en comentarios: un `for ((` que no abre un comando es un error del shell y no corre
  * nada, y el de un `"$(…)"`, una función, un `case` o un `<(…)` sí corre; lo citado sigue siendo texto para quien lo lee.
  * El primer blanco de detrás se cambia por el `;`; sin blanco, se agrega uno. Lo de adentro de la cuenta queda igual.
- * Cada cabecera con su propio cierre: un `for ((` citado antes (`: 'for (('`), que cierra donde no debe, no saltea a
- * la de verdad.
+ * Cada cabecera con su propio cierre. Un `for ((` citado (`: 'for (('`) cierra donde no debe y su `;` puede cortar
+ * argumentos: por eso `variantesConSeparador` da también una versión por cada cabecera sola.
  */
-function conSeparadorTrasElFor(texto) {
-  const t = String(texto);
-  const cabecera = /(?<![\w$.-])for[ \t]*\(\(/g;
-  if (!t.includes('((')) return t;
+function puntosDeSeparador(t) {
   // dónde va cada `;`, y si reemplaza un blanco
   const puntos = new Map();
-  for (const m of t.matchAll(cabecera)) {
+  if (!t.includes('((')) return puntos;
+  for (const m of t.matchAll(/(?<![\w$.-])for[ \t]*\(\(/g)) {
     const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
     if (fin < 0) continue;
-    // una que abre adentro de comillas y cierra afuera no es una cabecera: lo de entre sus paréntesis tiene un número
-    // impar de comillas (`'for ((')) h`); su `;` cortaría los argumentos de lo que sigue
-    const cuenta = t.slice(m.index + m[0].length, fin - 1);
-    const impares = (re) => (cuenta.match(re) || []).length % 2 === 1;
-    if (impares(/'/g) || impares(/(?<!\\)"/g) || impares(/`/g)) continue;
     let k = fin + 1;
     while (t[k] === ' ' || t[k] === '\t') k++;
     // ya separado, o cierra lo de afuera
     if (k >= t.length || /[;\n&|)]/.test(t[k])) continue;
     puntos.set(fin + 1, k > fin + 1);
   }
+  return puntos;
+}
+
+function conPuntos(t, puntos, cuales) {
   let out = t;
-  for (const p of [...puntos.keys()].sort((a, b) => b - a)) out = out.slice(0, p) + ';' + out.slice(puntos.get(p) ? p + 1 : p);
+  for (const p of [...cuales].sort((a, b) => b - a)) out = out.slice(0, p) + ';' + out.slice(puntos.get(p) ? p + 1 : p);
+  return out;
+}
+
+function conSeparadorTrasElFor(texto) {
+  const t = String(texto);
+  const puntos = puntosDeSeparador(t);
+  return puntos.size ? conPuntos(t, puntos, puntos.keys()) : t;
+}
+
+// hasta cuántas cabeceras se lee una versión por cada una sola
+const TOPE_DE_CABECERAS = 8;
+
+/**
+ * Las versiones del comando con el `;` de `conSeparadorTrasElFor` que hay que leer además de la de tal cual: con todas
+ * las cabeceras y, si son varias, con cada una sola (hasta `TOPE_DE_CABECERAS`). Un `for` real con un señuelo citado
+ * en su cuerpo (`for ((…)) do rm $(: 'for ((') h.md`) se ve en la de su cabecera sola. Vacía si no hay ninguna.
+ */
+function variantesConSeparador(texto) {
+  const t = String(texto);
+  const puntos = puntosDeSeparador(t);
+  if (!puntos.size) return [];
+  // (con más cabeceras que el tope, `demasiadas`: el freno frena sin leerlas)
+  if (puntos.size > TOPE_DE_CABECERAS) return Object.assign([conPuntos(t, puntos, puntos.keys())], { demasiadas: true });
+  const out = [conPuntos(t, puntos, puntos.keys())];
+  if (puntos.size > 1) for (const p of puntos.keys()) out.push(conPuntos(t, puntos, [p]));
   return out;
 }
 
@@ -1461,4 +1483,4 @@ const REDIRECCION_DE_ENTRADA_O_PROCESO = /(?<![^\s])\{[A-Za-z_]\w*\}(?=[<>])|[<>
 // y la que corre un guion (`-f`, `-File`)
 const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
 
-module.exports = { COMANDO_DE_POWERSHELL, COMANDO_CODIFICADO_DE_POWERSHELL, REDIRECCION_DE_ENTRADA_O_PROCESO, ARCHIVO_DE_POWERSHELL, sinCuentasSueltas, conSeparadorTrasElFor, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
+module.exports = { variantesConSeparador, TOPE_DE_CABECERAS, COMANDO_DE_POWERSHELL, COMANDO_CODIFICADO_DE_POWERSHELL, REDIRECCION_DE_ENTRADA_O_PROCESO, ARCHIVO_DE_POWERSHELL, sinCuentasSueltas, conSeparadorTrasElFor, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };

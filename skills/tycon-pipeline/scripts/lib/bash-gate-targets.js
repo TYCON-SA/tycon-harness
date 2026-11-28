@@ -23,7 +23,7 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, conSeparadorTrasElFor, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinCuentasSueltas, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
+const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, variantesConSeparador, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinCuentasSueltas, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
 const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 
 /**
@@ -349,11 +349,10 @@ const ANTES_DEL_CD_COMPLEJO = /['"`(){}|<>#\\]|\$\(|(?:^|[^&])&(?!&)|\b(?:if|the
  */
 function extractWriteTargets(cmd, { keep = null, cuentas = false } = {}) {
   const out = new Set();
-  // tal cual y, con un `for ((`, también con un `;` detrás de cada cabecera: el cuerpo de un `for ((…)) do …` sin `;`
-  // antes del `do` es un comando (`conSeparadorTrasElFor`). Cuentan los destinos de las dos
+  // tal cual y, con un `for ((`, también con el `;` detrás de las cabeceras: el cuerpo de un `for ((…)) do …` sin `;`
+  // antes del `do` es un comando (`variantesConSeparador`). Cuentan los destinos de todas
   const tal = String(cmd || '');
-  const separado = conSeparadorTrasElFor(tal);
-  for (const raw of separado === tal ? [tal] : [tal, separado]) {
+  for (const raw of [tal, ...variantesConSeparador(tal)]) {
     const s = stripNonCommandText(raw, 0, { cuentas });
     const lecturas = [s];
     // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
