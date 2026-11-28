@@ -574,7 +574,8 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const severidad = String(f.severidad || '').toLowerCase() || null;
     // una tarea es vigente si el paquete sigue en su proyecto, con la misma regla que la noche usa para pedirlas;
     // si un repo no dice su proyecto, no se sabe dónde vive el paquete y todas son vigentes
-    const etiquetas = Array.isArray(f.repos_etiquetas) ? f.repos_etiquetas : null;
+    // una ficha sin `repos:` (la lista vacía) tampoco dice dónde vive: no da sus tareas por cerradas
+    const etiquetas = Array.isArray(f.repos_etiquetas) && f.repos_etiquetas.length ? f.repos_etiquetas : null;
     const proyectos = etiquetas && reposCfg ? etiquetas.map((r) => DEP_PROJECT.declaredProject(r, reposCfg)) : null;
     const donde = proyectos && proyectos.every(Boolean) ? new Set(proyectos.map((p) => String(p).toLowerCase())) : null;
     if (!donde && (f.pedidos || []).length) {

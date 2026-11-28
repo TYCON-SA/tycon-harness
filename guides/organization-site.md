@@ -575,6 +575,11 @@ candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, s
 túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
 avisa «falta el paso de una vez» si el candado las tapa.
 
+**Al reiniciar o actualizar el sitio.** Cuando la plataforma avisa que apaga la instancia vieja, el sitio cierra cada
+conexión de máquina pidiéndole que reconecte (el código 1012), y la máquina vuelve enseguida. Si una máquina reconecta
+con un ritmo fijo, por ejemplo cada minuto, el registro del sitio lo dice una vez por hora («reconecta cada ~61 s»): es
+un intermediario que corta las conexiones largas. En Cloud Run es el plazo del servicio (ver su receta).
+
 ## Configuración, sección por sección
 
 Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de

@@ -41,7 +41,7 @@ const AHORA = Date.parse('2026-10-27T13:00:00Z');
 const MIN = 60000;
 const INICIO = 'Tue Oct 27 10:00:00 2026';
 const HUELLA = 'a1b2c3d4e5f60718';
-const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round', 'refresh-after-main', 'pending-approval', 'adhoc-lane', 'compare-waiver'], owner_only: ['control-change'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
+const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'refresh-after-main', 'pending-approval', 'adhoc-lane', 'compare-waiver'], owner_only: ['control-change'], delegated_machines: [{ id: HUELLA, label: 'Mac de prueba' }] };
 const delegacionReal = ({ perfil = PERFIL, huella = HUELLA } = {}) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella }) });
 
 // --- los árboles de procesos (los de owner-window.test.js) ---------------------------------------------------------
@@ -140,6 +140,8 @@ const gates = (L) => fs.readFileSync(path.join(L.estado, 'gates.log'), 'utf8').s
 const firmasComunes = (L) => { try { return fs.readFileSync(logPath(L.casa), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
 const PENDIENTE = (repo, extra = '') => `node ${MARKER} approve-pending --id DEF-nuevo --repo ${repo}${extra}`;
 const EXTRA = (extra = '') => `node ${PIPELINE} smart-reloop --iter 3 --extra-round${extra}`;
+// una firma de rutina que se delega, de ejemplo para el desvío: la vuelta extra ya no se delega
+const COMPARA = (extra = '') => `node ${MARKER} compare-waiver --story specs/s.md --command c --reason r${extra}`;
 const REFIRMA = (extra = '') => `bash ${CONTROLES} approve --base abc123 --entries '[{"path":"scripts/ci/x.sh","blob":"b1"}]'${extra}`;
 const esRefirma = () => ({ clase: 'refresh-after-main', refirma_de: 'abc123' });
 /** Lo que ve `sesion` al pedir lo siguiente, con la delegación inyectada. */
@@ -177,11 +179,16 @@ test('Desvio_Fondo_PendienteParaSi_SinCuadroYConComando (T1) — @story-8.295 @a
   assert.match(f.delegable.comando, new RegExp(`--repo ${L.ajeno} --for-session ses-a$`));
   assert.match(r.texto, new RegExp(f.id));
   assert.strictEqual(f.key, sl.claveDe('pending-approval', 'ses-a', ow.canonica(f.delegable.comando)), 'la clave sale del comando desviado');
-  // la vuelta extra sin --repo: el desviado lo lleva con la carpeta del pedido
-  ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, id: 'toolu_02' }));
-  const x = desviados(L.casa).find((g) => g.firma === 'extra-round');
-  assert.match(x.delegable.comando, new RegExp(`--repo ${L.ajeno} --for-session ses-a$`));
-  assert.strictEqual(ow.canonicaDe(x.delegable.comando).id, 'extra-round');
+  // eximir de la comparación: el desviado lleva la historia tal cual y la sesión destino
+  ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, id: 'toolu_02' }));
+  const x = desviados(L.casa).find((g) => g.firma === 'compare-waiver');
+  assert.match(x.delegable.comando, /--story specs\/s\.md --command c --reason r --for-session ses-a$/);
+  assert.strictEqual(ow.canonicaDe(x.delegable.comando).id, 'compare-waiver');
+  // pasado el tope la vuelta extra la firma el dueño. Con el perfil que la liste, no se desvía a la coordinadora
+  const conVuelta = { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'extra-round'] };
+  const ve = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, id: 'toolu_05', delegacion: delegacionReal({ perfil: conVuelta }) }));
+  assert.notStrictEqual(ve.via, 'desviada', ve.texto);
+  assert.ok(!desviados(L.casa).some((g) => g.firma === 'extra-round'), 'la vuelta extra no queda desviada');
   // la refirma tras traer main sin --root: el desviado lo lleva absoluto, y el freno lo sigue leyendo como su firma
   const rr = ow.decidir(pedido(L, 'ses-a', REFIRMA(), { cwd: L.ajeno, id: 'toolu_03', clasificar: esRefirma }));
   assert.deepStrictEqual([rr.decision, rr.via], ['deny', 'desviada'], rr.texto);
@@ -192,7 +199,7 @@ test('Desvio_Fondo_PendienteParaSi_SinCuadroYConComando (T1) — @story-8.295 @a
 
 test('Desvio_Pestana_VueltaExtraYPendiente_SinVentana (T2) — @story-8.295 @ac-1', (t) => {
   const L = laboratorio(t);
-  for (const [cmd, id] of [[EXTRA(), 'toolu_01'], [PENDIENTE(L.ajeno), 'toolu_02']]) {
+  for (const [cmd, id] of [[COMPARA(), 'toolu_01'], [PENDIENTE(L.ajeno), 'toolu_02']]) {
     const r = ow.decidir(pedido(L, 'ses-a', cmd, { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id }));
     assert.deepStrictEqual([r.decision, r.via], ['deny', 'desviada'], `${cmd}: ${r.texto}`);
     assert.notStrictEqual(r.decision, 'ask');
@@ -235,8 +242,8 @@ test('Coordinadora_CorreElComando_FirmaPorDelegacionYCierra (T4) — @story-8.29
 
 test('Desvio_MismoPedidoDosVeces_UnRenglon (T5) — @story-8.295 @ac-4', (t) => {
   const L = laboratorio(t);
-  const a = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
-  const b = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  const a = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
+  const b = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   assert.deepStrictEqual([a.via, b.via], ['desviada', 'desviada']);
   assert.strictEqual(renglones(L.casa).length, 1);
 });
@@ -245,22 +252,22 @@ test('SinPermisos_RutinaAvisada_NoRutinaDesviada (T6) — @story-8.295 @ac-5', (
   const L = laboratorio(t);
   const r = ow.decidir(pedido(L, 'ses-a', PENDIENTE(L.ajeno), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'bypassPermissions' }));
   assert.deepStrictEqual([r.decision, r.via], ['allow', 'avisado'], r.texto);
-  const x = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'bypassPermissions', id: 'toolu_02' }));
+  const x = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'bypassPermissions', id: 'toolu_02' }));
   assert.deepStrictEqual([x.decision, x.via], ['deny', 'desviada'], x.texto);
   assert.doesNotMatch(x.texto, /AskUserQuestion/);
-  assert.deepStrictEqual(renglones(L.casa).map((f) => [f.firma, Boolean(f.delegable)]), [['extra-round', true]]);
+  assert.deepStrictEqual(renglones(L.casa).map((f) => [f.firma, Boolean(f.delegable)]), [['compare-waiver', true]]);
 });
 
 test('NoDesviada_LaVentanaDiceElMotivoDeDelegable (T7) — @story-8.295 @ac-6 @ac-16', (t) => {
   // máquina fuera de la lista
   let L = laboratorio(t);
-  let r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', delegacion: delegacionReal({ huella: 'ffffffffffffffff' }) }));
+  let r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', delegacion: delegacionReal({ huella: 'ffffffffffffffff' }) }));
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.match(r.texto, /No se desvió a la coordinadora: esta máquina no está en approvals\.delegated_machines/);
   assert.doesNotMatch(r.texto, /la sesión que implementa/);
   // la coordinadora parada
   L = laboratorio(t, { coord: 'muerta' });
-  r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
+  r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.match(r.texto, /No se desvió a la coordinadora: no hay coordinadora confirmada y viva/);
   assert.doesNotMatch(r.texto, /la sesión que implementa/);
@@ -286,9 +293,9 @@ test('StoryGate_EjemploDePendiente_ConForSession (T8) — @story-8.295 @ac-8', (
 
 test('Respaldo_Ocupada_HastaElPlazoDeElla_DespuesDelDueno (T9) — @story-8.295 @ac-9', (t) => {
   const L = laboratorio(t, { coord: 'ocupada' });
-  const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  const r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   assert.strictEqual(r.via, 'desviada', r.texto);
-  conversacion(L, 'ses-a', [{ id: 'toolu_01', command: EXTRA() }]);
+  conversacion(L, 'ses-a', [{ id: 'toolu_01', command: COMPARA() }]);
   assert.strictEqual(siguiente(L, 'ses-coord', AHORA + 5 * MIN).tipo, 'delegable');
   const n = siguiente(L, 'ses-coord', AHORA + 11 * MIN);
   assert.strictEqual(n.tipo, 'firma', JSON.stringify(n));
@@ -314,14 +321,14 @@ test('Respaldo_Ocupada_HastaElPlazoDeElla_DespuesDelDueno (T9) — @story-8.295 
 
 test('Respaldo_Parada_NoDesviaYMuertaDespuesVuelveAlDueno (T10) — @story-8.295 @ac-10', (t) => {
   let L = laboratorio(t, { coord: 'muerta' });
-  const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  const r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.notStrictEqual(r.via, 'desviada');
   assert.deepStrictEqual(renglones(L.casa).map((f) => [f.tipo, Boolean(f.delegable)]), [['firma', false]], 'el renglón de siempre, para el dueño');
   // viva al desviar, muerta después: el renglón es del dueño enseguida, lo lea quien lo lea
   L = laboratorio(t);
-  assert.strictEqual(ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno })).via, 'desviada');
-  conversacion(L, 'ses-a', [{ id: 'toolu_01', command: EXTRA() }]);
+  assert.strictEqual(ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno })).via, 'desviada');
+  conversacion(L, 'ses-a', [{ id: 'toolu_01', command: COMPARA() }]);
   L.sesion('ses-coord', L.propio, { pid: 999999 });
   const n = siguiente(L, 'ses-a');
   assert.strictEqual(n.tipo, 'firma', JSON.stringify(n));
@@ -330,7 +337,7 @@ test('Respaldo_Parada_NoDesviaYMuertaDespuesVuelveAlDueno (T10) — @story-8.295
 
 test('Oficina_FirmaConLaCoordinadora_NoEsDelDueno (T11) — @story-8.295 @ac-11', (t) => {
   const L = laboratorio(t);
-  ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   const filas = sl.abiertos(L.casa, { ...L.lista, ahora: AHORA + MIN }).filas;
   const [f] = filas;
   // fresca y con la coordinadora viva: la firma la coordinadora; vencida, vuelve a ser del dueño
@@ -366,7 +373,7 @@ test('Suplantacion_CuatroIntentos_NingunaFirma (T12) — @story-8.295 @ac-12', (
   assert.strictEqual(r.decision, 'deny');
   assert.match(r.texto, /variable de sesión|forma exacta/);
   // (3) lo pide con --for-session de otra sesión: no se desvía y va a la ventana
-  r = ow.decidir(pedido(L, 'ses-a', EXTRA(' --for-session ses-b'), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id: 'toolu_04' }));
+  r = ow.decidir(pedido(L, 'ses-a', COMPARA(' --for-session ses-b'), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id: 'toolu_04' }));
   assert.strictEqual(r.decision, 'ask', r.texto);
   // (4) owner-next no le da el comando
   assert.notStrictEqual(siguiente(L, 'ses-a').tipo, 'delegable');
@@ -402,7 +409,7 @@ test('RenglonAMano_SoloDelDuenoRepoDeLaCoordFormaRara_Saltados (T13) — @story-
   // corridos igual por la coordinadora, el freno no delega
   assert.notStrictEqual(correLaCoordinadora(L, 'control-change', mano[0].delegable).r.via, 'delegacion');
   // con un segundo --repo del repo de la coordinadora, el pedido no se desvía: la ventana dice por qué
-  const doble = EXTRA(` --repo ${L.ajeno} --repo ${L.propio}`);
+  const doble = PENDIENTE(L.ajeno, ` --repo ${L.propio}`);
   const r = ow.decidir(pedido(L, 'ses-a', doble, { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default', id: 'toolu_doble' }));
   assert.notStrictEqual(r.via, 'desviada', r.texto);
   assert.match(r.texto, /No se desvió a la coordinadora: --repo viene más de una vez/);
@@ -477,7 +484,7 @@ test('NoDesvia_SoloDelDuenoONoDelegada (T16) — @story-8.295 @ac-15', (t) => {
 
 test('NoDesvia_MaquinaNoHabilitada (T17) — @story-8.295 @ac-16', (t) => {
   const L = laboratorio(t);
-  const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, delegacion: delegacionReal({ huella: 'ffffffffffffffff' }) }));
+  const r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, delegacion: delegacionReal({ huella: 'ffffffffffffffff' }) }));
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.notStrictEqual(r.via, 'desviada');
   assert.match(r.texto, /No se desvió a la coordinadora: esta máquina no está en approvals\.delegated_machines/);
@@ -487,21 +494,21 @@ test('NoDesvia_MaquinaNoHabilitada (T17) — @story-8.295 @ac-16', (t) => {
 test('NoDesvia_MismaHistoriaOSinConfirmar (T18) — @story-8.295 @ac-17', (t) => {
   let L = laboratorio(t);
   fs.writeFileSync(path.join(L.estado, 'active', 'ses-coord.json'), JSON.stringify({ sessionId: 'ses-coord', storyId: '9.99', storyPath: `${L.ajeno}/specs/story-9.99.md`, repoPath: L.propio }));
-  let r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  let r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   assert.notStrictEqual(r.via, 'desviada', r.texto);
   assert.match(r.texto, /misma story/);
   L = laboratorio(t, { confirmada: false });
-  r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   assert.notStrictEqual(r.via, 'desviada', r.texto);
   assert.deepStrictEqual(desviados(L.casa), []);
 });
 
 test('NoDesvia_LoSuyoOWindows (T19) — @story-8.295 @ac-18', (t) => {
   const L = laboratorio(t);
-  const r = ow.decidir(pedido(L, 'ses-coord', EXTRA(), { cwd: L.propio, arbol: DE_PESTANA, modo: 'default' }));
+  const r = ow.decidir(pedido(L, 'ses-coord', COMPARA(), { cwd: L.propio, arbol: DE_PESTANA, modo: 'default' }));
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.notStrictEqual(r.via, 'desviada');
-  const d = DR.delegable({ firma: 'extra-round', destino: 'ses-a', casa: L.casa, palabras: ow.canonica(EXTRA()), cwd: L.ajeno, delegacion: delegacionReal(), plataforma: 'win32', ...L.lista });
+  const d = DR.delegable({ firma: 'compare-waiver', destino: 'ses-a', casa: L.casa, palabras: ow.canonica(COMPARA()), cwd: L.ajeno, delegacion: delegacionReal(), plataforma: 'win32', ...L.lista });
   assert.strictEqual(d.ok, false);
   assert.match(d.motivo, /Windows/);
   assert.deepStrictEqual(desviados(L.casa), []);
@@ -538,14 +545,14 @@ test('AprobacionExplicita_GanaAlDesvio (T23) — @story-8.295 @ac-23', (t) => {
   const L = laboratorio(t);
   const aprobacion = { id: 'ap-1', sesion: 'ses-a', texto: 'aprobado' };
   const aprobaciones = { ...OA, buscar: () => ({ ok: true, via: 'click', aprobacion }), consumir: () => ({ ok: true }), devolver: () => {} };
-  const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, aprobaciones }));
+  const r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, aprobaciones }));
   assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
   assert.deepStrictEqual(desviados(L.casa), []);
 });
 
 test('RutaManual_SinRenglonDesviado_SinRouted (T24) — @story-8.295 @ac-21', (t) => {
   const L = laboratorio(t);
-  const { r, e } = correLaCoordinadora(L, 'extra-round', EXTRA(' --for-session ses-a'));
+  const { r, e } = correLaCoordinadora(L, 'compare-waiver', COMPARA(' --for-session ses-a'));
   assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], r.texto);
   assert.strictEqual(e.codigo, 0, e.motivo);
   const [firma] = firmasComunes(L);
@@ -630,7 +637,7 @@ test('CambiarElEstado_DelegadaEnElPerfil_VaALaCoordinadora — sign-file cambiar
 test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @ac-20', (t) => {
   // lista apagada y máquina sin coordinadora designada: ni renglón desviado ni motivo dicho, la ventana de siempre
   for (const L of [laboratorio(t, { lista: 'off' }), laboratorio(t, { designada: false })]) {
-    const r = ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
+    const r = ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno, arbol: DE_PESTANA, modo: 'default' }));
     assert.strictEqual(r.decision, 'ask', r.texto);
     assert.notStrictEqual(r.via, 'desviada');
     assert.doesNotMatch(r.texto, /No se desvió a la coordinadora/);
@@ -638,7 +645,7 @@ test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @a
   }
   // Codex (`turn_id`) no tiene ventana: se niega como hoy, sin desvío
   const L = laboratorio(t);
-  const p = pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno });
+  const p = pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno });
   p.evento.turn_id = 'turn-1';
   const r = ow.decidir(p);
   assert.strictEqual(r.decision, 'deny', r.texto);
@@ -649,7 +656,7 @@ test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @a
 
 test('OwnerWait_OtraCoordinadora_PasaALaPersona (T27) — @story-8.295 @ac-9', (t) => {
   const L = laboratorio(t);
-  assert.strictEqual(ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno })).via, 'desviada');
+  assert.strictEqual(ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno })).via, 'desviada');
   // el dueño designa otra coordinadora: el renglón de la anterior pasa a la persona, dicho una vez
   const d = { name: 'relay-designation', status: 'ok', ts: '2026-10-27T13:02:00.000Z', sesion: 'ses-nueva', rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
   fs.appendFileSync(path.join(L.estado, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, '2026-10-27T13:03:00.000Z'))}\n`);
@@ -664,7 +671,7 @@ test('OwnerWait_OtraCoordinadora_PasaALaPersona (T27) — @story-8.295 @ac-9', (
 
 test('Oficina_Collect_MarcaElRenglonDesviado (T28) — @story-8.295 @ac-11', async (t) => {
   const L = laboratorio(t);
-  ow.decidir(pedido(L, 'ses-a', EXTRA(), { cwd: L.ajeno }));
+  ow.decidir(pedido(L, 'ses-a', COMPARA(), { cwd: L.ajeno }));
   const { collectAt, col } = require('./lib/office-fixtures.js');
   const leer = (min) => collectAt({ home: L.casa }, AHORA + min * MIN, { ...L.lista, readOnly: true });
   // la conexión de verdad: collect marca la fila con la coordinadora viva y en plazo, y la oficina no la pone en «Tu firma»

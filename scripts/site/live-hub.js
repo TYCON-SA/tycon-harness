@@ -53,6 +53,10 @@ const CIERRE_MUY_GRANDE = 1009;
 const CIERRE_PROBA_DESPUES = 1013;
 // «el servicio se reinicia»: la máquina lo toma como un corte común y reintenta en unos segundos
 const CIERRE_RENOVAR = 1012;
+// el ritmo de un intermediario que corta las conexiones largas (Cloud Run con su plazo de 60 s): tantos cortes seguidos que
+// no hizo el sitio, de una duración pareja (dentro de la tolerancia) y entre el mínimo y el máximo, se avisan una vez por
+// hora por máquina
+const RITMO = Object.freeze({ cortes: 3, minimoMs: 20000, maximoMs: 15 * 60 * 1000, tolerancia: 0.1, avisoCadaMs: 60 * 60 * 1000 });
 const NONCE_BYTES = 32;
 
 /** La dirección de quien pide: la del socket, o la última de `X-Forwarded-For` si la instalación confía en el intermediario. */
@@ -223,7 +227,11 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     const st = fuentes.estado();
     return Boolean(st.frenado) || !(st.cargado || st.navegable);
   };
-  const cerrar = (ws, codigo, motivo) => { try { ws.close(codigo, motivo); } catch { /* ya cerrada */ } };
+  // las conexiones que cortó el sitio: un corte suyo no cuenta para el ritmo de un intermediario
+  const cortoElSitio = new WeakSet();
+  const cerrar = (ws, codigo, motivo) => { cortoElSitio.add(ws); try { ws.close(codigo, motivo); } catch { /* ya cerrada */ } };
+  const cortar = (ws) => { cortoElSitio.add(ws); ws.terminate(); };
+  const ritmos = new Map();      // máquina → { duraciones, avisado }
   const quienEs = (ses) => access.quienPide(ses, { config: fuentes.config(), firstMaintainer });
   const reglasAhora = () => {
     const config = fuentes.config();
@@ -324,7 +332,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
       if (callada && !oficinas.has(id)) {
         maquinas.delete(id);
         llaves.anotarConexion(id, false);
-        conn.ws.terminate();
+        cortar(conn.ws);
         log(`oficinas: ${id} sin conexión`);
         continue;
       }
@@ -337,7 +345,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
         o.sinConexionDesde = o.ultimoLatido;
         huboCambios = true;
         const conn = maquinas.get(id);
-        if (conn) { maquinas.delete(id); llaves.anotarConexion(id, false); conn.ws.terminate(); }
+        if (conn) { maquinas.delete(id); llaves.anotarConexion(id, false); cortar(conn.ws); }
         log(`oficinas: ${id} sin conexión`);
       } else if (o.sinConexionDesde !== null && t - o.sinConexionDesde >= P.fotoMs) {
         oficinas.delete(id);
@@ -429,6 +437,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     conn.id = id;
     conn.fingerprint = huella;
     conn.ultimoLatido = ahora();
+    conn.desde = conn.ultimoLatido;
     // con algo de azar (hasta un quinto antes), para que las máquinas que conectaron juntas no vuelvan juntas
     conn.vence = P.vidaMaquinaMs > 0 ? conn.ultimoLatido + Math.round(P.vidaMaquinaMs * (1 - 0.2 * azar())) : null;
     maquinas.set(id, conn);
@@ -550,6 +559,25 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     return true;
   }
 
+  /**
+   * Una conexión de máquina terminó: `ms` es cuánto duró, o null si la cortó el sitio (eso rompe la racha). Varios cortes
+   * seguidos de la misma duración son un intermediario que corta las conexiones largas, no la red: la máquina reconecta
+   * y la oficina queda unos segundos sin datos en cada vuelta.
+   */
+  function anotarCorte(id, ms) {
+    const r = ritmos.get(id) || { duraciones: [], avisado: -Infinity };
+    ritmos.set(id, r);
+    if (ms === null || ms < RITMO.minimoMs || ms > RITMO.maximoMs) { r.duraciones = []; return; }
+    r.duraciones = [...r.duraciones, ms].slice(-RITMO.cortes);
+    if (r.duraciones.length < RITMO.cortes) return;
+    const mayor = Math.max(...r.duraciones);
+    if (mayor - Math.min(...r.duraciones) > mayor * RITMO.tolerancia) return;
+    if (ahora() - r.avisado < RITMO.avisoCadaMs) return;
+    r.avisado = ahora();
+    const promedio = Math.round(r.duraciones.reduce((a, b) => a + b, 0) / r.duraciones.length / 1000);
+    log(`oficinas: ⚠️ ${id} reconecta cada ~${promedio} s: algo entre la máquina y el sitio corta las conexiones largas y la oficina queda sin datos en cada corte (en Cloud Run, el plazo del servicio: --timeout=3600)`);
+  }
+
   function abrirMaquina(ws, req) {
     if (noDisponible()) return cerrar(ws, CIERRE_PROBA_DESPUES, 'el sitio está cargando');
     const direccion = direccionDe(req, cfg.trustProxy);
@@ -561,6 +589,7 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     ws.on('message', (raw) => { try { alMensajeDeMaquina(conn, raw); } catch (e) { log(`oficinas: un mensaje de máquina falló (${e.message})`); cerrar(ws, 1011, 'error del sitio'); } });
     ws.on('close', () => {
       soltarSinAutenticar(conn);
+      if (conn.autenticada) anotarCorte(conn.id, cortoElSitio.has(ws) ? null : ahora() - conn.desde);
       if (conn.id && maquinas.get(conn.id) === conn) { maquinas.delete(conn.id); llaves.anotarConexion(conn.id, false); huboCambios = true; }
     });
     ws.send(JSON.stringify({ type: 'challenge', nonce: conn.nonce }));
@@ -642,12 +671,21 @@ function crearCentro({ cfg, fuentes, llaves, sesionDe, ahora = Date.now, log = (
     alUpgrade, revisar, repartir, conversacion,
     oficina: (id) => oficinas.get(id) || null,
     conectada: (id) => maquinas.has(id),
-    detener() {
+    /**
+     * Al apagarse: cada máquina recibe 1012 («el servicio se reinicia») y abre otra conexión, que una plataforma que drena
+     * la instancia vieja ya manda a la nueva. Espera esos cierres hasta `cierreMs`; lo que no contestó se corta.
+     */
+    async detener() {
       clearInterval(relojReparto);
       clearInterval(relojRevision);
       clearInterval(relojLatido);
       for (const c of sinAutenticar) { if (c.reloj) clearTimeout(c.reloj); c.ws.terminate(); }
-      for (const c of maquinas.values()) c.ws.terminate();
+      const abiertas = [...maquinas.values()].map((c) => c.ws);
+      const cerradas = abiertas.map((ws) => new Promise((resolve) => { ws.once('close', resolve); cerrar(ws, CIERRE_RENOVAR, 'el sitio se reinicia'); }));
+      let espera;
+      await Promise.race([Promise.all(cerradas), new Promise((resolve) => { espera = setTimeout(resolve, P.cierreMs); })]);
+      clearTimeout(espera);
+      for (const ws of abiertas) ws.terminate();
       for (const n of navegadores) n.ws.terminate();
       puerta.close();
     },
