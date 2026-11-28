@@ -1762,3 +1762,15 @@ test('A176_HowItWorks_TuOrganizacion_EnPalabrasDeLaPantalla', () => conCasa(() =
     assert.doesNotMatch(f, /(nombres de prueba|test names): any/);
   }
 }));
+
+// 🔴 mutación: un gancho que le dice algo a la sesión al arrancar (el aviso del disco) en «Anotan», que según la
+// leyenda no avisa; o la descripción de uno de «Avisan» que no dice qué avisa (A181).
+test('A181 Arranque_CadaPiezaEnElGrupoDeLoQueHace — el aviso del disco avisa; la actualización del freno dice que lo avisa', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  const efecto = (spec) => (lista.find((h) => h.spec === spec) || {}).effect;
+  assert.strictEqual(efecto('@tcg:disk-notice.js'), 'warns', 'dice al arrancar cuánto disco queda: avisa');
+  assert.strictEqual(efecto('@tcg:guard-auto-update.js'), 'warns', 'actúa y lo dice al arrancar');
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TX.t('es', 'control.@tcg:guard-auto-update.js'), /lo dice al arrancar/);
+  assert.match(TX.t('en', 'control.@tcg:guard-auto-update.js'), /says so at startup/);
+});
