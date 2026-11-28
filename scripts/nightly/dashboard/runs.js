@@ -2245,7 +2245,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var nombrePaso = function (key) { return key.split('+').map(function (p) { return PASOS[+p] || p; }).join(' + '); };
     return '<div class="mini"><h4>' + T('consumoTitulo', { n: miles(tokensDe(c)) }) + '</h4>'
       + '<p class="kv">' + T('consumoDetalle', { o: miles(k.tokens.out), n: miles(k.tokens.cache_new), l: miles(k.tokens.cache_read), r: k.respuestas == null ? '?' : k.respuestas }) + '</p>'
-      + '<p class="kv">' + T('modelos') + ': ' + Object.keys(k.por_modelo).map(function (m) { return esc(m) + ' ' + k.por_modelo[m].respuestas; }).join(' · ') + '</p>'
+      // sin ningún modelo no hay renglón: un rótulo vacío se lee como un dato que falta sin motivo
+      + (k.por_modelo && Object.keys(k.por_modelo).length ? '<p class="kv">' + T('modelos') + ': ' + Object.keys(k.por_modelo).map(function (m) { return esc(m) + ' ' + k.por_modelo[m].respuestas; }).join(' · ') + '</p>' : '')
       + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[RAMPA.length - 1]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
       + (k.fuera_de_ventana ? '<p class="kv">' + T('fueraDeTodoPaso', { n: miles(k.fuera_de_ventana) }) + '</p>' : '')
       + '</div>';

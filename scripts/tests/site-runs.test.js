@@ -2598,3 +2598,19 @@ test('A151 Ingles_ControlesSinNombreRepetido_YConcordancia — «tests», no «t
   const en = JSON.stringify(RT);
   assert.ok(!/did not pass and were fixed/.test(en), 'concordancia: «did not pass and was fixed»');
 });
+
+// 🔴 mutación: el recuadro de consumo con un renglón «modelos:» vacío cuando la ejecución no trae ningún modelo (A145).
+test('A145 Consumo_SinModelos_SinRenglonVacio — sin modelos no hay renglón «modelos:»; con uno, sí', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    assert.strictEqual(det.consumo.estado, 'medido', 'la ejecución tiene consumo');
+    const conModelos = (por) => c.w.__detalle({ ...det, consumo: { ...det.consumo, por_modelo: por } });
+    assert.doesNotMatch(conModelos({}), /<p class="kv">modelos: <\/p>/, 'sin modelos, sin el renglón vacío');
+    assert.doesNotMatch(conModelos({}), />modelos: </);
+    assert.match(conModelos({ 'claude-opus-5-5': { respuestas: 3 } }), /modelos: claude-opus-5-5 3/);
+  });
+});
