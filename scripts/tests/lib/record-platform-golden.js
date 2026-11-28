@@ -14,6 +14,8 @@
 //   node scripts/tests/lib/record-platform-golden.js record [--without-suites]   escribe las tres partes
 //   node scripts/tests/lib/record-platform-golden.js compare [--without-suites]  compara contra lo grabado; sale 1 si cambió
 //   node scripts/tests/lib/record-platform-golden.js compare --suite <suite>     compara sólo la foto de esa suite
+//   node scripts/tests/lib/record-platform-golden.js check-calls <suite> <archivo>  compara la foto que la suite sacó
+//                                                                                   mientras corría (SELF_CHECKED)
 // `--without-suites` saltea la foto de las suites (tarda: corre seis suites). `--suite` compara la de una sola y nada
 // más: la prueba que mira la foto tiene una por suite, así se reparten entre las partes de su archivo y ninguna corre
 // las seis de un tirón.
@@ -37,6 +39,10 @@ const TEXTO = /\.(js|cjs|mjs|sh|ps1|md|json|yml|yaml|toml|py)$/;
 const LITERAL = /\baz\s+(boards|repos|pipelines|devops|rest)\b/;
 // Las suites que corren guiones de verdad contra el az de mentira
 const SUITES = ['open-prs.test.sh', 'assigned-items.test.js', 'work-items.test.sh', 'work-item-status.test.sh', 'work-items-type.test.sh', 'nightly-deployments.test.js'];
+// Las que sacan su propia foto cada vez que corren y la comparan al final (`check-calls`): la prueba de la foto no las
+// vuelve a correr. work-items.test.sh es la más larga de la lista y no se puede partir; correrla dos veces era la mitad
+// del tiempo de la suite que mira las fotos.
+const SELF_CHECKED = ['work-items.test.sh'];
 
 // los archivos del núcleo que no se pudieron leer: la foto no se arma sin ellos (contarlos como 0 la achicaría en silencio)
 const ilegibles = [];
@@ -172,7 +178,19 @@ async function main(argv) {
   const sinSuites = resto.includes('--without-suites');
   const iSuite = resto.indexOf('--suite');
   const unaSuite = iSuite === -1 ? null : resto[iSuite + 1];
-  const uso = 'uso: record-platform-golden.js record|compare [--without-suites] · compare --suite <suite>\n';
+  const uso = 'uso: record-platform-golden.js record|compare [--without-suites] · compare --suite <suite> · check-calls <suite> <archivo>\n';
+  if (modo === 'check-calls') {
+    // la suite que saca su propia foto mientras corre (SELF_CHECKED) la compara al final: así nadie la vuelve a correr
+    const [suite, archivo] = resto;
+    if (!SELF_CHECKED.includes(suite) || !archivo) { process.stderr.write(`check-calls va con una de: ${SELF_CHECKED.join(', ')} y el archivo de su foto\n${uso}`); return 2; }
+    let crudo;
+    try { crudo = fs.readFileSync(archivo, 'utf8'); } catch (e) { process.stdout.write(`✗ no pude leer la foto de ${suite} (${e.code || e.message})\n`); return 1; }
+    const lineas = [...new Set(crudo.split('\n').filter(Boolean).map(normalizar))].sort();
+    const problemas = lineas.length ? compararSuite(suite, { lineas }) : [`la suite ${suite} no hizo ninguna llamada a az: la foto vacía no sirve de vara`];
+    for (const p of problemas) process.stdout.write(`✗ ${p}\n`);
+    if (!problemas.length) process.stdout.write(`✓ la foto de llamadas a Azure DevOps de ${suite} no cambió\n`);
+    return problemas.length ? 1 : 0;
+  }
   if (!['record', 'compare'].includes(modo)) { process.stderr.write(uso); return 2; }
   if (iSuite !== -1 && (modo !== 'compare' || sinSuites || !SUITES.includes(unaSuite))) {
     process.stderr.write(`--suite va sólo con compare, sin --without-suites, y con una de: ${SUITES.join(', ')}\n${uso}`);
@@ -214,4 +232,4 @@ async function main(argv) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((codigo) => { process.exitCode = codigo; });
-module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES };
+module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES, SELF_CHECKED };

@@ -605,7 +605,7 @@
       }
     },
     "platform-github-only.test.js": {
-      "parts": 3,
+      "parts": 2,
       "seconds": {
         "E2E_GithubOnly_FullCycle_FakeConnector @story-8.85 @ac-26": 0.3,
         "E2E_GithubOnly_RealGithubConnector_FakeGh @story-8.85 @ac-26": 0.9,
@@ -613,7 +613,6 @@
         "Migration_AzureOrg_SameConfigSameGolden @story-8.85 @ac-27": 0.8,
         "Migration_AzureOrg_SameGolden_open-prs.test.sh @story-8.85 @ac-27": 2.0,
         "Migration_AzureOrg_SameGolden_assigned-items.test.js @story-8.85 @ac-27": 3.4,
-        "Migration_AzureOrg_SameGolden_work-items.test.sh @story-8.85 @ac-27": 54.0,
         "Migration_AzureOrg_SameGolden_work-item-status.test.sh @story-8.85 @ac-27": 12.0,
         "Migration_AzureOrg_SameGolden_work-items-type.test.sh @story-8.85 @ac-27": 17.0,
         "Migration_AzureOrg_SameGolden_nightly-deployments.test.js @story-8.85 @ac-27": 12.0,

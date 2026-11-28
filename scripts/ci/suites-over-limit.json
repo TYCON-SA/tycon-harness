@@ -127,14 +127,6 @@
         "until": "el retiro de las suites legacy-names-* (story 8.15)"
       }
     },
-    "platform-github-only.p1.test.js": {
-      "exception": {
-        "signed_by": "el dueño del arnés",
-        "date": "2026-10-07",
-        "why": "Parte 1 de 3 de platform-github-only.test.js (la suite se partió el 2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada). Es una sola prueba: la foto de llamadas a az de work-items.test.sh, que corre esa suite entera con el az de mentira (54 s medidos en el agente). Es la excepción que el dueño firmó para work-items.test.sh el 2026-10-07, pasada a la prueba que corre esa misma suite, sin cambiar la decisión: no se parte hasta el retiro de las legacy-names-* (story 8.15). Las otras cinco fotos entran en las partes 2 y 3. Corre sólo cuando el cambio toca lo que mira la suite (su gate_only_when_touching, el mismo de antes). Pendiente de que el dueño confirme este traspaso.",
-        "until": "el retiro de las suites legacy-names-* (story 8.15)"
-      }
-    },
     "open-pr-per-finding.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",

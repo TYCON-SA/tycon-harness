@@ -387,9 +387,12 @@
       "raiz": "arnes",
       "ruta": "tests/work-items.test.sh",
       "requiere": [],
+      "__gate": "integrations/** y scripts/tests/lib/** porque compara su foto de llamadas a az (la del conector de Azure DevOps y el az de mentira): antes la miraba platform-github-only, con esos mismos disparadores.",
       "gate_only_when_touching": [
         "scripts/nightly/**",
-        "scripts/lib/**"
+        "scripts/lib/**",
+        "integrations/**",
+        "scripts/tests/lib/**"
       ]
     },
     {
@@ -4041,7 +4044,7 @@
       "requiere": []
     },
     {
-      "__nota": "Parte 1 de 3 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada una de las seis suites de la foto) y la instalación no duplica ganchos.",
+      "__nota": "Parte 1 de 2 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada suite de la foto; work-items.test.sh compara la suya cada vez que corre) y la instalación no duplica ganchos.",
       "raiz": "arnes",
       "ruta": "tests/platform-github-only.p1.test.js",
       "requiere": [],
@@ -4055,23 +4058,9 @@
       ]
     },
     {
-      "__nota": "Parte 2 de 3 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada una de las seis suites de la foto) y la instalación no duplica ganchos.",
+      "__nota": "Parte 2 de 2 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada suite de la foto; work-items.test.sh compara la suya cada vez que corre) y la instalación no duplica ganchos.",
       "raiz": "arnes",
       "ruta": "tests/platform-github-only.p2.test.js",
-      "requiere": [],
-      "gate_only_when_touching": [
-        "scripts/lib/**",
-        "integrations/**",
-        "scripts/nightly/**",
-        "scripts/hooks/**",
-        "scripts/setup/**",
-        "scripts/tests/lib/**"
-      ]
-    },
-    {
-      "__nota": "Parte 3 de 3 de tests/platform-github-only.test.js (2026-11-27, fila A18: entera pasaba su tope cuando corría acompañada; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Una organización sólo con GitHub hace el ciclo de una historia por la capa sin una llamada a az (con el conector de mentira y con el de GitHub contra el gh de mentira), y una con Azure DevOps no nota el cambio: su configuración no se toca, la foto de llamadas a az es la de siempre (una prueba por cada una de las seis suites de la foto) y la instalación no duplica ganchos.",
-      "raiz": "arnes",
-      "ruta": "tests/platform-github-only.p3.test.js",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/lib/**",

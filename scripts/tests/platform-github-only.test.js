@@ -179,7 +179,9 @@ test('Migration_AzureOrg_SameConfigSameGolden @story-8.85 @ac-27', () => {
 // La foto de llamadas a az de cada suite que corre contra el az de mentira, una prueba por suite: así se reparten entre
 // las partes del archivo y ninguna parte corre las seis suites de un tirón. Sin la marca del corredor de pruebas, que
 // haría que las suites anidadas le reporten a este proceso en vez de correr solas (y sin llamadas la foto sale vacía).
-for (const suite of require(GOLDEN).SUITES) {
+// Las que comparan su propia foto cada vez que corren (SELF_CHECKED) no se vuelven a correr acá.
+const { SUITES: FOTOS, SELF_CHECKED } = require(GOLDEN);
+for (const suite of FOTOS.filter((s) => !SELF_CHECKED.includes(s))) {
   test(`Migration_AzureOrg_SameGolden_${suite} @story-8.85 @ac-27`, () => {
     const r = spawnSync(process.execPath, [GOLDEN, 'compare', '--suite', suite], { cwd: ROOT, env: sinCorredor(), encoding: 'utf8', timeout: 600000 });
     assert.strictEqual(r.status, 0, `la foto de llamadas a az de ${suite} cambió: ${r.stdout}${r.stderr}`);
