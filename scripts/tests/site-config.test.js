@@ -7383,3 +7383,16 @@ test('A186 Paridad_CuentaDiferencias_YNombraElGrupo — una diferencia vista de 
   assert.ok(!textos.some((t) => /2 productos con algo para mirar/.test(t)));
   assert.ok(textos.includes('Producto X (grupo: productos)'), 'el rótulo dice que es el grupo');
 });
+
+// 🔴 mutación: en «Quién firma cada cosa», dos formas de la misma firma con el mismo rótulo («se pide con su comando» dos
+// veces), sin decir cuál es cuál (A184).
+test('A184 Firmas_FormasRepetidas_DicenCualEsCual — cada forma con su comando cuando hay dos del mismo tipo', async () => {
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: {} })]);
+  assert.strictEqual(p.error, null);
+  const fila = p.todo(p.sec('aprobaciones')).find((n) => n.attrs['data-firma-grupo'] === 'lost-run');
+  assert.ok(fila, 'la fila de dar por perdida una ejecución');
+  const rotulos = p.todo(fila).filter((n) => /\bforma\b/.test(n.attrs.class || '')).map((n) => (n.hijos[0] && n.hijos[0].textContent) || '');
+  assert.ok(rotulos.length >= 3, `sus formas: ${rotulos.join(' | ')}`);
+  assert.strictEqual(new Set(rotulos).size, rotulos.length, `cada forma se distingue: ${rotulos.join(' | ')}`);
+  assert.ok(rotulos.some((r) => /como deuda/.test(r)), 'con lo que aprueba esa forma, sin su id');
+});

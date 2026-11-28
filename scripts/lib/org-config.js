@@ -2865,6 +2865,9 @@ ${trabajandoJs}
           var delegable = rutina && (estado === 'delegada' || (estado === '' && f.otherSession === 'yes'));
           var opciones = [['', T('pantalla.firmaVentana')]].concat(delegable ? [['delegada', T('pantalla.firmaDelegadaOpcion')]] : []).concat([['dueno', T('pantalla.firmaSoloDueno')]]);
           var como = T(f.kind === 'freno' ? 'pantalla.firmaComoFrase' : 'pantalla.firmaComoGuion');
+          // dos formas del mismo tipo en la misma firma se distinguen por lo que aprueba cada una, sin el paréntesis del
+          // final, que a veces nombra otra firma por su id (nunca un id a la vista)
+          if (f !== cabeza && g.formas.filter(function (o) { return o.kind === f.kind; }).length > 1 && queDe(f) !== queDe(cabeza)) como = String(queDe(f)).replace(/\s*\([^)]*\)\s*$/, '') + ' — ' + como;
           var c = corto(queDe(f) + ' · ' + como, estado, opciones, function (x) {
             if ((x === 'delegada') !== (estado === 'delegada')) ponerDelegada(f.id, x === 'delegada');
             if ((x === 'dueno') !== (estado === 'dueno')) ponerSoloDueno(f.id, x === 'dueno');
