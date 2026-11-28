@@ -358,7 +358,7 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),
     ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' },
     analisis: { recomendacion: 'arreglar', por_que_pasa: 'Se apagó con la variable de escape en 3 de las 6 ejecuciones de la semana, siempre en la misma máquina', por_que_recomienda: 'sin el pase adversarial los errores llegan a la revisión humana', arreglo: 'que el escape pida el ok de una persona y quede anotado', autor: 'modelo', modelo: 'sonnet', el: hoy } };
-  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5004 };
+  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-CIERRE:incoherente', nombre: 'cerrada con pendientes', hoy: ayer }), veredicto: 'arreglo', pedido: 5004 };
   f[`inbox/runs-review/pending/${ej1.id}.yaml`] = CYCLE.serializar(ej1);
   f[`inbox/runs-review/promoted/${ej2.id}.yaml`] = CYCLE.serializar(ej2);
   // lo que deja la noche para el sitio
@@ -538,14 +538,14 @@ function oficinasDeEjemplo(ahora = Date.now()) {
       sesion('Boro', 'firma', { titulo: 'Los avisos de espera llegan a quien corresponde', espera: 'el plan espera tu firma', fin: fin(65), avance: 27, pasos: pasos(3) }),
       sesion('Cleo', 'trabajando', { titulo: 'La oficina se actualiza en tiempo real', fin: fin(90), avance: 73, pasos: pasos(8) }),
       sesion('Dina', 'libre', { haciendo: 'Sin trabajo' }),
+      sesion('Hugo', 'parada', { titulo: 'Revisa un error al iniciar sesión desde el celular', parada: 'sin novedades' }),
     ]) },
-    { id: 'mac-ana', person: ANA, conectada: true, sinConexionDesde: null, marcas: [], foto: foto([
+    // como en el sitio real, sólo las máquinas confirmadas tienen oficina (mac-bruno sigue «por confirmar» en
+    // Configuración); la de Ana muestra cómo se ve una oficina sin conexión: su última foto, con la hora en que se cortó
+    { id: 'mac-ana', person: ANA, conectada: false, sinConexionDesde: ahora - 42 * 60000, marcas: [], foto: foto([
       sesion('Eros', 'trabajando', { titulo: 'Comprobante de transferencias entre cuentas', fin: fin(25), avance: 45, pasos: pasos(5) }),
       sesion('Fara', 'espera', { titulo: 'Exportar los reportes mensuales a planilla', haciendo: 'Espera su turno para entrar', fin: fin(50), avance: 91, pasos: pasos(10) }),
       sesion('Gael', 'libre', { haciendo: 'Sin trabajo' }),
-    ]) },
-    { id: 'mac-bruno', person: BRUNO, conectada: false, sinConexionDesde: ahora - 42 * 60000, marcas: [], foto: foto([
-      sesion('Hugo', 'parada', { titulo: 'Revisa un error al iniciar sesión desde el celular', parada: 'sin novedades' }),
     ]) },
   ];
 }

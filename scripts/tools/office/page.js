@@ -27,6 +27,12 @@ const EN={
   "El trabajo":"The work","Tablas":"Tables","Kanban":"Kanban","Buscar":"Search","Ir":"Go","Ver como tabla":"See as a table","Trabajo":"Work","Estado":"State",
   "Fin estimado":"Estimated end","Sesión":"Session","Carpeta":"Folder","Las sesiones trabajando en la oficina":"The sessions working in the office","Acercar":"Zoom in","Alejar":"Zoom out","Conversación":"Conversation",
   "Trabajando":"Working","Corriendo pruebas":"Running tests","Parada":"Stopped","Esperando entrar":"Waiting to merge","Esperando":"Waiting","Tu firma":"Your signature","Te pregunta":"Asks you",
+  // los pasos de una ejecución, como los nombra el pipeline (la misma traducción que `paso.<id>` del sitio), y la etiqueta
+  // del resumen de cada oficina
+  "Arranque":"Start","Validar la historia":"Validate the story","Armar el plan":"Draft the plan",
+  "Implementar":"Implement","Correr las pruebas":"Run the tests","Revisores":"Reviewers",
+  "Hallazgos":"Findings","Probar en vivo":"Try it live","Preparar el pull request":"Prepare the pull request","Cerrar la historia":"Close the story",
+  "coordina":"coordinates",
   "Libre":"Free","Coordinando":"Coordinating","Inactiva":"Inactive","Terminado, falta cerrar":"Done, still to close","Pasada de la hora":"Past its time","En hora":"On time",
   "Agentes de IA":"AI agents","Pendientes":"Pending","tocá para ver el detalle":"tap to see the detail","TU FIRMA":"SIGN","PARADA":"STOPPED",
   "A medio camino":"Halfway","Camino corto":"Short path","Cargando las oficinas…":"Loading the offices…","Con la coordinadora":"With the coordinator","Con las sesiones":"With the sessions",
@@ -177,6 +183,8 @@ const SITE=(()=>{try{const u=new URL(RAIZ.dataset.site||"");return u.protocol===
 setData(DATA);
 // el fin lo calcula office.js una vez por sesión: la etiqueta, la tarjeta, el detalle, el panel y la tabla dicen lo mismo
 const finTxt=a=>a.fin||null;
+// el pie de «Las sesiones» explica «Prometido» y el color de la diferencia: sólo sale si alguna sesión muestra uno
+const conPrometido=lista=>(lista||[]).some(a=>!!(a&&(a.estimadaIso||(finTxt(a)&&finTxt(a).dif))));
 // los pendientes: cinco columnas siempre, del estado real y del tablero de la coordinadora. Todo va como texto, nunca como HTML
 // cómo va una tarjeta de «En curso», de lo que ya dice su hora: lo calcula la oficina, con su margen de 15 minutos. Sin hora, nada
 function estadoDeHora(i){const h=i.hora||"";if(i.espera||/^espera\b|parada/.test(h))return ["Esperando","#d19a00"];if(/tarde|se pasó|estaba para/.test(h))return ["Pasada de la hora","#e5534b"];if(/en hora|antes$/.test(h))return ["En hora","#2fa866"];return null}
@@ -328,7 +336,7 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
       bd.appendChild(tr);bd.appendChild(det);if(foco===id)b.focus();});
     tb.appendChild(bd);const w=el("div","table");w.appendChild(tb);d.appendChild(w);pie();sec.appendChild(d);})}
-function renderCrew(){const crew=document.getElementById("crew");pintarTarjetas(crew,agents,abrirSesion);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
+function renderCrew(){const crew=document.getElementById("crew");document.getElementById("foot").hidden=!conPrometido(agents);pintarTarjetas(crew,agents,abrirSesion);renderCerradas(cerradasJunto(crew),DATA.cerradas||[])}
 // «Cerradas», al final de «Las sesiones»: las de Claude cuyo proceso ya no existe. «Quitar» borra su archivo de estado y
 // está sólo en la oficina viva de la máquina: en el sitio la foto no trae el id
 function cerradasJunto(crew){let g=crew.nextElementSibling;if(!g||!g.classList.contains("cerradas-grupo")){g=el("div","cerradas-grupo");crew.after(g)}return g}
@@ -866,7 +874,8 @@ T.cerrarPanel=cerrarPanel;PANELES.add(cerrarPanel);
 {let abajo=null;document.addEventListener("pointerdown",e=>{abajo=!panel.hidden&&ventana().hidden&&!panel.contains(e.target)&&!e.target.closest(".tag,.ventana")?{x:e.clientX,y:e.clientY}:null},true);
   document.addEventListener("pointerup",e=>{const a=abajo;abajo=null;if(!a||panel.contains(e.target)||Math.hypot(e.clientX-a.x,e.clientY-a.y)>6)return;cerrarPanel()},true);}
 const BOT='<svg class="bot" viewBox="0 0 24 24" fill="none" stroke="#c9b6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="4"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1.2"/><circle cx="9" cy="13" r="1.3" fill="#c9b6ff"/><circle cx="15" cy="13" r="1.3" fill="#c9b6ff"/><path d="M2 12.5v3M22 12.5v3"/></svg>';
-const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"✓",libre:"z",parada:"‖"};
+// el ícono sobre la cabeza; el de quien corre pruebas es una vuelta (sigue trabajando), no una tilde, que se lee «terminó»
+const FX={firma:"!",pregunta:"?",espera:"⌛",esperando:"⌛",coordina:"→",prueba:"↻",libre:"z",parada:"‖"};
 function nuevoTag(d){const e=document.createElement("button");e.type="button";e.className="tag";e.innerHTML=BOT+'<div class="tx"><b></b><span class="como"></span><span class="st"><span class="dot"></span><span class="es"></span></span><span class="more"><span class="fin"></span><span class="bar"><i></i></span></span></div><span class="fx"></span>';e.onclick=()=>abrir(d.agent.nombre);labelsEl.appendChild(e);d.el=e}
 function pintarTag(d){const a=d.agent,m=manoDe(a),s0=T.AST[a.estado]||[a.estado||"","#999"],
   // con la mano levantada por otra cosa que su pantalla, la etiqueta dice a quién espera, con el color de su aro
@@ -1098,7 +1107,7 @@ function arrancarOficinas(){
   // lo que repinta desde afuera de la conexión: si falla, se dice en la página, no sólo en la consola
   const seguro=f=>{try{f()}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
   // cortada antes del primer mensaje y sin reintento: no hay nada cargando, y el aviso dice por qué
-  function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size;vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
+  function pintarVacio(){vacio.hidden=oficinas.size>0||(!llego&&cortada);document.querySelector(".interruptor").hidden=!oficinas.size;$("foot").hidden=!oficinas.size||![...oficinas.values()].some(o=>conPrometido(o.foto&&o.foto.agents));vacio.textContent=llego?"Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"Cargando las oficinas…"}
   function ubicar(){const W=wrap.clientWidth,ancho=W>=900,G=18;
     // en el orden del sitio, el mismo con que se eligen las salas: no en el de llegada, que cambia con lo que la página vio antes
     const orden=[...new Set([...oficinas.keys(),...fichas.keys()])].filter(id=>fichas.has(id)),cards=orden.map(id=>fichas.get(id).card);

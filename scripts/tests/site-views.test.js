@@ -648,12 +648,12 @@ test('T20 2.79-Inicio_MaquinasSinConfirmar_Cargando_NoDiceNoMedido @story-2.79 @
   const reglas = (modelo) => access.crearReglas({ config: {}, modelo, personas: { informados: H.informados({ 'maq-x-12345678': null }), repos: null } });
   const pagina = (modelo) => views.paginaInicio({ modelo: access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, reglas(modelo)), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
   const cargando = pagina(modeloCompleto({ corridas: noMedida('cargando'), generado: AHORA }));
-  const t = tarjetaDe(cargando, 'Máquinas sin confirmar con ejecuciones');
+  const t = tarjetaDe(cargando, 'Máquinas por confirmar con ejecuciones');
   assert.ok(t.startsWith('cargando'), `la ficha está cargando, no gris: ${t.slice(0, 40)}`);
   assert.doesNotMatch(t, /no medido|buzón/i);
   assert.match(cargando, /<meta http-equiv="refresh" content="\d+">/, 'Inicio se recarga sola mientras carga');
   const leido = pagina(modeloCompleto({ generado: Date.parse('2026-10-15T11:58:00Z') }));
-  assert.match(tarjetaDe(leido, 'Máquinas sin confirmar con ejecuciones'), /leído 11:58 UTC/);
+  assert.match(tarjetaDe(leido, 'Máquinas por confirmar con ejecuciones'), /leído 11:58 UTC/);
   assert.doesNotMatch(leido, /<meta http-equiv="refresh"/, 'leído, ya no se recarga');
 });
 

@@ -285,6 +285,12 @@ test('T25 Demo_OficinasInventadas_SinConexion — @story-8.171 @ac-20', async ()
     assert.ok(ids.includes('mac-ana') && ids.includes('mac-lead'), `las inventadas: ${ids}`);
     assert.ok(todas.json.oficinas.every((o) => (o.foto.agents || []).length > 0), 'cada una con sus sesiones');
     assert.ok(todas.json.oficinas.some((o) => o.sinConexionDesde), 'una sin conexión, para que se vea');
+    // 🔴 como en el sitio real, sólo las máquinas confirmadas tienen oficina: una «por confirmar» en Configuración no
+    // puede verse en Oficinas igual que las confirmadas (recorrido del sitio del 27/11)
+    const opsDemo = require(path.join(H.SITE, 'demo', 'data.js')).operaciones()['operations.json'];
+    const confirmadas = Object.entries((typeof opsDemo === 'string' ? JSON.parse(opsDemo) : opsDemo).people.machines)
+      .filter(([, m]) => m && m.confirmed_by).map(([id]) => id);
+    assert.deepStrictEqual(ids.filter((id) => !confirmadas.includes(id)), [], `oficinas de máquinas sin confirmar (confirmadas: ${confirmadas})`);
     for (const o of todas.json.oficinas) {
       const limpia = limpiarFoto(o.foto);
       assert.strictEqual(limpia.ok, true, `${o.id} tiene la forma de lo que manda una máquina`);
@@ -452,6 +458,16 @@ test('T36 Imagen_TraeLaOficina — @story-8.171 @ac-17c', () => {
   for (const r of propios) assert.ok(!r.startsWith('..'), `page-parts.js sale de su carpeta: ${r}`);
   const tab = [...fs.readFileSync(path.join(H.SITE, 'tabs', 'offices.js'), 'utf8').matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1]);
   assert.ok(tab.every((r) => !/tools\/office\.js/.test(r)), `la pestaña no carga office.js: ${tab}`);
+});
+
+// 🔴 Falla con: dos nombres para lo mismo. Inicio decía «Máquinas sin confirmar con ejecuciones» y Configuración,
+// «Máquinas por confirmar» (recorrido del sitio del 27/11).
+test('T-nombre MaquinasPorConfirmar_UnSoloNombre — Inicio y Configuración las llaman igual', () => {
+  const { TEXTOS } = require(path.join(H.SITE, 'texts.js'));
+  const inicio = TEXTOS['inicio.maquinas_sin_confirmar'];
+  const config = TEXTOS['pantalla.maquinasPorConfirmar'];
+  assert.ok(inicio.es.startsWith(config.es), `Inicio: «${inicio.es}» · Configuración: «${config.es}»`);
+  assert.ok(inicio.en.startsWith(config.en), `Inicio: «${inicio.en}» · Configuración: «${config.en}»`);
 });
 
 // 🔴 Falla con: con la máquina sin conexión, una sesión «parada · sin novedades» se contaba en «esperan o libres»: lo que

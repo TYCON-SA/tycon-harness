@@ -5853,6 +5853,12 @@
       "requiere": []
     },
     {
+      "__nota": "Los títulos de las fichas de ejecuciones de Mantenimiento: como título dibujado arrancan con mayúscula (la noche escribe el nombre en minúscula), y el demo sólo usa causas que el catálogo de la noche conoce, con su nombre en inglés. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-findings-titles.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 4.13, tanda B: la pestaña Aprendizajes del sitio (scripts/site/tabs/learnings.js) — las propuestas de la noche de los instintos con sus números y su regla, los estados que no se confunden con una lista vacía, sólo para quien mantiene, la cuenta del menú, rechazar con motivo y aprobar con el texto confirmado en un envío (un pedido al bloque team-learnings.md del perfil y otro a operaciones), el paquete, el techo y la versión de la capa, el reintento con la misma marca, lo que espera aprobación, el borrador para el arnés, los textos y la imagen, sin identidad de escritura y lo aprobado que no llegó al perfil. Servidor real con sesiones de un emisor OIDC local, dos repos git locales y dos APIs de GitHub falsas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-learnings.test.js",
