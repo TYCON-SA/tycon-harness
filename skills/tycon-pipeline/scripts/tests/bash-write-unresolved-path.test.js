@@ -321,3 +321,15 @@ test('T11 CarpetaDeMktemp_SeSabeDondeQueda — la carpeta temporal pasa; un mold
   // un TMPDIR relativo en el ambiente: mktemp lo usa relativo, no `/tmp`
   assert.deepStrictEqual(expandirRuta('T=$(mktemp -d); cat > $T/x', '$T/x', { env: { TMPDIR: 'src' } }).sinResolver, ['T']);
 });
+
+// T12 EscapesEnElValor_ComoLosQuitaBash
+// 🔴 Falla con (A214): el valor guardaba los escapes (`ca\rpeta`), y bash escribe en `carpeta`.
+test('T12 EscapesEnElValor_ComoLosQuitaBash — fuera de comillas se quitan, entre comillas dobles casi nunca', () => {
+  const v = (cmd, raw = '$F/x.txt') => expandirRuta(cmd, raw, { env: {} });
+  assert.deepEqual(v('F=/tmp/ca\\rpeta; echo x > $F/x.txt'), { valor: '/tmp/carpeta/x.txt', sinResolver: [] });
+  assert.ok(v('F=/tmp/una\\ carpeta; echo x > $F/x.txt').sinResolver.length, 'un blanco escapado no lo lee la asignación: «no sé»');
+  assert.deepEqual(v('F="/tmp/ca\\rpeta"; echo x > $F/x.txt'), { valor: '/tmp/ca\\rpeta/x.txt', sinResolver: [] }, 'entre comillas dobles `\\r` queda');
+  assert.deepEqual(v('F="/tmp/a\\\\b"; echo x > $F/x.txt'), { valor: '/tmp/a\\b/x.txt', sinResolver: [] }, 'entre comillas dobles `\\\\` es una');
+  assert.deepEqual(v("F=/tmp/'ca\\r'peta; echo x > $F/x.txt"), { valor: '/tmp/ca\\rpeta/x.txt', sinResolver: [] }, 'un tramo entre comillas simples es literal');
+  assert.ok(v('F=/tmp/\\$HOME; echo x > $F/x.txt').sinResolver.length, 'un `$` escapado es literal: no se sabe representar, «no sé»');
+});

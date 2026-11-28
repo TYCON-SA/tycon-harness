@@ -69,10 +69,32 @@ function sinSubcomandos(s) {
 const BLOQUE_ABRE = new Set(['if', 'while', 'until', 'for', 'case', 'select']);
 const BLOQUE_CIERRA = new Set(['fi', 'done', 'esac']);
 
-function sinComillas(v) {
+/**
+ * El valor de una asignación como lo deja bash: fuera de comillas `\x` es `x`; entre comillas dobles la contrabarra sólo
+ * escapa `$`, `` ` ``, `"`, `\` y el salto de línea; entre comillas simples todo es literal. Un `$` o un `` ` `` literal (escapado o
+ * entre comillas simples) no se puede representar para la expansión que sigue: da null («no sé»). Lineal.
+ */
+function sinEscapesDelShell(v) {
   const s = String(v);
-  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) return s.slice(1, -1);
-  return s;
+  let out = '';
+  let modo = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (modo === "'") { if (c === "'") modo = ''; else if (c === '$' || c === '`') return null; else out += c; continue; }
+    if (c === '\\' && i + 1 < s.length) {
+      const sig = s[i + 1];
+      if (modo === '"' && !'$`"\\\n'.includes(sig)) { out += c; continue; }
+      i++;
+      if (sig === '\n') continue;
+      if (sig === '$' || sig === '`') return null;
+      out += sig;
+      continue;
+    }
+    if (modo === '"') { if (c === '"') modo = ''; else out += c; continue; }
+    if (c === "'" || c === '"') { modo = c; continue; }
+    out += c;
+  }
+  return out;
 }
 
 /**
@@ -411,7 +433,8 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
             const literal = crudo.slice(1, -1);
             a.resuelto = /\$/.test(literal) ? NO_SE : literal;
           } else {
-            const r = expandirEn(sinComillas(crudo), a.pos, asigs, env, home, prof + 1);
+            const literal = sinEscapesDelShell(crudo);
+            const r = literal === null ? { valor: null } : expandirEn(literal, a.pos, asigs, env, home, prof + 1);
             a.resuelto = r.valor === null ? NO_SE : r.valor;
             if (r.temporal) a.temporal = true;
           }
