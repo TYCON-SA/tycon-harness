@@ -24,7 +24,7 @@ const { NEVER_CODE_SEGMENTS } = require('./story-gate.js');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { FORMAS_DE_ESCRIBIR, logHookError } = require('./bash-gate-net.js');
-const { ANTES_DEL_PROGRAMA, ARGUMENTOS_DE_LECTURA, ARGUMENTO_CON_NOMBRE, CLASES_POSIX, CORCHETE_TOPE, MODO_SOLO_LEE, OPEN_LLAMADA, PREFIJO, SOLO_VARIABLE, argumentosDeLlamada, guionDeSedSinEfectos, nativePath, noSeLeeElPrograma, palabras, palabrasDelComando, posicionesDeComando, sinComillasDeLosBordes, sinEscapesDeComillas, sinGrupo, sinRedireccionesDelante, ultimosArgumentos } = require('./bash-gate-words.js');
+const { COMANDO_DE_POWERSHELL, COMANDO_CODIFICADO_DE_POWERSHELL, REDIRECCION_DE_ENTRADA_O_PROCESO, ARCHIVO_DE_POWERSHELL, ANTES_DEL_PROGRAMA, ARGUMENTOS_DE_LECTURA, ARGUMENTO_CON_NOMBRE, CLASES_POSIX, CORCHETE_TOPE, MODO_SOLO_LEE, OPEN_LLAMADA, PREFIJO, SOLO_VARIABLE, argumentosDeLlamada, guionDeSedSinEfectos, nativePath, noSeLeeElPrograma, palabras, palabrasDelComando, posicionesDeComando, sinComillasDeLosBordes, sinEscapesDeComillas, sinGrupo, sinRedireccionesDelante, ultimosArgumentos } = require('./bash-gate-words.js');
 
 // Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
 // el archivo: se juntan la primera vez que se piden) y las de estos
@@ -1473,12 +1473,6 @@ function palabrasConAnsi(tramo) {
       : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
 }
 
-// las opciones de PowerShell que llevan el comando, con las abreviaturas que acepta (`-c`, `-com`, `-cwa`, `/Command`)
-const COMANDO_DE_POWERSHELL = /^(?:--?|\/)(?:c|co|com|comm|comma|comman|command|commandwithargs|cwa)$/i;
-// y las que lo llevan en base64 de UTF-16 (`-e`, `-ec`, `-enc`, `-EncodedCommand`)
-const COMANDO_CODIFICADO_DE_POWERSHELL = /^(?:--?|\/)(?:e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)$/i;
-// y la que corre un guion (`-f`, `-File`)
-const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
 
 /**
  * Lo que corre `pwsh` o `powershell` con `-Command` (o `-c`, `-cwa`, `-EncodedCommand`): las palabras que siguen,
@@ -1486,8 +1480,11 @@ const ARCHIVO_DE_POWERSHELL = /^(?:--?|\/)(?:f|fi|fil|file)$/i;
  * más, y como lo lee el freno en la herramienta PowerShell: `((cp a b))` copia.
  */
 function cuerpoDePowerShell(tramo) {
-  // (sin las redirecciones del tramo: `pwsh -c 'cp a b' 2>&1` no copia a `1`)
-  const w = palabrasConAnsi(sinRedireccionesDeSalida(sinPalabrasDelShell(pelarEnv(tramo).resto))).filter((x) => x !== '');
+  // (sin las redirecciones del tramo, fuera de comillas: `pwsh -c 'cp a b' 2>&1` no copia a `1`, ni `</dev/null` a él)
+  const resto = sinPalabrasDelShell(pelarEnv(tramo).resto);
+  const es = posicionesDeComando(resto);
+  const sinEntradas = resto.replace(REDIRECCION_DE_ENTRADA_O_PROCESO, (m, en) => (es[en] ? ' '.repeat(m.length) : m));
+  const w = palabrasConAnsi(sinRedireccionesDeSalida(sinEntradas)).filter((x) => x !== '');
   let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
   while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command', 'busybox', 'toybox'].includes(nombreDeComando(w[k0]))) k0++;
   if (!['pwsh', 'powershell'].includes(nombreDeComando(w[k0]))) return null;
