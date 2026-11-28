@@ -23,7 +23,7 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
+const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinCuentasSueltas, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
 const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 
 /**
@@ -95,13 +95,14 @@ function programaEntre(piezas, info = null) {
  *  - los strings entre comillas que NO son el token inmediato tras `>`/`>>`/`tee` (`-m "..."`, `-e "..."`,
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
-function stripNonCommandText(s, hondo = 0) {
+function stripNonCommandText(s, hondo = 0, { cuentas = false } = {}) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
   // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
   // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo. Un carácter
   // nulo no llega al shell, y sale antes de marcar los cuerpos sacados (las marcas se borran al final)
   const sinNulos = String(s || '').split(MARCA_DE_CUERPO).join('');
-  const t = conComentariosApagados(quitarCuerposDeHeredoc(sinNulos, true));
+  const sinCuerpos = conComentariosApagados(quitarCuerposDeHeredoc(sinNulos, true));
+  const t = cuentas ? sinCuentasSueltas(sinCuerpos, adentroDeUnaCuenta) : sinCuerpos;
   return vaciarCitados(t, hondo).replace(RENGLON_DE_MARCA, '');
 }
 
@@ -185,8 +186,10 @@ const LLAVE_DE_CUENTA = /^\$\{#?[A-Za-z_]\w*\}/;
  * una barra, un `;`, un renglón, `<(`, un `${…}` que no es `${n}` o `${#n}`. Ahí se lee como antes, como un comando: zsh corre
  * como comandos una cuenta que no puede leer y que tiene una sustitución adentro (`$((cp a b && : `: \(`))`).
  */
-function adentroDeUnaCuenta(t, i, fin) {
-  if (t[i] !== '$' || t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
+function adentroDeUnaCuenta(t, i, fin, { sinPesos = false, conPuntoYComa = false } = {}) {
+  if (sinPesos) i--;
+  else if (t[i] !== '$') return null;
+  if (t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
   let out = '';
   let hondo = 0;
   for (let j = i + 2; j < fin; j++) {
@@ -206,6 +209,8 @@ function adentroDeUnaCuenta(t, i, fin) {
       j += m[0].length - 1;
       continue;
     }
+    // (los `;` que separan las tres cuentas de `for ((a; b; c))`, sólo con `conPuntoYComa`)
+    if (ch === ';' && conPuntoYComa && hondo === 1) { out += ' '; continue; }
     if (!LETRA_DE_CUENTA.test(ch) || ((ch === '<' || ch === '>') && t[j + 1] === '(')) return null;
     if (ch === '(') hondo++;
     else if (ch === ')' && --hondo === 0 && j !== fin - 1) return null;
@@ -342,16 +347,16 @@ const ANTES_DEL_CD_COMPLEJO = /['"`(){}|<>#\\]|\$\(|(?:^|[^&])&(?!&)|\b(?:if|the
  * tiene continuaciones de renglón, también unidos como los une el shell (`cp a \` y `b` abajo es `cp a b`): cuentan los
  * destinos de las dos lecturas, así unir los renglones nunca hace ver menos que no unirlos.
  */
-function extractWriteTargets(cmd, { keep = null } = {}) {
+function extractWriteTargets(cmd, { keep = null, cuentas = false } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
-  const s = stripNonCommandText(raw);
+  const s = stripNonCommandText(raw, 0, { cuentas });
   const lecturas = [s];
   // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
   const unidos = sinContinuaciones(s, { sinCuerpos: true });
   if (unidos !== s) lecturas.push(unidos);
   for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
-  destinosPorElPartidor(raw, keep, out);
+  destinosPorElPartidor(raw, keep, out, 0, { cuentas });
   return [...out];
 }
 
@@ -362,13 +367,13 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
  * citado con blancos, `TS=$(date) cp …`), y se suma a ella: nunca se ve menos. Sin el partidor (una instalación a
  * medias) no agrega nada y quedan las otras lecturas.
  */
-function destinosPorElPartidor(raw, keep, out, hondo = 0) {
+function destinosPorElPartidor(raw, keep, out, hondo = 0, { cuentas = false } = {}) {
   const p = partidorComun();
   if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
   // un destino que es la salida de un comando (`"$(mktemp -d)"`, `$(pwd)/a`) no se sabe sin correrlo: esta lectura no lo
   // suma, como las de antes, que tampoco lo leían; lo que corre adentro se lee como su propio tramo
   const sumar = (t) => { if (t && !/^\/dev\//.test(t) && !/\$\(|`/.test(t)) out.add(t); };
-  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw))) {
+  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw), 0, { cuentas })) {
     const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
     for (const r of c.redirections) if (r.write && r.target != null) sumar(palabraConAnsi(r.target));
     const info = {};
@@ -405,8 +410,9 @@ const HONDO_DE_SUSTITUCIONES = 8;
  * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
  * (`2>&1`, `&>f`, `<&0`). Una sola pasada: una comilla o una sustitución sin cerrar se lleva el resto en el mismo tramo.
  */
-function tramosDelShell(texto, hondo = 0) {
-  const s = String(texto);
+function tramosDelShell(texto, hondo = 0, { cuentas = false } = {}) {
+  // (con `cuentas`, una cuenta sin `$` que no corre nada queda en blanco: `sinCuentasSueltas`)
+  const s = cuentas ? sinCuentasSueltas(texto, adentroDeUnaCuenta) : String(texto);
   const out = [];
   // el tramo que se arma, y sus dos últimas letras sueltas (sin escapar ni citadas; vacía detrás de otra cosa): mirar la
   // punta del tramo armado lo recompone entero cada vez
@@ -419,7 +425,7 @@ function tramosDelShell(texto, hondo = 0) {
   const adentro = (desde, fin) => {
     if (hondo >= HONDO_DE_SUSTITUCIONES) return;
     const cuenta = adentroDeUnaCuenta(s, desde - 2, fin);
-    for (const t of tramosDelShell(cuenta ?? s.slice(desde, fin), hondo + 1)) out.push(t);
+    for (const t of tramosDelShell(cuenta ?? s.slice(desde, fin), hondo + 1, { cuentas })) out.push(t);
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];

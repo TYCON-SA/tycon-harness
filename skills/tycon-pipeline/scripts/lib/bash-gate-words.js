@@ -370,6 +370,65 @@ function cierreDeParentesis(s, i) {
   return -1;
 }
 
+// las palabras de bloque detrás de las que empieza un comando: `if (( a > b ))`, `for ((i=0;i<3;i++))`
+const PALABRA_DE_BLOQUE = /(?:^|[\s;&|(){}!])(if|elif|while|until|then|do|else|time|for)$/;
+// cuántos `!`, `{`, `(` o palabras de bloque seguidos se miran hacia atrás
+const HONDO_DE_POSICION = 32;
+
+/**
+ * Si `t[p]` está donde el shell espera un comando (`{}`, o `{ for: true }` detrás de `for`; null si no): al principio,
+ * detrás de `;`, `&`, `|`, un renglón o `$(`, o detrás de un `!`, `{`, `(` o palabra de bloque que también lo están
+ * (en `echo ! ((…))` el `!` es un argumento). Nunca escapado ni detrás de una redirección (`>|`, `<&`, `<(`).
+ */
+function dondeEmpiezaUnComando(t, p, hondo = 0) {
+  if (hondo > HONDO_DE_POSICION) return null;
+  let k = p;
+  while (k > 0 && (t[k - 1] === ' ' || t[k - 1] === '\t')) k--;
+  if (k === 0) return {};
+  const antes = t[k - 1];
+  const dos = t[k - 2] || '';
+  if (dos === '\\') return null;
+  if (antes === '\n' || antes === ';') return {};
+  if (antes === '&' || antes === '|') return /[<>&|]/.test(dos) && !(antes === dos) ? null : {};
+  if (antes === '(') {
+    if (dos === '$') return t[k - 3] === '\\' ? null : {};
+    if (/[<>=]/.test(dos)) return null;
+    return dondeEmpiezaUnComando(t, k - 1, hondo + 1);
+  }
+  if (antes === '!' || antes === '{') return /[\s;&|()]/.test(dos) || k === 1 ? dondeEmpiezaUnComando(t, k - 1, hondo + 1) : null;
+  const m = PALABRA_DE_BLOQUE.exec(t.slice(Math.max(0, k - 7), k));
+  if (!m) return null;
+  const r = dondeEmpiezaUnComando(t, k - m[1].length, hondo + 1);
+  return r && { for: m[1] === 'for' };
+}
+
+/**
+ * El comando con cada cuenta sin `$` que no corre nada (`(( a > b ))`, `for ((i=0;i<3;i++))`) en blanco: su `>` compara.
+ * Sólo para el comando de la herramienta Bash (`cuentas`): en `dash`, `ash`, el `sh` de Linux o PowerShell, `((…))` son
+ * dos paréntesis y lo de adentro corre, así que nunca para lo anidado ni un guion. Sólo donde empieza un comando, fuera
+ * de comillas y heredocs, y si `adentroDeUnaCuenta` (de bash-gate-targets.js, que la pasa) la lee como cuenta (`((cp a b) )` y `(( $(cp a b) ))` no). Lo de al
+ * lado (`(( 1 )) > f`) se sigue leyendo; las posiciones no cambian.
+ */
+function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
+  const t = String(texto);
+  if (!t.includes('((')) return t;
+  const es = posicionesDeComando(t);
+  let out = '';
+  let hecho = 0;
+  for (let p = t.indexOf('(('); p >= 0; p = t.indexOf('((', p + 1)) {
+    if (p < hecho || !es[p]) continue;
+    const donde = dondeEmpiezaUnComando(t, p);
+    if (!donde) continue;
+    const fin = cierreDeParentesis(t, p);
+    // (detrás de `for`, las tres cuentas van separadas por `;`: bash y zsh no corren nada de lo de adentro)
+    if (fin < 0 || adentroDeUnaCuenta(t, p, fin, { sinPesos: true, conPuntoYComa: Boolean(donde.for) }) === null) continue;
+    out += t.slice(hecho, p) + ' '.repeat(fin - p + 1);
+    hecho = fin + 1;
+    p = fin;
+  }
+  return out + t.slice(hecho);
+}
+
 /**
  * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
  * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
@@ -1359,4 +1418,4 @@ function guionDeSedSinEfectos(guion) {
 }
 
 
-module.exports = { RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
+module.exports = { sinCuentasSueltas, RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
