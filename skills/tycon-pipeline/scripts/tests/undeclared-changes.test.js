@@ -247,6 +247,13 @@ test('T35 Cierre_LoQueGeneraElArnes_NoSobra', () => {
   assert.equal(r.medido, true);
   assert.deepEqual(r.sobra, ['specs/qa/9.9-notas.md'], JSON.stringify(r));
   assert.match(r.avisos.join('\n'), /generado\(s\) por el arnés.*9\.9-mockup-1440\.png/);
+  // un enlace con el nombre de una captura no exime nada: ni a sí mismo ni al archivo al que apunta
+  fs.rmSync(path.join(qa, '9.9-mockup-390.png'));
+  fs.writeFileSync(path.join(c.repo, 'src', 'b.ts'), 'export const b = 1;\n');
+  fs.symlinkSync(path.join(c.repo, 'src', 'b.ts'), path.join(qa, '9.9-mockup-390.png'));
+  const conEnlace = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.ok(conEnlace.sobra.includes('src/b.ts'), JSON.stringify(conEnlace));
+  assert.ok(conEnlace.sobra.includes('specs/qa/9.9-mockup-390.png'), JSON.stringify(conEnlace));
   fs.rmSync(c.home, { recursive: true, force: true });
 });
 

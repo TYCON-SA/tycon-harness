@@ -67,17 +67,17 @@ function fileListOf(content) {
  * Las rutas absolutas que los guiones del arnés generan para la historia, en su carpeta de QA: las capturas de la maqueta
  * en cada ancho y su informe (lib/mockup-shots.js) y la guía HTML del tester (qa-guide.js). Son las mismas rutas que esos
  * guiones calculan, no un patrón: un archivo con otro nombre en esa carpeta sigue contando. Si la carpeta no se puede
- * calcular, ninguna (se cuenta todo, como antes).
+ * calcular, ninguna (se cuenta todo, como antes) y se dice por qué: `{ rutas, error }`.
  */
 function generadosDelArnes(storyPath) {
-  if (!storyPath) return [];
+  if (!storyPath) return { rutas: [] };
   try {
     const abs = path.resolve(storyPath);
     const { qaDir, qk } = require('../qa-guide.js').qaPlace(abs);
     const { shotsPaths } = require('./mockup-shots.js');
     const shots = shotsPaths(path.join(qaDir, `${qk}-mockup.html`));
-    return [...Object.values(shots.shots), shots.report, path.join(qaDir, `${path.basename(abs, '.md')}-guia-qa.html`)];
-  } catch (_) { return []; }
+    return { rutas: [...Object.values(shots.shots), shots.report, path.join(qaDir, `${path.basename(abs, '.md')}-guia-qa.html`)] };
+  } catch (e) { return { rutas: [], error: e.message }; }
 }
 
 function lockDeclarado(rel, declarados) {
@@ -161,7 +161,16 @@ function computeUndeclared({ repo, baseSha, storyPath, startedAt = null, registr
   if (memoria.length) avisos.push(`memoria exportada (no cuenta): ${memoria.length} archivo(s)`);
   // lo que generan para esta historia los guiones del arnés (las capturas de la maqueta y su informe, la guía HTML del
   // tester): nadie lo escribe a mano, y pedir declararlo en el File List sólo agrega papeleo
-  const generados = new Set(generadosDelArnes(storyPath).map(relDe).filter(Boolean));
+  // (la ruta sin seguir el último tramo, y nunca un enlace: un enlace con el nombre de una captura que apunta a código
+  // eximiría al código)
+  const relSinSeguir = (abs) => {
+    try { if (fs.lstatSync(abs).isSymbolicLink()) return null; } catch (_) { return null; }
+    const r = toPosix(path.relative(repoReal, path.join(real(path.dirname(abs)), path.basename(abs))));
+    return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : null;
+  };
+  const gen = generadosDelArnes(storyPath);
+  if (gen.error) avisos.push(`no pude calcular lo que el arnés genera para la historia (${gen.error}): todo cuenta`);
+  const generados = new Set(gen.rutas.map(relSinSeguir).filter(Boolean));
   const delArnes = cambiados.filter((f) => generados.has(f));
   if (delArnes.length) avisos.push(`generado(s) por el arnés para la historia (no cuenta(n)): ${delArnes.join(', ')}`);
   const sinDeclarar = cambiados.filter((f) => !f.split('/').includes('.advisors') && f !== historiaRel && !memoria.includes(f) && !generados.has(f)
