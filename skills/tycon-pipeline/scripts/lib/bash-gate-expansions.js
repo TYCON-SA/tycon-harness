@@ -1431,8 +1431,7 @@ function relativaDeGitBash(rel, cwd, conContrabarras = false) {
   const unidad = /^([A-Za-z]):[\\/]?([\s\S]*)$/.exec(cwd);
   // una carpeta de Git Bash sin unidad (`cd /` da `\`, `cd /tmp` da `\tmp`): bash resuelve desde ella con barras
   const deBash = !unidad && /^[\\/](?![\\/])/.test(cwd);
-  // con contrabarras, Git Bash la toma por una ruta de Windows: sube como Windows y nunca sale de la unidad
-  if ((!unidad && !deBash) || (unidad && conContrabarras)) return path.win32.resolve(cwd, rel);
+  if (!unidad && !deBash) return path.win32.resolve(cwd, rel);
   const relPosix = rel.split('\\').join('/');
   // `/c/a/b` → `C:\a\b`, sin depender de la lib de rutas (un skill instalado a medias corre sin ella)
   const nativa = (r) => {
@@ -1442,7 +1441,10 @@ function relativaDeGitBash(rel, cwd, conContrabarras = false) {
     const n = nativePath(r, 'win32');
     // fuera de toda unidad (`/`, `/tmp/x`: subió más allá de ella o arrancó sin una) queda la forma de Git Bash, que una
     // relativa posterior sigue resolviendo como bash
-    return /^[A-Za-z]:/.test(n) ? n : path.win32.normalize(r);
+    if (/^[A-Za-z]:/.test(n)) return n;
+    // con contrabarras Git Bash la toma por una ruta de Windows, que no sale de la unidad al subir. No se decide antes por
+    // la contrabarra: puede ser un escape del shell (`a\.txt` en una variable), y la lectura de bash ya cae en la unidad
+    return conContrabarras && unidad ? path.win32.resolve(cwd, rel) : path.win32.normalize(r);
   };
   const carpeta = deBash ? cwd.split('\\').join('/')
     : `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;
