@@ -1634,3 +1634,45 @@ test('ProductionWatch_EntradasAMain_PasoYLinea: sin parámetros no corre; con el
     assert.strictEqual(fs.readFileSync(path.join(tmp, 'main-sin-ci.txt'), 'utf8').trim(), linea(72, 0, 0, 'al día'), 'la del paso no se pisa');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// A219 (issue #1844): GitHub corre cada `run:` con `bash -e`, y `set -uo pipefail` no lo apaga. El paso de actualizar el
+// sitio leía el código del actualizador con `rc=$?`: cuando salía 1 (no_pudo, vuelto_atras), el paso se cortaba antes y
+// el resultado no se guardaba, justo en el caso que más interesa. Todo paso de los modelos de GitHub que lee `$?` en una
+// variable lleva antes `set +e`; y el de actualizar, corrido con bash -e y un actualizador que sale 1, termina en 0.
+// 🔴 Falla con: el paso que sale 1 cuando el actualizador falla, o un paso nuevo con `rc=$?` sin `set +e`.
+test('A219 ModelosGithub_LeerElCodigo_ConSetMasE', () => {
+  const dir = path.join(ROOT, 'pipelines', 'operations', 'github');
+  const sinApagar = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.yml'))) {
+    const t = fs.readFileSync(path.join(dir, f), 'utf8');
+    for (const m of t.matchAll(/run: \|\n((?:[ ]{10,}.*\n|\n)+)/g)) {
+      const b = m[1];
+      const lee = b.search(/\b\w+=\$\?/);
+      if (lee >= 0 && !/^\s*set \+e\b/m.test(b.slice(0, lee))) sinApagar.push(`${f}:${t.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepStrictEqual(sinApagar, [], 'cada paso que guarda el código de salida apaga -e antes');
+  // el paso de actualizar, como lo corre GitHub, con un actualizador que sale 1
+  const t = fs.readFileSync(path.join(dir, 'site-update.yml'), 'utf8');
+  const paso = [...t.matchAll(/run: \|\n((?:[ ]{10,}.*\n|\n)+)/g)].map((m) => m[1]).find((b) => b.includes('update-site.js'));
+  assert.ok(paso, 'el paso que corre update-site.js');
+  const guion = `node() { echo "no_pudo" >&2; return 1; }\n${paso.replace(/^ {10}/gm, '')}`;
+  const env = { ...process.env, SITE_PLATFORM: 'cloudrun', SITE_IMAGE_NAME: 'i', SITE_RESOURCE_GROUP: '', SITE_APP: '', SITE_URL: 'https://x', SITE_SERVICE: 's', SITE_GCP_REGION: 'r', SITE_GCP_PROJECT: 'p' };
+  const r = spawnSync('bash', ['-e', '-c', guion], { encoding: 'utf8', env });
+  assert.strictEqual(r.status, 0, `el paso termina en 0 aunque el actualizador falle: ${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /::warning::el sitio no se actualizó/, 'y avisa');
+});
+
+// A219 (issue #1844): con el sitio en Cloud Run desde un espejo de Artifact Registry, Cloud Run comprueba que quien
+// despliega pueda leer la imagen. La guía y el README de los modelos de GitHub no lo pedían, y la actualización fallaba
+// con PERMISSION_DENIED.
+// 🔴 Falla con: la guía o el README sin el permiso de lectura del espejo, sobre ese repositorio.
+test('A219 CloudRun_ConEspejo_PideLeerElRepositorio', () => {
+  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'integrations', 'gcs-mailbox.md'), 'utf8');
+  const punto2 = /\n2\. \*\*Una cuenta de servicio para el actualizador\*\*[\s\S]*?\n3\. /.exec(guia);
+  assert.ok(punto2, 'el punto 2 de «El sitio en Cloud Run, al día»');
+  assert.match(punto2[0], /roles\/artifactregistry\.reader/);
+  assert.match(punto2[0], /ese repositorio/, 'sobre el repositorio del espejo, no sobre el proyecto');
+  const readme = fs.readFileSync(path.join(ROOT, 'pipelines', 'operations', 'github', 'README.md'), 'utf8');
+  assert.match(readme, /Google Cloud Run[\s\S]{0,600}roles\/artifactregistry\.reader/, 'los permisos mínimos del README');
+});

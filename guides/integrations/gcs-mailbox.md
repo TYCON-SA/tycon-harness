@@ -153,7 +153,10 @@ Para darlo de alta:
    `site-update` (sin llave de cuenta de servicio guardada).
 2. **Una cuenta de servicio para el actualizador**, con un rol propio sobre el servicio del sitio
    (`run.services.get` y `run.services.update`) e `iam.serviceAccounts.actAs` sobre la cuenta con la que corre el
-   sitio, y nada más.
+   sitio. Si el servicio corre desde un espejo (un repositorio remoto de Artifact Registry), además
+   `roles/artifactregistry.reader` sobre **ese repositorio**, no sobre el proyecto: Cloud Run comprueba que quien
+   despliega pueda leer la imagen, y sin él cambiar la imagen y volver atrás fallan con `PERMISSION_DENIED`
+   (`artifactregistry.repositories.downloadArtifacts`). Nada más.
 3. **Las variables del repo de operaciones**: `SITE_PLATFORM=cloudrun`, `SITE_GCP_WIF_PROVIDER`
    (`projects/<número>/locations/global/workloadIdentityPools/<pool>/providers/<proveedor>`),
    `SITE_GCP_SERVICE_ACCOUNT`, `SITE_GCP_PROJECT`, `SITE_GCP_REGION`, `SITE_SERVICE`, `SITE_IMAGE_NAME` (la imagen
