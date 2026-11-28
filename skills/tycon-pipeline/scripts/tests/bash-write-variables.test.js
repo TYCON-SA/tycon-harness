@@ -392,7 +392,8 @@ test('T4 DestinoConSubcomando_Variantes_SiguenComoHoy', () => {
     assert.notEqual(tituloDe(bash.handle(ev('echo x > inst/r-$(date +%s).md', repo), { stateDir: estado, installedRoots: [inst] })), '', 'el árbol instalado');
     // el estado del pipeline: nombrado entero, desde otra carpeta posible del comando o por un enlace simbólico
     assert.match(freno('echo x > <estado>/r-$(date +%s).md'), /ESTADO DEL PIPELINE|EDICIÓN INVISIBLE/, 'el estado');
-    assert.equal(freno('cd out || cd <estado>; echo x > r-$(date +%s).log'), INVISIBLE, 'cd a || cd b');
+    // (el comando nombra el estado y su destino no se resuelve: frena como estado desde la A215)
+    assert.match(freno('cd out || cd <estado>; echo x > r-$(date +%s).log'), /ESTADO DEL PIPELINE|EDICIÓN INVISIBLE/, 'cd a || cd b');
     fs.symlinkSync(estado, path.join(repo, 'out', 'lnk1'));
     assert.equal(freno('echo x > out/lnk$(date +%s)/x.md'), INVISIBLE, 'un enlace al estado que el comodín nombra');
     // una carpeta con historias: el `$(…)` puede caer en una de ellas, salga `.md` o `.log`, también si la carpeta sale

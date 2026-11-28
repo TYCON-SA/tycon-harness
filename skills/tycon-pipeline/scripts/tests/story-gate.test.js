@@ -2003,6 +2003,111 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
   });
 });
 
+// 🔴 Falla con (A215): un comodín (`?`, `[…]`, `*`) en el destino de una redirección: bash lo expande si nombra un solo
+// archivo, y pisa el de la carpeta de estado
+test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  fs.writeFileSync(path.join(E, 'plan-review', 's1', 's1.resultado.json'), '{}');
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const conComodin = (c) => `${E.slice(0, -1)}${c}`;
+  fs.mkdirSync(path.join(repo, 'falso', 'plan-review'), { recursive: true });
+  fs.symlinkSync(E, path.join(repo, 'l1'));
+  fs.symlinkSync(E, path.join(repo, '.l1'));
+  conEnv(SIN_REGISTRO, () => {
+    for (const c of [`F=${conComodin('?')}/plan-review/s1/s1.resultado.json; echo x >> $F`, `echo x >> ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${E}/plan-revie?/s1/s1.resultado.json`, `echo x >> ${E}/plan-revie[w]/s1/s1.resultado.json`, `echo x >> ${E}/plan-*/s1/s1.resultado.json`,
+      // de la revisión de Fable: ocultos, sed -i, llaves, `**` y `(a|b)` de zsh
+      `shopt -s dotglob; echo x >> ${path.dirname(E)}/*/plan-review/s1/s1.resultado.json`, `sed -i '' 1d ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${conComodin(`{${E.slice(-1)},}`)}/plan-review/s1/s1.resultado.json`, `echo x >> ${path.dirname(E)}/**/s1.resultado.json`,
+      `echo x >> ${conComodin(`(${E.slice(-1)}|x)`)}/plan-review/s1/s1.resultado.json`,
+      // segunda vuelta: llaves que salen del tramo fijo, `.?` que nombra `..`, un enlace con comodín, cp adentro de la carpeta
+      `echo x | tee {${E},x}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{..,x}/${path.basename(E)}/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${repo}/.?/${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x >> ${repo}/l?/plan-review/s1/s1.resultado.json`,
+      `cp -R ${repo}/falso ${conComodin('?')}`,
+      // tercera vuelta: llaves de secuencia, llaves con una variable sin resolver, `(o)` de zsh, enlace oculto con dotglob
+      `echo x >> ${conComodin(`{${E.slice(-1)}..${E.slice(-1)}}`)}/plan-review/s1/s1.resultado.json`, `echo x | tee {${E},$NOSE}/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${conComodin(`(${E.slice(-1)})`)}/plan-review/s1/s1.resultado.json`, `shopt -s dotglob; echo x >> ${repo}/?l1/plan-review/s1/s1.resultado.json`,
+      // cuarta vuelta: llaves con coma y de secuencia juntas, y un enlace con llaves o paréntesis de zsh
+      `echo x | tee ${repo}/{..,x}/${path.basename(E).slice(0, -1)}{${E.slice(-1)}..${E.slice(-1)}}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${repo}/l{1..1}/plan-review/s1/s1.resultado.json`, `echo x >> ${repo}/(l1|x)/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${repo}/l(1)/plan-review/s1/s1.resultado.json`,
+      // quinta vuelta: un `..` después del comodín (sube desde el destino del enlace) y llaves anidadas
+      `echo x | tee ${repo}/l?/../${path.basename(E)}/plan-review/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}}/plan-review/s1/s1.resultado.json`,
+      // sexta vuelta: una barra o un `..` adentro de las llaves, y llaves muy anidadas
+      `echo x | tee ${repo}/{x,l{1..1}/plan-review}/s1/s1.resultado.json`, `echo x | tee ${repo}/{x,l{1..1}/..}/${path.basename(E)}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${repo}/${'{x,'.repeat(9)}l{1..1}${'}'.repeat(9)}/plan-review/s1/s1.resultado.json`,
+      // vuelta sobre el comodín por tramos: un `$(…)` o una variable sin resolver pegados al comodín, y llaves anidadas
+      `echo x >> ${conComodin('?')}$(true)/plan-review/s1/s1.resultado.json`, `echo x >> ${conComodin('?')}$NOSE/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${path.dirname(E)}/{x,${path.basename(E).slice(0, 1)}{${path.basename(E).slice(1, 2)}..${path.basename(E).slice(1, 2)}}}${path.basename(E).slice(2)}/plan-review/s1/nuevo.json`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+  });
+});
+
+// 🔴 Falla con (A215): `~+` es la carpeta actual y `x:~/…` en una asignación es la casa (bash expande la tilde después de `:`)
+test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const r = bash.handle(ev(`echo x >> ~+/${path.basename(E)}/plan-review/s1/s1.resultado.json`, path.dirname(E)), { stateDir, installedRoots: [arnes] });
+    assert.ok(r && r.block, '~+ es la carpeta actual');
+    // un comodín que no puede llegar al estado no frena por eso
+    fs.mkdirSync(path.join(repo, 'logs'), { recursive: true });
+    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt', `echo x | tee ${repo}/{a,b}/notas.txt`,
+      'mv docs/{v1/guia.txt,v2/guia.txt}', 'echo x | tee logs/{a,sub/b}.txt']) {
+      const p = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(!(p && p.block && /estado|state/i.test(p.block)), `${c}: ${p && p.block}`);
+    }
+  });
+});
+
+// 🔴 Falla con (A215): un destino que no se sabe resolver (`$(…)` en la variable) pero con una extensión escrita (`.json`)
+// no frenaba: se juzgaba como un archivo de datos cualquiera, y bash escribe en la carpeta de estado
+test('EscrituraAlEstado_ConDestinoSinResolverYExtension_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    for (const c of [`D=$(echo ${E})/plan-review; echo x > $D/s1/s1.resultado.json`, `echo x > $(echo ${E})/plan-review/s1/s1.resultado.json`,
+      `D=\`echo ${E}\`; echo x > $D/plan-review/s1/s1.resultado.json`,
+      // opción B del dueño: lo que no se resuelve nombra la casa (`~`, `$HOME`) o la carpeta del arnés; o la ruta del estado
+      // queda a la vista pegada a una variable sin resolver
+      'D=$(echo ~)/.tycon/x; echo x > $D/s1.json', 'echo x > $(cd $HOME && pwd)/.tycon/x/s1.json',
+      `echo x >> ${E}$NOSE/plan-review/s1/s1.resultado.json`,
+      // vuelta de Fable: un paréntesis dentro de la sustitución, la zona en la asignación fuera de ella, y `$PWD`
+      `D=$(python3 -c "print('${E}')"); echo x >> $D/plan-review/s1/s1.resultado.json`, 'D=~/.tycon/$(echo state); echo x >> $D/x.json', 'D=$(cd && pwd); echo x >> $D/.tycon/state/x.json', 'echo x >> /Users/$(whoami)/.tycon/state/x.json', 'echo x >> /home/$(id -un)/.tycon/state/x.json', 'echo x >> "$HOME"/.tycon/$(echo state)/x.json', 'D=$(printenv HOME); echo x >> $D/.tycon/state/x.json', 'cd; D=$(pwd); echo x >> $D/.tycon/state/x.json',
+      `D=\${NOSE:-${E}}; echo x >> $D/plan-review/s1/s1.resultado.json`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+    // lo que no se resuelve y no nombra nada de eso sigue pasando
+    for (const c of ['echo x > $(date +%F)-informe.md', 'echo x > $NOSE/notas.txt', 'D=$(mktemp -d); echo x > $D/x.json',
+      'ROOT=$(git rev-parse --show-toplevel); echo "x: 1" > $ROOT/.tycon/work-items.yaml', "N=$(awk '$3 ~ /err/' log | wc -l); echo $N > $OUT/n.txt",
+      // leer del arnés y escribir a un archivo con fecha en otro lado
+      `cat ${E}/gates.log | tail -5 > /tmp/x-$(date +%s).txt`, 'node ~/.tycon/harness/x.js --json > /tmp/runs-$(date +%F).json',
+      'echo x > /tmp/build-$(whoami).log', 'echo x > ~/Desktop/nota-$(date +%F).txt']) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(!(r && r.block && /ESTADO/.test(r.block)), `${c}: ${r && r.block}`);
+    }
+    // `$PWD` es la carpeta del comando
+    const r2 = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: path.dirname(E), tool_input: { command: `echo x >> $PWD/${path.basename(E)}/plan-review/s1/s1.resultado.json` } }, { stateDir, installedRoots: [arnes] });
+    assert.ok(r2 && r2.block, '$PWD');
+    // una relativa con `..` desde una carpeta vecina, con una variable sin resolver
+    fs.mkdirSync(path.join(path.dirname(E), 'vecina'), { recursive: true });
+    const r3 = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: path.join(path.dirname(E), 'vecina'), tool_input: { command: `echo x >> ../${path.basename(E)}$NOSE/active/s1.json` } }, { stateDir, installedRoots: [arnes] });
+    assert.ok(r3 && r3.block, 'relativa con ..');
+  });
+});
+
 // 🔴 Lo que en Windows sí escribe en el estado o en el arnés instalado: la ruta entre comillas (bash conserva las barras
 // invertidas), con barras normales (`C:/…`) o en la forma de Git Bash (`/c/…`). Las tres son el mismo archivo y tienen
 // que frenar como en Mac. Sin comillas y con barras invertidas, bash se come las barras y el comando escribe en otro lado:

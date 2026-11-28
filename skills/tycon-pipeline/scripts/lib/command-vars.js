@@ -423,6 +423,10 @@ function carpetaDeMktemp(crudo, pos, asigs, env) {
 }
 
 function expandirEn(t, pos, asigs, env, home, prof = 0) {
+  // una `${` sin cerrar, o sin un nombre adentro (`${}`, `${ x}`), es «bad substitution» para bash: corta la línea y deja
+  // el valor anterior. «No sé». Mirarlo antes mantiene lineal lo que sigue (cada `${` sin cierre se buscaría hasta el final)
+  const texto = String(t);
+  if (texto.lastIndexOf('${') > texto.lastIndexOf('}') || /\$\{(?![A-Za-z_0-9@*#?$!-])/.test(texto)) return { valor: null, sinResolver: ['${…}'] };
   // `$(…)`, comillas invertidas, el tope de profundidad, y las variables posicionales o especiales (`$1`, `${1}`, `$@`,
   // `$$`, `$?`…): «no sé»
   // todas, no sólo la primera: quien llama deja pasar una ruta cuyo único «no sé» es un `$$` (no trae barras), y una

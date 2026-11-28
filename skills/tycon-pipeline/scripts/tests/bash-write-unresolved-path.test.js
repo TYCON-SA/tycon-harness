@@ -348,3 +348,20 @@ test('T12 EscapesEnElValor_ComoLosQuitaBash — fuera de comillas se quitan, ent
   assert.deepEqual(v('U=/u; F="$U\\Desktop"; echo x > $F/x.txt'), { valor: '/u\\Desktop/x.txt', sinResolver: [] }, 'entre comillas dobles la contrabarra no corta el nombre: queda');
   assert.deepEqual(v('U=/u; F="$U"/d; echo x > $F/x.txt'), { valor: '/u/d/x.txt', sinResolver: [] }, 'una comilla seguida de barra no pega nombres');
 });
+
+// T13 LlavesQueBashNoLee_NoSe
+// 🔴 Falla con (A215): `${}` (o una `${` sin nombre válido) se dejaba como texto: bash da «bad substitution», corta la
+// línea y deja el valor anterior. Y una `${` sin cerrar repetida era cuadrática.
+test('T13 LlavesQueBashNoLee_NoSe — ${} vacía o sin cerrar dan «no sé», en tiempo lineal', () => {
+  const v = (cmd, raw = '$F/x.txt') => expandirRuta(cmd, raw, { env: {} });
+  for (const c of ['F=/tmp/q${}; echo x > $F/x.txt', 'F=/tmp/q${ x}; echo x > $F/x.txt', 'F=/tmp/q${x; echo x > $F/x.txt']) {
+    assert.ok(v(c).sinResolver.length, `«no sé»: ${c}`);
+  }
+  assert.ok(expandirRuta('echo x > /tmp/${}/x.txt', '/tmp/${}/x.txt', { env: {} }).sinResolver.length, 'en el destino también');
+  assert.deepEqual(v('x=/tmp/q; F=${x}; echo x > $F/x.txt'), { valor: '/tmp/q/x.txt', sinResolver: [] }, '${x} se sigue leyendo');
+  const largo = 'F=' + '${a'.repeat(270000) + '; echo x > $F/x.txt';
+  const t0 = process.hrtime.bigint();
+  v(largo);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.ok(ms < 1500, `tardó ${ms} ms`);
+});
