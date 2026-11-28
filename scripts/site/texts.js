@@ -2393,11 +2393,11 @@ const TEXTOS = {
   'comoTrabaja.apagadoEnTuOrganizacion': { es: 'apagado en tu organización', en: 'off in your organization' },
   'comoTrabaja.telegramDeCadaMaquina': { es: 'Telegram no es de la organización: lo configura cada máquina.', en: 'Telegram is not an organization setting: each machine sets it up.' },
   // el nombre de cada integración en la franja «Tu organización» (la clave del perfil queda para el archivo)
-  'comoTrabaja.integ.ado': { es: 'pedidos de trabajo en la plataforma del equipo', en: 'work items on the team platform' },
+  'comoTrabaja.integ.ado': { es: 'tareas en la plataforma del equipo', en: 'work items on the team platform' },
   'comoTrabaja.integ.timeTracking': { es: 'registro de horas', en: 'time tracking' },
   'comoTrabaja.integ.engram': { es: 'memoria entre sesiones (engram)', en: 'memory across sessions (engram)' },
   'comoTrabaja.integ.codegraph': { es: 'índice del código (CodeGraph)', en: 'code index (CodeGraph)' },
-  'comoTrabaja.integ.mailbox': { es: 'buzón de ejecuciones', en: 'run mailbox' },
+  'comoTrabaja.integ.mailbox': { es: 'depósito de ejecuciones', en: 'run storage' },
   'comoTrabaja.integ.codex': { es: 'el lado Codex', en: 'the Codex side' },
   'comoTrabaja.integ.nightly': { es: 'revisión de la noche', en: 'nightly review' },
   'comoTrabaja.integ.instincts': { es: 'aprendizajes del equipo', en: 'team learnings' },

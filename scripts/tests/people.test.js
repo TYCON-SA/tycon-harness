@@ -515,7 +515,7 @@ test('A163 LeerCorreosInformados_SinHuella_ElMotivoNoInventaLaVersion', () => {
     'maq-sin-place': null,
   });
   const r = P.leerCorreosInformados(dir);
-  assert.match(r.maquinas['maq-nueva'].machine_id_motivo, new RegExp(`no trae la huella.*${P.MACHINE_ID_SINCE.replace(/\./g, '\\.')}`));
+  assert.match(r.maquinas['maq-nueva'].machine_id_motivo, new RegExp(`no trae la huella.*${P.MACHINE_ID_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.ok(!('machine_id_motivo' in r.maquinas['maq-vieja']), 'la vieja sí es una versión que no la manda: queda el texto de siempre');
   assert.equal(r.maquinas['maq-sin-place'].machine_id_motivo, 'la máquina no subió place.json');
 });
