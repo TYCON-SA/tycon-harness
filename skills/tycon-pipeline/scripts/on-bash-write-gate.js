@@ -609,6 +609,24 @@ function handleCarrilEHistoria(event, opts = {}) {
     return true;
   });
   const cmdDestinos = sub.cmd;
+  // Un destino que no se sabe resolver (una variable o un `$(…)` que no se calcula sin correrlo) no se puede probar fuera
+  // del estado. Frena si lo que no se resuelve nombra la casa (`~`, `$HOME`) o la carpeta del arnés, o si la ruta de una
+  // zona protegida queda a la vista en el destino (`<estado>$NOSE/x`). Se esquiva armando el nombre a pedazos
+  // (`$(printf %s .ty con)`): límite conocido y aceptado (opción B del dueño, A215)
+  {
+    const nombraZona = (t) => /\.tycon\b/.test(t) || zonas().some((z) => z && String(t).includes(z));
+    const nombraCasa = (t) => /(^|[^\w~])~(?=[\/\s)`;|&]|$)|\$\{?HOME\b/.test(t);
+    const sustituciones = [...String(cmd).matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)].map((m) => m[1] ?? m[2]);
+    const sustitucionNombra = sustituciones.some((t) => nombraZona(t) || nombraCasa(t));
+    for (const t of extractWriteTargets(cmd, { keep: () => true })) {
+      if (!/[$`]/.test(t)) continue;
+      const ex = expandirRuta(cmd, t);
+      if (!ex.sinResolver.length && !/\$\(|`/.test(t)) continue;
+      if (sustitucionNombra || nombraZona(t)) {
+        return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: t, via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)} (un destino que no se puede resolver y nombra la casa o el arnés)` }) + '\n' };
+      }
+    }
+  }
   const targets = extractWriteTargets(cmdDestinos, { keep });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)

@@ -2042,3 +2042,29 @@ test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
     }
   });
 });
+
+// 🔴 Falla con (A215): un destino que no se sabe resolver (`$(…)` en la variable) pero con una extensión escrita (`.json`)
+// no frenaba: se juzgaba como un archivo de datos cualquiera, y bash escribe en la carpeta de estado
+test('EscrituraAlEstado_ConDestinoSinResolverYExtension_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    for (const c of [`D=$(echo ${E})/plan-review; echo x > $D/s1/s1.resultado.json`, `echo x > $(echo ${E})/plan-review/s1/s1.resultado.json`,
+      `D=\`echo ${E}\`; echo x > $D/plan-review/s1/s1.resultado.json`,
+      // opción B del dueño: lo que no se resuelve nombra la casa (`~`, `$HOME`) o la carpeta del arnés; o la ruta del estado
+      // queda a la vista pegada a una variable sin resolver
+      'D=$(echo ~)/.tycon/x; echo x > $D/s1.json', 'echo x > $(cd $HOME && pwd)/.tycon/x/s1.json',
+      `echo x >> ${E}$NOSE/plan-review/s1/s1.resultado.json`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+    // lo que no se resuelve y no nombra nada de eso sigue pasando
+    for (const c of ['echo x > $(date +%F)-informe.md', 'echo x > $NOSE/notas.txt', 'D=$(mktemp -d); echo x > $D/x.json']) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(!(r && r.block && /ESTADO/.test(r.block)), `${c}: ${r && r.block}`);
+    }
+  });
+});
