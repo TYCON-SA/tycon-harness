@@ -5093,6 +5093,12 @@
       "requiere": []
     },
     {
+      "__nota": "La fila «El proceso de la noche» de Configuración dice lo que pasa sin modelo: la noche corre igual y sólo no redacta con un modelo (aprendizajes, propuestas de hallazgos). Antes decía que la noche no corría, con los datos de la noche de hoy a la vista. La opción vacía del selector es corta. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-nightly-model-text.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Lo que el arranque de Windows corre como el del .sh: el lanzador en orden (scripts/lib/run-in-order.js) corre la recolección de hallazgos antes de la subida y uno que falla no corta el otro; la recolección con --log agrega su salida al registro y no escribe en la consola; un programa que no se encuentra por su nombre corre con el Node del lanzador. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/windows-startup-batch.test.js",

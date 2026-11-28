@@ -5096,7 +5096,7 @@ test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
   const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
     'pantalla.proveedor.cursor', 'pantalla.columnaNivel', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
-    'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
+    'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheSinProveedor', 'pantalla.nocheHoy',
     'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
   for (const k of claves) {
     // los nombres de proveedor se arman con su prefijo y el proveedor
