@@ -599,6 +599,14 @@ function handleCarrilEHistoria(event, opts = {}) {
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
+  // un comodín en el destino (`>> /p/est?do/x`): bash lo expande si nombra un archivo que existe. Se juzga también cada
+  // archivo que nombra; si son demasiados para mirarlos todos, el que quedó sin mirar puede ser del estado
+  for (const abs of [...absTargets]) {
+    if (!/[*?[]/.test(abs)) continue;
+    const aviso = {};
+    for (const m of expandirComodin(abs, cwd, aviso)) if (!absTargets.includes(m)) absTargets.push(m);
+    if (aviso.recortado && !absTargets.includes(path.join(stateDir, 'comodin-sin-mirar'))) absTargets.push(path.join(stateDir, 'comodin-sin-mirar'));
+  }
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // los destinos relativos, si el comando cambia de carpeta con un `cd` (o `pushd`/`popd`) que no es el que se sigue: el
   // del principio, o el de la forma mínima de `resolverCd`. Ahí la carpeta de esos destinos no se sabe

@@ -1980,3 +1980,35 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
     assert.match(r.reason, /harness/);
   });
 });
+
+// 🔴 Falla con (A215): un comodín (`?`, `[…]`, `*`) en el destino de una redirección: bash lo expande si nombra un solo
+// archivo, y pisa el de la carpeta de estado
+test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  fs.writeFileSync(path.join(E, 'plan-review', 's1', 's1.resultado.json'), '{}');
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const conComodin = (c) => `${E.slice(0, -1)}${c}`;
+  conEnv(SIN_REGISTRO, () => {
+    for (const c of [`F=${conComodin('?')}/plan-review/s1/s1.resultado.json; echo x >> $F`, `echo x >> ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
+      `echo x >> ${E}/plan-revie?/s1/s1.resultado.json`, `echo x >> ${E}/plan-revie[w]/s1/s1.resultado.json`, `echo x >> ${E}/plan-*/s1/s1.resultado.json`]) {
+      const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(r && r.block, JSON.stringify(c));
+    }
+  });
+});
+
+// 🔴 Falla con (A215): `~+` es la carpeta actual y `x:~/…` en una asignación es la casa (bash expande la tilde después de `:`)
+test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const r = bash.handle(ev('echo x > ~+/plan-review/s1/s1.resultado.json', E), { stateDir, installedRoots: [arnes] });
+    assert.ok(r && r.block, '~+ es la carpeta actual');
+  });
+});
