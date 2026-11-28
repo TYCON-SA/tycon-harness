@@ -663,9 +663,12 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     //    de los otros cinco son «las veces que el comando les competía». Dividir la suma de unos por
     //    la suma de los otros produce un número que no significa nada. La proporción vive por freno,
     //    en el detalle, donde cada uno lleva SU denominador.
+    // el desglose también como datos (el sitio lo muestra en los dos idiomas; el detalle es texto en castellano)
+    const sumar = (f) => Object.keys(fb.porDim).reduce((a, k) => a + f(k), 0);
     frenos = medida(fb.num, fb.num, fb.num, {
       unidad: 'conteo', den_etiqueta: 'veces que un freno frenó',
       detalle: `${ventana}${filas ? ' · ' + filas : ''}${parcial(fb, 'frenos previos')}`,
+      partes: [{ clave: 'frenaron', n: fb.num }, { clave: 'saltearon', n: sumar(escapesDe) }, { clave: 'avisaron', n: sumar(avisosDe) }],
     });
   }
   // ── cuántas evidencias rechazan los hooks del CIERRE ─────────────────────────────
@@ -699,9 +702,11 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   else if (sinMaquinas || ca.midieron === 0) carriles = noMedida(sinMaquinas ? 'ninguna máquina reportó sus registros' : 'ninguna máquina subió todavía el carril de sus commits');
   else if (ca.num < piso) carriles = noMedida(`por debajo del piso (${ca.num} commits en la ventana; hacen falta ${piso})`);
   else {
+    // cuántos por carril, como datos: los tres del vocabulario, en ese orden (un carril que no es de la lista no viaja)
     carriles = medida(ca.num, ca.num, ca.num, {
       unidad: 'conteo', den_etiqueta: 'commits hechos desde una sesión',
       detalle: `${ventana} · ${lasQueMas(ca.porDim)}${parcial(ca, 'carriles')}`,
+      partes: ['pipeline', 'adhoc', 'ninguno'].filter((k) => Object.prototype.hasOwnProperty.call(ca.porDim, k)).map((k) => ({ clave: k, n: ca.porDim[k].num })),
     });
   }
   // El 75 % sobre las LÍNEAS TOCADAS, en observación. Cada corrida de test-gate deja una línea
@@ -1362,6 +1367,9 @@ function extra(por, ctx, cfg) {
     const lineas = [];
     let comparables = 0;
     let conCarpeta = 0;
+    // de los comparables, en cuántos vuelve menos lo que pasó por el pipeline: el desglose como datos, sin nombres de
+    // repos ni proporciones sumadas entre productos
+    let vuelveMenos = 0;
     for (const r of rs) {
       const x = r.rework_por_carril;
       if (!x) continue;
@@ -1372,6 +1380,7 @@ function extra(por, ctx, cfg) {
       // `&lt;b&gt;` y el `--json` llevaría etiquetas.
       if (con.den >= nMin && sin.den >= nMin) {
         comparables += 1;
+        if (con.num / con.den < sin.num / sin.den) vuelveMenos += 1;
         lineas.push(`${nombre(r)}: con ejecución volvieron ${con.num} de ${con.den} (${pctDe(con)}) · sin constancia ${sin.num} de ${sin.den} (${pctDe(sin)})`);
       } else {
         const falta = [con.den < nMin ? `${nMin - con.den} con ejecución` : null, sin.den < nMin ? `${nMin - sin.den} sin constancia` : null].filter(Boolean).join(' y ');
@@ -1382,7 +1391,8 @@ function extra(por, ctx, cfg) {
     if (!conCarpeta) return noMedida(`ningún repo guarda las ejecuciones del pipeline todavía (${rs.length} medidos): no hay con qué separar los carriles`);
     const detalle = `${lineas.join(' · ')}${sinCarpeta ? ` · ${sinCarpeta} repo(s) no guardan ejecuciones: no se comparan` : ''}`;
     if (!comparables) return noMedida(`ningún repo llega al mínimo de ${nMin} stories cerradas por grupo — ${detalle}`, { detalle });
-    return medida(comparables, comparables, conCarpeta, { unidad: 'conteo', den_etiqueta: `repos comparables de ${conCarpeta} que guardan ejecuciones · mínimo ${nMin} por grupo`, detalle });
+    return medida(comparables, comparables, conCarpeta, { unidad: 'conteo', den_etiqueta: `repos comparables de ${conCarpeta} que guardan ejecuciones · mínimo ${nMin} por grupo`, detalle,
+      partes: [{ clave: 'vuelve_menos', n: vuelveMenos }, { clave: 'no_vuelve_menos', n: comparables - vuelveMenos }] });
   });
 
   m.rework_top = desde(sdlc, (d) => {

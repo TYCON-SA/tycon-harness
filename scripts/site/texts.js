@@ -841,6 +841,15 @@ const TEXTOS = {
   'fichas.unidad.segundos1': { es: 'segundo', en: 'second' },
   'fichas.masDeDias': { es: 'más de {d} días en su estado', en: 'more than {d} days in their state' },
   'fichas.masDeUnDia': { es: 'más de 1 día en su estado', en: 'more than 1 day in their state' },
+  // el desglose de las fichas que preguntan una comparación (cards.js, PARTES)
+  'fichas.parte.frenos.frenaron': { es: 'frenaron {n}', en: 'blocked {n}' },
+  'fichas.parte.frenos.saltearon': { es: 'los saltearon {n}', en: 'skipped {n}' },
+  'fichas.parte.frenos.avisaron': { es: 'avisaron {n}', en: 'warned {n}' },
+  'fichas.parte.carriles.pipeline': { es: 'por el pipeline {n}', en: 'through the pipeline {n}' },
+  'fichas.parte.carriles.adhoc': { es: 'atajo declarado {n}', en: 'declared shortcut {n}' },
+  'fichas.parte.carriles.ninguno': { es: 'ninguno {n}', en: 'none {n}' },
+  'fichas.parte.rework_por_carril.vuelve_menos': { es: 'vuelve menos en {n}', en: 'comes back less in {n}' },
+  'fichas.parte.rework_por_carril.no_vuelve_menos': { es: 'no vuelve menos en {n}', en: 'does not come back less in {n}' },
   // las causas del vocabulario cerrado de «por qué volvió»; una fuera de él no muestra su clave
   'fichas.causa.defecto-propio': { es: 'defecto propio', en: 'own defect' },
   'fichas.causa.cambio-de-requisito': { es: 'cambio de requisito', en: 'requirement change' },
