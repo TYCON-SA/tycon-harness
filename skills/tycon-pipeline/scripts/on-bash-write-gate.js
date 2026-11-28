@@ -712,7 +712,12 @@ function handleCarrilEHistoria(event, opts = {}) {
       // cada pieza por separado (un `$(…)` sin cerrar de una pieza no se come la siguiente); una pieza relativa se lee
       // también desde la carpeta del comando
       const piezas = suyo.split('\n');
-      const conCarpeta = piezas.filter((x) => x && !/^[/~$`]/.test(x)).map((x) => `${cwd}/${x}`);
+      // (las relativas y las que empiezan con `$PWD`, con la carpeta pegada y sus `..` colapsados)
+      const colapsar = (x) => { let y = x; for (let v = 0; v < 20 && SUBE.test(y); v++) { SUBE.lastIndex = 0; y = y.replace(SUBE, ''); } SUBE.lastIndex = 0; return y; };
+      const conCarpeta = [
+        ...piezas.filter((x) => x && !/^[/~$`]/.test(x)).map((x) => `${cwd}/${x}`),
+        ...piezas.filter((x) => /^\$\{?PWD\b/.test(x)).map((x) => x.replace(/^\$\{PWD\}|^\$PWD\b/, cwd)),
+      ].map((x) => colapsar(x.replace(/\/{2,}/g, '/')));
       let frena = casaConNombre || [...piezas, ...conCarpeta].some(nombraZona) || piezas.some((x) => cuerposDe(x).some(nombraCasa))
         || (cortado && cuerposDe(texto).some(nombraCasa));
       if (!frena && /\$\{?PWD\b/.test(t)) {

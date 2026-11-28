@@ -2076,5 +2076,9 @@ test('EscrituraAlEstado_ConDestinoSinResolverYExtension_Frena', () => {
     // `$PWD` es la carpeta del comando
     const r2 = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: path.dirname(E), tool_input: { command: `echo x >> $PWD/${path.basename(E)}/plan-review/s1/s1.resultado.json` } }, { stateDir, installedRoots: [arnes] });
     assert.ok(r2 && r2.block, '$PWD');
+    // una relativa con `..` desde una carpeta vecina, con una variable sin resolver
+    fs.mkdirSync(path.join(path.dirname(E), 'vecina'), { recursive: true });
+    const r3 = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: path.join(path.dirname(E), 'vecina'), tool_input: { command: `echo x >> ../${path.basename(E)}$NOSE/active/s1.json` } }, { stateDir, installedRoots: [arnes] });
+    assert.ok(r3 && r3.block, 'relativa con ..');
   });
 });
