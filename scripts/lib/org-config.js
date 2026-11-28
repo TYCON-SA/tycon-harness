@@ -3597,6 +3597,8 @@ ${trabajandoJs}
       var nombreP = T('pantalla.proveedor.' + p);
       var t = tabla('modelos proveedores', nombreP, [T('pantalla.columnaNivel'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
       t.setAttribute('data-proveedor', p);
+      // el nombre del proveedor arriba de su tabla: sin él, sólo la primera quedaba asociada a uno
+      box.appendChild(el('p', { class: 'sub-t prov-t', text: nombreP }));
       var permitidos = permitidosDe(p);
       var listaId = 'permitidos-' + p;
       NIVELES.forEach(function (n) {
@@ -4683,6 +4685,12 @@ ${trabajandoJs}
     });
     return sec;
   }
+  // las que no están al día y tampoco piden arreglo (sólo para mirar, sin configurar, por crear): se nombran con su
+  // estado, para que la ficha de las al día no haga creer que les falta guardar algo
+  function otrasQueNoEstanAlDia() {
+    var otras = S.secciones.filter(function (s) { return estadoDe(s)[0] === 'nm'; });
+    return otras.length ? ' · ' + otras.map(function (s) { return plano(s).corto + ' (' + estadoDe(s)[1] + ')'; }).join(', ') : '';
+  }
   function render() {
     var ex = S.extras || {};
     var porId = {}; S.secciones.forEach(function (s) { porId[s.id] = s; });
@@ -4696,7 +4704,7 @@ ${trabajandoJs}
     partes.push(el('div', { class: 'grid' },
       kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', T('pantalla.maquinasPorConfirmar'), porConfirmar, porConfirmar ? T('pantalla.pidenQueDigasDeQuienSon') : T('pantalla.todasANombreDeAlguien')),
       kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, T('pantalla.seccionesConAlgoParaArreglar'), aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : T('pantalla.ninguna2')),
-      kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente')),
+      kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente') + otrasQueNoEstanAlDia()),
       kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.deN') + (ex.versiones || []).length + T('pantalla.queInforman'))));
     var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), ruta: p.ruta || '—', repo: p.repo ? (p.producto ? p.producto + ' · ' : '') + String(p.repo).split('/').pop() : p.ruta, estado: (p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo')) + (p.repetida ? ' · ' + T('pantalla.entradaRepetida') : ''), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['ruta', T('pantalla.rutaDeLaEntrada')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
     if (ex.productosMotivo) prod.appendChild(aviso('bad', T('pantalla.laListaDeProductosNo'), ex.productosMotivo));

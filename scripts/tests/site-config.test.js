@@ -741,7 +741,12 @@ test('T30 Umbrales_SinMarcaDelNocturno_SoloLectura @story-2.29 @ac-11', async ()
     await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
       const u = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'umbrales');
       assert.strictEqual(Boolean(u.soloLectura), soloLectura, JSON.stringify(u));
-      if (soloLectura) assert.match(u.motivo, /tu nocturno todavía no lee este archivo/);
+      // el motivo dice qué pasa y qué hacer, sin la ruta de la marca ni la palabra «nocturno» (A178)
+      if (soloLectura) {
+        assert.match(u.motivo, /la máquina que corre la noche todavía no lee este archivo/);
+        assert.match(u.motivo, /actualizá el arnés en esa máquina/);
+        assert.doesNotMatch(u.motivo, /\.dashboard\/|applied-config|nocturno/);
+      }
     });
   }
 });
@@ -7231,4 +7236,58 @@ test('8.176-Textos_ConUnClickOEnSuTerminal @story-8.176 @ac-7', () => {
   }
   assert.ok(!/en su terminal; esto no lo cambia/.test(guias.es + textos.t('es', 'pantalla.firmaDelegadaAviso')), 'el aviso viejo ya no está');
   assert.ok(!/at their terminal; this does not change that/.test(guias.en + textos.t('en', 'pantalla.firmaDelegadaAviso')), 'ni en inglés');
+});
+
+// 🔴 mutación: la ficha «Secciones sin cambios N de M» sin decir qué son las que faltan: las sólo para mirar parecen
+// secciones con cambios pendientes (A180).
+test('A180 FichaSeccionesAlDia_DiceQueSonLasQueFaltan — las sólo para mirar se nombran, no parecen cambios pendientes', async () => {
+  const secs = TODAS.map((id) => SEC(id, id === 'ado' || id === 'umbrales' ? { soloLectura: true, motivo: 'x' } : {}));
+  const r = await pantallaConPestanas({ secciones: secs });
+  const textoDe = (n) => [n.textContent || '', ...(n.hijos || []).map(textoDe)].join(' ');
+  const kpis = [];
+  const walk = (x) => { if (/\bkpi\b/.test(x.attrs.class || '')) kpis.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.resumen);
+  const ficha = kpis.find((k) => /Secciones al día/.test(textoDe(k)));
+  assert.ok(ficha, `la ficha se llama como en la Ayuda: ${kpis.map(textoDe).join(' | ')}`);
+  const t = textoDe(ficha);
+  assert.match(t, /15 de 17/);
+  assert.match(t, /sólo para mirar/, 'dice qué son las dos que faltan');
+});
+
+// 🔴 mutación: las tablas de modelos de OpenAI, Ollama y Cursor sin título propio (el proveedor sólo aparecía debajo), o
+// la ayuda con «inherit» como palabra del texto (A183).
+test('A183 ModelosPorProveedor_CadaTablaConSuTitulo — el nombre del proveedor va arriba de su tabla', async () => {
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)), hash: '#tab-claude' });
+  const todos = [];
+  const walk = (x, padre) => { todos.push({ x, padre }); (x.hijos || []).forEach((h) => walk(h, x)); };
+  walk(r.app, null);
+  const tablas = todos.filter(({ x }) => x.attrs['data-proveedor']);
+  assert.ok(tablas.length >= 4, `las tablas por proveedor: ${tablas.length}`);
+  for (const { x, padre } of tablas) {
+    const i = padre.hijos.indexOf(x);
+    const antes = padre.hijos[i - 1] || {};
+    assert.ok(/\bprov-t\b/.test(antes.attrs && antes.attrs.class || '') && antes.textContent === x.attrs['aria-label'], `la tabla de ${x.attrs['data-proveedor']} lleva su título arriba`);
+  }
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.doesNotMatch(TX.t('es', 'pantalla.porProveedorAyuda'), /«inherit»/, 'en castellano, «el del dev»; inherit sólo como lo que dice el archivo');
+});
+
+// 🔴 mutación: los selectores de «Cómo trabaja el agente» con ancho fijo de 13em, que cortan la opción elegida
+// («sin configurar (la noche», «el equivalente de cada r») (A182).
+test('A182 SelectoresDeModelos_NoCortanLaOpcion — crecen desde 13em hasta el ancho de su celda', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const regla = (css.match(/\.tabla2\.modelos select\.corto\{[^}]*\}/) || [''])[0];
+  assert.ok(regla, 'la regla está');
+  assert.doesNotMatch(regla, /(^|[{;])width:13em/, 'sin ancho fijo');
+  assert.match(regla, /min-width:13em/);
+  assert.match(regla, /width:auto/);
+});
+
+// 🔴 mutación: en el celular la barra de las partes de Configuración se desliza de costado sin decirlo y dos pestañas
+// quedan fuera de la vista (A179): en pantalla angosta las pestañas bajan de renglón y se ven todas.
+test('A179 Celular_PestanasDeConfiguracionSeVenTodas — en pantalla angosta bajan de renglón', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
+  assert.match(angosta, /\.pestanas\{[^}]*flex-wrap:wrap/, 'las pestañas bajan de renglón');
+  assert.match(angosta, /\.pestanas\{[^}]*overflow-x:visible/, 'y no se esconden de costado');
 });
