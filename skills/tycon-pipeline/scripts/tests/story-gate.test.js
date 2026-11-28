@@ -1998,8 +1998,9 @@ test('EscrituraAlEstado_OtrasFormasDeWindows_Frena', { skip: process.platform !=
   const subir = '../'.repeat(repo.split(/[\\/]/).length + 2);
   // el nombre corto de la carpeta `plan-review`, si la unidad los crea
   const corto = (() => {
-    const r = require('child_process').spawnSync('cmd', ['/c', `for %I in ("${path.join(E, 'plan-review')}") do @echo %~sI`], { encoding: 'utf8' });
-    const c = String(r.stdout || '').trim();
+    // sin comillas: Node las escaparía al pasarle el argumento a cmd (la carpeta temporal no tiene blancos)
+    const r = require('child_process').spawnSync('cmd', ['/c', `for %I in (${path.join(E, 'plan-review')}) do @echo %~sI`], { encoding: 'utf8' });
+    const c = String(r.stdout || '').trim().replace(/"/g, '');
     return c && c !== path.join(E, 'plan-review') ? c : null;
   })();
   const formas = [`/.${bashDe(res)}`, `//${bashDe(res)}`, `/tmp/..${bashDe(res)}`, `${subir}${bashDe(res).slice(1)}`,
