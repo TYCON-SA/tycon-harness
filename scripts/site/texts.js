@@ -238,7 +238,7 @@ const TEXTOS = {
   'inicio.maquinas_sin_confirmar': { es: 'Máquinas sin confirmar con ejecuciones', en: 'Unconfirmed machines with runs' },
   'inicio.maquinasSinInforme': { es: 'no medido: lo que informan las máquinas no se pudo leer del depósito', en: 'not measured: what the machines report could not be read from the run storage' },
   'inicio.retrospectivas': { es: 'Retrospectivas pendientes', en: 'Pending retrospectives' },
-  'inicio.retrosComo': { es: 'Cada una se hace en la máquina de quien mergeó, con node ~/.tycon/harness/scripts/metrics/retro-heartbeat.js --repo CARPETA --merge SHA (la carpeta del repo y el merge de la lista).', en: 'Each one is done on the machine of the person who merged, with node ~/.tycon/harness/scripts/metrics/retro-heartbeat.js --repo FOLDER --merge SHA (the repo folder and the merge from the list).' },
+  'inicio.retrosComo': { es: 'Cada una se hace en la máquina de quien mergeó, con node "$HOME/.tycon/harness/scripts/metrics/retro-heartbeat.js" --repo CARPETA --merge SHA (la carpeta del repo y el merge de la lista).', en: 'Each one is done on the machine of the person who merged, with node "$HOME/.tycon/harness/scripts/metrics/retro-heartbeat.js" --repo FOLDER --merge SHA (the repo folder and the merge from the list).' },
   'inicio.retrospectivasMotivo': { es: 'no medido: sólo existen en la máquina de quien mergeó', en: 'not measured: they only exist on the machine of the person who merged' },
   'inicio.queDecidir': { es: 'Qué decidir hoy', en: 'What to decide today' },
   'inicio.cadaFicha': { es: 'cada ficha lleva a su lista o a donde se decide', en: 'each card leads to its list or to where it is decided' },
