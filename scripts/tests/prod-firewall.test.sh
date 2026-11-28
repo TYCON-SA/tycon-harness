@@ -289,6 +289,24 @@ printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":"/tmp","tool_in
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "^$REGLA " "$TMP/az-reglas" || break; sleep 0.5; done
 if ! grep -q "^$REGLA " "$TMP/az-reglas"; then ok "T41 Guard_AnyCommand_LaunchesSweepForExpiredRule · una sesión larga sola no deja la regla pasar de 8 h"
 else no "T41 · la regla vencida sigue abierta tras un comando · estado: $(estado)"; fi
+espera_cierre "$PROD" || no "T41 · el cierre de fondo no terminó en 2 min"
+
+# ── T41b · un cierre de fondo termina antes de que la prueba siga ──────────────────────────────────────────────
+# El cierre que lanza el freno sigue escribiendo su estado y su registro después de borrar la regla. Con la máquina
+# cargada (el portón, con el medidor de cobertura) lo hacía sobre el mundo de la prueba siguiente, en la ruta que vio
+# al arrancar: T21 encontraba los dos archivos también en ~/.claude/.tycon-pipeline (issue #1855).
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesion_proceso "$SES_A" "$$"
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta=new Date(Date.now()-9*3600e3).toISOString(); require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+printf 'borrar-lento' > "$TMP/fake-az-mode"
+printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":"/tmp","tool_input":{"command":"ls"}}' | \
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
+    TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-$AZ_TOPE_COMUN}" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+for _ in $(seq 1 40); do grep -q "^$REGLA " "$TMP/az-reglas" || break; sleep 0.5; done
+espera_cierre "$PROD"
+mundo; mkdir -p "$CASA/.tycon/state"; sleep 4
+if [ ! -e "$CASA/.claude/.tycon-pipeline/production-firewall.json" ] && [ ! -e "$CASA/.claude/.tycon-pipeline/production.log" ]; then
+  ok "T41b Sweep_FinishesBeforeTheNextWorld · el cierre de fondo no escribe en el mundo de la prueba siguiente"
+else no "T41b · el cierre de fondo escribió después en $(ls "$CASA/.claude/.tycon-pipeline" | tr '\n' ' ')"; fi
 
 # ── T19 · el hook está en la configuración administrada, en los dos eventos, sin interruptor ───────────────────
 PLANT="$AQUI/scripts/production/managed-settings.tycon-production.json.template"
