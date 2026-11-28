@@ -9,6 +9,15 @@
       "safety-guard-pre.sh"
     ]
   },
+  "agile-pass-turn.js": {
+    "tipo": "preferencia",
+    "motivo": "Cuida que la máquina no se quede sin procesos con varios pases pesados a la vez fuera del pipeline: un trámite de uso de recursos, con el turno que da la coordinadora.",
+    "review_before": "2027-05-27",
+    "estado": "propuesta",
+    "ganchos": [
+      "agile-pass-turn.js"
+    ]
+  },
   "test-scope-guard": {
     "tipo": "preferencia",
     "motivo": "Cuida que la máquina no se congele con una suite completa mientras se itera: un trámite de uso de recursos.",
