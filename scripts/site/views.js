@@ -15,7 +15,7 @@
  *   · Ningún texto visible se escribe acá: sale de la tabla de texts.js, en el idioma del pedido
  *     (`ctx.idioma`; sin él, castellano). Las funciones de filas reciben `idioma` por el mismo motivo.
  */
-const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
+const { esc, chip, umbralValido, claveDeProducto } = require('../nightly/dashboard/common.js');
 const fichasDelTablero = require('./tabs/cards.js');
 const { compare: compararVersiones } = require('../setup/harness/version-order.js');
 const { t, TEXTOS } = require('./texts.js');
@@ -187,7 +187,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   for (const p of productos) for (const k of p.proyectos || []) cuantos.set(k, (cuantos.get(k) || 0) + 1);
   const dep = m.despliegues;
   const vig = m.vigilante;
-  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map((x) => String(x).toLowerCase().replace(/\s+/g, '')) : []);
+  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map(claveDeProducto) : []);
   const contar = (stories) => {
     const r = { en_curso: 0, en_revision: 0, bloqueadas: 0 };
     for (const s of stories) {
@@ -244,7 +244,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
       por_proyecto: Object.fromEntries((p.proyectos || []).map((k) => { const c = contar(frescasDe(k).flatMap((s) => s.stories || [])); return [k, { en_curso: c.en_curso, paradas: c.paradas, sin_medir: c.sin_medir }]; })),
       despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? motivoDeDespliegue(d.motivo, idioma) : null }
         : { estado: 'no_medido', motivo: medida(dep) ? T('proyectos.despliegueSinProducto') : conFecha(dep, idioma) },
-      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(String(p.producto).toLowerCase().replace(/\s+/g, '')) : null,
+      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(claveDeProducto(p.producto)) : null,
       vivas,
       paridad: paridadDe(p),
     };
