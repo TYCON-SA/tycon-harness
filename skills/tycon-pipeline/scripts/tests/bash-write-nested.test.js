@@ -847,11 +847,114 @@ test('T41 CarpetaDelComando_DespuesDeUnCd @A50 — el cd mueve $PWD una vez, cd 
     `(cd ${afuera} && rm $PWD/${H})`]) pasa(c, cmd);
 });
 
-// T42 Cuenta_EntreComillas_NoEsUnDestino @S247d
+// T42 FindName_ComoLoDejaElShell_YBucles @A50
+// 🔴 Falla con: un `-name` sin comillas con barra (`\*.md`), con una variable o con `$'…'` leído tal cual; una carpeta que
+// cumple el `-name` borrada entera con `rm -rf` sin mirar sus historias; o un bucle que recorre lo que lista un `find`
+// (`for f in $(find …)`, `find … | while read f`) sin mirar lo que corre su cuerpo.
+test('T42 FindName_ComoLoDejaElShell_YBucles @A50 — el -name como lo deja el shell, la carpeta que cumple y los bucles de un find', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(c.dir, 'docs', 'a.md'), '# a\n');
+  for (const cmd of [
+    'find . -name \\*.md -exec rm {} \\;', 'find . -name story-\\*.md -exec rm {} \\;', "p='story-*.md'; find . -name \"$p\" -exec rm {} \\;",
+    "find . -name $'story-1.1.md' -exec rm {} \\;", 'find . -name specs -exec rm -rf {} +', 'find . -type d -name specs -exec rm -rf {} \\;',
+    "find specs -name 'story-*.md' | while read f; do rm \"$f\"; done", "for f in $(find specs -name 'story-*.md'); do rm $f; done",
+    "find $PWD -name 'story-*.md' | while read -r f; do rm \"$f\"; done",
+  ]) frena(c, cmd);
+  for (const cmd of ["find docs -name '*.md' | while read f; do rm \"$f\"; done", "for f in $(find docs -name '*.md'); do rm $f; done",
+    "for f in $(find specs -name 'story-*.md'); do cat $f; done", 'find . -name docs -exec rm -rf {} +']) pasa(c, cmd);
+});
+
+// T43 Bucles_FormasQueSeEscapaban @A50
+// 🔴 Falla con (revisión de Fable de la tanda 2): las comillas de alrededor de `$f` comidas (`echo "Borrando $f"; rm "$f"`),
+// el cuerpo cortado en el primer `done` (bucle adentro, `echo done`), el `do` en otro renglón, un filtro en el medio de la
+// tubería, `< <(find …)`, `read -rd ''` o sin variable (REPLY), o un `rm -r` del cuerpo sobre una carpeta que cumple.
+test('T43 Bucles_FormasQueSeEscapaban @A50 — comillas, done de adentro, do en otro renglón, filtros, < <(find) y rm -r', () => {
+  const c = corral();
+  for (const cmd of [
+    "for f in $(find specs -name 'story-*.md'); do echo \"Borrando $f\"; rm \"$f\"; done",
+    "for f in $(find specs -name 'story-*.md'); do for g in 1 2; do echo done; done; rm $f; done",
+    "for f in $(find specs -name 'story-*.md')\ndo\n  rm \"$f\"\ndone",
+    "find specs -name 'story-*.md' | sort | while read f; do rm \"$f\"; done",
+    "while read -r f; do rm \"$f\"; done < <(find specs -name 'story-*.md')",
+    "find specs -name 'story-*.md' -print0 | while IFS= read -rd '' f; do rm \"$f\"; done",
+    "find specs -name 'story-*.md' | while read; do rm \"$REPLY\"; done",
+    "find specs -name 'story-*.md' | while read f\ndo rm \"$f\"; done",
+    'for d in $(find . -type d -name specs); do rm -rf "$d"; done',
+  ]) frena(c, cmd);
+  pasa(c, 'for d in $(find . -type d -name specs); do ls "$d"; done');
+  pasa(c, 'find . -type f -name specs -exec rm -rf {} +');
+});
+
+// T44 Bucles_SinTardarConBlancos @A50
+// 🔴 Falla con: las expresiones del bucle que se comían los mismos blancos una y otra vez: un `for … in` con miles de
+// espacios llegaba al tope de tiempo del freno, que frena el comando entero aunque no toque historias.
+test('T44 Bucles_SinTardarConBlancos @A50 — un for con muchos blancos no crece más que lineal', () => {
+  const { ordenesDeBucles } = require('../lib/bash-gate-folders.js');
+  const op = { palabras: (s) => s.split(/\s+/), alcanzadas: () => [], citar: (x) => x };
+  const medir = (n) => {
+    const t = process.hrtime.bigint();
+    ordenesDeBucles(`find . ; for f in${' '.repeat(n)}x${' '.repeat(n)}done`, op);
+    return Number(process.hrtime.bigint() - t) / 1e6;
+  };
+  medir(1000);
+  const chico = Math.max(medir(4000), 1);
+  const grande = medir(32000);
+  assert.ok(grande < chico * 40, `8 veces más texto tardó ${grande.toFixed(1)} ms contra ${chico.toFixed(1)} ms`);
+  // con miles de bucles sin cerrar (o bien cerrados), el tope de bucles leídos lo deja en menos de un segundo
+  // lo que sigue al `done` armado para enredar la expresión de las redirecciones (CodeQL, js/redos): lineal
+  {
+    const t = process.hrtime.bigint();
+    for (const trozo of ['!>', '!0>', '0>!', '&! >', '>& ']) ordenesDeBucles(`find x | while read f; do y; done >${trozo.repeat(3000)}`, op);
+    const ms = Number(process.hrtime.bigint() - t) / 1e6;
+    assert.ok(ms < 1000, `las redirecciones tardaron ${ms.toFixed(0)} ms`);
+  }
+  for (const trozo of ['for f in a; do x; ', 'find x | while read f; do y; done; ']) {
+    const t = process.hrtime.bigint();
+    ordenesDeBucles(`${trozo.repeat(8000)} echo done`, op);
+    const ms = Number(process.hrtime.bigint() - t) / 1e6;
+    assert.ok(ms < 1000, `8000 veces ${JSON.stringify(trozo)} tardó ${ms.toFixed(0)} ms`);
+  }
+});
+
+// T45 Bucles_SegundaVuelta @A50
+// 🔴 Falla con (segunda vuelta de Fable): el bucle pegado a una comilla (`bash -c 'for …'`), un `\;` o un `;` entre comillas
+// en la tubería o en la lista del `for`, el `find` partido en dos renglones, `${f:?}`, la segunda variable del `read`,
+// `done<` o una redirección antes de `< <(find …)`.
+test('T45 Bucles_SegundaVuelta @A50 — comillas pegadas, \\; y ; citados, continuación de renglón, ${f…}, read a b, done<', () => {
+  const c = corral();
+  for (const cmd of [
+    "bash -c 'for f in $(find specs -name \"*.md\"); do rm $f; done'",
+    "find specs -name '*.md' -exec grep -l status {} \\; | while read f; do rm \"$f\"; done",
+    "find specs -name '*.md' | awk '{ print $0; }' | while read f; do rm \"$f\"; done",
+    "for f in $(find specs -name '*.md' | awk '{ print $0; }'); do rm $f; done",
+    "find specs \\\n  -name '*.md' | while read f; do rm \"$f\"; done",
+    "find specs -name '*.md' |\n  while read f; do rm \"$f\"; done",
+    "for f in $(find specs -name '*.md'); do rm \"${f:?}\"; done",
+    "find specs -name '*.md' | nl | while read n f; do rm \"$f\"; done",
+    "while read f; do rm \"$f\"; done< <(find specs -name '*.md'); echo done",
+    "while read f; do rm \"$f\"; done 2>/dev/null < <(find specs -name '*.md')",
+  ]) frena(c, cmd);
+});
+
+// T46 CarpetaQueCumple_ConMuchasCarpetas @A50
+// 🔴 Falla con: el tope de carpetas del recorrido que cortaba en silencio: con más de dos mil carpetas antes, una `specs` a
+// dos niveles no se miraba y `find . -name specs -exec rm -rf {} +` pasaba.
+test('T46 CarpetaQueCumple_ConMuchasCarpetas @A50 — pasado el tope de carpetas se miran todas las historias', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'zzz'));
+  fs.renameSync(path.join(c.dir, 'specs'), path.join(c.dir, 'zzz', 'specs'));
+  for (let i = 0; i < 2500; i++) fs.mkdirSync(path.join(c.dir, 'aaa', `d${i}`), { recursive: true });
+  frena(c, 'find . -name specs -exec rm -rf {} +');
+  frena(c, 'for d in $(find . -type d -name specs); do rm -rf "$d"; done');
+  pasa(c, 'find aaa -name specs -exec rm -rf {} +');
+});
+
+// T47 Cuenta_EntreComillas_NoEsUnDestino @S247d
 // 🔴 Falla con: el `>` de una cuenta `$(( a > b ))`, con o sin comillas, leído como una redirección (frenaba con la palabra
 // de después como destino), o con lo que corre adentro de la cuenta, con una sustitución que sólo parece una cuenta
 // (`$((cp …) )`) o con una cuenta que zsh corre como comandos (`$((cp … && : `: \(`))`), dejado de leer.
-test('T42 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compara; lo que corre adentro se sigue leyendo', () => {
+test('T47 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compara; lo que corre adentro se sigue leyendo', () => {
   const c = corral();
   for (const cmd of [`echo "$(( x > ${H} ? 1 : 0 ))"`, `echo $(( x > ${H} ))`, `n="$(( 3 > ${H} ))"`,
     `echo "$(( $(( x > ${H} )) + 1 ))"`, `echo "$(( x >= ${H} ))" | cat`]) pasa(c, cmd);
