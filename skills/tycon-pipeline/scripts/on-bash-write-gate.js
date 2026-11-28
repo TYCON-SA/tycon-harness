@@ -260,7 +260,9 @@ function paso(texto) {
 }
 
 /**
- * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: si el comando tiene un `for ((`, se lee
+ * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando, y el de un `if (…) then …`, un
+ * `while (…) do …`, un `for x do …` o las formas cortas de zsh también (`puntosDeOtrasCabeceras`): si el comando tiene
+ * una de esas cabeceras, se lee
  * también con el `;` detrás de las cabeceras (`variantesConSeparador`: con todas y con cada una sola), y frena si
  * cualquiera de las lecturas frena. La de tal cual ve lo que un `;` cortaría (un `for ((` citado en un argumento); las
  * otras, el `for` donde corra, también con un señuelo citado en su cuerpo. Con más cabeceras sin `;` que el tope, frena
@@ -274,9 +276,9 @@ function handle(event, opts = {}) {
   const variantes = typeof original === 'string' ? variantesConSeparador(original) : [];
   if (!variantes.length) return r;
   if (variantes.demasiadas) {
-    return { block: `⛔ tycon-pipeline — DEMASIADOS for (( )) SIN «;»\n\n  El comando tiene más de ${TOPE_DE_CABECERAS} cabeceras \`for ((…))\` sin \`;\` antes del \`do\`: no se puede leer qué corre cada cuerpo.\n  Poné el \`;\` (\`for ((…)); do\`) o partilo en comandos más chicos.\n` };
+    return { block: `⛔ tycon-pipeline — DEMASIADAS CABECERAS SIN «;»\n\n  El comando tiene más de ${TOPE_DE_CABECERAS} cabeceras de bloque sin \`;\` antes de lo que corren (\`for ((…)) do\`, \`if (…) then\`, \`while (…) do\`, \`for x do\`): no se puede leer qué corre cada cuerpo.\n  Poné el \`;\` (\`for ((…)); do\`, \`if (…); then\`) o partilo en comandos más chicos.\n` };
   }
-  paso('las lecturas con un ; detrás de los for (( ))');
+  paso('las lecturas con un ; detrás de las cabeceras de bloque');
   const antes = modoDeLectura().soloDecidir;
   modoDeLectura({ soloDecidir: true });
   try {

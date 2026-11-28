@@ -1091,3 +1091,48 @@ test('T49 PowerShellConComando_Y_ForDeCuentaSinPuntoYComa @A216 — lo de adentr
     // frenar: la lectura con el `;` es en todo el texto, el lado seguro)
   ]) pasa(c, cmd);
 });
+
+// T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218
+// 🔴 Falla con: el `;`, el `|` o el salto de renglón de adentro de un `$(…)` cortando el `rm` de afuera (`rm $(: # x⏎)
+// h.md` dejaba la historia en otro tramo), o el cuerpo de un bloque sin `;` antes del `then`/`do` (`if (true) then cp …`,
+// `while (true) do …`, `for x do …`, `if [[ … ]] then …`, y en zsh `for x (a) cp …`, `foreach`, `repeat 1 cp …`) leído
+// como argumentos de la condición.
+test('T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218 — lo de después corre; lo que no escribe pasa', () => {
+  const c = corral();
+  for (const cmd of [`rm $(: $(: # x\n)) ${H}`, `rm $(: $(# x\n)) ${H}`, `rm $(: # x\n) ${H}`, `rm $(:\n) ${H}`,
+    `rm $(: ; :) ${H}`, `rm $(: | cat) ${H}`, `rm \`: ; :\` ${H}`, `rm "$(: ; :)" ${H}`, `rm <(: ; :) ${H}`,
+    `git rm $(:\n) ${H}`, `git checkout -- $(: ; :) ${H}`, `rm -f $(: && :) ${H}`,
+    `if (true) then cp README.md ${H}; fi`, `if { true; } then cp README.md ${H}; fi`,
+    `while (true) do cp README.md ${H}; break; done`, `until (false) do cp README.md ${H}; break; done`,
+    `for x do cp README.md ${H}; done`, `select x do cp README.md ${H}; done`, `if [[ 1 ]] then cp README.md ${H}; fi`,
+    `while [[ 1 ]] do rm ${H}; done`, `for x (1) cp README.md ${H}`, `for x (a b) { cp README.md ${H}; }`,
+    `foreach x (a) cp README.md ${H}; end`, `repeat 1 cp README.md ${H}`, `while (true) { cp README.md ${H}; break; }`,
+    `if true; then :; elif (true) then cp README.md ${H}; fi`, `x=$(if (true) then cp README.md ${H}; fi)`,
+    `echo "$(while (true) do rm ${H}; break; done)"`, `bash -c 'if (true) then cp README.md ${H}; fi'`,
+    `sh -c "for x do rm ${H}; done"`, `! (true) || if (true) then rm ${H}; fi`, `if (true) then rm $(: # x\n) ${H}; fi`,
+    `case a in (a) cp README.md ${H};; esac`,
+    // (primera vuelta de Fable) paréntesis citados en la condición, `case` sin `(`, redirección delante, pegado, partido,
+    // detrás de `fi`/`esac`, en una función o un brazo de `case`, varios nombres, otras sustituciones, `dd` y `find`
+    `if (grep -q "f(" README.md; true) then cp README.md ${H}; fi`, `if (: ")") then cp README.md ${H}; fi`,
+    `case a in a) cp README.md ${H};; esac`, `case a in (a) >/dev/null cp README.md ${H};; esac`,
+    `for x (a) >/dev/null cp README.md ${H}`, `for x (a) &>/dev/null cp README.md ${H}`, `if(true) then cp README.md ${H}; fi`,
+    `i\\\nf (true) then cp README.md ${H}; fi`, `repeat \\\n1 cp README.md ${H}`, `if { (true) } then cp README.md ${H}; fi`,
+    `if case a in a) ;; esac then cp README.md ${H}; fi`, `if if true; then true; fi then cp README.md ${H}; fi`,
+    `if false; then if true; then :; fi else cp README.md ${H}; fi`, `f() for x do cp README.md ${H}; done; f a`,
+    `set -- a; case a in a) for x do cp README.md ${H}; done;; esac`, `for x y (a b) cp README.md ${H}`,
+    `repeat "$(echo 1)" cp README.md ${H}`, `rm $(: # )\n) ${H}`, `rm \${x:-;} ${H}`, `rm $[1|1] ${H}`, `rm =(: ; :) ${H}`,
+    `dd if=README.md $(: ; :) of=${H}`, `find specs -name 'story-1.1.md' $(: ; :) -delete`,
+    `find specs $(: ; :) -name 'story-1.1.md' -exec rm {} +`,
+  ]) frena(c, cmd);
+  for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `(( a > b ))`, `echo "$(( a > b ))"`, `if (true) then echo hola; fi`,
+    `while (true) do echo x; break; done`, `for x do echo $x; done`, `for x (1) echo $x`, `repeat 2 echo hola`,
+    `git commit -m "if (true) then cp README.md ${H}; fi"`, `echo 'while (true) do rm ${H}; done'`, `echo $(: # x\n) hola`,
+    `cat $(: ; :) ${H}`, `echo $(rm x; :) ${H}`, `rm notas.txt $(: ; :) README.md`,
+    // un texto con muchos paréntesis no son cabeceras: no llega al tope
+    `git commit -m "${'fix (A218) algo '.repeat(40)}"`, `echo "${'si (x) entonces '.repeat(40)}"`,
+    `(cd specs && cat story-1.1.md) 2>&1 | tail`, `(cd /tmp; ls) && echo ok`, `f() { echo hi; }; f`, `echo $((1+(2*3))) fin`,
+    // (primera vuelta de Fable) código escrito con un heredoc, una tabla con paréntesis en un texto: no llegan al tope
+    `cat > notas.txt <<'EOF'\n${'if (a) {\n  x();\n} else {\n  y();\n}\n'.repeat(13)}EOF`,
+    `echo "${'| (0) algo |\n'.repeat(13)}" > notas.txt`, `node -e "${'const f = (a) => a; '.repeat(25)}"`,
+  ]) pasa(c, cmd);
+});

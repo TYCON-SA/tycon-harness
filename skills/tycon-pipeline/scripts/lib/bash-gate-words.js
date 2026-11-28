@@ -441,9 +441,8 @@ function sinCuentasSueltas(texto, adentroDeUnaCuenta) {
 function puntosDeSeparador(t) {
   // dónde va cada `;`, y si reemplaza un blanco
   const puntos = new Map();
-  if (!t.includes('((')) return puntos;
   // (también con la cabecera partida en dos renglones: `for \⏎((…))`)
-  for (const m of t.matchAll(/(?<![\w$.-])for(?:[ \t]|\\\r?\n)*\(\(/g)) {
+  if (t.includes('((')) for (const m of t.matchAll(/(?<![\w$.-])for(?:[ \t]|\\\r?\n)*\(\(/g)) {
     const fin = cierreDeParentesis(t, m.index + m[0].length - 2);
     if (fin < 0) continue;
     let k = fin + 1;
@@ -452,6 +451,9 @@ function puntosDeSeparador(t) {
     if (k >= t.length || /[;\n&|)]/.test(t[k])) continue;
     puntos.set(fin + 1, k > fin + 1);
   }
+  // (los del `for ((`, aparte: sólo ellos cuentan para el tope que frena)
+  puntos.delFor = new Set(puntos.keys());
+  require('./bash-gate-blocks.js').puntosDeOtrasCabeceras(t, puntos, t.includes(')') ? posicionesDeComando(t) : null);
   return puntos;
 }
 
@@ -469,6 +471,8 @@ function conSeparadorTrasElFor(texto) {
 
 // hasta cuántas cabeceras se lee una versión por cada una sola
 const TOPE_DE_CABECERAS = 24;
+// hasta cuántos puntos de las otras cabeceras (`puntosDeOtrasCabeceras`) se lee una versión por cada uno solo
+const TOPE_DE_OTROS_SOLOS = 8;
 
 /**
  * Las versiones del comando con el `;` de `conSeparadorTrasElFor` que hay que leer además de la de tal cual: con todas
@@ -477,12 +481,29 @@ const TOPE_DE_CABECERAS = 24;
  */
 function variantesConSeparador(texto) {
   const t = String(texto);
+  // con renglones partidos por una barra (`i\⏎f (true) then cp …`), también las del comando con los renglones juntos,
+  // como los junta el shell: la de juntos sola, si no tiene puntos, no hace falta (es la de tal cual)
+  if (/\\\r?\n/.test(t)) {
+    const juntos = t.replace(/\\\r?\n/g, '');
+    const deJuntos = variantesSinJuntar(juntos);
+    const propias = variantesSinJuntar(t);
+    if (!deJuntos.length) return propias;
+    return Object.assign([...propias, ...deJuntos], { demasiadas: Boolean(propias.demasiadas || deJuntos.demasiadas) });
+  }
+  return variantesSinJuntar(t);
+}
+
+function variantesSinJuntar(t) {
   const puntos = puntosDeSeparador(t);
   if (!puntos.size) return [];
-  // (con más cabeceras que el tope, `demasiadas`: el freno frena sin leerlas)
-  if (puntos.size > TOPE_DE_CABECERAS) return Object.assign([conPuntos(t, puntos, puntos.keys())], { demasiadas: true });
+  // (con más cabeceras `for ((` que el tope, `demasiadas`: el freno frena sin leerlas)
+  if (puntos.delFor.size > TOPE_DE_CABECERAS) return Object.assign([conPuntos(t, puntos, puntos.keys())], { demasiadas: true });
   const out = [conPuntos(t, puntos, puntos.keys())];
-  if (puntos.size > 1) for (const p of puntos.keys()) out.push(conPuntos(t, puntos, [p]));
+  if (puntos.size <= 1) return out;
+  // con más puntos de las otras cabeceras que `TOPE_DE_OTROS_SOLOS` (un heredoc que escribe código, un texto con muchos
+  // paréntesis), una versión por cada cabecera `for ((` sola y no por cada punto: cada una es una lectura entera
+  const solos = puntos.size - puntos.delFor.size > TOPE_DE_OTROS_SOLOS ? puntos.delFor : puntos.keys();
+  for (const p of solos) out.push(conPuntos(t, puntos, [p]));
   return out;
 }
 

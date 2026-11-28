@@ -585,7 +585,7 @@ function destinosDeEscritura(raw, s, keep, out) {
 
   // 6) dd of=… y truncate … <file>: dos escritores que, sin esta extracción, permitirían escribir el estado
   //    del pipeline esquivando esta puerta.
-  const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
+  const reDd = /\bdd\b(?:\$\([^()\n]*\)|\$(?!\()|[^\n|;&$])*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
     // el programa por su nombre, y la lectura de siempre (el nombre al principio, detrás de variables y `sudo`)

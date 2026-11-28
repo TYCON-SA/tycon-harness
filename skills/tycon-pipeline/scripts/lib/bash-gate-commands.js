@@ -25,6 +25,7 @@ const { logHookError } = require('./bash-gate-net.js');
 const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, variantesConSeparador, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
 const { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
 const { adentroDeUnaCuenta, ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
+const { findsEnSustituciones, tramosConSustituciones } = require('./bash-gate-blocks.js');
 
 /**
  * La carpeta contra la que se resuelven los destinos relativos del comando. Sólo una forma se sigue:
@@ -157,7 +158,7 @@ function resolverCd(cmd, baseCwd) {
  */
 function destinosBorrados(cmd) {
   const out = [];
-  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
@@ -220,7 +221,7 @@ function deshacenEnBloque(cmd) {
   const larga = (w, nombre, minimo) => w.length >= minimo && w.startsWith('--') && nombre.startsWith(w.split('=')[0]);
   // una opción corta dentro de un grupo (`-qf`); el valor de `-m`, `-b`, `-C` no cuenta: va en la palabra siguiente
   const corta = (lista, letra) => lista.some((w) => /^-[a-zA-Z]+$/.test(w) && w.slice(1).includes(letra));
-  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
@@ -377,7 +378,7 @@ function borradosProfundos(cmd) {
   const ver = (texto, nivel) => {
     for (const d of destinosBorrados(texto)) out.push(d);
     for (const raw of origenesMovidos(texto)) out.push({ raw });
-    for (const tramo of tramos(texto)) {
+    for (const tramo of tramosConSustituciones(texto)) {
       const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
       const lee = new RegExp(`^${LECTORES_DE_FIND}`);
       const borraEnFind = words.some((w, k) => w === '-delete' || (/^-exec(?:dir)?$/.test(w) && !lee.test(words[k + 1] || '')));
@@ -1101,7 +1102,7 @@ function guionesDeShellEscritos(cmd, bases) {
   if (!escritos.length) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const out = [];
-  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
     const c = words[0] === '.' || words[0] === 'source' ? 'source' : nombreDeComando(words[0]);
     if (!['source', 'sh', 'bash', 'zsh', 'dash', 'ksh'].includes(c)) continue;
@@ -1156,7 +1157,7 @@ function guionesDeShellEnDisco(cmd, bases, instalados = [], tope = 256 * 1024, t
     } catch (_) { texto = ''; }
     out.push({ archivo, texto, grande: st.size > tope });
   };
-  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramosConSustituciones(t))) {
     // la entrada desde un archivo (`sh < g.sh`), antes de sacar las redirecciones
     const entrada = /(?<![<\d])<(?![<(&])\s*((?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s;&|<>()])+)/.exec(tramo);
     let words = palabras(sinPalabrasDelShell(String(tramo).replace(/(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^\s;&|()<>]+)?/g, ' '))).filter((w) => w !== '');
@@ -1310,6 +1311,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
       if (previo !== undefined && previo.trimEnd().endsWith('\\')) lista[lista.length - 1] = `${previo} ${t}`;
       else lista.push(t);
     }
+    out.push(...findsEnSustituciones(texto, absoluta));
     lista.forEach((tramo, k) => {
       // sinPalabrasDelShell se come el `xargs` con sus opciones: acá sólo se sacan los prefijos y las palabras del shell
       let antes = pelarEnv(tramo).resto.trim();
