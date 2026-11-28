@@ -1042,9 +1042,21 @@ test('8.177 T4e3 Open_ClaveAnidada_NoEsElModo @story-8.177 @ac-4: una clave perm
     { type: 'assistant', message: { content: [{ type: 'tool_use', input: { permissionMode: 'bypassPermissions' } }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] }, toolUseResult: { permissionMode: 'bypassPermissions' } },
     { type: 'assistant', permissionMode: 'bypassPermissions' },
+    // el renglón de un subagente no es un mensaje de la persona
+    { type: 'user', isSidechain: true, permissionMode: 'bypassPermissions', message: { content: 'hola' } },
   ];
   fs.appendFileSync(file, `${anidadas.map((d) => JSON.stringify(d)).join('\n')}\n`);
   assert.deepStrictEqual(C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } }), { mode: 'default' });
+});
+
+// Un renglón con el modo que no se puede leer (a medio escribir) no se saltea para copiar uno más viejo: no abre.
+test('8.177 T4e4 Open_RenglonDelModoIlegible_NoAbre @story-8.177 @ac-4: el último renglón con el modo, roto, no deja ganar al anterior', () => {
+  const t = toy();
+  const file = callerTranscript(t, ['bypassPermissions']);
+  fs.appendFileSync(file, '{"type":"user","permissionMode":"default","message":{"content":"ho');
+  const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+  assert.ok(r.problem && !r.mode, JSON.stringify(r));
+  assert.match(r.problem, /no se puede leer/);
 });
 
 test('8.177 T5 Open_SinModo_ConRepo_NoTomaPuesto @story-8.177 @ac-4: con el repo y sin modo legible, no toma puesto ni crea la rama', () => {

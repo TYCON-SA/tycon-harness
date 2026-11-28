@@ -2864,44 +2864,44 @@ const LAUNCHER_MODES = new Set(['acceptEdits', 'auto', 'bypassPermissions', 'man
 const MODE_CHUNK_BYTES = 256 * 1024;
 const MODE_KEY = Buffer.from('"permissionMode"');
 
-// El modo de un renglón de la conversación, si es la anotación de Claude Code: un mensaje de la persona (`type: user`)
-// con `permissionMode` en su primer nivel. La misma clave adentro de la entrada de una herramienta o de un resultado no
-// cuenta. null si el renglón no es eso.
+// El modo de un renglón de la conversación, si es la anotación de Claude Code: un mensaje de la persona (`type: user`,
+// no el de un subagente) con `permissionMode` en su primer nivel. La misma clave adentro de la entrada de una
+// herramienta o de un resultado no cuenta. null si el renglón no es eso. Un renglón con la clave que no se puede leer
+// (a medio escribir, pegado con otro) no se saltea: tira, y `open` no abre antes que copiar un modo más viejo.
 function modeOfLine(buf) {
   if (buf.indexOf(MODE_KEY) < 0) return null;
   let d;
-  try { d = JSON.parse(buf.toString('utf8')); } catch { return null; }
-  return d && d.type === 'user' && typeof d.permissionMode === 'string' ? d.permissionMode : null;
+  try { d = JSON.parse(buf.toString('utf8')); } catch { throw new Error('un renglón con el modo no se puede leer (a medio escribir o roto); probá de nuevo en un momento'); }
+  return d && d.type === 'user' && !d.isSidechain && typeof d.permissionMode === 'string' ? d.permissionMode : null;
 }
 
 // El último modo anotado en un archivo, leído de atrás hacia adelante hasta el principio, renglón por renglón; null si
 // no hay. Claude Code anota el modo sólo con cada mensaje de la persona, y una sesión que trabaja sola (sin mensajes)
-// lo deja muy atrás: no se corta en una distancia. El renglón partido entre dos bloques se completa con el bloque de
-// antes.
+// lo deja muy atrás: no se corta en una distancia. Un renglón partido entre bloques se junta una sola vez, al
+// encontrar su principio: cada bloque se recorre una vez, por largo que sea el renglón.
 function lastModeIn(file) {
   const fd = fs.openSync(file, 'r');
   try {
     let end = fs.fstatSync(fd).size;
-    let resto = Buffer.alloc(0); // el principio de un renglón que empieza en un bloque anterior
+    let despues = []; // los pedazos del renglón que sigue al principio de este bloque, en orden
     while (end > 0) {
       const len = Math.min(MODE_CHUNK_BYTES, end);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, end - len);
       end -= len;
-      const text = Buffer.concat([buf, resto]);
-      // los renglones enteros de este texto, del último al primero; el primero puede seguir en el bloque de antes
-      let fin = text.length;
-      let nl = text.lastIndexOf(10, fin - 1);
+      let fin = len;
+      let nl = buf.lastIndexOf(10, len - 1);
       while (nl >= 0) {
-        const mode = modeOfLine(text.subarray(nl + 1, fin));
+        const linea = despues.length ? Buffer.concat([buf.subarray(nl + 1, fin), ...despues]) : buf.subarray(nl + 1, fin);
+        despues = [];
+        const mode = modeOfLine(linea);
         if (mode !== null) return mode;
         fin = nl;
-        nl = fin > 0 ? text.lastIndexOf(10, fin - 1) : -1;
+        nl = fin > 0 ? buf.lastIndexOf(10, fin - 1) : -1;
       }
-      resto = text.subarray(0, fin);
-      if (end === 0) return modeOfLine(resto);
+      despues = [buf.subarray(0, fin), ...despues];
     }
-    return null;
+    return despues.length ? modeOfLine(Buffer.concat(despues)) : null;
   } finally { fs.closeSync(fd); }
 }
 
