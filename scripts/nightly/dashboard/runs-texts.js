@@ -65,7 +65,8 @@ const TEXTOS = {
   'corridas.v.controlUnaVez': { es: '{n} vez: {p} pasó, {e} encontró un error, {f} frenó', en: '{n} time: {p} passed, {e} found an error, {f} stopped' },
   'corridas.v.controlVeces': { es: '{n} veces: {p} pasó, {e} encontró un error, {f} frenó', en: '{n} times: {p} passed, {e} found an error, {f} stopped' },
   'corridas.v.controlSinEstado': { es: ', {n} sin estado registrado', en: ', {n} with no recorded status' },
-  'corridas.v.versionDelSitio': { es: 'versión del sitio', en: 'site version' },
+  'corridas.v.versionDelSitio': { es: 'versión del sitio {version}', en: 'site version {version}' },
+  'corridas.v.versionDelSitioDesconocida': { es: 'versión del sitio desconocida', en: 'site version unknown' },
   'corridas.v.desconocido': { es: 'desconocido', en: 'unknown' },
   // el sello se arma por partes: cada una con su número, en singular o en plural
   'corridas.v.selloLeidos': { es: '{n} de {a} archivos', en: '{n} of {a} files' },
