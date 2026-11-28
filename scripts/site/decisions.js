@@ -76,7 +76,10 @@ function itemsDeLasColas({ clon, fotos, dentroDe }) {
       for (const x of valor) {
         const id = esObjeto(x) ? textoCorto(x.id || x.ficha, 130) : null;
         if (!id || !ID_SEGURO.test(id)) continue;
-        items.push({ fuente, rubro, id, titulo: tituloDe(fuente, x), ...seguimientoDeLaFicha(clon, cola.carpeta, id, dentroDe) });
+        // la tarea que se cerró con la vulnerabilidad viva (el cruce de la noche: proyecto y número), no la de la ficha
+        const tareaCerrada = rubro === 'pedidos_cerrados_con_vivas' && Number.isInteger(x.pedido) && x.pedido > 0
+          ? { numero: x.pedido, proyecto: textoCorto(x.proyecto, 80) } : null;
+        items.push({ fuente, rubro, id, titulo: tituloDe(fuente, x), ...seguimientoDeLaFicha(clon, cola.carpeta, id, dentroDe), tareaCerrada });
       }
     }
   }
@@ -131,6 +134,14 @@ function decisiones(m, { operationsRepo = null, remoto = null } = {}) {
     const aceptada = x.rubro === 'aceptadas_sin_resolver';
     let enlace = null;
     let sinLugar = null;
+    // una tarea cerrada con la vulnerabilidad viva se decide en esa tarea (la noche le comenta, no la reabre): el pull
+    // request de la ficha es el de cuando se detectó y no dice nada de por qué se cerró
+    if (x.rubro === 'pedidos_cerrados_con_vivas') {
+      const t = esObjeto(x.tareaCerrada) && Number.isInteger(x.tareaCerrada.numero) ? x.tareaCerrada : null;
+      return { fuente: String(x.fuente || ''), rubro: String(x.rubro || ''), id: String(x.id || ''), titulo: x.titulo || null, pr: null, enlace: null,
+        sinLugar: t ? 'tarea_cerrada' : 'tarea_cerrada_sin_numero', tarea: t ? t.numero : null, proyecto: t ? t.proyecto || null : null,
+        severidad: textoCorto(x.severidad, 20), noches: Number.isInteger(x.noches) ? x.noches : null };
+    }
     // una aceptada ya se decidió: sin pull request, o con el suyo cerrado y una tarea, se sigue en su tarea, en
     // Mantenimiento (la noche no le abre otro). Con el suyo cerrado y ninguna tarea, nadie la sigue: el pull request
     // cerrado no es su seguimiento.

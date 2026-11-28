@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const OFFICE = path.join(ROOT, 'scripts', 'tools', 'office.js');
@@ -1205,9 +1205,12 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
 
   // sin proceso, el comando termina igual: con el mismo resultado y sin demora de más
   const event = officeEvent();
+  // «vuelve enseguida» contra lo que tardaría si esperara al proceso del aviso (un node que vive su tope de 200 ms),
+  // medido en esta misma máquina: una cota fija de 200 ms fallaba con la máquina cargada y el medidor de cobertura (A76)
+  const esperaria = (() => { const t = Date.now(); spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 200)']); return Date.now() - t; })();
   const quick = Date.now();
   assert.doesNotThrow(() => event.notify('s1', { home: m.home }));
-  assert.ok(Date.now() - quick < 200, 'sin candado, vuelve enseguida');
+  assert.ok(Date.now() - quick < esperaria / 2, `sin candado, vuelve enseguida (${Date.now() - quick} ms; esperar al aviso tarda ${esperaria} ms)`);
   const timed = async () => { const x = await run(MARKER(), ['touch'], markerEnv); assert.strictEqual(x.status, 0, x.stderr); return x; };
   const without = [];
   let lastWithout = null;
@@ -1238,7 +1241,7 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   assert.ok(median(staleWindow) - median(withoutWindow) < 200, `ventana sin proceso: ${withoutWindow} ms, con candado viejo: ${staleWindow} ms`);
   const q2 = Date.now();
   assert.doesNotThrow(() => event.notify('s1', { home: m.home }));
-  assert.ok(Date.now() - q2 < 200, 'con candado viejo, tampoco espera');
+  assert.ok(Date.now() - q2 < esperaria / 2, `con candado viejo, tampoco espera (${Date.now() - q2} ms; esperar al aviso tarda ${esperaria} ms)`);
   fs.unlinkSync(lockOf(m));
 
   // con la vigilancia prendida, un cambio que no avisa también llega

@@ -341,13 +341,17 @@ test('T9b Textos_LaTraduccionDeMensajes_NoTocaDatos @story-2.42 @ac-4 — el cas
   // un texto largo no se prueba contra los moldes: no cuelga el sitio
   const v = T.TEXTOS['org.capaPideRepos'].es;
   const partes = v.split(/\{[A-Za-z0-9_]+\}/);
-  let s = partes[0];
-  for (let i = 0; i < 300; i++) s += `x${partes.slice(1, -1).join('x')}`;
-  s += 'xZZZ';
+  const armar = (n) => { let s = partes[0]; for (let i = 0; i < n; i++) s += `x${partes.slice(1, -1).join('x')}`; return `${s}xZZZ`; };
   // stable-data: mide cuánto tarda, no compara contra una fecha
-  const t0 = Date.now();
-  assert.strictEqual(T.traducirMensaje('en', s), s);
-  assert.ok(Date.now() - t0 < 500, `tardó ${Date.now() - t0} ms con ${s.length} caracteres`);
+  // se mide cómo crece (300 repeticiones contra un octavo), no contra un tope fijo de 500 ms, que fallaba con el medidor
+  // de cobertura o la máquina cargada (A76). Lineal da unas 8 veces; el backtracking que esto cuida, mucho más
+  const medir = (s) => { const t0 = process.hrtime.bigint(); assert.strictEqual(T.traducirMensaje('en', s), s); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  medir(armar(38));
+  const chico = medir(armar(38));
+  const s = armar(300);
+  const ms = medir(s);
+  assert.ok(ms < chico * 24 + 300, `tardó ${ms.toFixed(0)} ms con ${s.length} caracteres, y ${chico.toFixed(0)} ms con un octavo: no crece lineal`);
+  assert.ok(ms < 15000, `tardó ${ms.toFixed(0)} ms`);
 });
 
 test('T8b Textos_ElAvisoDeCorridasSigueElIdioma @story-2.42 @ac-4', async () => {

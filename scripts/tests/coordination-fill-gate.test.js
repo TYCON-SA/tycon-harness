@@ -706,12 +706,20 @@ test('NadieQuieto_BloqueNoTexto_EmpiezaTurno: una imagen o un documento con reco
 
 test('NadieQuieto_RecordatoriosSinCierre_Lineal: 40000 aperturas sin cierre se leen rápido, y una apertura sin cierre se come el resto', () => {
   // 🔴 mutación: sacar los recordatorios con una expresión que vuelve a buscar el cierre desde cada apertura → segundos
-  const r = destinosConMensaje('<system-reminder>'.repeat(40000));
+  // se mide cómo crece (40000 aperturas contra un octavo), no contra un tope fijo: con el medidor de cobertura o la
+  // máquina cargada, 500 ms no alcanzaban sin que nada fuera cuadrático (A76). Lineal da unas 8 veces; cuadrático, 64
+  const crece = (armar) => {
+    destinosConMensaje(armar(5000));
+    const chico = destinosConMensaje(armar(5000)).ms;
+    const r = destinosConMensaje(armar(40000));
+    assert.ok(r.ms < chico * 24 + 300, `40000 aperturas tardaron ${Math.round(r.ms)} ms y 5000, ${Math.round(chico)} ms: no crece lineal`);
+    assert.ok(r.ms < 15000, `tardaron ${Math.round(r.ms)} ms`);
+    return r;
+  };
+  const r = crece((n) => '<system-reminder>'.repeat(n));
   assert.deepStrictEqual(r.to, ['A', 'B'], 'sólo aperturas: no hay texto de la persona');
-  assert.ok(r.ms < 500, `40000 aperturas sin cierre tardaron ${Math.round(r.ms)} ms (tope 500)`);
-  const r2 = destinosConMensaje(`seguí${'<system-reminder>'.repeat(40000)}`);
+  const r2 = crece((n) => `seguí${'<system-reminder>'.repeat(n)}`);
   assert.deepStrictEqual(r2.to, ['B'], 'el texto antes de las aperturas es de la persona');
-  assert.ok(r2.ms < 500, `con texto adelante tardaron ${Math.round(r2.ms)} ms (tope 500)`);
   assert.deepStrictEqual(destinosConMensaje('<system-reminder>ctx sin cerrar\nseguí').to, ['A', 'B'], 'la apertura sin cierre se come el resto del bloque');
   assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '<system-reminder>sin cerrar' }, { type: 'text', text: 'seguí' }]).to, ['B'], 'sólo el resto de su bloque');
 });
@@ -773,4 +781,21 @@ test('T12b KeepFree_RevisionLlena_NadaQueJustificar @story-8.326 @ac-12', () => 
   assert.strictEqual(r.code, 1, JSON.stringify(r));
   assert.match(r.message, /revisión/);
   assert.strictEqual(FS.current(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), t.nowMs).record, null, 'no anotó nada');
+});
+
+// 🔴 Falla con: comparar carpetas con fs.realpathSync común, que no corrige mayúsculas. En Windows (y en un disco de Mac,
+//    que tampoco las distingue) una sesión puede anotar su carpeta con otra mayúscula que la del disco: `c:\lab\proyecto`
+//    contra `C:\lab\proyecto`. La coordinación no la reconocía como la misma y abría otra copia (A85).
+test('A85 Coordinacion_CarpetaConOtraMayuscula_EsLaMisma', (t) => {
+  const C = require('../tools/coordination.js');
+  const raiz = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'a85-')));
+  t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
+  const real = path.join(raiz, 'Proyecto', 'Sub');
+  fs.mkdirSync(real, { recursive: true });
+  const otra = path.join(raiz, 'proyecto', 'sub');
+  // sólo tiene sentido donde el disco no distingue mayúsculas (Windows y la Mac de siempre); en Linux son otra carpeta
+  if (!fs.existsSync(otra)) return t.skip('el disco distingue mayúsculas: son dos carpetas');
+  const row = { name: 'Norte', cwd: real, at: 1000 };
+  const s = { name: 'Norte', cwd: otra, startedAt: 1000 };
+  assert.strictEqual(C.launchedMatches(row, s), true, 'la misma carpeta escrita con otra mayúscula es la misma sesión');
 });

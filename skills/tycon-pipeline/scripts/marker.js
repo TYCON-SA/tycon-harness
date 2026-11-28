@@ -108,6 +108,10 @@
  *                                                  en gates.log. `--date-at-last-reviewer` produce
  *                                                  el corte correcto cuando ese código YA fue
  *                                                  revisado. Kill-switch: TYCON_SNAPSHOT_GUARD=0.
+ *                                                  `--at-launch [--at <hora del sello>]`: la foto al
+ *                                                  lanzar la vuelta, aparte (fotosAlLanzar); la pide
+ *                                                  pipeline.js al sellar, y el re-loop la usa si la
+ *                                                  ronda no se completó.
  *   marker.js promote-probe <probe_dir> --file <x.txt> --a <tests/…>
  *                                                → la prueba con la que el pase adversarial
  *                                                  CONFIRMÓ un hallazgo pasa a la suite del repo

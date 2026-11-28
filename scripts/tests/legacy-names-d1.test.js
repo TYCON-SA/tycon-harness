@@ -189,9 +189,19 @@ test('T46b · BatchD_KeysClassifiedAndRecounted — schemaFiles nombra cada arch
   assert.ok(schema.has(PACK), `${PACK} no está en schemaFiles: el termómetro no contaría sus claves (AC 44)`);
 });
 
+// El termómetro de nombres en castellano sobre el árbol, una vez por proceso: lo leen T46c y T48 (cada uno lo corría
+// entero, ~10 s por vez). Con las guías de este árbol, no las de la máquina.
+let thermometer = null;
+function countSpanishNames() {
+  if (!thermometer) {
+    thermometer = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), '--count', '--json', '--repo', RAIZ],
+      { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS, TYCON_GUIDES_DIR: RAIZ }), maxBuffer: 64 * 1024 * 1024 });
+  }
+  return thermometer;
+}
+
 test('T46c · BatchD_KeysClassifiedAndRecounted — el termómetro no cuenta ninguna clave en castellano', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills') }, () => {
-  const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), '--count', '--json', '--repo', RAIZ],
-    { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS }) });
+  const r = countSpanishNames();
   assert.strictEqual(r.status, 0, r.stderr);
   const j = JSON.parse(r.stdout);
   for (const [pkg, c] of Object.entries(j.packages)) assert.strictEqual(c.keys, 0, `${pkg}: quedan ${c.keys} clave(s) en castellano en los archivos de esquema`);
@@ -232,11 +242,14 @@ test('T46d · BatchD_KeysClassifiedAndRecounted — readKeysDeep traduce en todo
 test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango desde antes de la D1 no avisan «nombre viejo»', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, (t) => {
   // la base de un rango anterior a la mudanza de las claves trae la lista blanca y los manifiestos con las claves viejas: es historia, y en
   // Azure cada aviso sería un warning en el pull request (y un uso falso en el registro del retiro)
+  // El rango es fijo: de la base a la mudanza de la D1 (52802e9, cuatro commits). Lo que se mide —leer una base con las
+  // claves viejas— está entero en esos cuatro; un rango hasta HEAD crece con cada merge y alarga la suite sin medir más.
   const BASE = '1779dc1';
-  if (spawnSync('git', ['-C', RAIZ, 'cat-file', '-e', `${BASE}^{commit}`]).status !== 0) { t.skip(`NO MEDIDO: el clon no trae ${BASE} (superficial)`); return; }
+  const TIP = '52802e9';
+  for (const c of [BASE, TIP]) if (spawnSync('git', ['-C', RAIZ, 'cat-file', '-e', `${c}^{commit}`]).status !== 0) { t.skip(`NO MEDIDO: el clon no trae ${c} (superficial)`); return; }
   const home = tmp('home');
   for (const script of ['new-names.js', 'spanish-names.js']) {
-    const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', script), '--range', `${BASE}...HEAD`, '--repo', RAIZ],
+    const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', script), '--range', `${BASE}...${TIP}`, '--repo', RAIZ],
       { encoding: 'utf8', env: cleanEnv({ HOME: home, TF_BUILD: 'True', TYCON_SKILLS_DIR: SKILLS }), maxBuffer: 64 * 1024 * 1024 });
     // Cualquiera de los dos frenos puede decir 1 sobre este rango y está bien: una excepción (del glosario, o de la lista
     // de nombres reales) cuenta sólo si ya estaba en la base, y la base es fija; toda excepción aprobada después (en su
@@ -244,7 +257,7 @@ test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango de
     // las pruebas del freno de producción (los servidores y las entradas de llavero inventados), al de
     // nombres reales. Lo que esta prueba mide es el «nombre viejo»; lo que no puede pasar es que no haya podido mirar (2)
     assert.ok(r.status === 0 || r.status === 1, `${script} --range no pudo mirar (exit ${r.status}): ${r.stderr.slice(-1500)}`);
-    assert.doesNotMatch(r.stderr, /nombre viejo/, `${script} --range ${BASE}...HEAD avisa nombres viejos al leer la base: ${r.stderr.split('\n').filter((l) => /nombre viejo/.test(l)).slice(0, 3).join(' | ')}`);
+    assert.doesNotMatch(r.stderr, /nombre viejo/, `${script} --range ${BASE}...${TIP} avisa nombres viejos al leer la base: ${r.stderr.split('\n').filter((l) => /nombre viejo/.test(l)).slice(0, 3).join(' | ')}`);
   }
   assert.ok(!fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'legacy-names.jsonl')), 'leer la base anotó usos del nombre viejo');
 });
@@ -254,8 +267,7 @@ test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango de
 test('T48 · BatchD_BizuitPackage — el paquete Bizuit sale sin nombres en castellano', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, (t) => {
   // El exportador no arma la copia: el repo público es la fuente. El paquete se mide sobre
   // el árbol con el termómetro de nombres en castellano (`--count`).
-  const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), '--count', '--json', '--repo', RAIZ],
-    { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS, TYCON_GUIDES_DIR: RAIZ }), maxBuffer: 64 * 1024 * 1024 });
+  const r = countSpanishNames();
   assert.strictEqual(r.status, 0, `el termómetro no pudo contar: ${r.stderr.slice(-2000)}`);
   const j = JSON.parse(r.stdout);
   if (!j.dictionary) { t.skip('NO MEDIDO: la máquina no tiene el diccionario inglés con que el termómetro separa castellano de inglés'); return; }
