@@ -2861,8 +2861,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   function rotularDesplegables(enFechas) {
     var nRepo = {}, nMaq = {};
     enFechas.forEach(function (c) { var k = claveRepo(c); nRepo[k] = (nRepo[k] || 0) + 1; if (elMaq) nMaq[maqDe(c)] = (nMaq[maqDe(c)] || 0) + 1; });
+    // dentro del grupo de un producto, el repo va con su nombre solo cuando la carpeta repite el del producto escrito de
+    // otra manera («Producto-X/FrontEnd» bajo «Producto X»): el mismo producto no se escribe de dos formas
+    var mismoNombre = function (a, b) { return String(a).toLowerCase().replace(/[\s_-]+/g, '') === String(b).toLowerCase().replace(/[\s_-]+/g, ''); };
     var opcion = function (k) {
-      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')' : rotulo(k);
+      var g = grupoRepo[k], barra = k.indexOf('/');
+      var etiqueta = k === SIN_PRODUCTO ? k : k.indexOf('laboratorio/') === 0 ? rotulo(k.slice(12)) + ' (' + T('laboratorio') + ')'
+        : g && g !== 'laboratorio' && barra > 0 && mismoNombre(k.slice(0, barra), g) ? k.slice(barra + 1) : rotulo(k);
       return '<option value="' + esc(k) + '">' + esc(etiqueta) + ' (' + (nRepo[k] || 0) + ')</option>';
     };
     var elegido = elRepo.value;

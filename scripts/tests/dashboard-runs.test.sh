@@ -2592,6 +2592,24 @@ grep -qF '@media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{displa
 grep -qF '.shell .corridas .tl svg{min-width:600px !important;max-width:none}' "${CSS_SITIO}" \
   && ok "A139 la línea de tiempo no se achica en el celular" || mal "A139 la línea de tiempo se achica al ancho del celular"
 
+# ── A157 · el filtro de Ejecuciones bajo el grupo de un producto ─────────────────────────────────
+T=$(mktemp -d)
+# El filtro: bajo el grupo de un producto, el repo cuya carpeta repite el nombre del producto escrito de otra manera
+# («Producto-X/FrontEnd» bajo «Producto X») va con su nombre solo: el mismo producto no se escribe de dos formas.
+# 🔴 Falla con la etiqueta de antes: «Producto-X · FrontEnd» dentro de «Producto X».
+volcado "${T}/r" "88888888-8888-4888-8888-888888888888" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/Producto-X/FrontEnd"}}' h.json
+volcado "${T}/r" "99999999-9999-4999-8999-999999999999" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/ClienteA/Backend"}}' i.json
+node -e "
+const r=require('${RAIZ}/scripts/nightly/dashboard/runs.js');
+const M=r.modelo('${T}/r',{repos:[{producto:'Producto X',ruta:'Producto-X/FrontEnd'},{producto:'Ventas',ruta:'ClienteA/Backend'}]});
+require('fs').writeFileSync('${T}/p.html', r.render(M));" 2>"${T}/err"
+R="$(cliente "${T}/p.html" container f-repo | grep -o '<optgroup label="[^"]*"\|>[^<]*([0-9]*)</option>' | tr '\n' ' ')"
+BAJO_PRODUCTO='<optgroup label="Producto X" >FrontEnd (1)</option>'
+ENTERO='>ClienteA · Backend (1)</option>'
+[[ "${R}" == *"${BAJO_PRODUCTO}"* ]] && ok "A157 bajo «Producto X», el repo dice «FrontEnd», no «Producto-X · FrontEnd»" || mal "A157 el filtro salió: ${R} $(cat "${T}/err")"
+[[ "${R}" == *"${ENTERO}"* ]] && ok "A157 un repo cuya carpeta no repite el producto sigue con su carpeta entera" || mal "A157 ClienteA/Backend perdió su carpeta: ${R}"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
