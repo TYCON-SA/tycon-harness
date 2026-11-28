@@ -1411,7 +1411,7 @@ function inlineStoryText(cmd, declares) {
  * Fuera de Windows es lo de siempre.
  */
 function resolveTarget(target, cwd, platform = process.platform, { homeVariable = false } = {}) {
-  const P = platform === 'win32' ? path.win32 : path;
+  const P = platform === 'win32' ? path.win32 : path.posix;
   let expanded = String(target).replace(/^~(?=\/|$)/, os.homedir());
   // `$HOME` sólo lo expande quien ya lo expandía (los destinos de una escritura): acá no cambia qué se expande
   if (homeVariable) expanded = expanded.replace(/^\$\{?HOME\}?(?=\/|$)/, os.homedir());
@@ -1431,9 +1431,14 @@ function relativaDeGitBash(rel, cwd) {
   const unidad = /^([A-Za-z]):[\\/]?(.*)$/.exec(cwd);
   if (!unidad) return path.win32.resolve(cwd, rel);
   const relPosix = rel.split('\\').join('/');
-  if (!unidad[2] && /^[A-Za-z](?:\/|$)/.test(relPosix)) return nativePath(`/${relPosix}`, 'win32');
+  // `/c/a/b` → `C:\a\b`, sin depender de la lib de rutas (un skill instalado a medias corre sin ella)
+  const nativa = (r) => {
+    const m = /^\/([A-Za-z])(?:\/(.*))?$/.exec(r);
+    return m ? path.win32.normalize(`${m[1].toUpperCase()}:\\${m[2] || ''}`) : path.win32.resolve(cwd, rel);
+  };
+  if (!unidad[2] && /^[A-Za-z](?:\/|$)/.test(relPosix)) return nativa(path.posix.normalize(`/${relPosix}`));
   const carpeta = `/${unidad[1].toLowerCase()}${unidad[2] ? `/${unidad[2].split('\\').join('/')}` : ''}`;
-  return nativePath(path.posix.resolve(carpeta, relPosix), 'win32');
+  return nativa(path.posix.resolve(carpeta, relPosix));
 }
 
 
