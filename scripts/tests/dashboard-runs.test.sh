@@ -2033,7 +2033,7 @@ assert kn is None or (kn.get('4')==10 and kn.get('5')==20 and kn.get('8')==5), k
 assert kv is not None or kn is not None, 'ninguna ejecución trajo su consumo'
 " "${J}" && ok "7.23-T15 cada ejecución con su esquema; el 4 viejo en una fila, el nuevo partido" || mal "7.23-T15 vista con los dos esquemas: $(echo "${J}" | head -c 300)"
 generar "${T}/r" "${T}/o.html" "${T}/log"
-grep -q 'Desde el 2026-08-20, «Implementar» y «Correr las pruebas» son dos pasos' "${T}/o.html" && ok "7.23-T15 la página dice desde qué día están partidos" || mal "7.23-T15 la página no dice desde cuándo están partidos"
+grep -q 'Desde el 2026-08-20, el arnés anota «Implementar» y «Correr las pruebas» como dos pasos' "${T}/o.html" && ok "7.23-T15 la página dice desde qué día están partidos" || mal "7.23-T15 la página no dice desde cuándo están partidos"
 rm -rf "${T}"
 # una ejecución nueva que sólo anotó el Arranque y trabajó se marca «no anotó sus pasos», como una vieja con el 0
 T=$(mktemp -d)

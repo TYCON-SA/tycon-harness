@@ -453,3 +453,11 @@ test('T36 Imagen_TraeLaOficina — @story-8.171 @ac-17c', () => {
   const tab = [...fs.readFileSync(path.join(H.SITE, 'tabs', 'offices.js'), 'utf8').matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1]);
   assert.ok(tab.every((r) => !/tools\/office\.js/.test(r)), `la pestaña no carga office.js: ${tab}`);
 });
+
+// 🔴 Falla con (A122, recorrido F21): en el dibujo de la oficina la insignia del estado («z») tapaba el final del nombre
+//    («Gae» por «Gael»), y el título de trabajo de las tarjetas se cortaba en un renglón con «…».
+test('A122 Oficina_LaInsigniaNoTapaElNombreYElTituloUsaDosRenglones', () => {
+  const html = fs.readFileSync(path.join(OFFICE_DIR, 'page.html'), 'utf8');
+  assert.match(html, /\.tag:has\(\.fx:not\(:empty\)\)\{[^}]*padding-right:\s*2\dpx/, 'con insignia, la etiqueta deja lugar a la derecha');
+  assert.match(html, /\.item\.abre b\.una-linea\{[^}]*-webkit-line-clamp:\s*2/, 'el título de la tarjeta, hasta dos renglones');
+});

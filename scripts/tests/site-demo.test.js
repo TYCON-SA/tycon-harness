@@ -1224,12 +1224,14 @@ test('8.101-Demo_Ejecuciones_TodoMedido', async () => {
     for (const c of lista.corridas) {
       assert.strictEqual(c.tiempos.trabajo_medido, true, `${c.story}: trabajo medido`);
       assert.ok(Number.isFinite(c.tiempos.espera_humana_ms), `${c.story}: espera medida`);
-      assert.ok(Number.isInteger(c.costo.vueltas) && c.costo.vueltas >= 1, `${c.story}: vueltas`);
+      // una ejecución que no llegó a Revisores tiene cero vueltas y cero revisores (A128); las demás, sus vueltas
+      const llego = c.tramos.some((t) => t.tipo === 'paso' && (t.pasos || []).map(String).some((p) => p === 'reviewers' || p === '7'));
+      assert.ok(llego ? Number.isInteger(c.costo.vueltas) && c.costo.vueltas >= 1 : !c.costo.vueltas, `${c.story}: vueltas`);
       assert.strictEqual(c.validador.estado, 'medido', `${c.story}: validador por fase`);
       for (const t of c.tramos) if (t.tipo === 'paso' && t.ms > 0) conTiempo.add(t.nombre);
       const d = (await h.pedir(`/api/corridas/${c.id}`)).json;
       assert.strictEqual(d.revisores.estado, 'medido', `${c.story}: revisores medidos`);
-      assert.ok(Object.keys(d.costo.por_tipo).length > 0, `${c.story}: desglose por tipo`);
+      if (llego) assert.ok(Object.keys(d.costo.por_tipo).length > 0, `${c.story}: desglose por tipo`);
       assert.strictEqual(Object.values(d.costo.por_tipo).reduce((a, b) => a + b, 0), d.costo.agentes, `${c.story}: el desglose suma los agentes`);
       for (const t of d.tramos) if (t.tipo === 'paso' && d.consumo.por_paso && Object.keys(d.consumo.por_paso).some((k) => t.pasos.map(String).includes(k))) conTokens.add(t.nombre);
     }
@@ -1341,4 +1343,34 @@ test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
   assert.deepStrictEqual(vivos, [], `quedaron vivos: ${vivos.join(', ')}`);
   // y ningún cierre de las pruebas de arriba se colgó (se anotan en vez de tapar el rojo de su prueba)
   assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
+});
+
+// 🔴 Falla con (A127, A128; recorrido F21): en el sitio demo, la ejecución con el paso viejo «Implementar + pruebas» corría
+//    en la máquina del arnés nuevo (y la de pasos partidos en la del viejo); y una ejecución frenada antes de Revisores
+//    traía dos vueltas de revisión.
+test('A127-A128 Demo_LasEjecucionesCuadranConSuMaquinaYSusPasos', () => {
+  const D = DATOS();
+  const b = D.blobsDelBuzon(AHORA_FIJO, { completo: true });
+  const versionDe = (maq) => (JSON.parse(b[`${maq}/registros/place.json`]).install || {}).version;
+  const corridas = Object.entries(b).filter(([k]) => /^[^/]+\/[0-9a-f-]{36}\.json$/.test(k)).map(([k, v]) => [k.split('/')[0], JSON.parse(v)]);
+  assert.ok(corridas.length >= 4);
+  // la primera con los pasos partidos: una con el paso viejo después de ésa sólo puede salir de una máquina sin actualizar
+  const desde = corridas.filter(([, c]) => c.marker.stepScheme === 2).map(([, c]) => c.marker.startedAt).sort()[0];
+  for (const [maq, c] of corridas) {
+    const pasos = c.marker.stepsCompleted;
+    const nuevo = c.marker.stepScheme === 2;
+    if (!nuevo && c.marker.startedAt > desde) assert.strictEqual(versionDe(maq), D.VERSION_VIEJA, `${c.marker.storyId}: el paso viejo, después de los partidos, sale de una máquina con el arnés viejo (${maq})`);
+    else assert.notStrictEqual(versionDe(maq), D.VERSION_VIEJA, `${c.marker.storyId}: los pasos partidos, de una máquina con el arnés nuevo`);
+    const llegoARevisores = pasos.includes('reviewers') || pasos.includes(7);
+    if (!llegoARevisores) {
+      assert.deepStrictEqual(c.marker.iterations || {}, {}, `${c.marker.storyId}: sin Revisores no hay vueltas`);
+      assert.strictEqual(c.revisores.lanzamientos, 0, `${c.marker.storyId}: ni revisores lanzados`);
+    }
+  }
+  // el aviso de los pasos partidos no dice que las de después ya los tienen partidos: depende de la versión del arnés
+  const RT = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'runs-texts.js'));
+  const textos = RT.TEXTOS || RT;
+  const aviso = JSON.stringify(textos['corridas.v.pasosPartidos'] || '');
+  assert.match(aviso, /versión anterior del arnés/);
+  assert.doesNotMatch(aviso, /Las ejecuciones de antes/);
 });
