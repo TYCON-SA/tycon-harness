@@ -349,15 +349,48 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
  * hace otra cosa (`-exec`, `-ok`, `-fprint`, `-fls`) o tiene algo que el shell expande: entonces cuenta la carpeta entera.
  * La configuración del repo no corre programas acá, y la salida se lee en inglés y sin comillas.
  */
+/**
+ * El `find` con que se ensaya un borrado: el mismo que corre el comando. En Windows el comando corre en el bash de Git,
+ * y su `find` es el de Git (`usr\\bin\\find.exe`); el del PATH del freno puede ser el de Windows (`System32\\find.exe`),
+ * que es otro programa: el ensayo fallaba y el freno tomaba la carpeta entera como borrada. Primero el de Git: al lado
+ * del bash que se le dio a Claude Code (`CLAUDE_CODE_GIT_BASH_PATH`) y en las instalaciones por defecto (para todos los
+ * usuarios o para uno); después, el primer `find.exe` del PATH que no está en la carpeta de Windows. Sin ninguno, `find`.
+ */
+function programaFind() {
+  if (process.platform !== 'win32') return 'find';
+  const deGit = [];
+  const bashDado = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  if (bashDado) {
+    const d = path.dirname(path.resolve(bashDado));
+    deGit.push(d, path.join(path.dirname(d), 'usr', 'bin'));
+  }
+  for (const raiz of [process.env.ProgramFiles, path.join(require('os').homedir(), 'AppData', 'Local', 'Programs')]) {
+    if (raiz) deGit.push(path.join(raiz, 'Git', 'usr', 'bin'));
+  }
+  const sistema = path.resolve(process.env.SystemRoot || 'C:\\Windows').toLowerCase() + path.sep;
+  const delPath = String(process.env.PATH || process.env.Path || '').split(';').filter(Boolean).map((d) => path.resolve(d))
+    .filter((d) => !(d.toLowerCase() + path.sep).startsWith(sistema));
+  for (const d of [...deGit, ...delPath]) {
+    const f = path.join(d, 'find.exe');
+    if (fs.existsSync(f)) return f;
+  }
+  return 'find';
+}
+
 function loQueDeshaceEnBloque(b, dir) {
   // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida.
   // Sin la biblioteca (las skills en un clon aparte, sin scripts/), a git no se le pregunta: lo que deshace en bloque
   // cuenta como «no pude preguntar» y frena; find corre igual
   let env = null;
   try { const cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); env = cge.idiomaFijo(cge.sinGitDelPadre()); } catch (_) { env = null; }
+  // en Windows, un programa de Git (MSYS) lanzado desde node expande él mismo los comodines de su línea de comando: el
+  // `-name '*.ts'` del ensayo llegaría como el nombre de un archivo de la carpeta. Con `noglob` los recibe tal cual
+  const sinComodines = process.platform === 'win32'
+    ? { MSYS: `${(env || process.env).MSYS || ''} noglob`.trim(), CYGWIN: `${(env || process.env).CYGWIN || ''} noglob`.trim() } : {};
   const correr = (prog, args, cwd = dir) => {
     if (prog === 'git' && !env) throw new Error('falta la biblioteca de git del arnés (scripts/lib/clean-git-env.js)');
-    const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, ...(env ? { env } : {}), maxBuffer: 32 * 1024 * 1024 });
+    const entorno = prog === 'git' ? env : { ...(env || process.env), ...sinComodines };
+    const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, ...(entorno ? { env: entorno } : {}), maxBuffer: 32 * 1024 * 1024 });
     if (r.error || r.status !== 0) throw new Error((r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `${prog} salió ${r.status}`);
     return String(r.stdout);
   };
@@ -369,17 +402,21 @@ function loQueDeshaceEnBloque(b, dir) {
       const peligro = (w) => /^-(?:exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|print|print0|printf|ls|quit)$/.test(w) || /[$`{~]/.test(w);
       if (b.expresion.some(peligro) || b.desde.some(peligro)) throw new Error('la expresión de find no se puede ensayar');
       // `-delete` lleva `-depth`, que hace que `-prune` no pode: el ensayo también
-      const salida = correr('find', [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
+      const salida = correr(programaFind(), [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
       // por ruta real: el repo puede estar detrás de un enlace (en Mac, /tmp y /var lo son)
       const realDe = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
-      const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(path.resolve(dir, f)), kind: 'delete' }));
+      // la misma ruta aunque git y el disco la escriban distinto: en Windows, git da `C:/…` y la carpeta temporal se
+      // nombra `TEMP` o `Temp` según quién la arma (el disco no distingue mayúsculas)
+      const clave = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : p);
+      // con la función de los destinos: en Windows `find /c/repo/src …` imprime `/c/repo/src/a.ts`, que es `C:\\repo\\…`
+      const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(resolveTarget(f, dir)), kind: 'delete' }));
       // qué sigue git, de una vez: la carpeta puede no ser un repo (y entonces nada es código seguido de la corrida)
       let seguidosAca = null;
       try {
-        const top = git(['rev-parse', '--show-toplevel']).trim();
-        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => path.join(top, f)));
+        const top = realDe(nativePath(git(['rev-parse', '--show-toplevel']).trim()));
+        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => clave(path.join(top, f))));
       } catch (_) { seguidosAca = null; }
-      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(a.abs) ? [a.abs] : [];
+      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(clave(a.abs)) ? [a.abs] : [];
       return { archivos };
     }
     const top = git(['rev-parse', '--show-toplevel']).trim();
