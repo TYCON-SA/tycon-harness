@@ -2059,14 +2059,16 @@ test('EscrituraAlEstado_ConDestinoSinResolverYExtension_Frena', () => {
       'D=$(echo ~)/.tycon/x; echo x > $D/s1.json', 'echo x > $(cd $HOME && pwd)/.tycon/x/s1.json',
       `echo x >> ${E}$NOSE/plan-review/s1/s1.resultado.json`,
       // vuelta de Fable: un paréntesis dentro de la sustitución, la zona en la asignación fuera de ella, y `$PWD`
-      `D=$(python3 -c "print('${E}')"); echo x >> $D/plan-review/s1/s1.resultado.json`, 'D=~/.tycon/$(echo state); echo x >> $D/x.json',
+      `D=$(python3 -c "print('${E}')"); echo x >> $D/plan-review/s1/s1.resultado.json`, 'D=~/.tycon/$(echo state); echo x >> $D/x.json', 'D=$(cd && pwd); echo x >> $D/.tycon/state/x.json', 'echo x >> /Users/$(whoami)/.tycon/state/x.json', 'echo x >> /home/$(id -un)/.tycon/state/x.json',
       `D=\${NOSE:-${E}}; echo x >> $D/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
     // lo que no se resuelve y no nombra nada de eso sigue pasando
     for (const c of ['echo x > $(date +%F)-informe.md', 'echo x > $NOSE/notas.txt', 'D=$(mktemp -d); echo x > $D/x.json',
-      'ROOT=$(git rev-parse --show-toplevel); echo "x: 1" > $ROOT/.tycon/work-items.yaml', "N=$(awk '$3 ~ /err/' log | wc -l); echo $N > $OUT/n.txt"]) {
+      'ROOT=$(git rev-parse --show-toplevel); echo "x: 1" > $ROOT/.tycon/work-items.yaml', "N=$(awk '$3 ~ /err/' log | wc -l); echo $N > $OUT/n.txt",
+      // leer del arnés y escribir a un archivo con fecha en otro lado
+      `cat ${E}/gates.log | tail -5 > /tmp/x-$(date +%s).txt`, 'node ~/.tycon/harness/x.js --json > /tmp/runs-$(date +%F).json']) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(!(r && r.block && /ESTADO/.test(r.block)), `${c}: ${r && r.block}`);
     }

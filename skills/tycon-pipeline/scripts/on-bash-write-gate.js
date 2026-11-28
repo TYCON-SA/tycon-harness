@@ -610,34 +610,68 @@ function handleCarrilEHistoria(event, opts = {}) {
   });
   const cmdDestinos = sub.cmd;
   // Un destino que no se sabe resolver (una variable o un `$(…)` que no se calcula sin correrlo) no se puede probar fuera
-  // del estado. Frena si el comando nombra una zona protegida o la carpeta del arnés en la casa (`~/.tycon`), o si lo que
-  // no se resuelve (el cuerpo de un `$(…)` o de comillas invertidas, sin lo que va entre comillas simples) nombra la casa
-  // (`~`, `$HOME`). `$PWD` se lee como la carpeta del comando. Se esquiva armando el nombre a pedazos
-  // (`$(printf %s .ty con)`) o con una variable que el freno no sigue (`declare`, `read`): límite conocido y aceptado
-  // (opción B del dueño, A215)
+  // del estado. Se mira el texto del destino y el de las asignaciones de las variables que usa (dos niveles): frena si
+  // nombra una zona protegida (entera, o desde la casa con `~` o `$HOME`) o la carpeta del arnés en la casa (`~/.tycon`),
+  // o si el cuerpo de un `$(…)` o de comillas invertidas, sin lo que va entre comillas simples, nombra la casa (`~`,
+  // `$HOME`, un `cd` solo). `$PWD` se lee como la carpeta del comando. Lo que el comando lee de esas carpetas sin
+  // escribirlas no cuenta. Se esquiva armando el nombre a pedazos (`$(printf %s .ty con)`) o con una variable que el freno
+  // no sigue (`declare`, `read`): límite conocido y aceptado (opción B del dueño, A215)
   {
-    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/.test(t) || zonas().some((z) => z && String(t).includes(z));
-    const nombraCasa = (t) => /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(String(t).replace(/'[^']*'/g, "''"));
-    // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
-    const cuerpos = [];
-    const texto = String(cmd);
-    for (let k = texto.indexOf('$('); k >= 0 && cuerpos.length < 100; k = texto.indexOf('$(', k + 2)) {
-      let hondo = 0;
-      let fin = -1;
-      for (let m = k + 1; m < texto.length && m < k + 20000; m++) {
-        if (texto[m] === '(') hondo++;
-        else if (texto[m] === ')' && --hondo === 0) { fin = m; break; }
+    const casa = os.homedir();
+    const formasDe = (z) => {
+      const out = [z];
+      if (z && casa && (z === casa || z.startsWith(casa + path.sep))) {
+        const resto = z.slice(casa.length);
+        out.push(`~${resto}`, `$HOME${resto}`, `\${HOME}${resto}`);
       }
-      cuerpos.push(texto.slice(k + 2, fin < 0 ? Math.min(texto.length, k + 20000) : fin));
-    }
-    for (const m of texto.matchAll(/`([^`]*)`/g)) cuerpos.push(m[1]);
-    const nombra = nombraZona(texto) || cuerpos.some(nombraCasa);
+      return out;
+    };
+    const nombresDeZona = zonas().filter(Boolean).flatMap(formasDe);
+    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/.test(t) || nombresDeZona.some((z) => String(t).includes(z));
+    const nombraCasa = (t) => {
+      const sinSimples = String(t).replace(/'[^']*'/g, "''");
+      // también el nombre de la persona (`/Users/$(whoami)`), con el que se arma la casa
+      return /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(sinSimples) || /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(sinSimples)
+        || /(^|[;&|(\s])(?:whoami|logname|id\s+-[a-z]*u[a-z]*n|id\s+-[a-z]*n[a-z]*u)\b/.test(sinSimples) || /\$\{?(?:USER|LOGNAME)\b/.test(sinSimples);
+    };
+    // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
+    const cuerposDe = (texto) => {
+      const out = [];
+      for (let k = texto.indexOf('$('); k >= 0 && out.length < 100; k = texto.indexOf('$(', k + 2)) {
+        let hondo = 0;
+        let fin = -1;
+        for (let m = k + 1; m < texto.length && m < k + 20000; m++) {
+          if (texto[m] === '(') hondo++;
+          else if (texto[m] === ')' && --hondo === 0) { fin = m; break; }
+        }
+        out.push(texto.slice(k + 2, fin < 0 ? Math.min(texto.length, k + 20000) : fin));
+      }
+      for (const m of texto.matchAll(/`([^`]*)`/g)) out.push(m[1]);
+      return out;
+    };
+    let asigs = [];
+    try { asigs = require('./lib/command-vars.js').asignaciones(cmd); } catch (e) { logHookError(e); }
+    // el destino y las asignaciones de las variables que nombra, dos niveles
+    const textoDe = (t) => {
+      let piezas = [String(t)];
+      let nuevas = [String(t)];
+      for (let nivel = 0; nivel < 2; nivel++) {
+        const nombres = new Set(nuevas.flatMap((x) => [...x.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1])));
+        nuevas = asigs.filter((a) => nombres.has(a.nombre)).map((a) => String(a.valor));
+        piezas = piezas.concat(nuevas);
+      }
+      return piezas.join('\n');
+    };
+    const texto = String(cmd);
     for (const t of extractWriteTargets(cmd, { keep: () => true })) {
       if (!/[$`]/.test(t)) continue;
       const ex = expandirRuta(cmd, t);
       const sinResolver = ex.sinResolver.length > 0 || /\$\(|`/.test(t);
       if (!sinResolver) continue;
-      let frena = nombra;
+      const suyo = textoDe(t);
+      // un `$(…)` con blancos adentro llega cortado (`/Users/$(id`): sus cuerpos se leen del comando entero
+      const cortado = (String(t).match(/\$\(/g) || []).length > (String(t).match(/\)/g) || []).length;
+      let frena = nombraZona(suyo) || cuerposDe(suyo).some(nombraCasa) || (cortado && cuerposDe(texto).some(nombraCasa));
       if (!frena && /\$\{?PWD\b/.test(t)) {
         const conCarpeta = String(ex.sinResolver.length ? t : ex.valor).replace(/\$\{PWD\}|\$PWD\b/g, cwd);
         const ex2 = expandirRuta(cmd, conCarpeta);
