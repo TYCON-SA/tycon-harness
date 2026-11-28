@@ -85,10 +85,14 @@ function sinEscapesDelShell(v) {
   // (`$x''do` no es `$xdo`): «no sé»
   let nombre = '';
   let corte = false;
+  // adentro de `${…}` una comilla o contrabarra es «bad substitution» para bash (corta la línea y deja el valor anterior)
+  let enLlave = false;
   const emitir = (c, deUnDolar = false) => {
     const letra = /[A-Za-z0-9_]/.test(c);
     if (corte && nombre && (letra || (nombre === 'empieza' && c === '{'))) return false;
     corte = false;
+    if (nombre === 'empieza' && c === '{') enLlave = true;
+    else if (enLlave && c === '}') enLlave = false;
     if (deUnDolar) nombre = 'empieza';
     else if (nombre === 'empieza' && /[A-Za-z_]/.test(c)) nombre = 'sigue';
     else if (!(nombre === 'sigue' && letra)) nombre = '';
@@ -97,6 +101,7 @@ function sinEscapesDelShell(v) {
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
+    if (enLlave && (c === "'" || c === '"' || c === '\\')) return null;
     if (modo === "'") {
       if (c === "'") { modo = ''; corte = true; continue; }
       if (c === '$' || c === '`') return null;

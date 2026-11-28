@@ -341,6 +341,10 @@ test('T12 EscapesEnElValor_ComoLosQuitaBash — fuera de comillas se quitan, ent
   for (const c of ['x=a/b; F=/tmp/$\\x/../estado; echo x > $F/x.txt', 'x=a/b; F=/tmp/$\\{x}/../estado; echo x > $F/x.txt']) {
     assert.ok(v(c).sinResolver.length, `un \`$\` escapado es literal: «no sé»: ${c}`);
   }
+  for (const c of ["x=/tmp/q; F=${x''}; echo x > $F/x.txt", 'x=/tmp/q; F=${x\\do}; echo x > $F/x.txt', "x=/tmp/q; F=${'x'}; echo x > $F/x.txt", 'x=/tmp/q; F="${x"}"; echo x > $F/x.txt']) {
+    assert.ok(v(c).sinResolver.length, `una comilla o contrabarra adentro de \${…} es «bad substitution»: «no sé»: ${c}`);
+  }
+  assert.deepEqual(v('x=/tmp/q; F="${x}"/d; echo x > $F/x.txt'), { valor: '/tmp/q/d/x.txt', sinResolver: [] }, '${x} entre comillas dobles se lee');
   assert.deepEqual(v('U=/u; F="$U\\Desktop"; echo x > $F/x.txt'), { valor: '/u\\Desktop/x.txt', sinResolver: [] }, 'entre comillas dobles la contrabarra no corta el nombre: queda');
   assert.deepEqual(v('U=/u; F="$U"/d; echo x > $F/x.txt'), { valor: '/u/d/x.txt', sinResolver: [] }, 'una comilla seguida de barra no pega nombres');
 });
