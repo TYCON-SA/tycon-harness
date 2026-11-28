@@ -849,8 +849,8 @@ test('T41 CarpetaDelComando_DespuesDeUnCd @A50 — el cd mueve $PWD una vez, cd 
 
 // T42 Cuenta_EntreComillas_NoEsUnDestino @S247d
 // 🔴 Falla con: el `>` de una cuenta `$(( a > b ))`, con o sin comillas, leído como una redirección (frenaba con la palabra
-// de después como destino), o con lo que corre adentro de la cuenta, o con una sustitución que sólo parece una cuenta
-// (`$((cp …) )`), dejado de leer.
+// de después como destino), o con lo que corre adentro de la cuenta, con una sustitución que sólo parece una cuenta
+// (`$((cp …) )`) o con una cuenta que zsh corre como comandos (`$((cp … && : `: \(`))`), dejado de leer.
 test('T42 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compara; lo que corre adentro se sigue leyendo', () => {
   const c = corral();
   for (const cmd of [`echo "$(( x > ${H} ? 1 : 0 ))"`, `echo $(( x > ${H} ))`, `n="$(( 3 > ${H} ))"`,
@@ -860,5 +860,8 @@ test('T42 Cuenta_EntreComillas_NoEsUnDestino @S247d — el > de una cuenta compa
     `echo "$((cp README.md ${H}) )"`, `echo "$((cp README.md ${H}); (true))"`, `echo "$(( 1 ))" > ${H}`,
     `echo "$(( "x" > ${H} ))"`, `echo "$(( a[$(cp README.md ${H})] ))"`, `echo "$(( x )) $(cp README.md ${H})"`,
     `echo "$(( x ; cp README.md ${H} ))"`, `echo "$(( <(cp README.md ${H}) ))"`,
+    // zsh corre como comandos una cuenta que no puede leer y que tiene una sustitución adentro (revisión de Fable)
+    `echo $((cp README.md ${H} && : \`: \\(\`))`, `echo "$((cat README.md > ${H} && : \`: \\(\`))"`,
+    `x=$((cp README.md ${H} && : \`: \\(\`))`, `echo "$(( \${x:-$(cp README.md ${H})} ))"`,
   ]) frena(c, cmd);
 });

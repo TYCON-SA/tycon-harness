@@ -961,7 +961,7 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   // un `$(…)` conserva su cuerpo. Lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como
   // argumento, no (la mira su programa)
   const original = String(cmd);
-  // (de una cuenta, `$(( a > b ))`, sólo lo que corre adentro: `adentroDeUnaCuenta`)
+  // (una cuenta que no corre nada, `$(( a > b ))`, queda en blanco: `adentroDeUnaCuenta`)
   for (const m of sinSimples.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) {
     const fin = m.index + m[0].length - 1;
     sumarUno(adentroDeUnaCuenta(original, m.index, fin) ?? original.slice(m.index + 2, fin));

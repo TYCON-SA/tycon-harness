@@ -172,26 +172,40 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
   return -1;
 }
 
-// lo que puede llevar una cuenta fuera de sus sustituciones: nombres, números, operadores, paréntesis, corchetes y `${…}`
-const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]${}#@.]/;
+// lo que puede llevar una cuenta: nombres, números (`16#ff`), operadores, paréntesis, corchetes y `$nombre`
+const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]$#.]/;
+// un `${…}` de los que no corren nada: `${n}` o `${#n}`
+const LLAVE_DE_CUENTA = /^\$\{#?[A-Za-z_]\w*\}/;
 
 /**
- * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`), lo que corre adentro de ella: su
- * texto entre `$(` y el último `)`, con la cuenta en blanco y las sustituciones de adentro como están. El `>` de una
- * cuenta compara, no escribe; lo de `$(…)` o la comilla invertida adentro de una cuenta sí corre. Es una cuenta, como la
- * lee el shell, si el `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una
- * sustitución. null si no es una cuenta, o si tiene algo que una cuenta no lleva (comillas, una barra, un `;`, un renglón,
- * `<(`): se lee como antes, como un comando.
+ * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`) que no corre nada, su texto entre
+ * `$(` y el último `)` en blanco: el `>` de una cuenta compara, no escribe. Es una cuenta, como la lee el shell, si el
+ * `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una sustitución. null si
+ * no es una cuenta o si lleva algo más que nombres, números, operadores y otras cuentas así: una sustitución, comillas,
+ * una barra, un `;`, un renglón, `<(`, un `${…}` que no es `${n}` o `${#n}`. Ahí se lee como antes, como un comando: zsh corre
+ * como comandos una cuenta que no puede leer y que tiene una sustitución adentro (`$((cp a b && : `: \(`))`).
  */
 function adentroDeUnaCuenta(t, i, fin) {
   if (t[i] !== '$' || t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
   let out = '';
   let hondo = 0;
   for (let j = i + 2; j < fin; j++) {
-    const f = cierreDeUnaSustitucion(t, j);
-    if (f === -1) return null;
-    if (f > j) { out += t.slice(j, f + 1); j = f; continue; }
     const ch = t[j];
+    if (ch === '$' && t[j + 1] === '(') {
+      // otra cuenta adentro, si tampoco corre nada
+      const f = cierreDeUnaSustitucion(t, j);
+      if (f <= j || f >= fin || adentroDeUnaCuenta(t, j, f) === null) return null;
+      out += ' '.repeat(f - j + 1);
+      j = f;
+      continue;
+    }
+    if (ch === '$' && t[j + 1] === '{') {
+      const m = LLAVE_DE_CUENTA.exec(t.slice(j, fin));
+      if (!m) return null;
+      out += ' '.repeat(m[0].length);
+      j += m[0].length - 1;
+      continue;
+    }
     if (!LETRA_DE_CUENTA.test(ch) || ((ch === '<' || ch === '>') && t[j + 1] === '(')) return null;
     if (ch === '(') hondo++;
     else if (ch === ')' && --hondo === 0 && j !== fin - 1) return null;
@@ -271,7 +285,7 @@ function leerCitados(t, hondo) {
   const comandos = [];
   // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
   // un comando, y el de las sustituciones de adentro
-  // (de una cuenta, sólo lo que corre adentro: `adentroDeUnaCuenta`)
+  // (una cuenta que no corre nada queda en blanco: `adentroDeUnaCuenta`)
   const sustitucion = (desde, fin) => {
     const cuenta = adentroDeUnaCuenta(t, desde - 2, fin);
     const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(cuenta ?? t.slice(desde, fin), true)), hondo + 1);
@@ -401,7 +415,7 @@ function tramosDelShell(texto, hondo = 0) {
   const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
   const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
   // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
-  // las otras lecturas. De una cuenta, sólo lo que corre adentro (`adentroDeUnaCuenta`)
+  // las otras lecturas. Una cuenta que no corre nada queda en blanco (`adentroDeUnaCuenta`)
   const adentro = (desde, fin) => {
     if (hondo >= HONDO_DE_SUSTITUCIONES) return;
     const cuenta = adentroDeUnaCuenta(s, desde - 2, fin);
