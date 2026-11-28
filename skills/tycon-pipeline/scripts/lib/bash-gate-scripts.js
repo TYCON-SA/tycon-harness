@@ -349,6 +349,21 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
  * hace otra cosa (`-exec`, `-ok`, `-fprint`, `-fls`) o tiene algo que el shell expande: entonces cuenta la carpeta entera.
  * La configuración del repo no corre programas acá, y la salida se lee en inglés y sin comillas.
  */
+/**
+ * El `find` con que se ensaya un borrado: el mismo que corre el comando. En Windows el comando corre en el bash de Git,
+ * y su `find` es el de Git (`usr\bin\find.exe`); el del PATH del freno puede ser el de Windows (`System32\find.exe`),
+ * que es otro programa: el ensayo fallaba y el freno tomaba la carpeta entera como borrada. Sin el de Git, `find`.
+ */
+function programaFind() {
+  if (process.platform !== 'win32') return 'find';
+  try {
+    const gb = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'git-bash.js')).findGitBash();
+    const d = gb && gb.path ? path.dirname(gb.path) : null;
+    for (const f of d ? [path.join(d, 'find.exe'), path.join(path.dirname(d), 'usr', 'bin', 'find.exe')] : []) if (fs.existsSync(f)) return f;
+  } catch (_) { /* sin la biblioteca, el del PATH */ }
+  return 'find';
+}
+
 function loQueDeshaceEnBloque(b, dir) {
   // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida.
   // Sin la biblioteca (las skills en un clon aparte, sin scripts/), a git no se le pregunta: lo que deshace en bloque
@@ -369,7 +384,7 @@ function loQueDeshaceEnBloque(b, dir) {
       const peligro = (w) => /^-(?:exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|print|print0|printf|ls|quit)$/.test(w) || /[$`{~]/.test(w);
       if (b.expresion.some(peligro) || b.desde.some(peligro)) throw new Error('la expresión de find no se puede ensayar');
       // `-delete` lleva `-depth`, que hace que `-prune` no pode: el ensayo también
-      const salida = correr('find', [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
+      const salida = correr(programaFind(), [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
       // por ruta real: el repo puede estar detrás de un enlace (en Mac, /tmp y /var lo son)
       const realDe = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
       const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(path.resolve(dir, f)), kind: 'delete' }));
