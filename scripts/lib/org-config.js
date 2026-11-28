@@ -2842,8 +2842,13 @@ ${trabajandoJs}
       var cubiertos = [];
       grupos.forEach(function (g) { g.clave.split(',').forEach(function (c) { cubiertos.push(c); }); });
       NIVELES.forEach(function (l) { if (cubiertos.indexOf(l.id) < 0) grupos.push({ clave: l.id, suelto: true, formas: [], nivel: efectivo(l.id) }); });
+      // las firmas retiradas (ya no apagan nada) van juntas en un renglón al final; una con un valor guardado conserva su
+      // fila, para poder quitarlo
+      var esRetirada = function (f) { return /\(retirada/.test(String(f.approves || '')); };
+      var guardada = function (f) { return soloDueno.indexOf(f.id) >= 0 || delegadas.indexOf(f.id) >= 0; };
+      var retiradas = grupos.filter(function (g) { return !g.suelto && g.formas.length && g.formas.every(esRetirada) && !g.formas.some(guardada); });
       var bloque = 0;
-      grupos.slice().sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
+      grupos.filter(function (g) { return retiradas.indexOf(g) < 0; }).sort(function (a, b) { return a.nivel - b.nivel; }).forEach(function (g) {
         if (g.nivel !== bloque) {
           bloque = g.nivel;
           t.appendChild(el('div', { class: 'r nivel-cab', role: 'row', 'data-nivel-bloque': String(bloque) }, el('div', { class: 'nivel-t', role: 'cell' }, el('b', { text: T('pantalla.firmasNivel' + bloque) }), el('span', { class: 'muted', text: T('pantalla.firmasNivel' + bloque + 'Frase') }))));
@@ -2884,6 +2889,10 @@ ${trabajandoJs}
         fila.setAttribute('data-firma-grupo', g.clave);
         t.appendChild(fila);
       });
+      if (retiradas.length) {
+        var nombres = retiradas.map(function (g) { return String(queDe(g.formas[0])).replace(/\s*\([^)]*\)\s*$/, ''); }).join(' · ');
+        t.appendChild(el('div', { class: 'r', role: 'row', 'data-firma-retiradas': String(retiradas.length) }, el('div', { class: 'que', role: 'cell' }, el('b', { text: T('pantalla.firmasRetiradas') })), el('div', { class: 'muted', role: 'cell', text: nombres })));
+      }
       // lo guardado que el lector rechaza en su lista (su veredicto, que manda el servidor): su fila, con el error y cómo
       // quitarlo. «off» o un grupo valen en las delegadas y no en sólo del dueño, donde tumban la lista entera
       var rech = ex.rechazadas || {};

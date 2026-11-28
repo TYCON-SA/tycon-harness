@@ -1131,6 +1131,9 @@ async function pantallaConPestanas({ secciones, extras = {}, hash = '', idioma =
   const panelDe = (id) => dentro(app).filter((n) => n.attrs.role === 'tabpanel').find((p) => dentro(p).some((x) => x.attrs.id === id));
   return { app, tabs, visibles, panelDe, resumen: app.hijos[0], llamadas, creados };
 }
+// las firmas retiradas (ya no apagan nada) van juntas en un renglón sin selectores (A184): las pruebas que recorren el
+// catálogo firma por firma las saltean
+const esRetirada = (id) => /\(retirada/.test(String((require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((f) => f.id === id) || {}).approves || ''));
 const SEC = (id, extra = {}) => Object.assign({ id, titulo: id, repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: {}, problems: [], avisos: [] }, extra);
 const TODAS = ['sitio', 'personas', 'responsables', 'repos', 'despliegues', 'paridad', 'ado', 'canal', 'espera', 'umbrales', 'respuesta', 'modelos', 'suites', 'integraciones', 'hilos', 'actualizacion', 'instalacion'];
 
@@ -4155,7 +4158,7 @@ test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
   // perfil vacío: una fila por firma, ninguna marcada, y ninguna máquina
   let p = await pantallaFalsa([seccionPerfil('aprobaciones', {})]);
   assert.strictEqual(p.error, null);
-  for (const f of SIG.SIGNATURES) {
+  for (const f of SIG.SIGNATURES.filter((x) => !esRetirada(x.id))) {
     const sel = selectorDeFirma(p, f.id);
     assert.ok(sel, `la firma ${f.id} tiene su fila`);
     assert.strictEqual(sel.value || '', '', `${f.id}: de fábrica, a la ventana`);
@@ -6081,7 +6084,7 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   const nivel = (p, id) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${id}`);
   const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
   const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'compare-waiver'] } })]);
-  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS) {
+  for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS.filter((x) => !esRetirada(x.id))) {
     assert.deepStrictEqual(valores(nivel(p, l.id)), ['1', '2', '3'].slice(l.level - 1), `${l.id}: sólo desde su nivel para arriba`);
   }
   assert.ok(valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'la rutina se ofrece para delegar');
@@ -6290,7 +6293,9 @@ test('T64 2.79-Firmas_UnaFilaPorFirmaYValorDesconocido @story-2.79 @ac-53 — un
   let p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', owner_only: ['escape:no-deep-review'] } })]);
   assert.strictEqual(p.error, null);
   const filas = nodos(p).filter((n) => n.attrs['data-firma-grupo']);
-  assert.strictEqual(filas.length, grupos.size, 'una fila por firma, no por forma');
+  // las retiradas van juntas en un renglón (A184): cuentan por cuántas firmas junta
+  const enRetiradas = Number((nodos(p).find((n) => n.attrs['data-firma-retiradas']) || { attrs: {} }).attrs['data-firma-retiradas'] || 0);
+  assert.strictEqual(filas.length + enRetiradas, grupos.size, 'una fila por firma, no por forma');
   const fila = filas.find((n) => n.attrs['data-firma-grupo'] === 'adversarial-skip');
   assert.ok(fila, 'la fila del pase adversarial');
   const dentro = p.todo(fila);
@@ -6480,7 +6485,8 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel,
       if (n.attrs['data-nivel-bloque']) { actual = Number(n.attrs['data-nivel-bloque']); continue; }
       assert.strictEqual(actual, grupos.get(n.attrs['data-firma-grupo']), `${idioma}: ${n.attrs['data-firma-grupo']} va en el bloque de su nivel`);
     }
-    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length, grupos.size, `${idioma}: todas las firmas`);
+    const enRetiradas = Number((nodos.find((n) => n.attrs['data-firma-retiradas']) || { attrs: {} }).attrs['data-firma-retiradas'] || 0);
+    assert.strictEqual(enOrden.filter((n) => n.attrs['data-firma-grupo']).length + enRetiradas, grupos.size, `${idioma}: todas las firmas (las retiradas, juntas)`);
     // la matriz corta, igual a la de la guía
     const matriz = nodos.find((n) => n.attrs['data-matriz'] === 'corta');
     assert.ok(matriz, `${idioma}: la matriz corta está arriba de los bloques`);
@@ -6556,7 +6562,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
     const dentro = p.todo(tablas[0]);
     const filas = dentro.filter((n) => n.attrs.role === 'row');
     const filaDe = (sel) => filas.find((r) => r !== filas[0] && p.todo(r).includes(sel));
-    for (const l of SIG.LEVELS) {
+    for (const l of SIG.LEVELS.filter((x) => !esRetirada(x.id))) {
       const sels = nodos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${l.id}`);
       assert.strictEqual(sels.length, 1, `${idioma}: ${l.id}, exactamente un selector de nivel`);
       assert.ok(dentro.includes(sels[0]), `${idioma}: ${l.id}, en la tabla única`);
@@ -6571,7 +6577,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
     assert.strictEqual(suelta.attrs['data-firma-grupo'], undefined, `${idioma}: sin grupo de firma`);
     // la misma firma con un solo nombre: en una fila que cubre una sola cosa, el selector de nivel se llama como la fila
     const grupos = new Map();
-    for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
+    for (const f of SIG.SIGNATURES.filter((x) => !esRetirada(x.id))) { const k = f.covers.join(','); grupos.set(k, [...(grupos.get(k) || []), f]); }
     for (const [k, fs] of grupos) {
       const cubre = k.split(',');
       const cabeza = fs.find((f) => f.id === k) || fs[0];
@@ -7414,4 +7420,24 @@ test('A206 Celular_RevisoresConElDesplegableEntero — el desplegable de cada re
   const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
   const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
   assert.match(angosta, /\.tabla2\.revisores \.r > \.acc\{[^}]*grid-column:1\/-1/);
+});
+
+// 🔴 mutación: las firmas «(retirada: ya no apaga nada)» listadas como cualquier otra, una fila cada una (A184, decisión
+// del dueño: juntas en un renglón). Una retirada con un valor guardado conserva su fila, para poder quitarlo.
+test('A184b Firmas_RetiradasJuntasEnUnRenglon — un solo renglón al final; la guardada conserva su fila', async () => {
+  const SIGS = require(path.join(ROOT, 'scripts', 'lib', 'signatures.js'));
+  const retiradas = SIGS.SIGNATURES.filter((f) => /\(retirada/.test(f.approves));
+  assert.ok(retiradas.length >= 2, 'hay firmas retiradas en el catálogo');
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: {} })]);
+  const nodos = p.todo(p.sec('aprobaciones'));
+  for (const f of retiradas) assert.ok(!nodos.some((n) => n.attrs['data-firma-grupo'] === f.covers.join(',')), `${f.id}: sin fila propia`);
+  const renglon = nodos.find((n) => n.attrs['data-firma-retiradas']);
+  assert.ok(renglon, 'el renglón de las retiradas está');
+  const texto = p.todo(renglon).map((n) => n.textContent || '').join(' ');
+  assert.match(texto, /Retiradas/);
+  assert.match(texto, /apagar el freno de seguridad para un comando/);
+  assert.doesNotMatch(texto, /TYCON_|escape:/, 'sin ids');
+  // guardada en «sólo del dueño»: conserva su fila
+  const g = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { owner_only: [retiradas[0].id] } })]);
+  assert.ok(g.todo(g.sec('aprobaciones')).some((n) => n.attrs['data-firma-grupo'] === retiradas[0].covers.join(',')), 'la guardada tiene su fila');
 });

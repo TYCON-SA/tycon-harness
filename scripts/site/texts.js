@@ -1348,6 +1348,7 @@ const TEXTOS = {
   'pantalla.firmaSoloDuenoNoSeDelega': { es: "para delegarla, primero pasala a la ventana", en: "to delegate it, first move it to the window" },
   'pantalla.firmaNoDesdeOtraSesion': { es: "no se firma desde la pestaña de otra sesión: no se puede delegar", en: "it cannot be signed from another session's tab: it cannot be delegated" },
   'pantalla.firmaNoRutina': { es: "es de nivel {nivel}: no se delega, la firma una persona", en: "it is level {nivel}: it is not delegated, a person signs it" },
+  'pantalla.firmasRetiradas': { es: 'Retiradas: ya no apagan nada, no hace falta decidir quién las firma', en: 'Retired: they no longer switch anything off, no need to decide who signs them' },
   'pantalla.firmaComoGuion': { es: "se pide con su comando", en: "asked for with its command" },
   'pantalla.firmaComoFrase': { es: "se pide con la frase del freno", en: "asked for with the brake's phrase" },
   'pantalla.firmaDesconocida': { es: "«{valor}» no es una firma que el arnés conozca: quitala", en: "«{valor}» is not a signature the harness knows: remove it" },
