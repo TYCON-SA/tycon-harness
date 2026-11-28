@@ -457,10 +457,18 @@ if corre T13; then
   printf '{ "schema": 1, "stage": "start", "incoming": "%s", "version": "2026.10.07.9", "harness": "%s", "previous": "%s" }\n' "$T/incoming/2026.10.07.9" "$T/harness" "$T/previous" > "$T/swap.json"
   bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
   [ -d "$T/harness" ] && [ ! -e "$T/swap.json" ] && ok "«start» con harness/ ausente: el respaldo en shell completó el cambio" || mal "start no se reparó en shell: $(ls "$T")"
-  # sin node en el PATH el respaldo no sabe si harness.js arranca: no vuelve a nada, y lo dice
+  # sin node en el PATH el respaldo no sabe si harness.js arranca: no vuelve a nada, y lo dice. «Sin node» de verdad: los
+  # comandos de /usr/bin y /bin en una carpeta propia, salvo node. `PATH=/usr/bin:/bin` no alcanzaba: en Ubuntu el
+  # paquete nodejs pone node en /usr/bin (#1855). Para que el caso lo cuide en cualquier máquina, el /usr/bin que se
+  # copia trae un node, como en ese Ubuntu.
+  USR_CON_NODE="$BASE/usr-bin-con-node"; mkdir -p "$USR_CON_NODE"
+  for f in /usr/bin/*; do ln -s "$f" "$USR_CON_NODE/${f##*/}" 2>/dev/null; done
+  ln -sf "$(command -v node)" "$USR_CON_NODE/node"
+  SIN_NODE="$BASE/bin-sin-node"; mkdir -p "$SIN_NODE"
+  for d in "$USR_CON_NODE" /bin; do for f in "$d"/*; do b="${f##*/}"; case "$b" in node|nodejs) continue ;; esac; [ -e "$SIN_NODE/$b" ] || ln -s "$f" "$SIN_NODE/$b"; done; done
   mkdir -p "$T/previous"
   before="$(ls "$T/harness" | wc -l | tr -d ' ')"
-  PATH="/usr/bin:/bin" bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
+  PATH="$SIN_NODE" bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
   [ "$(ls "$T/harness" | wc -l | tr -d ' ')" = "$before" ] && [ -d "$T/previous" ] && ok "sin node, el respaldo no volvió a previous/" || mal "sin node el respaldo movió carpetas: $(ls "$T")"
   grep -q "node no está en el PATH" "$(LOG)" && ok "y dice que node no está en el PATH" || mal "no dice que falta node: $(tail -2 "$(LOG)")"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
