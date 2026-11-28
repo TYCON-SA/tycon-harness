@@ -517,6 +517,7 @@ function oficinasDeEjemplo(ahora = Date.now()) {
       sesion('Boro', 'firma', { titulo: 'Los avisos de espera llegan a quien corresponde', espera: 'el plan espera tu firma', fin: fin(65), avance: 27, pasos: pasos(3) }),
       sesion('Cleo', 'trabajando', { titulo: 'La oficina se actualiza en tiempo real', fin: fin(90), avance: 73, pasos: pasos(8) }),
       sesion('Dina', 'libre', { haciendo: 'Sin trabajo' }),
+      sesion('Hugo', 'parada', { titulo: 'Revisa un error al iniciar sesión desde el celular', parada: 'sin novedades' }),
     ]) },
     // como en el sitio real, sólo las máquinas confirmadas tienen oficina (mac-bruno sigue «por confirmar» en
     // Configuración); la de Ana muestra cómo se ve una oficina sin conexión: su última foto, con la hora en que se cortó

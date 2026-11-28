@@ -261,7 +261,7 @@ async function deLaDemo(browser) {
     await d.page.locator('.oficina[data-id="mac-lead"] .cover').click();
     await d.page.waitForSelector('.oficina.on[data-id="mac-lead"]');
     await d.page.waitForTimeout(1000);
-    check(await d.page.locator('.oficina.mini canvas').count() === 2, 'en la demo, al agrandar una, las otras siguen con su sala');
+    check(await d.page.locator('.oficina.mini canvas').count() === 1, 'en la demo, al agrandar una, la otra sigue con su sala');
     await shot(d.page, '9-demo-una-grande');
     check(conexiones.length === 0, `la demo no abre ninguna conexión: ${conexiones}`);
     check((await sinFrenos(d.page)).length === 0, `la política no frenó nada en la demo: ${await sinFrenos(d.page)}`);
