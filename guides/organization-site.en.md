@@ -127,9 +127,10 @@ On the left is the menu, with the numbered tabs. Each tab answers a question.
 
 **"Not measured"**. A gray, striped card says **not measured** and the reason, for example "there is no
 snapshot of this source". "Not measured" is not zero and not green: it means that today that piece of data could not be
-known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. Some cannot
-be measured from the site and always say so (for example, "Pending retrospectives": they live on the machine of whoever
-merged); those do not need a notice.
+known. If a card stays like that for more than a day, tell a maintainer: the reason says what is missing. "Pending
+retrospectives" is the exception: they live on the machine of whoever merged, and there is a count only on a day the
+night left its snapshot. That day the card leads to the list below, with the repo, the merge and how to do it; without
+the snapshot it is gray and needs no notice.
 
 ### Home
 
@@ -149,7 +150,7 @@ The cards are:
 - **Red suites** and **red bench cases tonight:** the harness tests and the harness controls that turned red last
   night.
 - **Declared data about to expire:** numbers someone wrote down by hand with a date to review them.
-- **Unconfirmed machines with runs** and **pending retrospectives**.
+- **Unconfirmed machines with runs** and **pending retrospectives** (this one leads to its list below).
 
 ![A maintainer's Home: "What to decide today", with cards in Decide, Nothing and Not measured](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 

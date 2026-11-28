@@ -142,6 +142,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   DONDE.maquinas_sin_confirmar = '/configuracion';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
+  // las retrospectivas, en su lista de abajo: sólo hay lista con la foto de hoy
+  const fRet = filas.find((f) => f.clave === 'retrospectivas');
+  if (fRet && fRet.estado === 'medido') fRet.enlace = '#retros-pendientes';
   return filas;
 }
 
@@ -420,6 +423,19 @@ function prsTrabados(prs, idioma) {
 }
 
 /**
+ * La lista de las retrospectivas pendientes de la foto de hoy, a donde lleva su ficha: cada una con su repo, su merge y
+ * sus días, y cómo se hace (en la máquina de quien mergeó). Sin la foto de hoy, nada: la ficha ya dice por qué.
+ */
+function retrosPendientes(ret, idioma) {
+  if (!medida(ret) || !Array.isArray(ret.pendientes)) return '';
+  const T = (k, v) => t(idioma, k, v);
+  const lista = [...ret.pendientes].sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
+  const fila = (r) => renglonDeLista(null, [esc(r.repo), r.merge ? `merge ${esc(r.merge)}` : null, Number.isFinite(r.dias) ? esc(dias(r.dias, idioma)) : null].filter(Boolean).join(' · '));
+  const cuerpo = `<p class="q-note">${esc(T('inicio.retrosComo'))}</p>` + (lista.length ? `<ul class="lista dos">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  return seccion(T('inicio.retrospectivas'), cuerpo, T('vista.deLaNocheDel', { fecha: ret.fecha }), 'retros-pendientes');
+}
+
+/**
  * Las listas a las que llevan las tarjetas de «Qué decidir hoy»: una sección por tarjeta (`#decidir-<clave>`), una
  * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
  * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
@@ -483,7 +499,7 @@ function paginaInicio(ctx) {
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan });
     // mientras alguna ficha carga, la página se recarga sola
-    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
+    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + retrosPendientes(m.retros, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');

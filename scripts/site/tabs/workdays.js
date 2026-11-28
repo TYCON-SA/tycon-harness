@@ -285,8 +285,10 @@ function textoCosto(c, t) {
  * tabla (nombres viejos, máquinas de CI): `fuera` dice cuántas. 🔴 «NO MEDIDO» NUNCA ES CERO: una persona sin días
  * medidos tiene `segundos`, `promedioDia` y `tokens` en null; un día cuenta como medido si alguna de sus máquinas trae
  * horas medidas ese día, y el promedio es por día medido.
- *   → { semana: { dias, promedioDia, tokens, sinMedir }, anterior: { dias, promedioDia, tokens }, personas: [{ persona,
- *       maquinas, segundos, diasMedidos, promedioDia, tokens }], fuera }
+ * `diasConDato` dice cuántos de los 7 días trajeron algo medido de alguna máquina: comparar una semana con otra que
+ * tiene menos días medidos engaña, y la pantalla lo dice en vez de poner la flecha.
+ *   → { semana: { dias, promedioDia, tokens, sinMedir, diasConDato }, anterior: { dias, promedioDia, tokens,
+ *       diasConDato }, personas: [{ persona, maquinas, segundos, diasMedidos, promedioDia, tokens }], fuera }
  */
 function resumen(tabla, people, precios = null) {
   const p = isObj(people) ? people : {};
@@ -319,6 +321,7 @@ function resumen(tabla, people, precios = null) {
   };
   const semana = tabla.dias.slice(0, 7);
   const anterior = tabla.dias.slice(7, 14);
+  const conDato = (dias) => dias.filter((d) => visibles.some((m) => { const c = tabla.celdas[d][m]; return c && c.estado === 'medido' && (c.horas || c.tokens); })).length;
   const personas = [...grupos.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([persona, maqs]) => ({ persona, maquinas: maqs.slice().sort(), ...medir(maqs, semana) }));
   const equipo = (dias) => {
     const filas = [...grupos.values()].map((maqs) => medir(maqs, dias));
@@ -327,7 +330,7 @@ function resumen(tabla, people, precios = null) {
     const tok = filas.filter((f) => f.tokens !== null);
     const costo = costoVacio();
     for (const f of filas) sumarCosto(costo, f.costo);
-    return { dias, promedioDia: dm ? seg / dm : null, tokens: tok.length ? tok.reduce((a, f) => a + f.tokens, 0) : null, costo: cerrarCosto(costo) };
+    return { dias, promedioDia: dm ? seg / dm : null, tokens: tok.length ? tok.reduce((a, f) => a + f.tokens, 0) : null, costo: cerrarCosto(costo), diasConDato: conDato(dias) };
   };
   let sinMedir = 0;
   for (const m of visibles) for (const d of semana) { const c = tabla.celdas[d][m]; if (!(c && c.estado === 'medido' && c.horas)) sinMedir += 1; }
@@ -343,7 +346,7 @@ function resumen(tabla, people, precios = null) {
       if (f.segundos !== null) medida = true;
       if (f.tokens !== null) { tokens += f.tokens; conTokens = true; }
     }
-    semanas.push({ desde: ds[6], hasta: ds[0], porPersona, tokens: conTokens ? tokens : null, medida });
+    semanas.push({ desde: ds[6], hasta: ds[0], porPersona, tokens: conTokens ? tokens : null, medida, diasConDato: conDato(ds) });
   }
   const sinHoras = (tabla.sinJornadas || []).filter((m) => !Object.prototype.hasOwnProperty.call(ocultas, m));
   return { semana: { ...equipo(semana), sinMedir }, anterior: equipo(anterior), personas, fuera: tabla.maquinas.length - visibles.length, semanas, sinHoras };
@@ -355,10 +358,14 @@ function htmlResumen(r, idioma) {
   const nm = esc(t('horas.noMedido'));
   const h = (s) => (s === null ? nm : horasDe(s));
   const tk = (n) => (n === null ? nm : abreviar(n));
+  // la anterior con menos días medidos que ésta no se compara: lo dice, sin flecha (una semana de 3 días contra una de
+  // 7 hace creer que el consumo bajó)
+  const parejas = r.semana.diasConDato === r.anterior.diasConDato;
+  const incompleta = r.anterior.diasConDato < 7 && r.anterior.diasConDato > 0 ? ` (${t('horas.diasDe7', { n: r.anterior.diasConDato })})` : '';
   const ant = (v, ahora, antes) => {
-    // la flecha sólo cuando las dos semanas se midieron: contra una sin medir no hay comparación
-    const flecha = ahora === null || antes === null || antes === undefined ? '' : ahora > antes ? ' ↑' : ahora < antes ? ' ↓' : ' =';
-    return `<div class="ficha-ant">${esc(t('horas.anterior', { valor: v }))}${flecha}</div>`;
+    // la flecha sólo cuando las dos semanas se midieron, y los mismos días: si no, no hay comparación
+    const flecha = !parejas || ahora === null || antes === null || antes === undefined ? '' : ahora > antes ? ' ↑' : ahora < antes ? ' ↓' : ' =';
+    return `<div class="ficha-ant">${esc(t('horas.anterior', { valor: v }) + (antes === null || antes === undefined ? '' : incompleta))}${flecha}</div>`;
   };
   const ficha = (titulo, valor, extra = '') => `<div class="ficha"><div class="ficha-titulo">${esc(titulo)}</div><div class="ficha-valor">${valor}</div>${extra}</div>`;
   const dias = r.semana.dias;
@@ -396,20 +403,24 @@ function htmlSemanas(r, idioma) {
     const grilla = [0, max / 2, max].map((v) => `<line class="grilla" x1="${IZQ}" x2="${W - 10}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="eje" x="${IZQ - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(formato(v))}</text>`).join('');
     const barras = semanas.map((s, i) => {
       const x = ejeX(i);
+      // una semana con menos de 7 días medidos lleva su marca arriba de la barra y lo dice al pasar el mouse
+      const falta = s.medida && Number.isInteger(s.diasConDato) && s.diasConDato < 7;
+      const deDias = falta ? ` (${t('horas.diasDe7', { n: s.diasConDato })})` : '';
+      const marca = (tope) => (falta ? `<text class="incompleta" x="${(x + barra / 2).toFixed(1)}" y="${Math.max(ARRIBA + 9, tope - 4).toFixed(1)}" text-anchor="middle">${s.diasConDato}/7</text>` : '');
       const etiqueta = `<text class="eje" x="${(x + barra / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(fecha(s.desde))}</text>`;
       if (!s.medida) return `${etiqueta}<text class="sin-medir" x="${(x + barra / 2).toFixed(1)}" y="${(H - ABAJO - 6).toFixed(1)}" text-anchor="middle">${esc(t('horas.sinMedirCorto'))}</text>`;
       if (!pila) {
         const v = valores[i];
         if (v === null) return `${etiqueta}<text class="sin-medir" x="${(x + barra / 2).toFixed(1)}" y="${(H - ABAJO - 6).toFixed(1)}" text-anchor="middle">${esc(t('horas.sinMedirCorto'))}</text>`;
-        return `${etiqueta}<rect class="barra-tokens" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${barra.toFixed(1)}" height="${(y(0) - y(v)).toFixed(1)}" rx="2"><title>${esc(`${s.desde} a ${s.hasta}: ${formato(v)}`)}</title></rect>`;
+        return `${etiqueta}<rect class="barra-tokens" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${barra.toFixed(1)}" height="${(y(0) - y(v)).toFixed(1)}" rx="2"><title>${esc(`${s.desde} a ${s.hasta}: ${formato(v)}${deDias}`)}</title></rect>${marca(y(v))}`;
       }
       let base = 0;
       const partes = valores[i].filter((p) => p.valor).map((p) => {
         const y0 = y(base); base += p.valor; const y1 = y(base);
         // 2 px de superficie entre partes: cada persona se distingue también sin el color
-        return `<rect class="barra-persona" x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${barra.toFixed(1)}" height="${Math.max(0, y0 - y1 - 2).toFixed(1)}" rx="2" style="fill:${color(p.i)}"><title>${esc(`${p.persona} · ${s.desde} a ${s.hasta}: ${formato(p.valor)}`)}</title></rect>`;
+        return `<rect class="barra-persona" x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${barra.toFixed(1)}" height="${Math.max(0, y0 - y1 - 2).toFixed(1)}" rx="2" style="fill:${color(p.i)}"><title>${esc(`${p.persona} · ${s.desde} a ${s.hasta}: ${formato(p.valor)}${deDias}`)}</title></rect>`;
       }).join('');
-      return `${etiqueta}${partes}`;
+      return `${etiqueta}${partes}${marca(y(base))}`;
     }).join('');
     return `<figure class="grafico"><figcaption>${esc(titulo)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">${grilla}${barras}</svg></figure>`;
   };

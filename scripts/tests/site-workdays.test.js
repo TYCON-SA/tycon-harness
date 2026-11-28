@@ -522,3 +522,35 @@ test('OH17 Costo_EscrituraDeCache_ConSuPrecio — se cobra con el precio de su p
   assert.ok(v.ok);
   assert.strictEqual(v.tokens.porModelo, null);
 });
+
+// 🔴 mutación: comparar una semana de 7 días medidos contra una de 3 sin decirlo (la flecha dice que bajó cuando por día
+// casi se duplicó), o la barra de una semana incompleta igual a las enteras, sin marca.
+test('OH18 SemanaIncompleta_SinFlechaYMarcada — la semana anterior con menos días medidos lo dice, sin flecha; la barra también', () => {
+  const todos = diasAtras('2026-11-09', 14);
+  // esta semana 7 días de 1000 tokens; la anterior, sólo 3 días de 2000 (6000 en total: «más» que 7000 no es, pero por día
+  // es el doble)
+  const maquinas = { 'maquina-a': Object.fromEntries([...todos.slice(0, 7), ...todos.slice(7, 10)].map((d, i) => [d, dia(d, { arnes: 3600, lectura: i < 7 ? 1000 : 2000, escritura: 0 })])) };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09', dias: 14 });
+  const r = WD().resumen(t, PEOPLE);
+  assert.strictEqual(r.semana.diasConDato, 7);
+  assert.strictEqual(r.anterior.diasConDato, 3);
+  const html = WD().htmlResumen(r, 'es');
+  const anteriores = html.match(/<div class="ficha-ant">[^<]*<\/div>/g) || [];
+  assert.strictEqual(anteriores.length, 2, 'horas y tokens');
+  for (const a of anteriores) {
+    assert.match(a, /3 de 7 días medidos/, `dice que la anterior está incompleta: ${a}`);
+    assert.doesNotMatch(a, / [↑↓=]<\/div>$/, `sin flecha contra una semana incompleta: ${a}`);
+  }
+  // con las dos semanas enteras, la flecha vuelve y no dice nada de días
+  const enteras = { 'maquina-a': Object.fromEntries(todos.map((d, i) => [d, dia(d, { arnes: i < 7 ? 7200 : 3600, sesion: 9000, lectura: 1000, escritura: 0 })])) };
+  const r2 = WD().resumen(WD().armarTabla(WD().leerJornadas(espejo(enteras)), { ayer: '2026-11-09', dias: 14 }), PEOPLE);
+  const h2 = WD().htmlResumen(r2, 'es');
+  assert.match(h2, /semana anterior: 1\.0 h ↑/);
+  assert.doesNotMatch(h2, /días medidos/);
+  // el gráfico: la semana incompleta lleva su marca y lo dice al pasar el mouse
+  assert.strictEqual(r.semanas[1].diasConDato, 3);
+  const svg = WD().htmlSemanas(r, 'es');
+  assert.match(svg, /class="incompleta"[^>]*>3\/7</, 'la barra de la semana incompleta, marcada');
+  assert.match(svg, /<title>[^<]*3 de 7 días medidos/);
+  assert.strictEqual((svg.match(/class="incompleta"/g) || []).length, 2, 'en los dos gráficos, sólo la semana incompleta');
+});

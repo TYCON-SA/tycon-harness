@@ -723,7 +723,7 @@ details.dia-a-dia{margin-top:18px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--serie-1:#338ced;--serie-2:#e76624;--serie-3:#00a888;--serie-4:#d28e05;--serie-5:#e24d8b;--serie-6:#0aac23;--serie-7:#9887ef;--serie-8:#eb6263}}
 :root[data-theme="dark"]{--serie-1:#338ced;--serie-2:#e76624;--serie-3:#00a888;--serie-4:#d28e05;--serie-5:#e24d8b;--serie-6:#0aac23;--serie-7:#9887ef;--serie-8:#eb6263}
 figure.grafico{margin:12px 0}figure.grafico figcaption{font-size:13px;color:var(--ink-2);margin-bottom:4px}figure.grafico svg{width:100%;max-width:640px;height:auto}
-figure.grafico .grilla{stroke:var(--grid);stroke-width:1}figure.grafico .eje{font-size:11px;fill:var(--ink-3)}figure.grafico .sin-medir{font-size:11px;fill:var(--nm-ink)}figure.grafico .barra-tokens{fill:var(--serie-1)}
+figure.grafico .grilla{stroke:var(--grid);stroke-width:1}figure.grafico .eje{font-size:11px;fill:var(--ink-3)}figure.grafico .incompleta{font-size:11px;fill:var(--ink-3)}figure.grafico .sin-medir{font-size:11px;fill:var(--nm-ink)}figure.grafico .barra-tokens{fill:var(--serie-1)}
 ul.leyenda{list-style:none;padding:0;margin:4px 0 12px;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--ink-2)}ul.leyenda .muestra{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 p.aviso{border-left:3px solid var(--warn);padding:4px 10px;background:var(--warn-soft)}table.por-persona td,table.por-persona th{white-space:nowrap}
 table.horas-personas,table.por-persona{border-collapse:collapse;margin:6px 0 14px}
