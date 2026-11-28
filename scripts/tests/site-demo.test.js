@@ -1342,3 +1342,20 @@ test('8.273-Demo_TerminaSinServidoresVivos', { timeout: 120000 }, async () => {
   // y ningún cierre de las pruebas de arriba se colgó (se anotan en vez de tapar el rojo de su prueba)
   assert.deepStrictEqual(cierresColgados, [], `cierres colgados: ${cierresColgados.join(' · ')}`);
 });
+
+// 🔴 Falla con: el sitio demo muestra máquinas al día como «una versión del arnés anterior a la que manda la huella» (A163).
+test('A163_Demo_LasMaquinasAlDiaMandanSuHuella — sin huella queda sólo la de la versión vieja, con el motivo de siempre', () => {
+  const D = DATOS();
+  const P = require(path.join(ROOT, 'scripts', 'lib', 'people.js'));
+  const dir = tmp('demo-huella-');
+  for (const [rel, texto] of Object.entries(D.blobsDelBuzon(AHORA_FIJO, { completo: true, version: P.MACHINE_ID_SINCE }))) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), texto);
+  }
+  const r = P.leerCorreosInformados(dir);
+  const sin = Object.keys(r.maquinas).filter((m) => !r.maquinas[m].machine_id).sort();
+  assert.deepStrictEqual(sin, ['mac-bruno'], JSON.stringify(r.maquinas));
+  assert.ok(!('machine_id_motivo' in r.maquinas['mac-bruno']), 'la de bruno tiene una versión de antes de la huella');
+  const huellas = Object.values(r.maquinas).map((m) => m.machine_id).filter(Boolean);
+  assert.strictEqual(new Set(huellas).size, huellas.length, 'cada máquina, su huella');
+});

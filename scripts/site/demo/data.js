@@ -67,7 +67,8 @@ function blobsDelBuzon(ahora = Date.now(), { completo = false, version = VERSION
   const { hoy } = diasDe(ahora);
   // el comienzo de una ejecución de hace `n` horas, en hora redonda
   const haceHoras = (n) => new Date(Math.floor((ahora - n * 36e5) / 36e5) * 36e5).toISOString();
-  const lugar = (correo, v) => JSON.stringify({ day: hoy, owner: { email: correo }, folder: null, ...(completo ? { install: { mode: 'managed', version: v } } : {}) });
+  // `huella` (sólo el sitio demo): la que manda cada máquina con una versión que la manda; la de bruno, más vieja, no
+  const lugar = (correo, v, huella) => JSON.stringify({ day: hoy, owner: { email: correo }, folder: null, ...(completo ? { install: { mode: 'managed', version: v }, ...(huella ? { machine_id: { fingerprint: huella } } : {}) } : {}) });
   const b = {};
   const sid = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
   const dos = completo ? { esquema: 2 } : {};
@@ -79,9 +80,9 @@ function blobsDelBuzon(ahora = Date.now(), { completo = false, version = VERSION
     ['mac-lead', '3.1', 'Producto-X/Backend', haceHoras(75), {}],
   ];
   corridas.forEach(([maq, story, repo, inicio, extra], i) => { b[`${maq}/${sid(i + 1)}.json`] = volcadoDeEjecucion(sid(i + 1), inicio, { story, repo, completo, ...extra }); });
-  b['mac-ana/registros/place.json'] = lugar(ANA, version);
+  b['mac-ana/registros/place.json'] = lugar(ANA, version, 'a1a1a1a1a1a1a1a1');
   b['mac-bruno/registros/place.json'] = lugar(BRUNO, VERSION_VIEJA);
-  b['mac-lead/registros/place.json'] = lugar(LEAD, version);
+  b['mac-lead/registros/place.json'] = lugar(LEAD, version, 'c3c3c3c3c3c3c3c3');
   if (completo) {
     const deMaquina = (maq) => corridas.map((c, i) => [c, sid(i + 1)]).filter(([c]) => c[0] === maq).map(([c, s]) => ({ volcado: `${s}.json`, inicio: c[3] }));
     for (const maq of ['mac-ana', 'mac-bruno', 'mac-lead']) Object.assign(b, registrosDeMaquina(maq, ahora, deMaquina(maq)));
