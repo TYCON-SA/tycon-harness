@@ -352,15 +352,22 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
 /**
  * El `find` con que se ensaya un borrado: el mismo que corre el comando. En Windows el comando corre en el bash de Git,
  * y su `find` es el de Git (`usr\bin\find.exe`); el del PATH del freno puede ser el de Windows (`System32\find.exe`),
- * que es otro programa: el ensayo fallaba y el freno tomaba la carpeta entera como borrada. Sin el de Git, `find`.
+ * que es otro programa: el ensayo fallaba y el freno tomaba la carpeta entera como borrada. Se toma el primer
+ * `find.exe` del PATH que no está en la carpeta de Windows y, si no hay, el de la instalación de Git por defecto (para
+ * todos los usuarios o para uno). Sin ninguno, `find`.
  */
 function programaFind() {
   if (process.platform !== 'win32') return 'find';
-  try {
-    const gb = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'git-bash.js')).findGitBash();
-    const d = gb && gb.path ? path.dirname(gb.path) : null;
-    for (const f of d ? [path.join(d, 'find.exe'), path.join(path.dirname(d), 'usr', 'bin', 'find.exe')] : []) if (fs.existsSync(f)) return f;
-  } catch (_) { /* sin la biblioteca, el del PATH */ }
+  const sistema = path.resolve(process.env.SystemRoot || 'C:\\Windows').toLowerCase();
+  const delPath = String(process.env.PATH || process.env.Path || '').split(';').filter(Boolean);
+  const deGit = [process.env.ProgramFiles, path.join(require('os').homedir(), 'AppData', 'Local', 'Programs')]
+    .filter(Boolean).map((d) => path.join(d, 'Git', 'usr', 'bin'));
+  for (const d of [...delPath, ...deGit]) {
+    const abs = path.resolve(d);
+    if (abs.toLowerCase().startsWith(sistema)) continue;
+    const f = path.join(abs, 'find.exe');
+    if (fs.existsSync(f)) return f;
+  }
   return 'find';
 }
 
