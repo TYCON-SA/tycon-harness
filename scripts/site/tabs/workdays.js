@@ -454,7 +454,8 @@ function htmlSemanas(r, idioma) {
 function htmlDiaPorPersona(tabla, r, idioma) {
   const t = (k, v) => TX.t(idioma, k, v);
   const dias = tabla.dias.slice(0, DIAS);
-  const cab = `<tr><th>${esc(t('horas.persona'))}</th>${dias.map((d) => `<th>${esc(d.slice(5))}</th>`).join('')}</tr>`;
+  // el día como en los gráficos (día/mes): la página no mezcla «11-27» con «27/11»
+  const cab = `<tr><th>${esc(t('horas.persona'))}</th>${dias.map((d) => `<th>${esc(`${d.slice(8, 10)}/${d.slice(5, 7)}`)}</th>`).join('')}</tr>`;
   const filas = r.personas.map((p) => {
     const celdas = dias.map((d) => {
       let s = 0; let medido = false;

@@ -1763,6 +1763,22 @@ test('A176_HowItWorks_TuOrganizacion_EnPalabrasDeLaPantalla', () => conCasa(() =
   }
 }));
 
+// 🔴 Falla con (A155, recorrido F21): «Cómo trabaja» decía «nombres de prueba: any», «ADO», «deprecado», «mergearon» y
+//    «en choque»: jerga sin traducir.
+test('A155 ComoTrabaja_SinJerga', () => {
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const es = (k) => TX.t('es', k);
+  for (const k of ['piezaOrg.pedidoDeTrabajoActivo', 'piezaOrg.pedidoDeTrabajoCierra', 'control.ado-story-create', 'segun.pedidoAdo', 'segun.pedidoAdo.pieza']) {
+    assert.doesNotMatch(es(k), /\bADO\b/, `${k}: ${es(k)}`);
+  }
+  for (const k of ['control.@tcg:deprecated-session-notice.js', 'control.@tcg:deprecated-read-notice.js', 'control.on-deprecated-edit']) assert.doesNotMatch(es(k), /deprecad/, k);
+  assert.doesNotMatch(es('control.@tcg:worktree-sweep.js'), /mergear/);
+  assert.doesNotMatch(es('control.@tcg:stuck-pr-notice.js'), /en choque/);
+  // el estilo de nombres con las palabras del selector de Configuración, no el valor guardado
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'how-it-works.js'), 'utf8');
+  assert.match(src, /tecCualquierNombre/, 'el valor «any» se dice con las palabras del selector');
+});
+
 // 🔴 mutación: un gancho que le dice algo a la sesión al arrancar (el aviso del disco) en «Anotan», que según la
 // leyenda no avisa; o la descripción de uno de «Avisan» que no dice qué avisa (A181).
 test('A181 Arranque_CadaPiezaEnElGrupoDeLoQueHace — el aviso del disco avisa; la actualización del freno dice que lo avisa', () => {

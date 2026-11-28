@@ -41,6 +41,8 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .necesita[hidden]{display:none}.necesita h2{color:#a8640b}.necesita-lista{margin:4px 0 0;padding-left:0;list-style:none}.necesita-item{margin:8px 0;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px}.necesita-item p{margin:2px 0}.necesita-que{font-weight:600}.necesita-lista .nada{color:var(--muted)}
 .ausente{margin:6px 0;color:#b08a2e;font-weight:600}.ausente[hidden]{display:none}.trabado[hidden]{display:none}.trabado h2{color:#b08a2e}.trabado h3{margin:8px 0 2px;font:600 .95rem var(--body)}.trabado ul{margin:0;padding-left:18px}
 .una-linea{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* el título de una tarjeta usa hasta dos renglones antes de cortarse (entero, al pasar el mouse) */
+.item.abre b.una-linea{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .empty{color:var(--muted);padding:18px;background:var(--surface);border:1px dashed var(--line);border-radius:6px;margin:0}
 /* la sala 3D es siempre de noche: un mundo propio, igual en tema claro y oscuro */
 .stage{position:relative;width:100%;aspect-ratio:16/10;max-height:82vh;border-radius:12px;overflow:hidden;background:radial-gradient(120% 90% at 50% 40%,#2a1f3a 0%,#120e1a 70%);color:#f4eefc;touch-action:none}
@@ -73,6 +75,8 @@ h2{font:700 .8rem var(--display);text-transform:uppercase;letter-spacing:.08em;c
 .tag .bar i{display:block;height:100%;background:var(--c)}
 .tag .fx{position:absolute;top:-11px;right:-9px;min-width:22px;height:22px;padding:0 5px;border-radius:11px;display:grid;place-items:center;font:700 12px var(--body);background:var(--c);color:#14101c;box-shadow:0 0 12px var(--c)}
 .tag .fx:empty{display:none}
+/* con insignia, la etiqueta deja lugar a la derecha: la insignia no tapa el final del nombre */
+.tag:has(.fx:not(:empty)){padding-right:22px}
 .tag.alert{border-color:var(--c);animation:pulso 1.2s ease-in-out infinite}
 @keyframes pulso{50%{box-shadow:0 0 0 4px rgba(255,165,61,.35),0 6px 18px rgba(0,0,0,.45)}}
 @media (prefers-reduced-motion:reduce){.tag.alert{animation:none}}

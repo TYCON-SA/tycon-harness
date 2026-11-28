@@ -82,8 +82,8 @@ test('Decisiones_AceptadaSinPr_SeSigueEnSuTarea', () => {
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
   // la fila en dos partes, para que la grilla alinee todas: el enlace adelante y el texto después
-  // el paquete adelante, después su seguimiento con el enlace; el id de la ficha al final, en gris
-  assert.match(seccion, /<li><span>paquete-c — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">9abc1234<\/span><\/li>/);
+  // la forma de todas las listas: el seguimiento adelante, después el id de la ficha y el paquete
+  assert.match(seccion, /<li><a href="\/mantenimiento">[^<]+<\/a><span>9abc1234 · paquete-c<\/span><\/li>/);
   assert.doesNotMatch(seccion, /la noche lo abre/);
 });
 
@@ -181,7 +181,7 @@ test('Decisiones_PrCerradoSinTarea_NadieLoSigueYVaPrimero', () => {
   assert.deepStrictEqual(ds.map((d) => `${d.id}:${d.sinLugar}:${d.enlace}`), ['ffff0002:nadie_lo_sigue:null', 'aaaa0001:en_su_tarea:null'], 'sale primero aunque sea baja');
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
   const seccion = html.split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
-  assert.match(seccion, /<li><span>paquete-ffff0002 · baja · 1 noche — pull request #42 cerrado sin resolver: nadie lo sigue<\/span><span class="muted">ffff0002<\/span><\/li>/);
+  assert.match(seccion, /<li><span class="li-marca"><\/span><span>ffff0002 · paquete-ffff0002 · baja · 1 noche · pull request #42 cerrado sin resolver: nadie lo sigue<\/span><\/li>/);
   assert.doesNotMatch(seccion, /pullrequest\/42/, 'el pull request cerrado no es un enlace a su seguimiento');
   assert.ok(seccion.indexOf('ffff0002') < seccion.indexOf('aaaa0001'), 'en la página también va primero');
   assert.match(decisions.fraseSinLugar('nadie_lo_sigue', 'en', { n: 42 }), /#42 closed without a fix: nobody follows it/);
@@ -195,7 +195,7 @@ test('Decisiones_PrCerradoConTarea_SeSigueEnSuTarea', () => {
   // un pull request todavía abierto sigue siendo su lugar
   assert.strictEqual(ds.find((d) => d.id === 'bbbb0003').enlace, `${ADO}/pullrequest/57`);
   const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
-  assert.match(html, /<li><span>paquete-dddd0005 · alta · 1 noche — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">dddd0005<\/span><\/li>/);
+  assert.match(html, /<li><a href="\/mantenimiento">[^<]+<\/a><span>dddd0005 · paquete-dddd0005 · alta · 1 noche<\/span><\/li>/);
   assert.doesNotMatch(html, /pull request #42/);
   // las otras colas no cambian: un pull request cerrado de otra lista no se reinterpreta
   const nueva = decisions.decisiones(conAceptadas({ ...aceptada('cccc0004', { pr: 43, prCerrado: true }), rubro: 'nuevos' }), { operationsRepo: ADO })[0];
@@ -252,10 +252,10 @@ test('Inicio_CadaFilaDiceSuGravedadYSusNoches', () => {
   const seccion = (idioma) => views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA, idioma })
     .split('id="decidir-dependencias_aceptadas_sin_resolver"')[1].split('</section>')[0];
   const es = seccion('es');
-  assert.match(es, /<span>paquete-a1 · crítica · 7 noches — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span><span class="muted">a1<\/span>/);
-  assert.match(es, /<span>paquete-a2 · media · 1 noche — <a href="\/mantenimiento">/,'una noche, en singular; «moderate» es media');
-  assert.match(es, /<span>paquete-a3 — <a href="\/mantenimiento">se sigue en su tarea<\/a><\/span>/, 'sin gravedad reconocida ni noches, no se inventan');
-  assert.match(seccion('en'), /<span>paquete-a1 · critical · 7 nights — <a href="\/mantenimiento">followed in its work item<\/a><\/span>/);
+  assert.match(es, /<a href="\/mantenimiento">[^<]+<\/a><span>a1 · paquete-a1 · crítica · 7 noches<\/span>/);
+  assert.match(es, /<span>a2 · paquete-a2 · media · 1 noche<\/span>/,'una noche, en singular; «moderate» es media');
+  assert.match(es, /<span>a3 · paquete-a3<\/span>/, 'sin gravedad reconocida ni noches, no se inventan');
+  assert.match(seccion('en'), /<a href="\/mantenimiento">[^<]+<\/a><span>a1 · paquete-a1 · critical · 7 nights<\/span>/);
   assert.deepStrictEqual(['critical', 'CRÍTICA', 'high', 'moderate', 'baja', 'rara', null].map(decisions.gravedadNormal), ['critical', 'critical', 'high', 'medium', 'low', null, null]);
 });
 
@@ -280,4 +280,23 @@ test('A91 Decisiones_TareaCerradaConVivas_NombraLaTareaYNoElPullRequest', (t) =>
   assert.doesNotMatch(seccion, /pull request/i, 'no habla de un pull request');
   assert.match(seccion, /4321/, 'nombra la tarea que se cerró');
   assert.match(seccion, /Producto X/, 'con su proyecto');
+});
+
+// 🔴 Falla con (A121, recorrido F21): en el Inicio, la lista de dependencias aceptadas se armaba distinto que las demás
+//    —«pkg-dos · media · 5 noches — pull request #202» con el id suelto a la derecha— y las otras empiezan con el enlace
+//    y llevan el id adelante («f3 · pkg-tres…»). Decisión del dueño: la misma forma en todas las listas.
+test('A121 Inicio_LasAceptadasConLaFormaDeLasDemasListas', () => {
+  const m = conAceptadas(aceptada('f2', { pr: 202, severidad: 'medium', noches: 5, titulo: 'pkg-dos' }), aceptada('f5', { conTarea: true, titulo: 'pkg-cinco' }));
+  m.decisiones.items.push({ fuente: 'dependencias', rubro: 'rechazadas_sin_deuda', id: 'f3', titulo: 'pkg-tres', pr: 203, severidad: 'low', noches: 8 });
+  m.dependencias.rubros.rechazadas_sin_deuda = 1;
+  const html = views.listasDeDecision(m, { enlaceOperaciones: ADO, ahora: AHORA });
+  const de = (clave) => html.split(`id="decidir-dependencias_${clave}"`)[1].split('</section>')[0];
+  const forma = (li) => li.replace(/>[^<]+</g, '><').replace(/href="[^"]*"/g, 'href');
+  const aceptadas = de('aceptadas_sin_resolver').match(/<li>.*?<\/li>/g) || [];
+  const nuevos = de('rechazadas_sin_deuda').match(/<li>.*?<\/li>/g) || [];
+  assert.ok(aceptadas.length === 2 && nuevos.length === 1, 'hay de las dos listas');
+  const conPedido = aceptadas.find((li) => li.includes('#202'));
+  assert.strictEqual(forma(conPedido), forma(nuevos[0]), `la aceptada con pedido tiene la forma de las demás: ${conPedido}`);
+  assert.match(conPedido, /<span>f2 · pkg-dos · /, 'el id adelante, como en las demás');
+  assert.doesNotMatch(de('aceptadas_sin_resolver'), /class="muted">f2</, 'el id no queda suelto a la derecha');
 });

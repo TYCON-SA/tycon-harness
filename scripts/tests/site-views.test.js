@@ -579,7 +579,7 @@ test('T4 2.79-Vulnerabilidades_CadaCuentaDiceQueCuenta @story-2.79 @ac-4 — Ini
 test('T14 2.79-Arnes_UltimaPublicada_DiceCuandoSeMiro @story-2.79 @ac-12 — «stable (mirada HH:MM)»', async () => {
   const ultima = { estado: 'medido', version: '2026.10.15.3', creada: '2026-10-14T20:00:00Z', mirado: Date.parse('2026-10-15T09:41:00Z') };
   const l = views.filasArnes({}, { version: '2026.10.15.1', ultima }).find((x) => x.clave === 'ultima');
-  assert.match(l.texto, /^2026\.10\.15\.3 \(del 2026-10-14\) · última publicada en stable \(mirada 09:41 UTC\)$/);
+  assert.match(l.texto, /^2026\.10\.15\.3 · imagen armada el 2026-10-14 · la más nueva del canal estable \(mirada a las 09:41 UTC\)$/);
   // la vigía guarda cuándo miró y lo devuelve con lo medido
   const LR = require(path.join(H.SITE, 'latest-release.js'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultima-'));
@@ -815,4 +815,55 @@ test('A115-A119 Vistas_BancoNuevosYRenglonesDeLaPersona', () => {
   assert.match(raro[1], /Riesgo · Mitigado/, 'uno que no se conoce va como lo dice la plataforma');
   assert.doesNotMatch(raro[1], /^#9 ·/, 'sin título tampoco queda un signo suelto');
   assert.doesNotMatch(require(path.join(H.SITE, 'texts.js')).t('es', 'inicio.vigilante_aceptadas_sin_story'), /story/);
+});
+
+// 🔴 Falla con (A152, recorrido F21): en Proyectos, el total de lo real decía «(parcial: falta alguna épica)» cuando la
+//    única épica estaba en la lista y lo que faltaba era una historia abierta: el motivo del «parcial» no era el real.
+test('A152 Proyectos_ElParcialDeLoRealDiceQueHayUnaEpicaAbierta', () => {
+  const est = (o) => ({ rango: null, unidad: 'hours', suma_plan: null, suma_vigente: null, dentro: null, fuera: null, por: null, sumas_por_unidad: null, motivo: null, en_horas: null, ...o });
+  const foto = (repo, epicas, estado = 'medido') => ({ proyecto: 'Proy', repo, fecha: '2026-11-27', vieja: false, stories: [], epicas, estimaciones: { estado, motivo: null, ilegibles: 0, unidad: 'hours' } });
+  const epica = { id: '1', titulo: 'La única', estimacion: est({ suma_plan: 20, suma_vigente: 22, en_horas: { min: null, max: null, plan: 20, vigente: 22 }, real: { cerrada: false, suma: 22, faltan: 1 } }) };
+  const pagina = (lista, idioma) => views.paginaProyectos({ modelo: { productos: [{ producto: 'Producto P', proyectos: ['Proy'], rutas: [] }], productosFuente: { estado: 'medido' }, proyectos: { estado: 'medido', lista } }, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.parse('2026-11-28T12:00:00Z'), idioma });
+  const total = (html) => html.slice(html.indexOf('id="estimaciones"')).split('<tr').find((f) => /Total del producto|Product total/.test(f)) || '';
+  const t1 = total(pagina([foto('RepoA', [epica])]));
+  assert.match(t1, /22 h \(parcial: alguna épica sigue abierta\)/, `con la épica abierta, el motivo es ése: ${t1}`);
+  assert.doesNotMatch(t1, /falta alguna épica/, 'no dice que falta una épica que está en la lista');
+  assert.match(total(pagina([foto('RepoA', [epica])], 'en')), /\(partial: an epic is still open\)/);
+  // un repo del producto sin medir sí deja afuera sus épicas: ahí el motivo sigue siendo que falta alguna
+  const t2 = total(pagina([foto('RepoA', [epica]), foto('RepoB', [], 'no_medido')]));
+  assert.match(t2, /22 h \(parcial: falta alguna épica\)/, `con un repo sin medir: ${t2}`);
+});
+
+// 🔴 Falla con (A156, recorrido F21): en Arnés, «(del <fecha>) · última publicada en stable (mirada sin hora)»: con una
+//    imagen armada después de su versión, parecía que la versión salió ese día (la fecha es la de la imagen), y «stable» y
+//    «mirada sin hora» no se explicaban; en inglés, «(checked no time)».
+test('A156 Arnes_LaUltimaPublicadaSeLeeSinAdivinar', () => {
+  const ultima = { estado: 'medido', version: '2026.10.15.48', creada: '2026-11-28T03:00:00Z', mirado: Date.parse('2026-11-28T09:41:00Z') };
+  const fila = (u, idioma) => views.filasArnes({}, { version: '2026.10.15.40', ultima: u, idioma }).find((x) => x.clave === 'ultima').texto;
+  const es = fila(ultima);
+  assert.match(es, /^2026\.10\.15\.48 · imagen armada el 2026-11-28 · la más nueva del canal estable \(mirada a las 09:41 UTC\)$/, es);
+  assert.doesNotMatch(es, /\(del |\bstable/, 'ni «(del …)» suelto ni «stable» sin traducir');
+  // sin la hora en que se miró, no se dice «mirada sin hora»: se calla
+  const sinHora = fila({ ...ultima, mirado: undefined });
+  assert.doesNotMatch(sinHora, /sin hora|mirada/, sinHora);
+  assert.match(sinHora, /la más nueva del canal estable$/);
+  const en = fila({ ...ultima, mirado: undefined }, 'en');
+  assert.doesNotMatch(en, /no time|checked/, en);
+  assert.match(fila(ultima, 'en'), /^2026\.10\.15\.48 · image built on 2026-11-28 · the newest in the stable channel \(checked at 09:41 UTC\)$/);
+});
+
+// 🔴 Falla con: la ficha de «seguimiento» llevaba el mismo rombo y el mismo amarillo que «decidir»: no se distinguía lo que
+//    hay que decidir de lo que sólo se sigue (A120, recorrido F21).
+test('A120 Inicio_SeguimientoNoSeVeComoDecidir', () => {
+  const m = modeloCompleto({ dependencias: leida({ rubros: { nuevos: 3, aceptadas_sin_resolver: 1, rechazadas_sin_deuda: 2, pedidos_cerrados_con_vivas: 0 }, vivas_por_proyecto: {} }) });
+  const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  const fichaDe = (texto) => (html.match(new RegExp(`<div class="tile [^"]*"><span class="chip [^"]*"><span class="g">[^<]*</span>${texto}</span>`, 'g')) || []);
+  const seguimiento = fichaDe('seguimiento');
+  const decidir = fichaDe('decidir');
+  assert.ok(seguimiento.length && decidir.length, 'hay de las dos');
+  for (const s of seguimiento) {
+    assert.doesNotMatch(s, /chip warn|◆/, `seguimiento sin el rombo ni el amarillo de decidir: ${s}`);
+    assert.doesNotMatch(s, /tile warn/);
+  }
+  for (const d of decidir) assert.match(d, /chip warn/, 'decidir sigue igual');
 });

@@ -299,10 +299,12 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
   lineas.push({ clave: 'version', titulo: T('arnes.version'), estado: version ? 'medido' : 'no_medido', texto: version || T('arnes.sinVersion') });
   // la última publicada: nunca «al día» sin haber mirado
   if (ultima) {
-    // contra qué se compara (stable) y cuándo se miró
+    // contra qué se compara (el canal estable) y cuándo se miró; la fecha es la de la imagen armada, no la de la
+    // versión, y sin la hora en que se miró no se dice nada de cuándo
     if (ultima.estado === 'medido') {
       lineas.push({ clave: 'ultima', titulo: T('arnes.ultima'), estado: 'medido', texto: T('arnes.ultimaMirada', { version: ultima.version,
-        del: ultima.creada ? ` ${T('vista.delParen', { fecha: String(ultima.creada).slice(0, 10) })}` : '', hora: Number.isFinite(ultima.mirado) ? horaCorta(ultima.mirado) : T('vista.sinHora') }) });
+        armada: ultima.creada ? T('arnes.ultimaArmada', { fecha: String(ultima.creada).slice(0, 10) }) : '',
+        mirada: Number.isFinite(ultima.mirado) ? T('arnes.ultimaMiradaA', { hora: horaCorta(ultima.mirado) }) : '' }) });
     }
     else {
       // el motivo es de la lista cerrada de latest-release.js: se dice en el idioma de la página
@@ -322,7 +324,8 @@ function tile(f, idioma) {
   const pie = f.enlace ? `<div class="t-foot"><a href="${esc(f.enlace)}">${esc(T(f.enlace.startsWith('#') ? 'vista.verLaLista' : f.enlace === '/arnes' ? 'vista.verEnArnes' : 'vista.dondeSeDecide'))}</a></div>` : '';
   if (f.estado === 'cargando') return `<div class="tile cargando">${chip('', T('vista.cargando'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-den">${esc(f.motivo)}</div>${pie}</div>`;
   if (f.estado !== 'medido') return `<div class="tile blind">${chip('blind', T('vista.noMedido'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(T('vista.falta'))}</div><div class="t-den">${esc(f.motivo || T('vista.noMedido'))}</div>${pie}</div>`;
-  const est = f.valor > 0 ? 'warn' : 'ok';
+  // lo que sólo se sigue no lleva el rombo ni el amarillo de lo que hay que decidir: el estado neutro, con su propia marca
+  const est = f.valor > 0 ? (f.seguimiento ? 'neutro' : 'warn') : 'ok';
   // de cuándo es la cuenta: al momento (la de Mantenimiento), leída recién (las máquinas) o de la noche
   const cuando = f.alMomento ? T('vista.alMomento') : Number.isFinite(f.leido) ? T('vista.leido', { hora: horaCorta(f.leido) }) : f.fecha ? T('vista.deLaNocheDel', { fecha: f.fecha }) : null;
   return `<div class="tile ${est}">${chip(est, T(f.valor > 0 ? (f.seguimiento ? 'vista.seguimiento' : 'vista.decidir') : 'vista.nada'))}<div class="t-label">${esc(f.titulo)}</div><div class="t-val">${esc(f.valor)}</div>${cuando ? `<div class="t-den">${esc(cuando)}</div>` : ''}${f.detalle ? `<div class="t-den">${esc(f.detalle)}</div>` : ''}${pie}</div>`;
@@ -498,15 +501,7 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
       const noches = Number.isInteger(d.noches) ? (d.noches === 1 ? T('decidir.unaNoche') : T('decidir.noches', { n: d.noches })) : null;
       return [gravedad ? T(`decidir.gravedad.${gravedad}`) : null, noches].filter(Boolean);
     };
-    // una aceptada arranca por lo que importa —el paquete, su gravedad y sus noches— y sigue con su seguimiento; el id
-    // de la ficha va al final, en gris, para buscarla en el repo de operaciones
-    const filaAceptada = (d) => {
-      const queEs = [d.titulo || d.id, ...gravedadYNoches(d)].map(esc).join(' · ');
-      const seguimiento = d.enlace && enlace(d.enlace) ? `<a href="${esc(d.enlace)}">${esc(T('decidir.pedido', { n: d.pr }))}</a>`
-        : d.sinLugar === 'en_su_tarea' ? `<a href="/mantenimiento">${esc(T('decidir.corto.en_su_tarea'))}</a>`
-          : esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr }));
-      return `<li><span>${queEs} — ${seguimiento}</span>${d.titulo ? `<span class="muted">${esc(d.id)}</span>` : ''}</li>`;
-    };
+    // todas las listas con la misma forma: el seguimiento adelante, después el id de la ficha, el paquete y sus noches
     const fila = (d) => {
       const nombre = [esc(d.id), d.titulo ? esc(d.titulo) : null, ...gravedadYNoches(d).map(esc)].filter(Boolean).join(' · ');
       return d.enlace && enlace(d.enlace)
@@ -514,10 +509,6 @@ function listasDeDecision(m, { enlaceOperaciones = null, remotoOperaciones = nul
         : d.sinLugar === 'en_su_tarea' ? renglonDeLista(`<a href="/mantenimiento">${esc(DEC.fraseSinLugar(d.sinLugar, idioma))}</a>`, nombre)
           : renglonDeLista(null, `${nombre} · ${esc(DEC.fraseSinLugar(d.sinLugar, idioma, { n: d.pr, tarea: d.tarea, proyecto: d.proyecto || '—' }))}`);
     };
-    if (def.rubro === 'aceptadas_sin_resolver') {
-      out.push(seccion(titulo, suyas.length ? `<ul class="lista">${suyas.map(filaAceptada).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguna'))}</p>`, T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
-      continue;
-    }
     out.push(seccion(titulo, ul(suyas.map(fila)), T('vista.deLaNocheDel', { fecha: m.decisiones.fecha }), `decidir-${clave}`));
   }
   return out.join('');
@@ -601,7 +592,8 @@ function filasEstimaciones(m, { idioma = POR_DEFECTO } = {}) {
       }
       total.parciales.real = filas.some((f) => !f.real || !f.real.cerrada);
       // un repo del producto que no se midió deja todo el total parcial: faltan sus épicas
-      if (repos.some((r) => r.estado === 'no_medido')) for (const k of ['rango', 'plan', 'vigente', 'real']) total.parciales[k] = true;
+      total.faltaUnRepo = repos.some((r) => r.estado === 'no_medido');
+      if (total.faltaUnRepo) for (const k of ['rango', 'plan', 'vigente', 'real']) total.parciales[k] = true;
     }
     return { producto: p.producto, repos, total, sin_fotos: !suyas.length };
   });
@@ -685,11 +677,13 @@ function seccionEstimaciones(m, idioma) {
     if (p.total) {
       const tt = p.total;
       // una suma a la que le falta alguna épica lo dice: un total parcial no se lee como completo
-      const marca = (texto, falta) => (falta && texto !== '—' ? `${texto} ${T('proyectos.est.parcial')}` : texto);
+      const marca = (texto, falta, motivo = 'proyectos.est.parcial') => (falta && texto !== '—' ? `${texto} ${T(motivo)}` : texto);
+      // lo real es parcial porque alguna épica sigue abierta; sólo un repo sin medir deja afuera épicas
+      const motivoReal = tt.faltaUnRepo ? 'proyectos.est.parcial' : 'proyectos.est.parcialAbierta';
       const celdas = tt.unidad
-        ? `<td>${esc(marca(rango(tt.min, tt.max, tt.unidad), tt.parciales.rango))}</td><td>${esc(marca(con(tt.plan, tt.unidad), tt.parciales.plan))}</td><td>${esc(marca(con(tt.vigente, tt.unidad), tt.parciales.vigente))}</td>`
+        ? `<td>${esc(marca(rango(tt.min, tt.max, tt.unidad), tt.parciales.rango && tt.min !== null))}</td><td>${esc(marca(con(tt.plan, tt.unidad), tt.parciales.plan))}</td><td>${esc(marca(con(tt.vigente, tt.unidad), tt.parciales.vigente))}</td>`
         : `<td colspan="3">${esc(marca(T('proyectos.est.porUnidad', { sumas: porUnidad(tt.por_unidad) }), tt.parciales.vigente))}</td>`;
-      filas.push(`<tr class="total" data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td><b>${esc(T('proyectos.est.totalDelProducto'))}</b></td>${celdas}<td>${esc(marca(tt.real === null ? '—' : con(tt.real, 'hours'), tt.parciales.real))}</td></tr>`);
+      filas.push(`<tr class="total" data-producto="${esc(p.producto)}"><th scope="row">${esc(p.producto)}</th><td><b>${esc(T('proyectos.est.totalDelProducto'))}</b></td>${celdas}<td>${esc(marca(tt.real === null ? '—' : con(tt.real, 'hours'), tt.parciales.real, motivoReal))}</td></tr>`);
     }
   }
   const tabla = `<div class="card tbl-wrap"><table class="tabla" id="tabla-estimaciones"><thead><tr>${cab}</tr></thead><tbody>${filas.join('')}</tbody></table></div>`;

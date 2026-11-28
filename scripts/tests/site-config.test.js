@@ -5526,7 +5526,7 @@ test('2.75-T27 Proyectos_PorEpicaYProducto @story-2.75 @ac-23 @ac-25 — una fil
   assert.doesNotMatch(fB, /encima|debajo/, 'dentro del rango: sin marca');
   const total = filas.find((f) => /Total del producto/.test(f));
   assert.ok(total && total.includes('100 h') && total.includes('50–80 h'), `la suma del producto suma todas las filas: ${total}`);
-  assert.match(total, /12 h \(parcial: falta alguna épica\)/, 'lo real del producto, con una épica abierta, dice que es parcial');
+  assert.match(total, /12 h \(parcial: alguna épica sigue abierta\)/, 'lo real del producto, con una épica abierta, dice que es parcial y por qué');
   // en inglés, los mismos números
   const en = views.paginaProyectos({ modelo, quien: { rol: 'maintainer', email: 'lider@acme.example' }, pestanas: [], ahora: Date.parse('2026-10-23T12:00:00Z'), idioma: 'en' });
   assert.match(en, /above by 25 h/);
