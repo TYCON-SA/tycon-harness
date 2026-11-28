@@ -210,7 +210,7 @@ const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
 const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
-const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
+const { algunOpenEscribe, comodinDelShell, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
 const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
@@ -384,27 +384,42 @@ function handleCarrilEHistoria(event, opts = {}) {
       || signedRecordKind(abs) !== null || signedRecordKind(real) !== null;
   };
   // La zona protegida (el estado o el árbol instalado) adonde puede llegar un destino con comodín, o null. Un patrón de k
-  // tramos desde su primer comodín sólo nombra rutas a esa profundidad; `**` y `(a|b)` (zsh) llegan a cualquiera. Llega
-  // si el tramo fijo ya está adentro de la zona, o si la zona queda a menos de k tramos debajo de él.
+  // tramos desde su primer comodín sólo nombra rutas a esa profundidad; `**`, `(a|b)` (zsh) y un tramo que nombra `..`
+  // (`.?`, `.*`) llegan a cualquiera. Llega si el tramo fijo ya está adentro de la zona, si la zona queda a k tramos o
+  // menos debajo de él, o si lo que el comodín nombra hoy en el disco es de la zona (un enlace: `l?` con `l1` → estado).
+  const zonas = () => [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))];
   const zonaQueAlcanzaElComodin = (abs) => {
     const partes = String(abs).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
-    const i = partes.findIndex((p) => /[*?[{(]/.test(p));
+    // `(a|b)` de zsh, o un `(` sin cerrar (el `|` corta la palabra: `x(a|b)` llega como `x(a`)
+    const alterna = (p) => /\([^)]*(?:\||$)/.test(p);
+    const esComodin = (p) => /[*?[]/.test(p) || alterna(p);
+    const i = partes.findIndex(esComodin);
     if (i < 0) return null;
-    const fijo = partes.slice(0, i).join(path.sep) || path.sep;
     const resto = partes.slice(i);
-    const cualquiera = resto.some((p) => p.includes('**') || /[(|]/.test(p));
-    for (const z of [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))]) {
+    // sólo un tramo que empieza con `.` nombra `..` (ni con dotglob un `*` lo nombra)
+    const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
+    const subeOAnda = resto.some((p) => p.includes('**') || alterna(p)
+      || nombraPadre(p));
+    const fijo = resto.some(nombraPadre)
+      ? path.parse(String(abs)).root || path.sep
+      : partes.slice(0, i).join(path.sep) || path.sep;
+    for (const z of zonas()) {
       if (isInside(z, fijo)) return z;
-      if (isInside(fijo, z) && (cualquiera || resto.length > path.relative(fijo, z).split(path.sep).length)) return z;
+      if (isInside(fijo, z) && (subeOAnda || resto.length >= path.relative(fijo, z).split(path.sep).length)) return z;
     }
+    try { for (const m of expandirComodin(abs, cwd, {})) if (protegido(m)) return stateDir; } catch (e) { logHookError(e); }
     return null;
   };
+  // Las rutas de un destino con llaves (`{a,b}`, `{..,x}`, `{<estado>,x}`): cada alternativa, resuelta por su cuenta
+  const conLlaves = (valor) => (/\{[^{}]*,[^{}]*\}/.test(String(valor))
+    ? expandirLlaves(String(valor)).map((x) => resolveTarget(x, cwd, process.platform, { homeVariable: true })) : []);
   // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
   // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
   const keep = (t) => {
     const valor = expandirRuta(cmd, t).valor;
     const abs = resolveTarget(valor, cwd, process.platform, { homeVariable: true });
-    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null;
+    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null
+      || conLlaves(valor).some((x) => protegido(x) || zonaQueAlcanzaElComodin(x) !== null);
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
   const constancias = constanciasTocadas(cmd, cwd, stateDir, baseCwd);
@@ -618,6 +633,10 @@ function handleCarrilEHistoria(event, opts = {}) {
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
   // un comodín en el destino (`>> /p/est?do/x`, `{a,b}`, `**` y `(a|b)` de zsh): el shell lo expande y puede nombrar un
   // archivo del estado o del árbol instalado. Sin mirar el disco: si el comodín puede llegar adentro de una zona, frena
+  for (const d of resueltos) {
+    if (d.sinResolver.length) continue;
+    for (const x of conLlaves(expandirRuta(cmdDestinos, d.raw).valor)) if (!absTargets.includes(x)) absTargets.push(x);
+  }
   for (const abs of [...absTargets]) {
     const zona = zonaQueAlcanzaElComodin(abs);
     if (zona && !absTargets.includes(path.join(zona, 'comodin'))) absTargets.push(path.join(zona, 'comodin'));
