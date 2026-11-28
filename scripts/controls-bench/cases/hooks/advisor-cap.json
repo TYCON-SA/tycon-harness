@@ -1,0 +1,79 @@
+{
+  "hooks": [
+    {
+      "hook": "on-advisor-cap.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-cap.js",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "cases": [
+        {
+          "id": "frena-revisor-a-mano-al-tope",
+          "type": "must-block",
+          "_por_que": "S254: al tope de vueltas, lanzar a mano un revisor fuera de la vuelta abierta era una vuelta más sin el guion ni la firma del dueño.",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo base > src/a.js && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && echo cambio > src/a.js",
+            "node -e \"const fs=require('fs'),p=require('path');const repo=process.env.FIXTURE,home=process.env.SANDBOX_HOME;const N=+process.argv[1];const hace=(s)=>new Date(Date.now()-s*1000).toISOString();const story=p.join(repo,'story.md');fs.writeFileSync(story,'---\\\\nstory: 9.8\\\\nepic: 9\\\\nstatus: in-progress\\\\n---\\\\n\\\\n## Acceptance Criteria\\\\n- AC1: x\\\\n');const run=p.join(repo,'.advisors','pipeline-runs','9.8-20261020000000');fs.mkdirSync(p.join(run,'rethink'),{recursive:true});const servidas=[...Array(N).keys()].map((i)=>i+1);fs.writeFileSync(p.join(run,'rethink','served.json'),JSON.stringify({served:servidas}));const st=p.join(home,'.claude','.tycon-pipeline');fs.mkdirSync(p.join(st,'active'),{recursive:true});const it={};for(const n of servidas)it[n]={ts:hace(900-n),files:{}};fs.writeFileSync(p.join(st,'active','bench-cap.json'),JSON.stringify({storyId:'9.8',storyPath:story,repoPath:repo,sessionId:'bench-cap',startedAt:hace(3600),stepsCompleted:[0,1,2,3,4,5,6,7],stepsPending:[8],iterations:it,fileEvents:[],checks:{}}));fs.appendFileSync(p.join(st,'gates.log'),JSON.stringify({ts:hace(3600),sessionId:'bench-cap',name:'run-open',sesion:'bench-cap',story:'9.8',storyPath:story,repo,runDir:run})+'\\\\n');\" 3"
+          ],
+          "stdin": {
+            "session_id": "bench-cap",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics",
+              "prompt": "revisá"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tope de 3 vueltas"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "review-cap-launch-denied"
+              }
+            ]
+          }
+        },
+        {
+          "id": "pasa-agente-que-no-es-revisor",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo base > src/a.js && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && echo cambio > src/a.js",
+            "node -e \"const fs=require('fs'),p=require('path');const repo=process.env.FIXTURE,home=process.env.SANDBOX_HOME;const N=+process.argv[1];const hace=(s)=>new Date(Date.now()-s*1000).toISOString();const story=p.join(repo,'story.md');fs.writeFileSync(story,'---\\\\nstory: 9.8\\\\nepic: 9\\\\nstatus: in-progress\\\\n---\\\\n\\\\n## Acceptance Criteria\\\\n- AC1: x\\\\n');const run=p.join(repo,'.advisors','pipeline-runs','9.8-20261020000000');fs.mkdirSync(p.join(run,'rethink'),{recursive:true});const servidas=[...Array(N).keys()].map((i)=>i+1);fs.writeFileSync(p.join(run,'rethink','served.json'),JSON.stringify({served:servidas}));const st=p.join(home,'.claude','.tycon-pipeline');fs.mkdirSync(p.join(st,'active'),{recursive:true});const it={};for(const n of servidas)it[n]={ts:hace(900-n),files:{}};fs.writeFileSync(p.join(st,'active','bench-cap.json'),JSON.stringify({storyId:'9.8',storyPath:story,repoPath:repo,sessionId:'bench-cap',startedAt:hace(3600),stepsCompleted:[0,1,2,3,4,5,6,7],stepsPending:[8],iterations:it,fileEvents:[],checks:{}}));fs.appendFileSync(p.join(st,'gates.log'),JSON.stringify({ts:hace(3600),sessionId:'bench-cap',name:'run-open',sesion:'bench-cap',story:'9.8',storyPath:story,repo,runDir:run})+'\\\\n');\" 3"
+          ],
+          "stdin": {
+            "session_id": "bench-cap",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "general-purpose",
+              "prompt": "buscá"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "pasa-revisor-antes-del-tope",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p src && echo base > src/a.js && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && echo cambio > src/a.js",
+            "node -e \"const fs=require('fs'),p=require('path');const repo=process.env.FIXTURE,home=process.env.SANDBOX_HOME;const N=+process.argv[1];const hace=(s)=>new Date(Date.now()-s*1000).toISOString();const story=p.join(repo,'story.md');fs.writeFileSync(story,'---\\\\nstory: 9.8\\\\nepic: 9\\\\nstatus: in-progress\\\\n---\\\\n\\\\n## Acceptance Criteria\\\\n- AC1: x\\\\n');const run=p.join(repo,'.advisors','pipeline-runs','9.8-20261020000000');fs.mkdirSync(p.join(run,'rethink'),{recursive:true});const servidas=[...Array(N).keys()].map((i)=>i+1);fs.writeFileSync(p.join(run,'rethink','served.json'),JSON.stringify({served:servidas}));const st=p.join(home,'.claude','.tycon-pipeline');fs.mkdirSync(p.join(st,'active'),{recursive:true});const it={};for(const n of servidas)it[n]={ts:hace(900-n),files:{}};fs.writeFileSync(p.join(st,'active','bench-cap.json'),JSON.stringify({storyId:'9.8',storyPath:story,repoPath:repo,sessionId:'bench-cap',startedAt:hace(3600),stepsCompleted:[0,1,2,3,4,5,6,7],stepsPending:[8],iterations:it,fileEvents:[],checks:{}}));fs.appendFileSync(p.join(st,'gates.log'),JSON.stringify({ts:hace(3600),sessionId:'bench-cap',name:'run-open',sesion:'bench-cap',story:'9.8',storyPath:story,repo,runDir:run})+'\\\\n');\" 2"
+          ],
+          "stdin": {
+            "session_id": "bench-cap",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics",
+              "prompt": "revisá"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

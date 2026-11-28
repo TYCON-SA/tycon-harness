@@ -33,6 +33,11 @@ HOY_OPC="--($(nombres option today scripts/nightly/dependencies/work-items.js sc
 DOBLE="$AQUI/scripts/tests/lib/fake-az.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
+# La foto de llamadas a az (scripts/tests/lib/record-platform-golden.js): esta suite la saca mientras corre y la compara
+# al final, así la prueba de la foto no la vuelve a correr. Si quien la llama ya trae su propia foto (grabarla), se
+# respeta y no se compara acá.
+FOTO_PROPIA=""
+if [ -z "${TYCON_AZ_SNAPSHOT:-}" ]; then FOTO_PROPIA="$TMP/foto-az"; : > "$FOTO_PROPIA"; export TYCON_AZ_SNAPSHOT="$FOTO_PROPIA"; fi
 ok(){ echo "✅ pedidos: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ pedidos: $1"; fallos=$((fallos+1)); }
 
@@ -1446,6 +1451,13 @@ rc=$(TYCON_AZ_FAIL=wiql correr --operations "$TMP/operations.json")
   && ok "T70 (búsqueda caída): 🔴 sin poder buscar duplicados no se crea nada, y se dice" \
   || no "T70 (búsqueda caída): rc=$rc creates=$(cuenta crear) · $(pie)"
 rm -f "$TMP/operations.json"
+
+# ── la foto de llamadas a az de toda la suite, contra la grabada ─────────────────────────────────────
+if [ -n "$FOTO_PROPIA" ]; then
+  foto_out="$(node "$AQUI/scripts/tests/lib/record-platform-golden.js" check-calls work-items.test.sh "$FOTO_PROPIA" 2>&1)" \
+    && ok "la foto de llamadas a az es la grabada (scripts/tests/fixtures/platform-golden/work-items.calls)" \
+    || no "la foto de llamadas a az cambió: $(printf '%s' "$foto_out" | head -5 | tr '\n' ' ')"
+fi
 
 echo
 total=$((pasaron + fallos))

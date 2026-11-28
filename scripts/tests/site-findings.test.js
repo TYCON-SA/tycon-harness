@@ -1376,6 +1376,18 @@ test('T6 2.79-Mantenimiento_TareasDeProyectosSinElPaquete_SeMuestranAparte @stor
   });
 });
 
+// 🔴 Falla con: una ficha sin `repos:` (no dice dónde vive el paquete) mandaba todas sus tareas a «esperan su cierre: el
+//    paquete ya no está en sus proyectos», al lado de «Te toca decidir» la misma vulnerabilidad (A93, recorrido F21). Sin
+//    la lista no se sabe dónde vive: las tareas son vigentes, como con un repo que no declara su proyecto.
+test('A93 Mantenimiento_FichaSinRepos_SusTareasSonVigentes', { timeout: 60000 }, async () => {
+  const ficha = 'id: dep-uno\ndetectado: 2026-10-19\nveredicto: pendiente\npaquete: pkg-uno\nseveridad: high\nnoches: 3\npedidos:\n  - Producto X: 5002\n';
+  const repos = JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm' }] });
+  await conSitio({ extra: { 'inbox/dependencies/pending/dep-uno.yaml': ficha, 'scripts/nightly/dependencies/repos.json': repos } }, async ({ lista }) => {
+    const v = (await lista()).json.marcha.vulnerabilidades.find((x) => x.id === 'dep-uno');
+    assert.deepStrictEqual(v.tareas.map((t) => [t.numero, t.vigente]), [['5002', true]], 'sin repos no se sabe dónde vive: vigente');
+  });
+});
+
 // 2.79-CadaCausaTieneSuNombreEnIngles @story-2.79 @ac-35
 // 🔴 Falla con: un código de causa sin su texto en inglés, un castellano distinto del que escribe la noche, o dos
 //    códigos con el mismo nombre que comparten una sola clave.

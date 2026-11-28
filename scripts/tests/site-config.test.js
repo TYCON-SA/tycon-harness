@@ -4217,14 +4217,14 @@ test('8.116 T29 SiteConfig_Aprobaciones_FirmasYMaquinas', async () => {
 test('8.116 T30 SiteConfig_Aprobaciones_ProponePedido', async () => {
   const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
   selectorDeFirma(p, 'plan-approval').on.change({ target: { value: 'delegada' } });
-  selectorDeFirma(p, 'extra-round').on.change({ target: { value: 'delegada' } });
+  selectorDeFirma(p, 'compare-waiver').on.change({ target: { value: 'delegada' } });
   selectorDeFirma(p, 'critical-waiver').on.change({ target: { value: 'dueno' } });
   const b = await borradorAlRevisar(p);
-  assert.deepStrictEqual(b.approvals, { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'], owner_only: ['critical-waiver'] });
+  assert.deepStrictEqual(b.approvals, { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'compare-waiver'], owner_only: ['critical-waiver'] });
   // pasar lo delegado a sólo del dueño lo saca de la otra lista: nunca queda en las dos
-  selectorDeFirma(p, 'extra-round').on.change({ target: { value: 'dueno' } });
+  selectorDeFirma(p, 'compare-waiver').on.change({ target: { value: 'dueno' } });
   const b2 = await borradorAlRevisar(p);
-  assert.deepStrictEqual([b2.approvals.delegated_signing, b2.approvals.owner_only], [['plan-approval'], ['extra-round', 'critical-waiver']], 'la lista que ya era lista sigue siéndolo');
+  assert.deepStrictEqual([b2.approvals.delegated_signing, b2.approvals.owner_only], [['plan-approval'], ['critical-waiver', 'compare-waiver']], 'la lista que ya era lista sigue siéndolo');
   // el lector lo valida, con las máquinas, y el pedido toca sólo approvals
   const borrador = { approvals: { ...b2.approvals, delegated_machines: [{ id: 'abcdefabcdefabcd', label: 'la de prueba' }] } };
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
@@ -6075,7 +6075,7 @@ test('T48 2.79-Corridas_DatosCrudosEnLlano @story-2.79 @ac-39 — en Configuraci
 test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   const nivel = (p, id) => p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === `approvals.nivel.${id}`);
   const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
-  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })]);
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'compare-waiver'] } })]);
   for (const l of require(path.join(ROOT, 'scripts', 'lib', 'signatures.js')).LEVELS) {
     assert.deepStrictEqual(valores(nivel(p, l.id)), ['1', '2', '3'].slice(l.level - 1), `${l.id}: sólo desde su nivel para arriba`);
   }
@@ -6083,7 +6083,7 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   nivel(p, 'plan-approval').on.change({ target: { value: '2' } });
   let b = await borradorAlRevisar(p);
   assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 });
-  assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'subirla a 2 la saca de la delegación');
+  assert.deepStrictEqual(b.approvals.delegated_signing, ['compare-waiver'], 'subirla a 2 la saca de la delegación');
   assert.ok(!valores(selectorDeFirma(p, 'plan-approval')).includes('delegada'), 'y ya no se ofrece para delegar');
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: b, lectores: { 'harness-config': TC } });
   assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
@@ -6107,7 +6107,7 @@ test('niveles T8 SiteConfig_Niveles_SoloSubeYProponePedido', async () => {
   assert.match(p.textoDe('aprobaciones'), /Quién firma cada nivel/, 'la sección dice quién firma cada nivel');
   // lo que se lee en cada opción, no sólo que la clave exista: una clave repetida en la tabla de textos se pisa con otra
   const rotulos = (sel) => sel.hijos.map((o) => o.textContent || o.attrs.text || '');
-  assert.deepStrictEqual(rotulos(nivel(p, 'extra-round')), ['1 · rutina', '2 · excepción', '3 · irreversible']);
+  assert.deepStrictEqual(rotulos(nivel(p, 'compare-waiver')), ['1 · rutina', '2 · excepción', '3 · irreversible']);
   for (const k of ['pantalla.nivelesTitulo', 'pantalla.nivelesAyuda', 'pantalla.nivelesQuienFirma', 'pantalla.nivel1', 'pantalla.nivel2', 'pantalla.nivel3']) {
     const es = textos.t('es', k); const en = textos.t('en', k);
     assert.ok(es && en && es !== k && en !== k && es !== en, `${k} existe y está traducida`);
@@ -6540,7 +6540,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
   const nombre = (idioma, pref, id, porDefecto) => { const v = TX.t(idioma, `${pref}${id}`); return v === `${pref}${id}` ? porDefecto : v; };
   const valores = (sel) => sel.hijos.map((o) => o.attrs.value);
   for (const idioma of ['es', 'en']) {
-    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'extra-round'] } })], {}, idioma);
+    const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: ['plan-approval', 'compare-waiver'] } })], {}, idioma);
     assert.strictEqual(p.error, null);
     const nodos = () => p.todo(p.sec('aprobaciones'));
     assert.ok(!nodos().some((n) => clase(n, 'tabla2') && clase(n, 'niveles')), `${idioma}: ya no está la tabla de niveles aparte`);
@@ -6591,7 +6591,7 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
     if (idioma === 'es') {
       const b = await borradorAlRevisar(p);
       assert.deepStrictEqual(b.approvals.levels, { 'plan-approval': 2 }, 'el nivel subido se guarda');
-      assert.deepStrictEqual(b.approvals.delegated_signing, ['extra-round'], 'y sale de lo delegado en el mismo cambio');
+      assert.deepStrictEqual(b.approvals.delegated_signing, ['compare-waiver'], 'y sale de lo delegado en el mismo cambio');
     }
   }
 });
