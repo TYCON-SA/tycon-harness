@@ -103,9 +103,9 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
-- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés, Cómo trabaja,
-  Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
-- **Una persona confirmada** ve Inicio, Ejecuciones, Proyectos y Ayuda, con lo suyo.
+- **Quien mantiene** ve todas las pestañas (Inicio, Oficinas, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés,
+  Cómo trabaja, Horas y tokens, Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
+- **Una persona confirmada** ve Inicio, Oficinas, Ejecuciones, Proyectos y Ayuda, con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
   lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
@@ -217,7 +217,7 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
 menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
-tiene cuatro bloques:
+tiene hasta cuatro bloques. «Te toca decidir» está siempre; de los otros tres, uno vacío no se muestra:
 
 - **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones, y las
   vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
@@ -1141,7 +1141,8 @@ El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra
 | **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
 | **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
 
-**Aprendizajes** la ve sólo quien mantiene, como Mantenimiento: una persona confirmada no la ve en el menú.
+**Aprendizajes** y **Horas y tokens** las ve sólo quien mantiene, como Mantenimiento: una persona confirmada no las ve en el
+menú. **Oficinas** está en el menú de los dos; qué oficinas ve cada uno lo dice «La pestaña «Oficinas»».
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
@@ -1273,8 +1274,9 @@ Es el mismo sitio, con datos de ejemplo de una organización inventada (**Acme**
 para mostrar qué hace sin dar acceso a nada real. Corre como una instancia aparte: no es el sitio de la organización ni
 lo reemplaza, y nada de lo que se ve en él existe.
 
-**Qué se ve.** Todas las pestañas con los datos de ejemplo: Inicio, Ejecuciones (con su detalle y sus textos), Proyectos,
-Arnés, Cómo trabaja, Configuración y Ayuda. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
+**Qué se ve.** Las pestañas con los datos de ejemplo: Inicio, Oficinas, Ejecuciones (con su detalle y sus textos),
+Mantenimiento, Proyectos, Arnés, Cómo trabaja, Horas y tokens, Configuración y Ayuda. **Aprendizajes** no está: sólo la
+tiene el sitio de una organización. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
 de la pestaña del navegador también. El selector **Ver como** deja mirar el sitio como quien lo mantiene (todo, con
 Configuración) o como una persona del equipo («Lo tuyo», sin Configuración). Los botones que cambian algo (**Proponer** en
 Configuración y en Cómo trabaja, **Invitar** y **Revocar**) revisan como siempre y muestran lo que pasaría, y dicen que en

@@ -106,9 +106,9 @@ the language you chose.
 
 **What you see the first time** depends on who you are for the site:
 
-- **A maintainer** sees every tab (Home, Runs, Maintenance, Learnings, Projects, Harness, How it works, Configuration and Help),
-  and in Home what is waiting for a decision across the organization.
-- **A confirmed person** sees Home, Runs, Projects and Help, with their own things.
+- **A maintainer** sees every tab (Home, Offices, Runs, Maintenance, Learnings, Projects, Harness, How it works, Hours and
+  tokens, Configuration and Help), and in Home what is waiting for a decision across the organization.
+- **A confirmed person** sees Home, Offices, Runs, Projects and Help, with their own things.
 - **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
   not in the list, whom to ask and how to sign in with another one. They see neither the menu on the left nor any data.
 
@@ -218,8 +218,8 @@ its own. Each run's changes come back when the new view finishes building. The s
 ### Maintenance
 
 Only for **maintainers**: what the night found, ordered by who has the ball. Next to the name, in the menu, goes how
-many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has four
-blocks:
+many findings wait for your decision, for example "Maintenance (12)"; with none, just the name. The screen has up to four
+blocks. "Your decision" is always there; of the other three, one that is empty is not shown:
 
 - **Your decision**: what the production watcher and the review of the runs found, and the pending package
   vulnerabilities. Production first, because those are real customers. Within each group, first what the analysis
@@ -1167,7 +1167,8 @@ The site decides who you are by your email, and only with the "Who gets into the
 | **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | no | the products they work on | no | no | no |
 | **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no | no |
 
-**Learnings** is seen only by maintainers, like Maintenance: a confirmed person does not see it in the menu.
+**Learnings** and **Hours and tokens** are seen only by maintainers, like Maintenance: a confirmed person does not see
+them in the menu. **Offices** is in both menus; which offices each one sees is in "The «Offices» tab".
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
@@ -1304,8 +1305,9 @@ It is the same site, with example data from a made-up organization (**Acme**), o
 account**, to show what it does without giving access to anything real. It runs as a separate instance: it is not the
 organization's site and does not replace it, and nothing you see in it exists.
 
-**What you see.** Every tab with the example data: Home, Runs (with their detail and their texts), Projects, Harness, How
-it works, Configuration and Help. At the top of every page a fixed strip says **Example data**, and so does the title of the
+**What you see.** The tabs with the example data: Home, Offices, Runs (with their detail and their texts), Maintenance,
+Projects, Harness, How it works, Hours and tokens, Configuration and Help. **Learnings** is not there: only an
+organization's site has it. At the top of every page a fixed strip says **Example data**, and so does the title of the
 browser tab. The **View as** selector lets you look at the site as its maintainer (everything, with Configuration) or as a
 team member ("Yours", without Configuration). The buttons that change something (**Propose** in Configuration and in How it
 works, **Invite** and **Revoke**) check as usual and show what would happen, and say that the demo site writes nothing.

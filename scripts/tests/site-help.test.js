@@ -298,3 +298,58 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
     assert.strictEqual(img.headers['cache-control'], 'private, max-age=3600', 'la captura se guarda sólo en el navegador de la sesión');
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
+
+// Las pestañas de cada rol, leídas de las rutas del sitio: `needs` y `pestana.id` de cada archivo que arma una pestaña.
+// `solo` es quien mantiene; `necesita` (Oficinas), los dos roles.
+function pestanasDelSitio() {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const archivos = [path.join(H.SITE, 'server.js'), path.join(H.SITE, 'help.js'), ...fs.readdirSync(path.join(H.SITE, 'tabs')).filter((f) => f.endsWith('.js')).map((f) => path.join(H.SITE, 'tabs', f))];
+  const roles = { solo: ['maintainer'], necesita: ['maintainer', 'person'] };
+  const out = [];
+  for (const f of archivos) {
+    for (const m of leer(f).matchAll(/needs: (\[[^\]]*\]|\w+), pestana: \{ id: '(\w+)'/g)) {
+      const needs = m[1].startsWith('[') ? JSON.parse(m[1].replace(/'/g, '"')) : roles[m[1]];
+      assert.ok(needs, `${path.basename(f)}: no sé qué roles son «${m[1]}»`);
+      out.push({ id: m[2], needs, es: t('es', `pestana.${m[2]}`), en: t('en', `pestana.${m[2]}`) });
+    }
+  }
+  return out;
+}
+
+// 🔴 Falla con: la Ayuda lista en «El primer ingreso» otras pestañas que las del menú (A160).
+test('A160_PrimerIngreso_NombraLasPestanasDeCadaRol — quien mantiene, todas; una persona, las suyas y ninguna de quien mantiene', () => {
+  const pestanas = pestanasDelSitio();
+  assert.ok(pestanas.length >= 11, `encontré ${pestanas.length} pestañas`);
+  const renglones = {
+    es: { mantiene: /^- \*\*Quien mantiene\*\* ve todas las pestañas \(([^)]*)\)/m, persona: /^- \*\*Una persona confirmada\*\* ve ([^,]*(?:, [^,]*)*?), con lo suyo/m },
+    en: { mantiene: /^- \*\*A maintainer\*\* sees every tab \(([^)]*)\)/m, persona: /^- \*\*A confirmed person\*\* sees (.*?), with their own things/m },
+  };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]).replace(/\n {2}/g, ' ');
+    const lista = (re) => { const m = re.exec(md); assert.ok(m, `${idioma}: no encontré el renglón ${re}`); const partes = m[1].split(', '); const ult = partes.pop(); const y = Math.max(ult.lastIndexOf(' y '), ult.lastIndexOf(' and '));
+      // el último par va con «y»/«and», que también puede estar adentro de un nombre («Horas y tokens»)
+      return [...partes, ...(y < 0 ? [ult] : [ult.slice(0, y), ult.slice(y).replace(/^ (y|and) /, '')])].map((x) => x.trim()); };
+    const mantiene = lista(renglones[idioma].mantiene);
+    const persona = lista(renglones[idioma].persona);
+    assert.deepStrictEqual([...mantiene].sort(), pestanas.filter((p) => p.needs.includes('maintainer')).map((p) => p[idioma]).sort(), `${idioma}: quien mantiene`);
+    assert.deepStrictEqual([...persona].sort(), pestanas.filter((p) => p.needs.includes('person')).map((p) => p[idioma]).sort(), `${idioma}: una persona`);
+  }
+});
+
+// 🔴 Falla con: la Ayuda promete cuatro bloques fijos en Mantenimiento y la pantalla esconde los vacíos (A161).
+test('A161_Mantenimiento_LaAyudaDiceQueLosBloquesVaciosNoSeVen — «Te toca decidir» siempre; los otros tres, sólo con algo', () => {
+  const secciones = { es: '### Mantenimiento', en: '### Maintenance' };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]);
+    const desde = md.indexOf(secciones[idioma]);
+    const sec = md.slice(desde, md.indexOf('\n### ', desde + 5)).replace(/\n/g, ' ');
+    assert.doesNotMatch(sec, /tiene cuatro bloques:|has four blocks:/, `${idioma}: promete cuatro bloques fijos`);
+    assert.match(sec, idioma === 'es' ? /hasta cuatro bloques/ : /up to four blocks/, `${idioma}: dice hasta cuántos`);
+    assert.match(sec, idioma === 'es' ? /vacío no se muestra/ : /empty is not shown/, `${idioma}: dice que el vacío no se ve`);
+  }
+  // y la pantalla, en efecto, arma esos tres bloques sólo con algo adentro
+  const src = leer(path.join(H.SITE, 'tabs', 'findings.js'));
+  assert.match(src, /const espera = m\.espera\.length\s*\?/);
+  assert.match(src, /const marcha = m\.cuentas\.marcha\s*\?/);
+  assert.match(src, /m-decididas"\$\{m\.decididas\.length \? '' : ' hidden'\}/);
+});
