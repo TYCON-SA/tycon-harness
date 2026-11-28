@@ -191,8 +191,9 @@ const CALCULADAS_SUELTAS = [{ archivo: 'scripts/lib/owner-window.js', args: /fir
 
 /**
  * Los `.js` y `.sh` del árbol, sin pruebas (ni carpetas `tests/` ni archivos `*.test.*`), sin el banco, sin los
- * laboratorios de `tasks/` (el árbol que arma el portón pone el privado debajo) y sin `on-red-test-edit.js` (su
- * `firmaDelDueno` no es la de marker.js).
+ * laboratorios de `tasks/` (el árbol que arma el portón pone el privado debajo), sin las carpetas de juguete que otra
+ * suite arma en la raíz mientras corre (`.prod-saved-…` de prod-saved-scripts.test.sh, con un guion sin permiso de
+ * lectura a propósito: en la CI corren a la vez) y sin `on-red-test-edit.js` (su `firmaDelDueno` no es la de marker.js).
  */
 function archivosDelArbol(raiz) {
   const out = [];
@@ -201,7 +202,7 @@ function archivosDelArbol(raiz) {
       const p = path.join(dir, e.name);
       const rel = path.relative(raiz, p).split(path.sep).join('/');
       if (e.isDirectory()) {
-        if (['.git', 'node_modules', 'tests', '.advisors', 'tasks'].includes(e.name) || rel === 'scripts/controls-bench') continue;
+        if (['.git', 'node_modules', 'tests', '.advisors', 'tasks'].includes(e.name) || rel === 'scripts/controls-bench' || /^\.prod-saved-/.test(e.name)) continue;
         recorrer(p);
       } else if (/\.(js|sh)$/.test(e.name) && !/\.test\.(js|sh)$/.test(e.name) && !rel.endsWith('on-red-test-edit.js')) out.push(rel);
     }
