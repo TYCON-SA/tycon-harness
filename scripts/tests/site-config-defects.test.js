@@ -733,3 +733,11 @@ test('Regresion_CadaSeccionDelPerfil_PideSuVersion — toda sección que el prim
   const todas = ORG.pedidasDelPerfil({ actual: {}, doc: { office: {}, approvals: { signature_list: 'on', levels: {}, owner_only: [], delegated_machines: [] }, coordination: { session_names: [] } } });
   for (const [k, , mensaje] of todas) for (const idioma of ['es', 'en']) assert.ok(t(idioma, mensaje) && t(idioma, mensaje) !== mensaje, `${idioma} ${k}: ${mensaje}`);
 });
+
+// 🔴 Falla con: el «Para qué» de las vueltas de revisores dice un valor de fábrica distinto del que usa el pipeline (A162).
+test('A162_VueltasDeRevisores_ElParaQueDiceElMismoValorDeFabrica — el «Para qué» nombra el tope de fábrica de review-rounds.js', () => {
+  const { FABRICA } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'review-rounds.js'));
+  const textos = { es: t('es', 'pantalla.para.revision'), en: t('en', 'pantalla.para.revision') };
+  assert.match(textos.es, new RegExp(`de fábrica son ${FABRICA}\\b`), textos.es);
+  assert.match(textos.en, new RegExp(`the default is ${FABRICA}\\b`), textos.en);
+});
