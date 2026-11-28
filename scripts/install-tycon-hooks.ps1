@@ -37,12 +37,13 @@
 # Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js en una máquina sólo con Codex): la misma lista cerrada
 # que el .sh (ver «Sin Claude Code» en su cabecera), en lo que este archivo tiene: el candado, el reporte y el plan; la
 # lectura de la configuración y del perfil; los chequeos de engram y de sqlite3; el AGENTS.md puntero; el refresco de la
-# lista de proyectos de Azure; la subida al buzón; los hooks globales de git y la mirada al core.hooksPath local de los
-# clones; y la mudanza del historial viejo de los hooks. Lo de Claude Code —el lugar del arnés y sus enlaces, las skills de
+# lista de proyectos de Azure; la recolección de hallazgos y la subida al buzón; los hooks globales de git y la mirada al
+# core.hooksPath local de los clones; y la mudanza del historial viejo de los hooks. Lo de Claude Code —el lugar del arnés y sus enlaces, las skills de
 # este archivo, settings.json, los nombres viejos, los bloques de CLAUDE.md, el despliegue de Codex en este archivo— no
 # corre, y nada se escribe en la carpeta de Claude Code: lo que va al estado va a la carpeta del estado de la casa propia.
 # Las skills de esa máquina llegan por la versión bajada y harness.js las enlaza en la carpeta de Codex. Cada parte
-# saltada lleva la guarda `CLAUDE_OFF`. (Este archivo no corre las suites rápidas del .sh, con o sin Claude Code.)
+# saltada lleva la guarda `CLAUDE_OFF`. (Este archivo no corre las suites rápidas del .sh, con o sin Claude Code: varias
+# de esas pruebas todavía no corren en Windows.)
 
 # -Enlace es el nombre viejo de -Link (en castellano): sigue andando por el alias de PowerShell hasta el
 # retiro, y su uso se anota (más abajo, con la biblioteca ya cargada).
@@ -595,6 +596,7 @@ $ReadBatch = $null
 if (-not $Link) {
     $readSteps = @()
     $readSteps += @{ id = 'claudedir'; script = 'tycon-home'; args = @('--claude-dir') }
+    $readSteps += @{ id = 'statedir'; script = 'tycon-home'; args = @('--state-dir') }
     if (-not $ClaudeOff -and (Test-Path $rutaCanonica)) {
         $readSteps += @{ id = 'place'; script = 'canonical-path'; args = @(@('--ensure-link', '--clone', (Split-Path -Parent $PSScriptRoot)) + @(if ($Check) { '--check' })) }
         if ($RepoLinksHere) { $readSteps += @{ id = 'links'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'agent-skills') + @(if ($Check) { '--check' })) } }
@@ -700,20 +702,22 @@ if (-not $ClaudeOff -and (Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'script
 # ============================================================
 $ClaudeDir   = $script:TyconClaudeDir   # la de tycon-home.js: la misma que usan los guiones de Node
 $Settings    = Join-Path $ClaudeDir 'settings.json'
-# Donde van el estado y los registros de este archivo. Con Claude Code, la de siempre. Sin él, la que da la regla
-# (scripts/setup/harness/tycon-home.js: la casa propia); si no contesta, $null, y lo que escribiría ahí no corre: nunca
-# cae en la carpeta de Claude Code.
-$StateDir = Join-Path $ClaudeDir '.tycon-pipeline'
-if ($ClaudeOff) {
-    $StateDir = $null
-    $tyconHomeJs = Join-Path (Join-Path (Join-Path $PSScriptRoot 'setup') 'harness') 'tycon-home.js'
-    if ((Test-Path $tyconHomeJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-        $eapS = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        try { $sd = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $tyconHomeJs 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $sd) { $StateDir = $sd } }
-        catch { } finally { $ErrorActionPreference = $eapS }
-    }
-    if (-not $StateDir) { Write-Host "⚠ tycon: no supe cuál es la carpeta del estado (scripts/setup/harness/tycon-home.js no contestó): no corre lo que escribe ahí" }
+# Donde van el estado y los registros de este archivo: la que da la regla (scripts/setup/harness/tycon-home.js), con o
+# sin Claude Code, como en el .sh. En una máquina que vive en la casa propia es esa, aunque tenga Claude Code: ahí la
+# leen los guiones. Si la regla no contesta: con Claude Code, la de siempre; sin él, $null, y lo que escribiría ahí no
+# corre (nunca cae en la carpeta de Claude Code).
+$StateDir = $null
+$tyconHomeJs = Join-Path (Join-Path (Join-Path $PSScriptRoot 'setup') 'harness') 'tycon-home.js'
+# lo que trajo la tanda de lectura; si no lo trajo, la misma pregunta suelta
+if ($ReadBatch -and $ReadBatch['statedir'] -and $ReadBatch['statedir'].Rc -eq 0) {
+    $sd = (Get-ChunkText $ReadBatch['statedir'].Chunks 'o').Trim(); if ($sd) { $StateDir = $sd }
+} elseif ((Test-Path $tyconHomeJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    $eapS = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $sd = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $tyconHomeJs 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $sd) { $StateDir = $sd } }
+    catch { } finally { $ErrorActionPreference = $eapS }
 }
+if (-not $StateDir -and -not $ClaudeOff) { $StateDir = Join-Path $ClaudeDir '.tycon-pipeline' }
+if (-not $StateDir) { Write-Host "⚠ tycon: no supe cuál es la carpeta del estado (scripts/setup/harness/tycon-home.js no contestó): no corre lo que escribe ahí" }
 
 # ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (dónde están las skills, settings.json y la verificación de agent-skills) no corre sin Claude Code
 if (-not $ClaudeOff) {
@@ -832,7 +836,9 @@ function Invoke-HarnessFromExisting {
     # lanzado POR harness.js: el estado lo escribe quien lo lanzó (se escribiría dos veces, con una copia de más)
     if ($env:TYCON_HARNESS_LOCK_HELD -eq '1') { return }
     $harnessJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'harness.js'
-    $stateFile = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'harness-state.json'
+    # el estado, en la carpeta que da la regla (en la casa propia, aunque haya Claude Code): sin ella no se sabe si falta
+    if (-not $StateDir) { return }
+    $stateFile = Join-Path $StateDir 'harness-state.json'
     if (-not (Test-Path $harnessJs) -or (Test-Path $stateFile)) { return }
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) { return }
     $prev = $env:TYCON_HARNESS_LOCK_HELD
@@ -914,7 +920,7 @@ if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
         if (Test-Path $tpManifest) {
             $tpLook = if ($CheckInClone) { $CheckInClone } else { $AgentSkillsRepo }
             $tpWhere = if ($CheckInClone) { Join-Path $ClaudeDir 'agent-skills' } else { $AgentSkillsRepo }
-            $tpStateFile = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'third-party-state.json'
+            $tpStateFile = Join-Path $StateDir 'third-party-state.json'
             $tpDone = @{}
             if (Test-Path $tpStateFile) {
                 foreach ($e in @(((Get-Content -Raw -Path $tpStateFile | ConvertFrom-Json).entries).PSObject.Properties)) { if ($e.Value.complete) { $tpDone[$e.Name.TrimEnd('/')] = $true } }
@@ -931,7 +937,7 @@ if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 # las skills de terceros que quedaron en su lugar, según el estado del paso (apagado el paso, no se anotan)
 if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
     try {
-        $tpState = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'third-party-state.json'
+        $tpState = Join-Path $StateDir 'third-party-state.json'
         if (Test-Path $tpState) {
             $tpEntries = (Get-Content -Raw -Path $tpState | ConvertFrom-Json).entries
             foreach ($e in @($tpEntries.PSObject.Properties)) {
@@ -1238,7 +1244,10 @@ if ((Integ-Prendida 'engram') -and (Test-Path $engramVerCheck)) {
 # ============================================================
 $sqliteEnsure = Join-Path (Join-Path $PSScriptRoot 'setup') 'ensure-sqlite3.ps1'
 if ((Integ-Prendida 'engram') -and (Test-Path $sqliteEnsure) -and -not $Check) {   # instala: con -Check no
-  try { & $PSHOME\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File $sqliteEnsure } catch {
+  # el PowerShell 7 de esta misma consola: `pwsh.exe` en Windows, `pwsh` fuera de Windows (lo que corren las pruebas);
+  # desde Windows PowerShell 5.1 ($IsWindows no existe) no está, y va el `powershell` de siempre
+  $pwshHere = Join-Path $PSHOME $(if ($IsWindows -eq $false) { 'pwsh' } else { 'pwsh.exe' })
+  try { & $pwshHere -NoProfile -ExecutionPolicy Bypass -File $sqliteEnsure } catch {
     try { powershell -NoProfile -ExecutionPolicy Bypass -File $sqliteEnsure } catch { }
   }
 }
@@ -1425,26 +1434,43 @@ if ($StateDir -and (Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH
   }
 }
 
-# -- las corridas del pipeline al buzón del equipo (espejo de la subida del .sh) --
-# Sin esto, las corridas de una máquina Windows nunca llegarían al buzón ni al tablero
-# del equipo. En cada arranque, de fondo y con la ventana oculta: no frena el arranque. Sólo con la integración del buzón
-# prendida, fuera de -Check y fuera de un agente de CI (un agente no es una máquina del equipo). Apagar:
-# TYCON_NO_UPLOAD_RUNS=1. Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: la subida agrega ella misma a su
-# registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: upload-runs.log en la carpeta de estado.
+# -- la recolección de hallazgos y las corridas del pipeline al buzón del equipo (espejo de la tanda de fondo del .sh) --
+# Sin esto, los hallazgos y las corridas de una máquina Windows nunca llegarían al buzón ni al tablero del equipo. En cada
+# arranque, de fondo y con la ventana oculta: no frena el arranque. Fuera de -Check y fuera de un agente de CI (un agente
+# no es una máquina del equipo). Una sola tanda, en orden (scripts/lib/run-in-order.js): la recolección va antes de la
+# subida para que lo de hoy suba hoy, y una que falla no corta la otra.
+#   · la recolección (collect-findings.js): sólo en full. Apagar: TYCON_NO_COLLECT_FINDINGS=1. No depende del buzón: el
+#     cruce de poda de esta máquina la lee aunque la subida esté apagada.
+#   · la subida (upload-runs.js): sólo con la integración del buzón prendida. Apagar: TYCON_NO_UPLOAD_RUNS=1.
+# Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: cada una agrega ella misma a su registro (`--log`, con
+# la rotación del .sh pasado ~512 KB). Registros: collect-findings.log y upload-runs.log, en la carpeta de estado.
 $upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
-if ($StateDir -and (Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
-    $upDir = $StateDir
-    $upLog = Join-Path $upDir 'upload-runs.log'
+$cfJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'collect-findings.js'
+$enOrdenJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'run-in-order.js'
+$tandaPuede = $StateDir -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$'
+$subir = $tandaPuede -and (Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and (Test-Path $upJs)
+# la recolección necesita el lanzador en orden (sin él, en una copia parcial, la subida sale sola, como antes)
+$recolectar = $tandaPuede -and $ProfileFull -and (Get-LegacyEnv 'TYCON_NO_COLLECT_FINDINGS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and (Test-Path $cfJs) -and (Test-Path $enOrdenJs)
+if ($subir -or $recolectar) {
+    $upLog = Join-Path $StateDir 'upload-runs.log'
+    $cfLog = Join-Path $StateDir 'collect-findings.log'
+    $upArgs = @($upJs, '--budget-ms', '90000', '--log', $upLog)
+    if (Test-Path $enOrdenJs) {
+        $tanda = @($enOrdenJs, $script:NodeProgram)
+        if ($recolectar) { $tanda += @('--', $cfJs, '--budget-ms', '60000', '--log', $cfLog) }
+        if ($subir) { $tanda += @('--') + $upArgs }
+    } else { $tanda = $upArgs }
+    $que = (@(if ($recolectar) { 'la recolección de hallazgos' }) + @(if ($subir) { 'la subida de ejecuciones al buzón' })) -join ' y '
     try {
-        New-Item -ItemType Directory -Force -Path $upDir -ErrorAction Stop | Out-Null
+        New-Item -ItemType Directory -Force -Path $StateDir -ErrorAction Stop | Out-Null
         # una sola línea con cada argumento entre comillas (las reglas de Windows: las barras antes de una comilla se duplican)
-        $upLine = (@($upJs, '--budget-ms', '90000', '--log', $upLog) | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
-        $upStart = @{ FilePath = $script:NodeProgram; ArgumentList = $upLine }
-        if ($IsWindows) { $upStart.WindowStyle = 'Hidden' } else { $upStart.RedirectStandardOutput = '/dev/null' }
+        $tandaLine = ($tanda | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
+        $tandaStart = @{ FilePath = $script:NodeProgram; ArgumentList = $tandaLine }
+        if ($IsWindows) { $tandaStart.WindowStyle = 'Hidden' } else { $tandaStart.RedirectStandardOutput = '/dev/null' }
         # la constancia de que se lanzó, antes de lanzar: si node muere sin escribir nada, el registro igual lo dice
-        Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de ejecuciones" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue
-        Start-Process @upStart -ErrorAction Stop
-    } catch { Write-Host "!! tycon: no pude lanzar la subida de ejecuciones al buzón ($($_.Exception.Message))" }
+        if ($subir) { Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de ejecuciones" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue }
+        Start-Process @tandaStart -ErrorAction Stop
+    } catch { Write-Host "!! tycon: no pude lanzar $que ($($_.Exception.Message))" }
 }
 
 # una linea con el estado de las ocho integraciones

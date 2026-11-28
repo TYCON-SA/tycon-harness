@@ -504,3 +504,18 @@ test('T23 SiteAccess_Confirmada_SeOcultaYSeMuestra @story-8.234 @ac-23 — la re
   assert.equal(P.estadoDeMaquina('maq-a', raro).estado, 'confirmada');
   assert.deepEqual(P.maquinasOcultas(raro), []);
 });
+
+// ── A163 · LeerCorreosInformados_SinHuella_ElMotivoNoInventaLaVersion ── 🔴 Falla si una máquina al día, o una que no
+// subió place.json, se muestra como «una versión del arnés anterior a la que manda la huella».
+test('A163 LeerCorreosInformados_SinHuella_ElMotivoNoInventaLaVersion', () => {
+  const conVersion = (v, base) => ({ ...base, install: { mode: 'managed', version: v } });
+  const dir = espejo(tmp(), {
+    'maq-nueva': conVersion(P.MACHINE_ID_SINCE, informa('dev-a@ejemplo.test')),
+    'maq-vieja': conVersion('2026.09.30.5', informa('dev-b@ejemplo.test')),
+    'maq-sin-place': null,
+  });
+  const r = P.leerCorreosInformados(dir);
+  assert.match(r.maquinas['maq-nueva'].machine_id_motivo, new RegExp(`no trae la huella.*${P.MACHINE_ID_SINCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.ok(!('machine_id_motivo' in r.maquinas['maq-vieja']), 'la vieja sí es una versión que no la manda: queda el texto de siempre');
+  assert.equal(r.maquinas['maq-sin-place'].machine_id_motivo, 'la máquina no subió place.json');
+});

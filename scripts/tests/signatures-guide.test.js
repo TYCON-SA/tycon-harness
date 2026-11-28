@@ -231,12 +231,13 @@ test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
 });
 
 // La tabla de niveles del esquema de firmas, escrita a mano para que un cambio de nivel en el catálogo se note:
-// id, nivel, perfiles. 7 de rutina, 15 de excepción, 4 irreversibles.
+// id, nivel, perfiles. 7 de rutina, 15 de excepción, 4 irreversibles. La vuelta extra es de
+// excepción: pasado el tope la firma el dueño.
 const TABLA_DE_NIVELES = [
-  ['plan-approval', 1, ['dev', 'mant']], ['extra-round', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
+  ['plan-approval', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
   ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']], ['adhoc-lane:ci-rojo', 1, ['dev', 'mant']],
   ['compare-waiver', 1, ['dev', 'mant']], ['refresh-after-main', 1, ['mant']], ['lost-run:particion', 1, ['dev', 'mant']],
-  ['save:sensible', 2, ['dev', 'mant']], ['write-after-release', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:guardado-ajeno', 2, ['dev', 'mant']], ['autonomy-resume', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
+  ['extra-round', 2, ['dev', 'mant']], ['save:sensible', 2, ['dev', 'mant']], ['write-after-release', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:guardado-ajeno', 2, ['dev', 'mant']], ['autonomy-resume', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
   ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
   ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['atdd-skip', 2, ['dev', 'mant']], ['review-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
@@ -271,7 +272,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [10, 28, 7], '10 de rutina (con compare-waiver, lost-run:particion y adhoc-lane:ci-rojo), 28 de excepción (con write-after-release, adhoc-lane:guardado-ajeno, autonomy-resume, red-control-test-edit, atdd-skip, review-skip y escape:advisors_exempt), 7 irreversibles (con external-pr)');
+  assert.deepStrictEqual(cuenta, [9, 29, 7], '9 de rutina (con compare-waiver, lost-run:particion y adhoc-lane:ci-rojo), 29 de excepción (con extra-round, write-after-release, adhoc-lane:guardado-ajeno, autonomy-resume, red-control-test-edit, atdd-skip, review-skip y escape:advisors_exempt), 7 irreversibles (con external-pr)');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -298,7 +299,7 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
 test('niveles T3 Catalogo_NivelPorDelegacion', () => {
   const cat = require(CATALOGO);
   const esperado = { 'save': 1, 'adhoc-lane': 1, 'adhoc-lane:ci-rojo': 1, 'plan-approval': 1, 'refresh-after-main': 1, 'pending-approval': 1,
-    'extra-round': 1, 'compare-waiver': 1, 'lost-run:particion': 1, 'write-after-release': 2, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
+    'extra-round': 2, 'compare-waiver': 1, 'lost-run:particion': 1, 'write-after-release': 2, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
     'escape:no-deep-review': 2, 'control-change': 3, 'escape:TYCON_SAFETY_OFF': 3 };
   for (const [id, n] of Object.entries(esperado)) assert.strictEqual(cat.delegatedLevel(id), n, id);
   assert.strictEqual(cat.delegatedLevel('no-existe'), null);
@@ -323,13 +324,13 @@ test('niveles T5 Catalogo_ElPerfilSoloSube', () => {
   assert.strictEqual(cat.effectiveLevel('plan-approval'), 1);
   assert.strictEqual(cat.effectiveLevel('plan-approval', { 'plan-approval': 2 }), 2, 'el perfil sube');
   assert.strictEqual(cat.effectiveLevel('control-change', { 'control-change': 1 }), 3, 'el perfil no baja: gana la tabla');
-  assert.strictEqual(cat.effectiveLevel('extra-round', { 'plan-approval': 3 }), 1, 'subir uno no toca otro');
+  assert.strictEqual(cat.effectiveLevel('pending-approval', { 'plan-approval': 3 }), 1, 'subir uno no toca otro');
   assert.strictEqual(cat.effectiveLevel('no-existe', { 'no-existe': 2 }), null);
   assert.strictEqual(cat.delegatedLevel('plan-approval', { 'plan-approval': 2 }), 2);
   assert.strictEqual(cat.delegatedLevel('save', { 'save:sensible': 3 }), 1, 'lo que la delegación no firma sigue afuera');
   assert.strictEqual(cat.delegatedLevel('save', { 'save': 2 }), 2);
   assert.strictEqual(cat.delegatedLevel('escape:no-deep-review', { 'adversarial-skip': 3 }), 3, 'el escape sube con la firma que cubre');
-  assert.strictEqual(cat.delegatedLevel('extra-round', null), 1, 'sin perfil, la tabla');
+  assert.strictEqual(cat.delegatedLevel('pending-approval', null), 1, 'sin perfil, la tabla');
 });
 
 // 🔴 Falla con: la guía sin las firmas de nombrar y retirar a la coordinadora, o con ellas por otra pestaña.

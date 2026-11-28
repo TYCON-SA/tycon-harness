@@ -356,8 +356,9 @@ test('T8 Inventario_ElArnesNoTieneNinguno', (t) => {
 });
 
 // no necesitan la copia: retro-pending.js la carga sólo si está y sin ella hace lo mismo; legacy-names.js la carga sólo
-// en `gitAt` (la medición de usos de los nombres viejos), que ningún gancho llama
-const CARGA_OPCIONAL = new Set(['scripts/hooks/retro-pending.js', 'scripts/lib/legacy-names.js']);
+// en `gitAt` (la medición de usos de los nombres viejos), que ningún gancho llama; prod-access-guard.js la usa sólo para
+// leer la hora de `ps` en inglés y sin ella usa el tiempo transcurrido (así corre en /opt/tycon, donde no viaja)
+const CARGA_OPCIONAL = new Set(['scripts/hooks/retro-pending.js', 'scripts/lib/legacy-names.js', 'scripts/hooks/prod-access-guard.js']);
 /** Los pasos de preparación del banco que copian un guion que carga clean-git-env.js sin copiar la biblioteca. */
 function casosDelBancoSinLaBiblioteca(dir) {
   const fuera = [];

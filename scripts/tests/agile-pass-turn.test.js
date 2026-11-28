@@ -3,13 +3,13 @@
  * agile-pass-turn.test.js — un pase lanzado sin el pipeline pasa por el turno de tarea pesada (fila 126, parte a).
  *
  *   APT1  qué cuenta como pase: todo Workflow; un Agent sólo si dice «adversarial».
- *   APT2  sin turno avisa, y dice quién lo tiene; con el «arrancá» o la reserva para la sesión, no.
+ *   APT2  sin turno frena, y dice quién lo tiene; con el «arrancá» o la reserva para la sesión, no.
  *   APT3  no mira sin coordinadora, en la coordinadora, ni en una sesión con corrida del pipeline.
- *   APT4  en modo freno, la decisión es frenar con el mismo motivo.
+ *   APT4  frena: la decisión es frenar con el mismo motivo, sin «hoy sólo se avisa».
  *   APT5  el gancho entero: sin coordinadora calla y no anota; apagado, también; lo que no es pase, también.
- *   APT6  el evento: apagado calla aun con coordinadora; el aviso viaja como contexto, nunca como freno; un error queda
- *         como no medido.
- *   APT7  con la reserva para la sesión, si su portón ya corre con ella, avisa: es para una cosa por vez.
+ *   APT6  el evento: apagado calla aun con coordinadora; sin turno, frena (permissionDecision deny, con el motivo); un
+ *         error queda como no medido y no frena.
+ *   APT7  con la reserva para la sesión, si su portón ya corre con ella, frena: es para una cosa por vez.
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con su HOME de juguete.
  */
 const test = require('node:test');
@@ -44,7 +44,8 @@ test('APT1 QueCuentaComoPase_WorkflowSiempre_AgentSiDiceAdversarial', () => {
   assert.strictEqual(G.esPase('Workflow', { name: 'revisar' }), true);
   assert.strictEqual(G.esPase('Agent', { description: 'Pase adversarial fila 9' }), true);
   assert.strictEqual(G.esPase('Task', { description: 'Revisión ADVERSARIAL', prompt: 'revisá' }), true, 'sin importar mayúsculas');
-  assert.strictEqual(G.esPase('Agent', { description: 'revisar la historia', subagent_type: 'tycon-story-adversarial-reviewer' }), true, 'por el tipo de agente');
+  assert.strictEqual(G.esPase('Agent', { description: 'revisar la historia', subagent_type: 'otro-adversarial-reviewer' }), true, 'por el tipo de agente');
+  assert.strictEqual(G.esPase('Agent', { description: 'revisar la historia', subagent_type: 'tycon-story-adversarial-reviewer' }), false, 'el revisor único de historias no (APT10)');
   assert.strictEqual(G.esPase('Agent', { description: 'Buscar X', prompt: 'Buscá X; no hagas una revisión adversarial.' }), false, 'el pedido no se mira');
   assert.strictEqual(G.esPase('Agent', { description: 'Buscar dónde se define X', prompt: 'buscá' }), false);
   assert.strictEqual(G.esPase('Agent', {}), false);
@@ -52,23 +53,23 @@ test('APT1 QueCuentaComoPase_WorkflowSiempre_AgentSiDiceAdversarial', () => {
 });
 
 // 🔴 mutación: aceptar la reserva de la coordinadora (su propia sesión) como turno de cualquiera, o callar quién lo tiene.
-test('APT2 SinTurno_Avisa_ConArrancaOReservaParaLaSesion_No', () => {
+test('APT2 SinTurno_Frena_ConArrancaOReservaParaLaSesion_No', () => {
   const sin = G.decidir(pase, maquina({ corriendo: () => ['Bea (120 suites, desde las 09:10)'], pases: () => ['el pase de la 8.3 (Ana)'] }));
-  assert.strictEqual(sin.status, 'aviso');
+  assert.strictEqual(sin.status, 'freno');
   assert.match(sin.message, /Lanzás un pase adversarial sin el turno de tarea pesada de esta máquina\. Lo tiene: Bea \(120 suites, desde las 09:10\) · el pase de la 8\.3 \(Ana\)\./, sin.message);
-  assert.match(sin.message, /grant --to <sesión>, o reserve --for "<qué>" --to <sesión>/);
-  assert.match(sin.message, /Hoy sólo se avisa\./);
+  assert.match(sin.message, /grant --to ses-a, o reserve --for "<qué>" --to ses-a/);
+  assert.doesNotMatch(sin.message, /Hoy sólo se avisa/, 'frena: ya no dice que sólo avisa');
   const wf = G.decidir({ ...pase, toolName: 'Workflow', toolInput: {} }, maquina());
   assert.match(wf.message, /Lanzás un Workflow \(un abanico de agentes\) sin el turno.*Nadie lo tiene, pero la coordinadora no te lo dio\./);
   // la reserva de la coordinadora para otra cosa (sin --to, o para otra sesión) no es turno de ésta, y se nombra
   const otra = G.decidir(pase, maquina({ reserva: () => ({ sid: 'coord-1', what: 'el pase de la fila 122', to: 'ses-b', toSession: 'Mejoras' }) }));
-  assert.strictEqual(otra.status, 'aviso');
+  assert.strictEqual(otra.status, 'freno');
   assert.match(otra.message, /Lo tiene: la reserva de la coordinadora para «el pase de la fila 122» de Mejoras\./);
-  assert.strictEqual(G.decidir(pase, maquina({ reserva: () => ({ sid: 'coord-1', what: 'x' }) })).status, 'aviso', 'una reserva sin --to no es de nadie');
+  assert.strictEqual(G.decidir(pase, maquina({ reserva: () => ({ sid: 'coord-1', what: 'x' }) })).status, 'freno', 'una reserva sin --to no es de nadie');
   // con turno: el «arrancá» o la reserva para esta sesión
   assert.strictEqual(G.decidir(pase, maquina({ arranca: () => ({ to: 'ses-a' }) })).status, 'con-turno');
   assert.strictEqual(G.decidir(pase, maquina({ reserva: () => ({ sid: 'coord-1', what: 'su pase', to: 'ses-a' }) })).status, 'con-turno');
-  assert.strictEqual(G.decidir(pase, maquina({ arranca: () => ({ to: 'ses-b' }) })).status, 'aviso', 'el «arrancá» de otra no');
+  assert.strictEqual(G.decidir(pase, maquina({ arranca: () => ({ to: 'ses-b' }) })).status, 'freno', 'el «arrancá» de otra no');
 });
 
 // 🔴 mutación: mirar sin coordinadora (no hay a quién pedir), a la coordinadora misma, o a una sesión del pipeline.
@@ -82,11 +83,11 @@ test('APT3 NoMira_SinCoordinadora_LaCoordinadora_NiConCorrida', () => {
 
 // 🔴 mutación: dar turno con la reserva aunque el portón de la sesión ya corra con ella (pase y suites a la vez), o
 // mirar las ejecuciones de otras sesiones (esas no usan la reserva de ésta).
-test('APT7 ConReserva_SiSuPortonYaCorre_Avisa (fila 130)', () => {
+test('APT7 ConReserva_SiSuPortonYaCorre_Frena (fila 130)', () => {
   const reserva = () => ({ sid: 'coord-1', what: 'su pase', to: 'ses-a' });
   const ocupada = G.decidir(pase, maquina({ reserva, propias: (s) => (s === 'ses-a' ? ['Uma (40 suites, desde las 10:05)'] : []) }));
-  assert.strictEqual(ocupada.status, 'aviso');
-  assert.match(ocupada.message, /con la reserva de la coordinadora, pero con esa reserva ya corre Uma \(40 suites, desde las 10:05\), de esta sesión: es para una cosa por vez\. Lanzalo cuando termine\. Hoy sólo se avisa\./);
+  assert.strictEqual(ocupada.status, 'freno');
+  assert.match(ocupada.message, /con la reserva de la coordinadora, pero con esa reserva ya corre Uma \(40 suites, desde las 10:05\), de esta sesión: es para una cosa por vez\. Lanzalo cuando termine\.$/);
   assert.strictEqual(G.decidir({ ...pase, modo: 'block' }, maquina({ reserva, propias: () => ['x'] })).status, 'freno');
   // lo de otra sesión no cuenta
   assert.strictEqual(G.decidir(pase, maquina({ reserva, corriendo: () => ['Bea (120 suites)'], propias: (s) => (s === 'ses-b' ? ['Bea'] : []) })).status, 'con-turno');
@@ -110,39 +111,45 @@ test('APT7 ConReserva_SiSuPortonYaCorre_Avisa (fila 130)', () => {
 
 // 🔴 Falla con (fila 138): la sesión que tomó el turno para su pase lo lanza y el aviso le dice «sin el turno… lo tiene»
 // ella misma; o el turno que la sesión tomó para otra cosa (su portón) deja lanzar el pase encima, o lo dice confuso.
-test('APT8 TurnoPropio_ParaSuPase_ConTurno_ParaOtraCosa_Avisa (fila 138)', () => {
+test('APT8 TurnoPropio_ParaSuPase_ConTurno_ParaOtraCosa_Frena (fila 138)', () => {
   const paraElPase = maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (pase adversarial fila 9, desde las 10:05)', what: 'pase adversarial fila 9' }] : []) });
   assert.deepStrictEqual(G.decidir(pase, paraElPase), { status: 'con-turno', message: null });
   assert.strictEqual(G.decidir({ toolName: 'Workflow', toolInput: {}, sid: 'ses-a' }, maquina({ propios: () => [{ texto: 'Uma (workflow de revisores)', what: 'workflow de revisores' }] })).status, 'con-turno');
   const paraOtra = G.decidir(pase, maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (40 suites, desde las 10:05)', what: '40 suites' }] : []) }));
-  assert.strictEqual(paraOtra.status, 'aviso');
-  assert.match(paraOtra.message, /el turno de esta sesión es para Uma \(40 suites, desde las 10:05\): es para una cosa por vez\. Lanzalo cuando termine\. Hoy sólo se avisa\./);
+  assert.strictEqual(paraOtra.status, 'freno');
+  assert.match(paraOtra.message, /el turno de esta sesión es para Uma \(40 suites, desde las 10:05\): es para una cosa por vez\. Lanzalo cuando termine\.$/);
   assert.doesNotMatch(paraOtra.message, /sin el turno/);
   // el turno de otra sesión sigue avisando como antes
   assert.match(G.decidir(pase, maquina({ corriendo: () => ['Bea (pase de la 9.9)'], propios: (s) => (s === 'ses-b' ? [{ texto: 'Bea', what: 'pase de la 9.9' }] : []) })).message, /sin el turno de tarea pesada de esta máquina\. Lo tiene: Bea/);
 });
 
-// 🔴 mutación: en modo freno, dejar pasar o frenar con otro motivo.
+// 🔴 mutación: en modo freno, dejar pasar o frenar con otro motivo; volver al modo aviso.
 test('APT4 ModoFreno_FrenaConElMismoMotivo', () => {
-  assert.strictEqual(G.MODO, 'warn', 'entra en modo aviso: el freno lo decide el dueño con la medición');
+  assert.strictEqual(G.MODO, 'block', 'frena: el aviso no separaba los pases');
   const r = G.decidir({ ...pase, modo: 'block' }, maquina());
   assert.strictEqual(r.status, 'freno');
   assert.match(r.message, /sin el turno de tarea pesada/);
   assert.doesNotMatch(r.message, /Hoy sólo se avisa/);
 });
 
-// 🔴 mutación: ignorar el apagado, frenar en vez de avisar, leer la máquina para lo que no es un pase, o perder un error
-// en vez de anotarlo como no medido.
-test('APT6 ElEvento_ApagadoCalla_AvisoComoContexto_ErrorNoMedido', () => {
+// 🔴 mutación: ignorar el apagado, avisar en vez de frenar, leer la máquina para lo que no es un pase, o perder un error
+// en vez de anotarlo como no medido (o frenar por él).
+test('APT6 ElEvento_ApagadoCalla_SinTurnoFrena_ErrorNoMedido', () => {
   const ev = { tool_name: 'Workflow', tool_input: {}, session_id: 'ses-a' };
   const leer = () => maquina();
   assert.strictEqual(G.responder(ev, { TYCON_AGILE_PASS_TURN: '0' }, leer), null, 'apagado no dice nada, aun con coordinadora');
   const r = G.responder(ev, {}, leer);
-  assert.deepStrictEqual(r.fila, { sessionId: 'ses-a', tool: 'Workflow', status: 'aviso' });
+  assert.deepStrictEqual(r.fila, { sessionId: 'ses-a', tool: 'Workflow', status: 'freno' });
   assert.strictEqual(r.salida.hookSpecificOutput.hookEventName, 'PreToolUse');
-  assert.match(r.salida.hookSpecificOutput.additionalContext, /sin el turno de tarea pesada/);
-  assert.match(r.salida.systemMessage, /^⚠️ Lanzás un Workflow/);
-  assert.ok(!('permissionDecision' in r.salida.hookSpecificOutput), 'avisa, no frena');
+  assert.strictEqual(r.salida.hookSpecificOutput.permissionDecision, 'deny', 'frena');
+  assert.match(r.salida.hookSpecificOutput.permissionDecisionReason, /sin el turno de tarea pesada/);
+  assert.match(r.salida.hookSpecificOutput.permissionDecisionReason, /Pedile turno a la coordinadora/);
+  assert.match(r.salida.systemMessage, /^⛔ Lanzás un Workflow/);
+  // en modo aviso (el de antes) la salida sigue siendo un aviso, sin frenar
+  const aviso = G.responder(ev, {}, leer, 'warn');
+  assert.strictEqual(aviso.fila.status, 'aviso');
+  assert.ok(!('permissionDecision' in aviso.salida.hookSpecificOutput), 'el modo aviso no frena');
+  assert.match(aviso.salida.hookSpecificOutput.additionalContext, /Hoy sólo se avisa/);
   // lo que no es pase no lee la máquina
   assert.strictEqual(G.responder({ ...ev, tool_name: 'Agent', tool_input: { description: 'buscar' } }, {}, () => { throw new Error('no se lee'); }), null);
   // con turno se anota y no se imprime
@@ -168,4 +175,45 @@ test('APT5 ElGanchoEntero_SinCoordinadoraNiApagado_CallaYNoAnota', () => {
   const logs = fs.readdirSync(home, { recursive: true }).map(String).filter((f) => path.basename(f) === 'gates.log');
   for (const f of logs) assert.ok(!fs.readFileSync(path.join(home, f), 'utf8').includes('agile-pass-turn'), `no anota en ${f}`);
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+// ── lo que el freno no tiene que frenar ─────────────────────────────────────────────────────────────────────────────
+
+// 🔴 mutación: mirar la reserva antes que el turno propio (la sesión que, con su reserva, tomó el turno para su pase
+// quedaba frenada por su propio pase).
+test('APT9 ConReservaYTurnoTomadoParaSuPase_ConTurno', () => {
+  const r = G.decidir(pase, maquina({
+    reserva: () => ({ to: 'ses-a', what: 'pase de la 9.9' }),
+    propias: (s) => (s === 'ses-a' ? ['Ana (pase adversarial de la 9.9, desde las 10:05)'] : []),
+    propios: (s) => (s === 'ses-a' ? [{ texto: 'Ana (pase adversarial de la 9.9, desde las 10:05)', what: 'pase adversarial de la 9.9' }] : []),
+  }));
+  assert.strictEqual(r.status, 'con-turno', r.message);
+  // con la reserva y el turno tomado para otra cosa (su portón), sigue frenando
+  const otra = G.decidir(pase, maquina({
+    reserva: () => ({ to: 'ses-a', what: 'x' }),
+    propias: (s) => (s === 'ses-a' ? ['Ana (40 suites)'] : []),
+    propios: (s) => (s === 'ses-a' ? [{ texto: 'Ana (40 suites)', what: 'suites' }] : []),
+  }));
+  assert.strictEqual(otra.status, 'freno');
+});
+
+// 🔴 mutación: frenar al revisor único de historias, o exceptuar por parecido (cualquier tipo que lo contenga o que
+// diga «adversarial»).
+test('APT10 RevisorDeHistorias_PasaPorSuNombreExacto_UnParecidoFrena', () => {
+  const revisor = { toolName: 'Agent', toolInput: { description: 'Revisar la historia 9.9', subagent_type: 'tycon-story-adversarial-reviewer' }, sid: 'ses-a' };
+  assert.strictEqual(G.esPase(revisor.toolName, revisor.toolInput), false, 'el revisor de historias no es un pase');
+  assert.strictEqual(G.decidir(revisor, maquina()).status, 'fuera');
+  for (const tipo of ['tycon-story-adversarial-reviewer-2', 'otro-adversarial-reviewer', 'x-tycon-story-adversarial-reviewer', 'TYCON-STORY-ADVERSARIAL-REVIEWER ']) {
+    const parecido = { ...revisor, toolInput: { ...revisor.toolInput, subagent_type: tipo } };
+    assert.strictEqual(G.decidir(parecido, maquina()).status, 'freno', tipo);
+  }
+  // con el nombre exacto pero una descripción que dice «pase adversarial», tampoco pasa: lo que se exceptúa es el revisor
+  const disfrazado = { ...revisor, toolInput: { ...revisor.toolInput, description: 'Pase adversarial de la fila 9' } };
+  assert.strictEqual(G.decidir(disfrazado, maquina()).status, 'freno');
+});
+
+// 🔴 mutación: el mensaje con un `<sesión>` genérico en vez del id de la sesión frenada.
+test('APT11 ElFreno_NombraLaSesion', () => {
+  const r = G.decidir(pase, maquina());
+  assert.match(r.message, /grant --to ses-a/);
 });

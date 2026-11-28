@@ -154,8 +154,10 @@ back from it; if the owner is also away from the machine, they cannot go in with
 and `--remote-control <name>`. The mode is not chosen: `open` does not accept `--permission-mode`, so it never opens a
 session with more permissions than the coordinator. It does not open, and says so in one line, if it cannot tell the
 mode or if the coordinator is in plan mode (the new session would wait for someone to approve its plan). The mode comes
-from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
-changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
+from the coordinator's conversation, which records it with each of the person's messages; the whole conversation is
+searched, so it is also found for a coordinator working alone, with no message from the owner for hours. **Known limit:** if someone
+changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode, however far back in
+the conversation it is: it does not expire. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
 `claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
 way it is not recorded as opened by the coordinator). To stop a
@@ -405,7 +407,7 @@ The harness controls this, not anyone's memory:
   reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
   `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
   pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
-  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  one thing at a time: if its gate is already running, the pass hook blocks; with the pass in flight nothing stops its
   gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
 - **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
   opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
@@ -413,9 +415,10 @@ The harness controls this, not anyone's memory:
   at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
   says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
   reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
-  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
-  measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
-  session. `TYCON_AGILE_PASS_TURN=0` turns it off.
+  blocks the launch, tells the session and the person who holds the turn and how to ask for it, and logs it in
+  `gates.log` (`agile-pass-turn`). An error reading the turn or the designation does not block: it is logged as not
+  measured. It does not look without a
+  coordinator, at the coordinator itself, or at a pipeline session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`
@@ -1186,7 +1189,7 @@ product's. Each one, with its why.
 | Do not open more when what waits for the person's review reaches its cap | aviso | `open` and the background-session brake still open, say so and log the `review-cap` line; what was not measured does not stop anything. It becomes a brake with a commit, when the lines justify it. |
 | With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
-| Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
+| Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. In a run, nothing stops launching the pass without asking the gate. A session without a run (a quick fix) is blocked by `agile-pass-turn.js` without the turn, but its pass is not noted as in flight. After an hour, it only warns. |
 | Idle background sessions get closed or given work | aviso | The coordinator's notice on each turn, after 15 minutes. |
 | A session closes with nothing pending | freno | `close` does not close if something is missing or it could not look. `claude stop` and `claude rm` by hand do not go through it, and it does not see another worktree the session left behind. |
 | A ready request does not stay unqueued | aviso | The coordinator's notice on each turn, after 10 minutes, and the startup one. GitHub only. |

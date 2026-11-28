@@ -129,12 +129,57 @@ function salirPorLaRed(e, texto) {
 }
 let entradaCruda = null;
 let yaDecidio = false;
+const ESPERA_SIN_DATOS_MS = 10;
+/**
+ * La entrada estándar hasta su cierre, o hasta que ya trae un objeto JSON entero: en macOS, una lectura bloqueante de
+ * un socket unix a veces no se despierta cuando el que escribe cierra su lado, con todo el texto ya leído, y el freno
+ * quedaba dormido hasta el corte del reloj. Claude Code y Codex mandan un solo objeto: con él entero, no hay más que
+ * esperar, y lo que viniera después no se lee. Lo leído se sigue byte a byte (cadenas, escapes, llaves y corchetes) y
+ * se prueba armarlo sólo cuando el primer valor se cierra fuera de una cadena: una vez por entrada. Los bytes de un
+ * carácter de varios bytes son todos mayores que 0x7f y no se confunden con esos signos. Una entrada no bloqueante sin
+ * datos todavía se espera de a poco: el reloj pone el tope.
+ */
+function leerEntradaEstandar(fd = 0) {
+  const tramos = [];
+  let total = 0;
+  let profundidad = 0;
+  let enCadena = false;
+  let escape = false;
+  const buf = Buffer.allocUnsafe(64 * 1024);
+  for (;;) {
+    let n;
+    try { n = fs.readSync(fd, buf, 0, buf.length, null); } catch (e) {
+      if (e && e.code === 'EOF') break;
+      if (e && e.code === 'EAGAIN') { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ESPERA_SIN_DATOS_MS); continue; }
+      throw e;
+    }
+    if (n === 0) break;
+    tramos.push(Buffer.from(buf.subarray(0, n)));
+    total += n;
+    let cerro = false;
+    for (let i = 0; i < n && !cerro; i++) {
+      const b = buf[i];
+      if (enCadena) {
+        if (escape) escape = false;
+        else if (b === 0x5c) escape = true;
+        else if (b === 0x22) enCadena = false;
+      } else if (b === 0x22) enCadena = true;
+      else if (b === 0x7b || b === 0x5b) profundidad++;
+      else if (b === 0x7d || b === 0x5d) { profundidad -= 1; cerro = profundidad === 0; }
+    }
+    if (!cerro) continue;
+    const texto = Buffer.concat(tramos, total).toString('utf8');
+    try { JSON.parse(texto); return texto; } catch { /* no es un objeto bien formado: se lee hasta el cierre */ }
+    profundidad = Number.NEGATIVE_INFINITY;
+  }
+  return Buffer.concat(tramos, total).toString('utf8');
+}
 function leerEntrada() {
   if (entradaCruda === null) {
     // la segunda lectura recibe el texto que ya leyó el análisis: la entrada estándar no se puede leer dos veces
     if (!isMainThread && workerData && typeof workerData.entrada === 'string') entradaCruda = workerData.entrada;
     // sin texto no hay qué frenar: el comando pasa sin mirarse
-    else try { entradaCruda = fs.readFileSync(0, 'utf8'); } catch (e) { entradaCruda = ''; logHookError(e, 'FAILED OPEN'); }
+    else try { entradaCruda = leerEntradaEstandar(); } catch (e) { entradaCruda = ''; logHookError(e, 'FAILED OPEN'); }
     if (!isMainThread && parentPort) require('./lib/gate-clock.js').entregarEntrada(parentPort, workerData, entradaCruda);
   }
   return entradaCruda;
@@ -506,7 +551,9 @@ function handleCarrilEHistoria(event, opts = {}) {
         }
         continue;
       }
-      const escritos = escritosDelGuion(g);
+      // el revisado (los bytes de main en otra copia) no se lee entero: lo que escribe ya pasó la revisión de main, y sus
+      // argumentos cuentan como destinos (una constancia entre ellos frena)
+      const escritos = g.revisado ? { rutas: [], armadosSinSaber: true } : escritosDelGuion(g);
       const resolver = (t) => resolveTarget(t, cwd, process.platform, { homeVariable: true });
       // un destino que arma de un modo que no se lee (`argparse`, un desempaquetado) puede ser cualquier argumento
       const abs = [...escritos.rutas, ...(escritos.armadosSinSaber ? g.argv : [])].map(resolver);

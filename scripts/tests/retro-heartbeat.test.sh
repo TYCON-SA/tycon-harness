@@ -251,6 +251,16 @@ node "${LATIDO}" --repo "${REPO}" --merge deadbeefdeadbeef --out "${BASE}/out-no
 RC=$?
 [ "${RC}" = "2" ] && grep -qi "merge" "${BASE}/stderr" \
   && ok "AC6 --merge que no resuelve a un commit: exit 2 con el motivo" || bad "AC6 sha inexistente" "rc=${RC} · $(head -c 300 "${BASE}/stderr")"
+# 🔴 Falla con: un argumento que el latido no reconoce y que ignora en silencio. En zsh, «--story <id>» guardado en una
+# variable sin comillas llega como una sola palabra, y el latido quedaba como camino corto, sin historia ni aviso.
+node "${LATIDO}" --repo "${REPO}" --merge "${SHA1}" "--story 9.9" --out "${BASE}/out-pegado" > "${BASE}/stdout" 2> "${BASE}/stderr"
+RC=$?
+[ "${RC}" = "2" ] && grep -q -- "--story 9.9" "${BASE}/stderr" && [ -z "$(ls -A "${BASE}/out-pegado" 2>/dev/null)" ] \
+  && ok "T21 un argumento que no reconoce («--story 9.9» en una sola palabra): exit 2 nombrándolo, nada escrito" || bad "T21 argumento desconocido" "rc=${RC} · $(head -c 300 "${BASE}/stderr")"
+node "${LATIDO}" --repo "${REPO}" --merge "${SHA1}" --story=9.9 --out "${BASE}/out-igual" > "${BASE}/stdout" 2> "${BASE}/stderr"
+RC=$?
+[ "${RC}" = "0" ] && ls "${BASE}/out-igual" 2>/dev/null | grep -- "-9.9-" >/dev/null \
+  && ok "T21 --story=9.9 se lee como --story 9.9" || bad "T21 --story=" "rc=${RC} · $(ls "${BASE}/out-igual" 2>/dev/null) · $(head -c 300 "${BASE}/stderr")"
 
 # ── el archivo cubre el merge para retro-pending, y la serie lo suma ──────────────────────
 LEDGER_DIR="${HOME}/.claude/.tycon-pipeline"
