@@ -638,21 +638,21 @@ test('BashWrite_InstalledTree_OtherForms', () => {
     `echo x | tee -a "${path.join(tree, 'f')}"`,
     `echo x >| "${g}"`,
     `cp -rt ${enBash(tree)} a`,
-    `mv -vt ${tree} a`,
-    `cp -t${tree} a`,
+    `mv -vt ${enBash(tree)} a`,
+    `cp -t${enBash(tree)} a`,
     `Copy-Item a ${path.join(tree, 'b.md')} 2>&1`,
     `cp a "b.md"`.replace('"b.md"', `"${path.join(tree, 'b.md')}"`),
-    `cp a ${path.join(tree, 'b.md')} -f`,
+    `cp a ${enBash(path.join(tree, 'b.md'))} -f`,
     `Copy-Item a ${path.join(tree, 'b.md')} -Force`,
-    `cp a ${path.join(tree, 'b.md')} # nota`,
-    `cp -t /tmp/x -t ${tree} a`,
-    `mv --target-directory ${tree} a`,
-    `perl -i.bak -pe 's/x/y/' ${g}`,
-    `perl -pi.bak -e 's/x/y/' ${g}`,
-    `sed -i ${g} -ne p`,
-    `sed -i 's/a b/c/' ${g}`,
-    `sed -i -es/a/b/ ${g}`,
-    `sed -i -e 's/a/b/' ${g}`,
+    `cp a ${enBash(path.join(tree, 'b.md'))} # nota`,
+    `cp -t /tmp/x -t ${enBash(tree)} a`,
+    `mv --target-directory ${enBash(tree)} a`,
+    `perl -i.bak -pe 's/x/y/' ${enBash(g)}`,
+    `perl -pi.bak -e 's/x/y/' ${enBash(g)}`,
+    `sed -i ${enBash(g)} -ne p`,
+    `sed -i 's/a b/c/' ${enBash(g)}`,
+    `sed -i -es/a/b/ ${enBash(g)}`,
+    `sed -i -e 's/a/b/' ${enBash(g)}`,
   ]) {
     const b = bash.handle(ev(cmd), opts);
     assert.ok(b && /el arnés instalado no se edita/.test(b.block), cmd);
@@ -1334,7 +1334,7 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-
       assert.ok(r && r.block, cmd);
     }
     // los dos del arnés pasan: el corredor del pase con su --out y marker.js plan-review
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${E}/plan-review/s1/s1.args.json' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${path.join(E, 'plan-review', 's1', 's1.args.json')}' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     assert.equal(bash.handle(ev(`node ${path.join(SCRIPTS, 'marker.js')} plan-review --result ${res} --model opus`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
@@ -1587,7 +1587,7 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   const E = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'f228-')));
   const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
   const S = path.join(E, '..', 'falso.json');
-  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).some((t) => mismaRuta(t, res)), JSON.stringify(cmd));
   // de acá hasta los envoltorios lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
   if (CON_LECTOR) {
     // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
