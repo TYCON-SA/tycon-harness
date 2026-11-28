@@ -173,17 +173,16 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
   return -1;
 }
 
-// lo que puede llevar una cuenta: nombres, números (`16#ff`), operadores, paréntesis, corchetes y `$nombre`
-const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]$#.]/;
-// un `${…}` de los que no corren nada: `${n}` o `${#n}`
-const LLAVE_DE_CUENTA = /^\$\{#?[A-Za-z_]\w*\}/;
+// lo que puede llevar una cuenta: nombres, números (`16#ff`), operadores, paréntesis y corchetes; no `$`: el valor de una
+// variable adentro de una cuenta se lee como otra cuenta, y puede correr un comando (`x='a[$(cp …)]'; echo $(( $x ))`)
+const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]#.]/;
 
 /**
  * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`) que no corre nada, su texto entre
  * `$(` y el último `)` en blanco: el `>` de una cuenta compara, no escribe. Es una cuenta, como la lee el shell, si el
  * `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una sustitución. null si
- * no es una cuenta o si lleva algo más que nombres, números, operadores y otras cuentas así: una sustitución, comillas,
- * una barra, un `;`, un renglón, `<(`, un `${…}` que no es `${n}` o `${#n}`. Ahí se lee como antes, como un comando: zsh corre
+ * no es una cuenta o si lleva algo más que nombres, números, operadores y otras cuentas así: una sustitución, una
+ * variable (`$x`, `${x}`), comillas, una barra invertida, un `;`, un renglón, `<(`. Ahí se lee como antes, como un comando: zsh corre
  * como comandos una cuenta que no puede leer y que tiene una sustitución adentro (`$((cp a b && : `: \(`))`).
  */
 function adentroDeUnaCuenta(t, i, fin, { sinPesos = false, conPuntoYComa = false } = {}) {
@@ -200,13 +199,6 @@ function adentroDeUnaCuenta(t, i, fin, { sinPesos = false, conPuntoYComa = false
       if (f <= j || f >= fin || adentroDeUnaCuenta(t, j, f) === null) return null;
       out += ' '.repeat(f - j + 1);
       j = f;
-      continue;
-    }
-    if (ch === '$' && t[j + 1] === '{') {
-      const m = LLAVE_DE_CUENTA.exec(t.slice(j, fin));
-      if (!m) return null;
-      out += ' '.repeat(m[0].length);
-      j += m[0].length - 1;
       continue;
     }
     // (los `;` que separan las tres cuentas de `for ((a; b; c))`, sólo con `conPuntoYComa`)
@@ -304,9 +296,13 @@ function leerCitados(t, hondo) {
     if (fin === -1) { agregar(t.slice(i)); break; }
     if (fin > i) {
       // en el texto de afuera, lo de adentro vaciado como antes: un pedazo roto adentro (una comilla o un `$(` sin
-      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte
+      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte. Una cuenta que no corre nada queda como
+      // está, en una sola palabra y sin sus `<` `>` `|` `&` (comparan, no redirigen) ni su `/` (divide: no es una carpeta): es parte de la palabra de afuera
+      // (`cp a specs/story-1.$((0+1)).md` escribe esa historia)
       const abre = c === '`' ? 1 : 2;
-      agregar(t.slice(i, i + abre) + vaciarConExpresion(sustitucion(i + abre, fin)) + t[fin]);
+      const adentro = vaciarConExpresion(sustitucion(i + abre, fin));
+      const cuenta = adentroDeUnaCuenta(t, i, fin) !== null;
+      agregar(cuenta ? t.slice(i, fin + 1).replace(/[\s<>|&;/]/g, '_') : t.slice(i, i + abre) + adentro + t[fin]);
       i = fin;
       continue;
     }
