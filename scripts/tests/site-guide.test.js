@@ -307,6 +307,11 @@ test('T3 Capturas_DelSitioCorriendo @story-2.32 @ac-5 @ac-6', () => {
   const delGuion = new Set(lista.map((c) => c.nombre));
   const faltan = capturasDe(leer(GUIA)).filter((n) => !delGuion.has(n));
   assert.deepStrictEqual(faltan, [], 'capturas que la guía nombra y el guion no saca');
+  // y al revés: el guion no saca capturas que la guía no nombra (T8 las contaría como sobrantes y el freno de
+  // publicación las frenaría al commitear)
+  const nombradas = new Set(capturasDe(leer(GUIA)));
+  const sobran = [...delGuion].filter((n) => !nombradas.has(n));
+  assert.deepStrictEqual(sobran, [], 'capturas que el guion saca y la guía no nombra');
   assert.ok(lista.every((c) => /^[a-z0-9-]+$/.test(c.nombre)), 'nombres fijos, en minúscula y con guiones');
   assert.ok(lista.every((c) => typeof c.espera === 'string' && c.espera.length > 3), 'cada captura dice qué texto tiene que mostrar su pantalla');
 });
