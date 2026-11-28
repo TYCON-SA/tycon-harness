@@ -231,6 +231,25 @@ test('T35 Cierre_LoQueNoEsDeLaEjecucion_NoSobra', () => {
   fs.rmSync(c.home, { recursive: true, force: true });
 });
 
+// 🔴 Falla con: el cierre que pedía declarar en el File List lo que generan los guiones del arnés para la historia (las
+// capturas de la maqueta en cada ancho, su informe y la guía HTML del tester), que nadie escribe a mano.
+test('T35 Cierre_LoQueGeneraElArnes_NoSobra', () => {
+  const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
+  const c = corral({ modificar: ['src/a.ts'] });
+  const qa = path.join(c.repo, 'specs', 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  const generados = ['9.9-mockup-1440.png', '9.9-mockup-390.png', '9.9-mockup-review.json', 'story-9.9-guia-qa.html'];
+  for (const f of generados) fs.writeFileSync(path.join(qa, f), 'x\n');
+  // otro archivo en la misma carpeta, con otro nombre, sigue contando
+  fs.writeFileSync(path.join(qa, '9.9-notas.md'), 'x\n');
+  fs.writeFileSync(path.join(c.repo, 'src', 'a.ts'), 'export const a = 2;\n');
+  const r = uc.computeUndeclared({ repo: c.repo, baseSha: c.baseSha, storyPath: c.storyPath, registrados: [path.join(c.repo, 'src', 'a.ts')] });
+  assert.equal(r.medido, true);
+  assert.deepEqual(r.sobra, ['specs/qa/9.9-notas.md'], JSON.stringify(r));
+  assert.match(r.avisos.join('\n'), /generado\(s\) por el arnés.*9\.9-mockup-1440\.png/);
+  fs.rmSync(c.home, { recursive: true, force: true });
+});
+
 test('T35 Cierre_RepoEnUnaSubcarpeta_YFileListConSubtitulos', () => {
   const uc = require(path.join(SCRIPTS, 'lib', 'undeclared-changes.js'));
   const c = corral();
