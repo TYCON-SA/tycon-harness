@@ -466,7 +466,7 @@ PY
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
     #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
-    #   scripts/hooks/agile-pass-turn.js — un pase lanzado sin el pipeline avisa si no tiene el turno de tarea pesada
+    #   scripts/hooks/agile-pass-turn.js — un pase lanzado sin el pipeline se frena si no tiene el turno de tarea pesada
     #   scripts/hooks/provider-retry.js — la sesión se reanuda sola cuando el proveedor corta el turno
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6

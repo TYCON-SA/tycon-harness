@@ -31,7 +31,9 @@
  *              "repo": <raíz del repo|null>, "story": <id de story|null>}.
  * El repo y la story los resuelve lib/repo-attrib.js (marker de la sesión → raíz de git del cwd).
  * Lo lee `pipeline.js advisor-runs`, que contesta "¿corrieron los revisores de la story X?".
- * Exit 0 SIEMPRE (advisory — nunca bloquea un spawn).
+ * Exit 0 siempre: nunca bloquea un spawn. Al tope de vueltas de revisores, un revisor del set fuera de la vuelta abierta
+ * lo niega otro gancho, on-advisor-cap.js (sólo en el perfil completo, el de los frenos); éste no anota ese lanzamiento,
+ * así no cuenta como revisado aunque el freno no esté instalado.
  *
  * Env:
  *   TYCON_ADHOC_SPAWN_WARN=<n>   umbral de aviso por fase (default 5; 0 = desactiva)
@@ -436,6 +438,55 @@ function recordLaunch(o) {
   return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
 }
 
+/**
+ * ¿Se niega este lanzamiento por el tope de vueltas? El mensaje (el cartel del tope) o null. Se niega un revisor del set
+ * (el núcleo y los paquetes; no el validador, ni los chequeadores de otras etapas, ni la exploración libre) cuando la
+ * corrida de la sesión ya llegó al tope y el revisor no es de la vuelta abierta, o ya se lanzó en ella. Una vuelta extra
+ * que firmó el dueño la deja pasar el mismo cartel del tope. Un fallo propio deja pasar: el gancho no rompe un
+ * lanzamiento por un error suyo.
+ */
+function frenoDelTope({ sessionId, advisor, anotar = true }) {
+  try {
+    const { esRevisor } = require('./lib/late-snapshot.js');
+    if (!esRevisor(advisor)) return null;
+    const key = sessionIdFileKey(sessionId);
+    const m = require('./lib/repo-attrib.js').readMarkerFile(key);
+    if (!m || typeof m.storyPath !== 'string' || !m.storyPath || !m.repoPath) return null;
+    const ctx = require('./lib/pipeline-advisor-context.js');
+    if (!ctx.revisoresDelCatalogo().has(advisor)) return null;
+    const { resolveRunDir } = require('./lib/pipeline-shared.js');
+    const rr = require('./lib/review-rounds.js');
+    const rt = require('./lib/rethink.js');
+    const stateDir = stateDirOf(os.homedir());
+    const repo = path.resolve(m.repoPath);
+    const storyAbs = path.isAbsolute(m.storyPath) ? m.storyPath : path.join(repo, m.storyPath);
+    const storyId = String(m.storyId || '');
+    const runDir = storyId ? resolveRunDir(repo, storyId, false, storyAbs, { marker: m }) : null;
+    // las vueltas: las fotos del marcador o las servidas de la corrida (served.json y su copia de fuera del repo), la
+    // mayor. Las fotos llevan el número que declaró quien pidió el set: pedidas sin --iter caen todas en la misma.
+    const servida = rt.readServed(runDir);
+    const espejo = rt.readServedMirror({ stateDir, runDir });
+    const n = Math.max(rr.vueltas(m), servida.ok ? servida.last : 0, espejo.ok ? espejo.last : 0);
+    if (n < rr.tope({ repo }).value) return null;
+    // la vuelta abierta: un revisor de su set que todavía no se lanzó en ella es de esa vuelta, no de una más
+    let parsed = [];
+    try {
+      parsed = fs.readFileSync(path.join(stateDir, 'advisor-runs', `${key}.jsonl`), 'utf8')
+        .split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+    } catch { parsed = []; }
+    const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
+    if (idx >= 0 && Array.isArray(parsed[idx].expected) && parsed[idx].expected.includes(advisor)
+      && !parsed.slice(idx + 1).some((d) => d && d.advisor === advisor)) return null;
+    const r = ctx.topeDeVueltas({ args: {}, iter: n + 1, rr, runDir, repoAbs: repo, storyId });
+    // al tope sin nada abierto tampoco hay otra vuelta: lanzarlo a mano sería una
+    const cartel = r && typeof r === 'object' ? r.sinAbiertos : r;
+    if (!cartel) return null;
+    fs.mkdirSync(stateDir, { recursive: true });
+    if (anotar) fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: key, name: 'review-cap-launch-denied', story: storyId || null, iter: n + 1, advisor })}\n`);
+    return `🛑 No lanzo ${advisor}: la corrida ya hizo ${n} vueltas de revisores y no es de la vuelta abierta. Lanzarlo a mano sería una vuelta más.\nSalida: pedí la vuelta por el guion (pipeline.js smart-reloop): te dice si hace falta y, pasado el tope, quién la firma.\n${cartel}`;
+  } catch { return null; }
+}
+
 function main() {
   let event;
   try {
@@ -452,7 +503,6 @@ function main() {
   // El evento SubagentStart NO sirve acá: su payload trae solo agent_id + agent_type="default", sin
   // el nombre — por eso este hook se registra en Codex como PreToolUse + matcher
   // collaborationspawn_agent, no como SubagentStart.
-  const TOOLS = new Set(['Task', 'Agent', 'collaborationspawn_agent']);
   if (!event || !TOOLS.has(event.tool_name)) return;
 
   // Codex (payload completo): la IDENTIDAD del agent viaja en
@@ -461,9 +511,8 @@ function main() {
   // como ground truth de check-count es falsificable. agent_type gana; task_name queda de
   // fallback (underscoreado → se normaliza) para payloads sin agent_type.
   const ti = event.tool_input || {};
-  const rawName = ti.subagent_type || (event.tool_name === 'collaborationspawn_agent' && ti.agent_type) || ti.task_name;
-  if (!rawName || typeof rawName !== 'string') return;
-  const advisor = event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
+  const advisor = advisorDelEvento(event);
+  if (!advisor) return;
   const model = (event.tool_input && event.tool_input.model) || null;
 
   // ── Después del lanzamiento: el agente que le tocó a la salida ────────────
@@ -484,6 +533,12 @@ function main() {
     }
     return;
   }
+
+  // ── El tope de vueltas también vale a mano ──
+  // Al tope, un revisor del set que no es de la vuelta abierta (o que ya se lanzó en ella) lo niega on-advisor-cap.js:
+  // si no, lanzarlo con la herramienta de agentes sacaba una vuelta más sin pasar por el guion y sin foto. Acá no se
+  // anota: con el freno, no corre; sin él (perfil mínimo), corre pero no cuenta como revisado.
+  if (frenoDelTope({ sessionId: event.session_id, advisor, anotar: false })) return { negado: true };
 
   // el registro de antes de este lanzamiento: dice si el pedido trae su lectura curada (y entonces no explora)
   const fileKey = sessionIdFileKey(event.session_id);
@@ -606,9 +661,22 @@ function main() {
   } catch { /* nunca romper el spawn */ }
 }
 
-module.exports = { recordLaunch, curatedReading, phaseStart };
+// Las herramientas que lanzan un subagente, y el nombre del agente que lanza: en Claude Code `subagent_type`; en Codex
+// la IDENTIDAD viaja en tool_input.agent_type (el nombre EXACTO del TOML, con guiones), y task_name es una etiqueta libre
+// que elige el orquestador: queda de respaldo (underscoreado → se normaliza) para pedidos sin agent_type.
+const TOOLS = new Set(['Task', 'Agent', 'collaborationspawn_agent']);
+function advisorDelEvento(event) {
+  if (!event || !TOOLS.has(event.tool_name)) return null;
+  const ti = event.tool_input || {};
+  const rawName = ti.subagent_type || (event.tool_name === 'collaborationspawn_agent' && ti.agent_type) || ti.task_name;
+  if (!rawName || typeof rawName !== 'string') return null;
+  return event.tool_name === 'collaborationspawn_agent' && !ti.agent_type ? rawName.replace(/_/g, '-') : rawName;
+}
+
+module.exports = { recordLaunch, curatedReading, phaseStart, frenoDelTope, advisorDelEvento, TOOLS };
 
 if (require.main === module) {
-  try { main(); } catch { /* fail-safe */ }
+  let r = null;
+  try { r = main(); } catch { /* fail-safe */ }
   process.exit(0);
 }

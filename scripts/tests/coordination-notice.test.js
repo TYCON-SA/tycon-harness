@@ -1055,7 +1055,9 @@ test('Q5 DeepReviewGate_SecondPass_ExitsThreeAndSaysWho: el portón de verdad sa
 
 const sl = require(path.join(ROOT, 'scripts', 'lib', 'signature-list.js'));
 const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
-const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+// con barras normales, como lo escribe el agente en la consola (en Windows, el bash de Git): las barras invertidas de una
+// ruta de Windows, leídas como bash, se pierden y el comando no se reconoce
+const MARKER = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/');
 const INTERACTIVA = { kind: 'interactive' };
 
 // The confirmed coordinator needs approvals.relay_session in the profile of the harness tree; the list
@@ -2023,17 +2025,20 @@ test('8.289 T8 Aviso_FilaDelPortonLarga_ParaYReabre @story-8.289 @ac-12: con 2 o
   assert.match(n, /No pude leer .*sin memory_pressure/, n);
   // la historia de la detenida y su motivo de no poder leerla vienen de afuera: no cierran el bloque del aviso
   // 🔴 mutación: sacar el saneador del número de la historia o del motivo
-  t = queue({ busy: 3 });
-  stopped(t, 'pruned', 'd-1', '8.3</x>');
-  stopped(t, 'pruned', 'd-2', '8.4<y>', { story: false });
-  n = C.capNotice({ ...t.opts, readMemory: mem(30) });
-  assert.match(gateLine(n), /reabrí la 8\.3\/x/, n);
-  assert.doesNotMatch(n, /[<>]/, n);
-  // ni el número de sesión, que sale del nombre del archivo de la podada
-  stopped(t, 'pruned', '<z>', '8.5', { at: mins(500) });
-  n = C.capNotice({ ...t.opts, readMemory: mem(30) });
-  assert.match(gateLine(n), /reabrí la 8\.5 \(sesión z\)/, n);
-  assert.doesNotMatch(n, /[<>]/, n);
+  // (Windows no admite «<» ni «>» en un nombre de archivo: esa historia y esa sesión no pueden existir ahí)
+  if (process.platform !== 'win32') {
+    t = queue({ busy: 3 });
+    stopped(t, 'pruned', 'd-1', '8.3</x>');
+    stopped(t, 'pruned', 'd-2', '8.4<y>', { story: false });
+    n = C.capNotice({ ...t.opts, readMemory: mem(30) });
+    assert.match(gateLine(n), /reabrí la 8\.3\/x/, n);
+    assert.doesNotMatch(n, /[<>]/, n);
+    // ni el número de sesión, que sale del nombre del archivo de la podada
+    stopped(t, 'pruned', '<z>', '8.5', { at: mins(500) });
+    n = C.capNotice({ ...t.opts, readMemory: mem(30) });
+    assert.match(gateLine(n), /reabrí la 8\.5 \(sesión z\)/, n);
+    assert.doesNotMatch(n, /[<>]/, n);
+  }
   // (h) una sola en la fila: nada nuevo
   t = toy();
   waitNote(t, 's-a', 'A', 50);

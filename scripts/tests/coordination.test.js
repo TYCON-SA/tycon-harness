@@ -23,7 +23,8 @@ const esperar = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0
 
 // A toy machine: HOME with its Claude folder, the pipeline state and a profile outside HOME.
 function toy({ profile = {}, machine = null } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-'));
+  // la ruta real, como la da git (en Windows, C:\Windows\TEMP es Temp en el disco: sólo la nativa lo dice)
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'coord-')));
   const home = path.join(root, 'home');
   fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
   const state = stateDir(home);
@@ -998,10 +999,65 @@ test('8.177 T4d Open_ModoFueraDeLista_NoAbre @story-8.177 @ac-4: un modo que el 
   refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'modo raro');
 });
 
-test('8.177 T4e Open_ModoMasLejosQueElTope_NoAbre @story-8.177 @ac-4: un modo anotado a más de 1 MB del final no se busca: no abre', () => {
+// Una coordinadora que trabaja sola no recibe mensajes de la persona, y Claude Code anota el modo sólo con cada uno:
+// tras unas pocas llamadas con registros de cientos de KB, el último modo queda a más de 1 MB del final. Se busca hasta
+// el principio de la conversación, y vale el último anotado.
+test('8.177 T4e Open_ModoMasLejosQueUnMega_SeEncuentra @story-8.177 @ac-4: un modo anotado lejos del final se busca hasta el principio', () => {
+  for (const [modos, pad, esperado] of [[['bypassPermissions'], 1024 * 1024 + 10, 'bypassPermissions'], [['default', 'auto'], 3 * 1024 * 1024, 'auto']]) {
+    const t = toy();
+    callerTranscript(t, modos, { pad });
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: esperado }, `pad ${pad}: ${JSON.stringify(r)}`);
+  }
+});
+
+// La anotación partida en el borde de un bloque de lectura (256 KB, contados desde el final) se lee entera: el corte
+// cae adentro de la clave, y adentro de un renglón de la persona más largo que un bloque.
+test('8.177 T4e2 Open_ModoPartidoEntreBloques_SeLee @story-8.177 @ac-4: el modo partido entre dos bloques de lectura se encuentra', () => {
+  const BLOQUE = 256 * 1024;
   const t = toy();
-  callerTranscript(t, ['bypassPermissions'], { pad: 1024 * 1024 + 10 });
-  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'más lejos que el tope');
+  const file = callerTranscript(t, ['auto']);
+  const linea = fs.readFileSync(file, 'utf8');
+  const corte = linea.indexOf('"permissionMode"') + 8;
+  for (const k of [1, 4]) {
+    // lo que va después del renglón, para que el borde del bloque k caiga en el byte `corte`
+    const relleno = JSON.stringify({ type: 'assistant', message: { content: '' } });
+    const falta = k * BLOQUE - (linea.length - corte) - relleno.length - 1;
+    const tras = JSON.stringify({ type: 'assistant', message: { content: 'y'.repeat(falta) } });
+    fs.writeFileSync(file, `${linea}${tras}\n`);
+    assert.strictEqual(fs.statSync(file).size - k * BLOQUE, corte, 'el borde cae adentro de la clave');
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: 'auto' }, `bloque ${k}: ${JSON.stringify(r)}`);
+  }
+  // un renglón de la persona más largo que tres bloques, con el modo al principio
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', permissionMode: 'default', message: { content: 'z'.repeat(3 * BLOQUE + 17) } })}\n`);
+  assert.deepStrictEqual(C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } }), { mode: 'default' });
+});
+
+// Sólo cuenta la anotación de Claude Code: la clave en el primer nivel de un mensaje de la persona. La misma clave
+// adentro de la entrada de una herramienta o de un resultado, posterior al último mensaje, no gana.
+test('8.177 T4e3 Open_ClaveAnidada_NoEsElModo @story-8.177 @ac-4: una clave permissionMode anidada en otro renglón no cuenta', () => {
+  const t = toy();
+  const file = callerTranscript(t, ['default']);
+  const anidadas = [
+    { type: 'assistant', message: { content: [{ type: 'tool_use', input: { permissionMode: 'bypassPermissions' } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] }, toolUseResult: { permissionMode: 'bypassPermissions' } },
+    { type: 'assistant', permissionMode: 'bypassPermissions' },
+    // el renglón de un subagente no es un mensaje de la persona
+    { type: 'user', isSidechain: true, permissionMode: 'bypassPermissions', message: { content: 'hola' } },
+  ];
+  fs.appendFileSync(file, `${anidadas.map((d) => JSON.stringify(d)).join('\n')}\n`);
+  assert.deepStrictEqual(C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } }), { mode: 'default' });
+});
+
+// Un renglón con el modo que no se puede leer (a medio escribir) no se saltea para copiar uno más viejo: no abre.
+test('8.177 T4e4 Open_RenglonDelModoIlegible_NoAbre @story-8.177 @ac-4: el último renglón con el modo, roto, no deja ganar al anterior', () => {
+  const t = toy();
+  const file = callerTranscript(t, ['bypassPermissions']);
+  fs.appendFileSync(file, '{"type":"user","permissionMode":"default","message":{"content":"ho');
+  const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+  assert.ok(r.problem && !r.mode, JSON.stringify(r));
+  assert.match(r.problem, /no se puede leer/);
 });
 
 test('8.177 T5 Open_SinModo_ConRepo_NoTomaPuesto @story-8.177 @ac-4: con el repo y sin modo legible, no toma puesto ni crea la rama', () => {
@@ -2153,10 +2209,11 @@ function nextWithOwnPass(t, { pending, exempt = false, status = 'completed' }) {
     adversarial: { launchedAtStep: 'run-tests', runId: 'wf_own', sessionId: 'propia-1', launchedAt: new Date(mins(20)).toISOString() },
   });
   workflowRecord(t, 'propia-1', 'wf_own', status);
-  const env = { ...process.env, HOME: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1' };
+  // la casa en las dos variables: en Windows sale de USERPROFILE
+  const env = { ...process.env, HOME: t.home, USERPROFILE: t.home, CLAUDE_CODE_SESSION_ID: 'propia-1' };
   for (const k of ['TYCON_SESSION_ID', 'CODEX_SESSION_ID', 'TYCON_5B_EARLY', 'TYCON_NO_DEEP_REVIEW', 'DOD_BYPASS']) delete env[k];
   const r = spawnSync(process.execPath, [PIPELINE, 'next'], { encoding: 'utf8', env, cwd: repo });
-  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.status, 0, r.stderr || r.stdout);
   return JSON.parse(r.stdout);
 }
 
@@ -3373,11 +3430,12 @@ test('OwnerNext_PrintsDetailBelowQuestion_WithoutFileList (T15) @story-8.275 @ac
   for (const r of controles) fs.writeFileSync(path.join(repo, r), 'a=1\nb=2\n');
   git('commit', '-qam', 'cambio');
   const entradas = JSON.stringify(controles.map((p) => ({ path: p, blob: git('rev-parse', `HEAD:${p}`).stdout.trim() })));
-  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh');
+  // con barras normales, como lo escribe el agente en la consola (en Windows, el bash de Git)
+  const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/');
+  const CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.sh').split(path.sep).join('/');
   const pedidos = {
     'plan-approval': `node ${MARKER} complete-step approve-plan --approved "pido el click del dueño"`,
-    'control-change': `bash ${CONTROLES} approve --root ${repo} --base ${base} --entries '${entradas}'`,
+    'control-change': `bash ${CONTROLES} approve --root ${repo.split(path.sep).join('/')} --base ${base} --entries '${entradas}'`,
   };
   const ahora = Date.parse('2026-11-04T12:30:00Z');
   for (const [firma, comando] of Object.entries(pedidos)) {
@@ -3556,7 +3614,8 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
   OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
   try {
     const ow = require(path.join(ROOT, 'scripts', 'lib', 'owner-window.js'));
-    const extra = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js')} smart-reloop --iter 3 --extra-round`;
+    // con barras normales, como lo escribe el agente en la consola (en Windows, el bash de Git)
+    const extra = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js').split(path.sep).join('/')} smart-reloop --iter 3 --extra-round`;
     const desviado = `${extra} --repo /r --for-session ses-a`;
     sl.anotarFirma({ casa: t.home, firma: 'extra-round', titulo: 'pedir una vuelta más', sesion: 'ses-a', destino: 'ses-a', comando: extra, palabras: ow.canonica(extra), cwd: '/r', ahora: NOW - 60000,
       delegable: { comando: desviado, coordinadora: 's-coord', cwd: '/c', tool_use_id: 'toolu_01', plazo_min: 10 } });
@@ -3566,7 +3625,7 @@ test('Aviso_SeparaLasDeLaCoordinadoraDeLasDelDueno (T21) — @story-8.295 @ac-7 
     assert.doesNotMatch(n, /sin firmar nada vos/);
     assert.doesNotMatch(n, /esperan a la persona/);
     // y una común: las dos cuentas por separado, y la frase sólo para la de la persona
-    const marcar = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js')} mark-tested --acs 3`;
+    const marcar = `node ${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js').split(path.sep).join('/')} mark-tested --acs 3`;
     sl.anotarFirma({ casa: t.home, firma: 'manual-test', titulo: 'marcar un criterio', sesion: 'ses-a', destino: 'ses-a', comando: marcar, palabras: ow.canonica(marcar), cwd: '/r', ahora: NOW - 60000 });
     n = C.listNotice({ ...t.opts, sessionId: 's-coord', prompt: 'volví de nuevo' });
     assert.match(n, /esperan a la persona 1 firma\./);

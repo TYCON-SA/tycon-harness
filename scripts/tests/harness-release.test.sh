@@ -457,10 +457,18 @@ if corre T13; then
   printf '{ "schema": 1, "stage": "start", "incoming": "%s", "version": "2026.10.07.9", "harness": "%s", "previous": "%s" }\n' "$T/incoming/2026.10.07.9" "$T/harness" "$T/previous" > "$T/swap.json"
   bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
   [ -d "$T/harness" ] && [ ! -e "$T/swap.json" ] && ok "«start» con harness/ ausente: el respaldo en shell completó el cambio" || mal "start no se reparó en shell: $(ls "$T")"
-  # sin node en el PATH el respaldo no sabe si harness.js arranca: no vuelve a nada, y lo dice
+  # sin node en el PATH el respaldo no sabe si harness.js arranca: no vuelve a nada, y lo dice. «Sin node» de verdad: los
+  # comandos de /usr/bin y /bin en una carpeta propia, salvo node. `PATH=/usr/bin:/bin` no alcanzaba: en Ubuntu el
+  # paquete nodejs pone node en /usr/bin (#1855). Para que el caso lo cuide en cualquier máquina, el /usr/bin que se
+  # copia trae un node, como en ese Ubuntu.
+  USR_CON_NODE="$BASE/usr-bin-con-node"; mkdir -p "$USR_CON_NODE"
+  for f in /usr/bin/*; do ln -s "$f" "$USR_CON_NODE/${f##*/}" 2>/dev/null; done
+  ln -sf "$(command -v node)" "$USR_CON_NODE/node"
+  SIN_NODE="$BASE/bin-sin-node"; mkdir -p "$SIN_NODE"
+  for d in "$USR_CON_NODE" /bin; do for f in "$d"/*; do b="${f##*/}"; case "$b" in node|nodejs) continue ;; esac; [ -e "$SIN_NODE/$b" ] || ln -s "$f" "$SIN_NODE/$b"; done; done
   mkdir -p "$T/previous"
   before="$(ls "$T/harness" | wc -l | tr -d ' ')"
-  PATH="/usr/bin:/bin" bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
+  PATH="$SIN_NODE" bash "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" >/dev/null 2>&1
   [ "$(ls "$T/harness" | wc -l | tr -d ' ')" = "$before" ] && [ -d "$T/previous" ] && ok "sin node, el respaldo no volvió a previous/" || mal "sin node el respaldo movió carpetas: $(ls "$T")"
   grep -q "node no está en el PATH" "$(LOG)" && ok "y dice que node no está en el PATH" || mal "no dice que falta node: $(tail -2 "$(LOG)")"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
@@ -494,7 +502,24 @@ if corre T17; then
   case "$out" in *"lab-third"*) mal "lo de terceros se contó como de más: $out" ;; *) ok "lo de terceros no se cuenta como de más" ;; esac
   # sin git en el PATH, doctor corre igual; sin --fetch no sale a la red
   : > "$LAB_RELEASE_LOG"
-  mkdir -p "$BASE/bin-sin-git"; for b in node python3 bash sh; do p="$(command -v $b)"; [ -n "$p" ] && ln -sf "$p" "$BASE/bin-sin-git/$b"; done
+  # Un python3 que es un atajo de un gestor de versiones (pyenv; asdf o volta para node): un guion que llama al gestor,
+  # que no está en el PATH reducido. Se arma uno de mentira delante del PATH, como en la máquina del reporte (#1855).
+  PY_REAL="$(command -v python3)"
+  mkdir -p "$BASE/gestor-bin" "$BASE/atajos"
+  printf '#!/bin/sh\nshift 2\nexec "%s" "$@"\n' "$PY_REAL" > "$BASE/gestor-bin/pyenv-falso"
+  printf '#!/bin/sh\nexec pyenv-falso exec python3 "$@"\n' > "$BASE/atajos/python3"
+  chmod +x "$BASE/gestor-bin/pyenv-falso" "$BASE/atajos/python3"
+  # Se enlaza el ejecutable real, no el primero del PATH: el atajo, sin su gestor, no contesta ni a --version
+  mkdir -p "$BASE/bin-sin-git"
+  real_de() { # $1 = comando → la ruta del ejecutable que de verdad corre, preguntándole a él mismo
+    local PATH="$BASE/atajos:$BASE/gestor-bin:$PATH"
+    case "$1" in
+      node) node -p process.execPath 2>/dev/null ;;
+      python3) python3 -c 'import sys; print(sys.executable)' 2>/dev/null ;;
+      *) command -v "$1" ;;
+    esac
+  }
+  for b in node python3 bash sh; do p="$(real_de $b)"; [ -n "$p" ] && ln -sf "$p" "$BASE/bin-sin-git/$b"; done
   out="$(PATH="$BASE/bin-sin-git" harness_release doctor 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "sin git en el PATH, doctor sale 0" || mal "sin git: doctor salió $rc: $out"
   case "$out" in *"falta git"*) mal "pide git: $out" ;; *) ok "no pide git" ;; esac

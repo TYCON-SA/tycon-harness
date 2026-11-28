@@ -142,9 +142,12 @@ function destinoDeTareas(workItems, remote) {
   const w = workItems && typeof workItems === 'object' ? workItems : {};
   const azure = remote && remote.platform === 'azure' ? remote : null;
   const ORGANIZACION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  // el servidor es el del repo de operaciones (una instalación propia no es la de la nube); sin su dirección, el de siempre
+  let servidor = URL_BASE.azure;
+  try { if (azure && ENLACE_WEB.test(String(azure.web || ''))) servidor = new URL(azure.web).origin; } catch { /* el de siempre */ }
   let org = typeof w.org === 'string' ? w.org.trim() : '';
-  if (org && ORGANIZACION.test(org)) org = `${URL_BASE.azure}/${org}`;
-  if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `${URL_BASE.azure}/${azure.org}`;
+  if (org && ORGANIZACION.test(org)) org = `${servidor}/${org}`;
+  if (!org && azure && ORGANIZACION.test(String(azure.org || ''))) org = `${servidor}/${azure.org}`;
   org = ENLACE_WEB.test(org) ? org.replace(/\/+$/, '') : null;
   const proyecto = typeof w.project === 'string' && w.project.trim() ? w.project.trim() : azure && azure.project ? azure.project : null;
   return { org, proyecto };
