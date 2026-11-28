@@ -531,19 +531,20 @@ function oficinasDeEjemplo(ahora = Date.now()) {
 
 /**
  * Los días de horas y tokens de ejemplo (la pestaña «Horas y tokens»), con la forma de `scripts/metrics/workday-upload.js`:
- * `{ <máquina>: { <día>: texto } }` de los últimos 10 días. Dos máquinas inventadas; a `maquina-b` le falta el día más
- * nuevo (no medido) y un día trae los tokens sin medir.
+ * `{ <máquina>: { <día>: texto } }` de los últimos 10 días. Dos máquinas inventadas: `mac-ana`, con su persona en
+ * `people.machines`, y `maquina-b`, sin persona asignada; a `maquina-b` le falta el día más nuevo (no medido) y un día
+ * trae los tokens sin medir.
  */
 function jornadasDeEjemplo(ahora = Date.now()) {
   const dia = (n) => new Date(ahora - n * DIA_MS).toISOString().slice(0, 10);
-  const out = { 'maquina-a': {}, 'maquina-b': {} };
+  const out = { 'mac-ana': {}, 'maquina-b': {} };
   for (let n = 1; n <= 10; n += 1) {
     const d = dia(n);
     // los días de maquina-a traen el reparto por modelo (la versión 2); los de maquina-b, no (la versión 1): el costo dice
     // «sin dato de modelo» para esos
     const grande = { lectura: 100000 * n, escritura: 15000 * n, cache: 2000000 * n, cache_escrita_1h: 60000 * n };
     const chico = { lectura: 20000 * n, escritura: 3000 * n, cache: 400000 * n };
-    out['maquina-a'][d] = JSON.stringify({ v: 2, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
+    out['mac-ana'][d] = JSON.stringify({ v: 2, dia: d, tz: '-03:00', horas: { arnes_segundos: 3600 * (4 + (n % 3)), sesion_segundos: 3600 * (6 + (n % 4)), sesiones: 3 + (n % 2), medido: true },
       tokens: { lectura: 120000 * n, escritura: 18000 * n, cache: 2400000 * n, medido: true, por_modelo: { 'modelo-grande': grande, 'modelo-chico': chico } } });
     if (n === 1) continue;
     // las horas de sesión nunca son menos que las horas con el arnés trabajando

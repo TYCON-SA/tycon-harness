@@ -153,7 +153,11 @@ test('T31 Sitio_Demo_MaquinasInventadas @story-8.209 @ac-19', async () => {
   const h = await arrancarDemo();
   try {
     const api = await h.pedir('/api/horas', { cookie: 'sitio-demo-vista=mantenedor' });
-    assert.deepStrictEqual(api.json.maquinas, ['maquina-a', 'maquina-b']);
+    // una máquina con su persona y otra sin persona asignada: la página muestra los dos casos
+    assert.deepStrictEqual(api.json.maquinas, ['mac-ana', 'maquina-b']);
+    const pagina = await h.pedir('/horas', { cookie: 'sitio-demo-vista=mantenedor' });
+    assert.match(pagina.texto, /ana@[^<]*<div class="maquinas">Máquinas: mac-ana<\/div>/);
+    assert.match(pagina.texto, /maquina-b<div class="maquinas">máquina sin persona asignada<\/div>/);
     const celdas = Object.values(api.json.celdas).flatMap((porMaquina) => Object.values(porMaquina));
     assert.ok(celdas.some((c) => c.estado === 'no_medido'), 'un día no medido');
     assert.ok(celdas.some((c) => c.estado === 'medido'));
@@ -521,4 +525,104 @@ test('OH17 Costo_EscrituraDeCache_ConSuPrecio — se cobra con el precio de su p
   const v = WD().validarDia(malo, '2026-11-08');
   assert.ok(v.ok);
   assert.strictEqual(v.tokens.porModelo, null);
+});
+
+// ── Recorrido del 27/11 (A102, A103, A104, A109, A110): lo que la pestaña no decía o no se veía ─────────────────────────
+
+test('OH20 Motivo_SeVe_YElTotalDiceQueFalta — A102: el motivo de «tokens no medidos» se lee sin el mouse y el total dice qué falta', () => {
+  const ds = diasAtras('2026-11-09', 7);
+  const maquinas = {
+    'maquina-a': Object.fromEntries(ds.map((d) => [d, dia(d)])),
+    'maquina-b': Object.fromEntries(ds.map((d) => [d, d === '2026-11-08' ? dia(d, { tokens: { medido: false, motivo: 'una conversación no se pudo leer (EACCES)' } }) : dia(d)])),
+  };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const html = WD().htmlTabla(t, 'es');
+  // el motivo, escrito en la celda
+  assert.match(html, /tokens no medidos: una conversación no se pudo leer \(EACCES\)/);
+  // el total no dice «1 máquina sin medir» cuando las dos tienen horas: dice que falta una máquina de tokens
+  const fila = (html.match(/<th scope="row">2026-11-08<\/th>(.*?)<\/tr>/) || [])[1] || '';
+  assert.doesNotMatch(fila, /1 máquina sin medir/);
+  assert.match(fila, /1 máquina sin tokens medidos/);
+  // la ficha de tokens de la semana avisa que le falta ese día
+  const r = WD().resumen(t, {});
+  assert.strictEqual(r.semana.sinTokens, 1);
+  assert.match(WD().htmlResumen(r, 'es'), /class="ficha-titulo">Tokens de la semana, sin caché<\/div><div class="ficha-valor">[^<]*<\/div>[\s\S]*?sin contar: 1 día sin tokens medidos/);
+  assert.match(WD().htmlResumen(r, 'en'), /not counted: 1 day without measured tokens/);
+});
+
+test('OH21 MaquinaSinPersona_SeDice — A103: una máquina sin persona asignada no se presenta como persona', () => {
+  const maquinas = { 'maquina-a': { '2026-11-09': dia('2026-11-09') }, 'maquina-d': { '2026-11-09': dia('2026-11-09') } };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09', dias: 42 });
+  const r = WD().resumen(t, PEOPLE);
+  assert.strictEqual(r.personas.find((p) => p.persona === 'maquina-d').sinPersona, true);
+  assert.strictEqual(r.personas.find((p) => p.persona === 'ana@acme.example').sinPersona, false);
+  const sin = /maquina-d<div class="maquinas">máquina sin persona asignada<\/div>/;
+  assert.match(WD().htmlResumen(r, 'es'), sin, 'en la tabla por persona');
+  assert.match(WD().htmlDiaPorPersona(t, r, 'es'), sin, 'en el día por día');
+  assert.match(WD().htmlSemanas(r, 'es'), /maquina-d \(máquina sin persona asignada\)/, 'en la leyenda');
+  assert.match(WD().htmlResumen(r, 'en'), /maquina-d<div class="maquinas">machine with no person assigned<\/div>/);
+  assert.doesNotMatch(WD().htmlResumen(r, 'es'), /ana@acme\.example<div class="maquinas">máquina sin persona/);
+});
+
+test('OH22 GraficoDeTokens_PorPersonaConLeyenda — A104: los tokens se apilan por persona con los colores de la leyenda, que vale para los dos', () => {
+  const ds = diasAtras('2026-11-09', 42);
+  const maquinas = {
+    'maquina-a': Object.fromEntries(ds.map((d) => [d, dia(d, { lectura: 1000, escritura: 0 })])),
+    'maquina-c': Object.fromEntries(ds.slice(0, 7).map((d) => [d, dia(d, { lectura: 500, escritura: 0 })])),
+  };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09', dias: 42 });
+  const r = WD().resumen(t, PEOPLE);
+  assert.strictEqual(r.semanas[0].tokensPorPersona['ana@acme.example'], 7000);
+  assert.strictEqual(r.semanas[0].tokensPorPersona['beto@acme.example'], 3500);
+  assert.strictEqual(r.semanas[1].tokensPorPersona['beto@acme.example'], null);
+  const svg = WD().htmlSemanas(r, 'es');
+  const tokens = svg.slice(svg.indexOf('Tokens sin caché'));
+  // beto (la segunda persona) aparece con su color en el gráfico de tokens
+  assert.match(tokens, /fill:var\(--serie-2\)[^>]*><title>beto@acme\.example[^<]*3\.5k/);
+  assert.match(tokens, /fill:var\(--serie-1\)[^>]*><title>ana@acme\.example[^<]*7\.0k/);
+  // la leyenda va antes de los dos gráficos y dice que es de los dos
+  assert.ok(svg.indexOf('class="leyenda"') < svg.indexOf('<figure'), 'la leyenda arriba de los dos gráficos');
+});
+
+test('OH23 TablasAnchas_SeDeslizanConAviso — A109 y A110: las tablas anchas van en una caja que se desliza y dice que hay más', () => {
+  const ds = diasAtras('2026-11-09', 30);
+  const maquinas = { 'maquina-a': Object.fromEntries(ds.map((d) => [d, dia(d)])) };
+  const t = WD().armarTabla(WD().leerJornadas(espejo(maquinas)), { ayer: '2026-11-09' });
+  const r = WD().resumen(t, PEOPLE);
+  assert.match(WD().htmlResumen(r, 'es'), /<div class="desliza"[^>]*><table class="horas-personas">/, 'la tabla por persona');
+  assert.match(WD().htmlTabla(t, 'es'), /^<div class="desliza"[^>]*><table class="horas">/, 'la tabla por máquina');
+  const diario = WD().htmlDiaPorPersona(t, r, 'es');
+  assert.match(diario, /<p class="desliza-aviso">[^<]*30 días[^<]*<\/p><div class="desliza"/, 'el día por día dice que hay 30 columnas y que se desliza');
+  assert.match(WD().htmlDiaPorPersona(t, r, 'en'), /<p class="desliza-aviso">[^<]*30 days/);
+  assert.match(WD().htmlSemanas(r, 'es'), /<div class="desliza"[^>]*><figure class="grafico">/, 'los gráficos también');
+  const css = fs.readFileSync(path.join(SITE, 'static', 'site.css'), 'utf8');
+  // la sombra del borde que dice «hay más» y el ancho mínimo de los gráficos para que los rótulos se lean
+  assert.match(css, /div\.desliza\{[^}]*background-attachment:local/);
+  assert.match(css, /figure\.grafico svg\{[^}]*min-width:/);
+});
+
+test('E3 E2E_HorasYTokens_CelularY1280 — A109 y A110: en un celular la página no se sale; a 1280 el día por día dice que se desliza', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  assert.ok(PLAYWRIGHT, `con la llave exigente prendida, Playwright tiene que estar: ${PINNED_PW.locate().why}`);
+  const h = await arrancarDemo();
+  const navegador = await PLAYWRIGHT.chromium.launch();
+  try {
+    for (const ancho of [390, 1280]) {
+      const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 } });
+      await ctx.setExtraHTTPHeaders({ cookie: 'sitio-demo-vista=mantenedor' });
+      const page = await ctx.newPage();
+      await page.goto(`${h.base}/horas`);
+      await page.locator('table.horas-personas').waitFor({ timeout: 20000 });
+      await page.getByText('Ver día por día', { exact: true }).click();
+      await page.getByText('Ver por máquina', { exact: true }).click();
+      await page.locator('table.horas').waitFor({ timeout: 20000 });
+      const medida = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, vista: window.innerWidth }));
+      assert.ok(medida.doc <= medida.vista, `a ${ancho} px la página mide ${medida.doc} px`);
+      assert.ok(await page.locator('p.desliza-aviso').isVisible(), `a ${ancho} px el aviso de que se desliza se ve`);
+      // los rótulos de los ejes se dibujan con al menos 9 px
+      const eje = await page.locator('figure.grafico text.eje').first().evaluate((n) => n.getBoundingClientRect().height);
+      assert.ok(eje >= 9, `a ${ancho} px los rótulos miden ${eje} px`);
+      if (process.env.TYCON_E2E_CAPTURE) await page.screenshot({ path: path.join(process.env.TYCON_E2E_CAPTURE, `horas-${ancho}.png`), fullPage: true });
+      await ctx.close();
+    }
+  } finally { await navegador.close(); await h.cerrar(); }
 });

@@ -2789,6 +2789,14 @@ const TEXTOS = {
   'horas.graficoTokens': { es: 'Tokens sin caché, por semana', en: 'Tokens without cache, by week' },
   'horas.sinMedirCorto': { es: 'sin medir', en: 'not measured' },
   'horas.otras': { es: 'con las demás', en: 'with the rest' },
+  'horas.sinTokens1': { es: '1 máquina sin tokens medidos', en: '1 machine without measured tokens' },
+  'horas.sinTokensN': { es: '{n} máquinas sin tokens medidos', en: '{n} machines without measured tokens' },
+  'horas.sinHorasMaq1': { es: '1 máquina sin horas medidas', en: '1 machine without measured hours' },
+  'horas.sinHorasMaqN': { es: '{n} máquinas sin horas medidas', en: '{n} machines without measured hours' },
+  'horas.diaSinTokens1': { es: '1 día sin tokens medidos (máquina × día)', en: '1 day without measured tokens (machine × day)' },
+  'horas.diaSinTokensN': { es: '{n} días sin tokens medidos (máquina × día)', en: '{n} days without measured tokens (machine × day)' },
+  'horas.sinPersona': { es: 'máquina sin persona asignada', en: 'machine with no person assigned' },
+  'horas.deslizaAviso': { es: '{n} días, del más nuevo al más viejo: deslizá la tabla de costado para ver el resto →', en: '{n} days, newest first: scroll the table sideways to see the rest →' },
 };
 
 // lo que dice un proveedor de inicio de sesión que nombra su nube o su marca vive en su archivo (auth-providers/, la
