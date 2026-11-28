@@ -825,6 +825,8 @@ const TEXTOS = {
   'fichas.causa.sin-declarar': { es: 'sin declarar', en: 'not declared' },
   'fichas.causa.otra': { es: 'fuera del vocabulario', en: 'outside the vocabulary' },
   // una fila de «lo rehecho al lado de lo entregado»: dos conteos del mismo mes, no un porcentaje
+  'fichas.cuenta.rehechas_sin_deuda': { es: 'rehechas sin contar la deuda declarada, en {meses} meses', en: 'reworked without the declared debt, over {meses} months' },
+  'fichas.cuenta.rehechas_sin_deuda1': { es: 'rehechas sin contar la deuda declarada, en 1 mes', en: 'reworked without the declared debt, over 1 month' },
   'fichas.mes.fila': { es: '{mes}: {entregadas} entregadas · rehechas: {rehechas}', en: '{mes}: {entregadas} delivered · reworked: {rehechas}' },
   'fichas.mes.filaEnCurso': { es: '{mes} (en curso): {entregadas} entregadas · rehechas: {rehechas}', en: '{mes} (in progress): {entregadas} delivered · reworked: {rehechas}' },
   'fichas.fuenteDelParen': { es: '(fuente del {fecha})', en: '(source from {fecha})' },
