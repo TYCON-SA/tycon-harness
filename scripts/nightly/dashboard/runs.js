@@ -958,12 +958,12 @@ const recortar = (s, max) => { const c = Array.from(s); return c.length > max ? 
  */
 function descripcionDe(marker, cz) {
   if (cz && cz.estado === 'leido') {
-    if (cz.titulo) return { texto: cz.titulo, fuente: 'el título de la story' };
+    if (cz.titulo) return { texto: cz.titulo, fuente: 'el título de la historia' };
     if (cz.commits && cz.commits.length) return { texto: cz.commits[0].s, fuente: 'su primer commit' };
   }
   const base = String((marker || {}).storyPath || '').split(/[\\/]/).pop().replace(/\.md$/i, '');
   const slug = base.replace(/^story[-_]?/i, '').replace(/^[0-9a-z]{1,4}([.-][0-9a-z]{1,3}){0,3}[-_]/i, '').replace(/[-_]+/g, ' ').trim();
-  return slug && /[a-záéíóúñ]{3}/i.test(slug) ? { texto: slug, fuente: 'el nombre del archivo de la story' } : null;
+  return slug && /[a-záéíóúñ]{3}/i.test(slug) ? { texto: slug, fuente: 'el nombre del archivo de la historia' } : null;
 }
 
 /**
@@ -1999,7 +1999,9 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
   var miles = function (n) { return n == null ? '—' : n >= 1e6 ? n1(n / 1e6) + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' k' : String(n); };
   var dt = function (min) { return min < 90 ? Math.round(min) + ' min' : n1(min / 60) + ' h'; };
-  var nombreCtl = function (k) { return CTL[k] ? CTL[k] + ' (' + k + ')' : k; };
+  // el nombre técnico entre paréntesis sólo cuando dice otra cosa: «tests (tests)» o «builds (build)» lo repetirían
+  var mismoNombre = function (a, b) { var n = function (s) { return String(s).toLowerCase().replace(/s$/, ''); }; return n(a) === n(b); };
+  var nombreCtl = function (k) { return CTL[k] ? (mismoNombre(CTL[k], k) ? CTL[k] : CTL[k] + ' (' + k + ')') : k; };
   // La etiqueta de un carril va anclada a la derecha en una columna de ~290 px: un nombre más largo se cortaba por la
   // izquierda. Se recorta con «…» y el nombre entero queda en su <title>.
   var ETIQUETA_MAX = 46;
@@ -2008,6 +2010,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var ctlTec = function (k) { return CTL[k] ? k : ''; };
   var mediana = function (v) { if (!v.length) return null; var x = v.slice().sort(function (a, b) { return a - b; }); return x.length % 2 ? x[(x.length - 1) / 2] : (x[x.length / 2 - 1] + x[x.length / 2]) / 2; };
   var tokensDe = function (c) { return c.consumo.tokens.out + c.consumo.tokens.in + c.consumo.tokens.cache_new; };
+
+  // la marca del eje en horas y minutos: «1 h 15′», nunca «1,3 h» (un decimal redondeado confunde 1¼ con 1,3)
+  function marcaDelEje(t) {
+    if (t < 60) return t + '′';
+    var m = Math.round(t % 60);
+    return Math.floor(t / 60) + ' h' + (m ? ' ' + m + '′' : '');
+  }
 
   function ejeTicks(durMin) {
     var paso = durMin <= 30 ? 5 : durMin <= 120 ? 15 : durMin <= 360 ? 60 : durMin <= 1440 ? 180 : 720;
@@ -2049,7 +2058,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="min-width:760px;display:block" role="img" aria-label="' + T('ariaLinea') + '">';
     ejeTicks(maxT).forEach(function (t) {
       s += '<line x1="' + X(t).toFixed(1) + '" y1="10" x2="' + X(t).toFixed(1) + '" y2="' + (H - 34) + '" stroke="var(--line)"></line>';
-      s += '<text x="' + X(t).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="var(--ink-3)">' + (t >= 60 ? n1(t / 60) + ' h' : t + '′') + '</text>';
+      s += '<text x="' + X(t).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="var(--ink-3)">' + marcaDelEje(t) + '</text>';
     });
     var lf = lanes.filter(function (l) { return l.ctl; });
     if (lf.length) {
@@ -2530,7 +2539,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return '<div class="det">'
       + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto ? rotulo(c.producto) : T('productoSinRegistrar')) + '</span>'
       + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : T('maquinaSinDeclarar') + ' ' + esc(c.maquina_motivo || '')) + '</span>' : '')
-      + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">' + T('sinDescripcion') + '</div>')
+      + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">' + T('descSegun', { f: esc(c.descripcion.fuente) }) + '</span></div>' : '<div class="det-desc nd">' + T('sinDescripcion') + '</div>')
       + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : T('sinDuracion')) + '</div></div>'
       + '<div class="det-chips">' + chips + '<button class="cerrar">' + T('cerrar') + ' ✕</button></div></div>'
       + '<div class="tl">' + tl + '</div><div class="qtok" hidden></div>'

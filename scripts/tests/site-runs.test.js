@@ -1360,7 +1360,7 @@ test('2.60-T11 FrasesDeLaCasa_CadaRama @story-2.60 @ac-1 @ac-3 — los tramos fu
 
 test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce sólo los campos de la casa', () => {
   // lo de afuera que coincide con un molde: un producto, una story, el título, los asuntos de los commits, un archivo
-  const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la story' },
+  const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la historia' },
     cambios: { titulo: 'antes, el login fallaba', commits: [{ h: 'a', s: 'pruebas' }, { h: 'b', s: 'fix: el pedido queda confirmado' }],
       archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'la conversación no se pudo leer (Z_DATA_ERROR)' },
     tramos: [{ nombre: 'Revisores + Hallazgos' }] };
@@ -2544,4 +2544,57 @@ test('A132 FichaBloqueos_NoSeConfundeConLosControlesDeLaTabla — dice de qué r
   assert.match(TX.t('es', 'ficha.bloqueos.titulo'), /registro de controles/);
   assert.match(TX.t('es', 'ficha.bloqueos.paraQue'), /no es la columna Controles/);
   assert.match(TX.t('en', 'ficha.bloqueos.paraQue'), /not the Controls column/);
+});
+
+// 🔴 mutación: el subtítulo del detalle como «mejora — el nombre del archivo de la story», que se lee como un texto de
+// relleno: la fuente tiene que decir que es de dónde salió el título.
+test('A146 Detalle_SubtituloDiceDeDondeSalio — «mejora (según el nombre del archivo de la historia)»', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    const html = c.w.__detalle({ ...det, descripcion: { texto: 'mejora', fuente: 'el nombre del archivo de la historia' } });
+    const sub = (html.match(/<div class="det-desc">[\s\S]*?<\/div>/) || [''])[0];
+    assert.match(sinTags(sub), /mejora \(según el nombre del archivo de la historia\)/);
+    assert.doesNotMatch(sub, / — /);
+  });
+  // la fuente, en castellano, dice «historia»
+  const RT = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'runs-texts.js'));
+  const textos = JSON.stringify(RT);
+  assert.ok(!/el nombre del archivo de la story|el título de la story/.test(textos), 'la fuente en castellano dice «historia»');
+});
+
+// 🔴 mutación: las marcas del eje de la línea de tiempo en horas con un decimal redondeado («1,3 h» por 1 h 15′).
+test('A149 LineaDeTiempo_MarcasEnHorasYMinutos — «1 h 15′», nunca «1,3 h»', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV_A);
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
+    const svg = c.w.__detalle({ ...det, dur_ms: 120 * 60000 });
+    const marcas = (svg.match(/font-size="10" fill="var\(--ink-3\)">[^<]*<\/text>/g) || []).map((x) => x.replace(/^[^>]*>|<\/text>$/g, ''));
+    assert.ok(marcas.includes('1 h 15′'), `las marcas: ${marcas.join(', ')}`);
+    assert.ok(marcas.includes('2 h'), 'la hora entera, sin minutos');
+    assert.ok(!marcas.some((m) => /\d[.,]\d h/.test(m)), `sin horas con decimales: ${marcas.join(', ')}`);
+  });
+});
+
+// 🔴 mutación: en inglés, el nombre técnico entre paréntesis que repite el mismo nombre («tests (tests)», «builds
+// (build)»), o «a test or the build that did not pass and were fixed».
+test('A151 Ingles_ControlesSinNombreRepetido_YConcordancia — «tests», no «tests (tests)»; otro nombre sí lleva el técnico', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const dev = `${await entrar(DEV_A)}; sitio-idioma=en`;
+    const c = await clienteDelSitio(h, dev);
+    const lista = (await h.pedir('/api/corridas', { cookie: dev })).json;
+    const a1 = lista.corridas.find((x) => x.story === '3.1');
+    const html = c.w.__detalle((await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json);
+    assert.doesNotMatch(html, /tests \(tests\)|builds \(build\)/, 'sin el mismo nombre entre paréntesis');
+    assert.match(html, />tests</);
+  });
+  const RT = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'runs-texts.js'));
+  const en = JSON.stringify(RT);
+  assert.ok(!/did not pass and were fixed/.test(en), 'concordancia: «did not pass and was fixed»');
 });
