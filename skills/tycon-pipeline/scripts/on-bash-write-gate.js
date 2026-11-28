@@ -630,9 +630,9 @@ function handleCarrilEHistoria(event, opts = {}) {
     const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/.test(t) || nombresDeZona.some((z) => String(t).includes(z));
     const nombraCasa = (t) => {
       const sinSimples = String(t).replace(/'[^']*'/g, "''");
-      // también el nombre de la persona (`/Users/$(whoami)`), con el que se arma la casa
+      // `pwd` parado en la casa (o en una carpeta que contiene una zona) también la nombra
       return /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(sinSimples) || /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(sinSimples)
-        || /(^|[;&|(\s])(?:whoami|logname|id\s+-[a-z]*u[a-z]*n|id\s+-[a-z]*n[a-z]*u)\b/.test(sinSimples) || /\$\{?(?:USER|LOGNAME)\b/.test(sinSimples);
+        || (/(^|[;&|(\s])pwd\b/.test(sinSimples) && zonas().some((z) => z && (isInside(cwd, z) || isInside(z, cwd))));
     };
     // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
     const cuerposDe = (texto) => {
@@ -651,14 +651,36 @@ function handleCarrilEHistoria(event, opts = {}) {
     };
     let asigs = [];
     try { asigs = require('./lib/command-vars.js').asignaciones(cmd); } catch (e) { logHookError(e); }
-    // el destino y las asignaciones de las variables que nombra, dos niveles
+    // la palabra entera del shell desde donde empieza el destino: el lector corta en una comilla o en un blanco adentro
+    // de un `$(…)` (`"$HOME"/x/$(echo a)/y` llega como `$HOME`)
+    const palabraEntera = (texto, desde) => {
+      let modo = '';
+      let hondo = 0;
+      let k = desde;
+      for (; k < texto.length && k < desde + 20000; k++) {
+        const ch = texto[k];
+        if (modo === "'") { if (ch === "'") modo = ''; continue; }
+        if (ch === '\\') { k++; continue; }
+        if (modo === '"') { if (ch === '"') modo = ''; else if (ch === '(' && texto[k - 1] === '$') hondo++; else if (ch === ')' && hondo) hondo--; continue; }
+        if (ch === "'" || ch === '"') { modo = ch; continue; }
+        if (ch === '(') { hondo++; continue; }
+        if (ch === ')') { if (!hondo) break; hondo--; continue; }
+        if (!hondo && /[\s;&|<>]/.test(ch)) break;
+      }
+      return texto.slice(desde, k);
+    };
+    // el destino con las variables que tienen una asignación en el comando reemplazadas por su texto (cuatro niveles), y
+    // además ese texto suelto: `C=.claude; D=~/$C/x` se lee `~/.claude/x`
     const textoDe = (t) => {
-      let piezas = [String(t)];
-      let nuevas = [String(t)];
-      for (let nivel = 0; nivel < 2; nivel++) {
-        const nombres = new Set(nuevas.flatMap((x) => [...x.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1])));
-        nuevas = asigs.filter((a) => nombres.has(a.nombre)).map((a) => String(a.valor));
-        piezas = piezas.concat(nuevas);
+      const valorDe = new Map();
+      for (const a of asigs) valorDe.set(a.nombre, String(a.valor));
+      let x = String(t);
+      const piezas = [x];
+      for (let nivel = 0; nivel < 4; nivel++) {
+        const y = x.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, a1, a2) => (valorDe.has(a1 || a2) ? valorDe.get(a1 || a2) : m));
+        if (y === x || y.length > 20000) break;
+        x = y;
+        piezas.push(x);
       }
       return piezas.join('\n');
     };
@@ -666,12 +688,21 @@ function handleCarrilEHistoria(event, opts = {}) {
     for (const t of extractWriteTargets(cmd, { keep: () => true })) {
       if (!/[$`]/.test(t)) continue;
       const ex = expandirRuta(cmd, t);
-      const sinResolver = ex.sinResolver.length > 0 || /\$\(|`/.test(t);
+      const palabras = [];
+      for (let k = texto.indexOf(t); k >= 0 && palabras.length < 20; k = texto.indexOf(t, k + 1)) palabras.push(palabraEntera(texto, k));
+      // (la palabra entera también: `"$HOME"/x/$(echo a)` llega como `$HOME`, que sí se resuelve)
+      const sinResolver = ex.sinResolver.length > 0 || /\$\(|`/.test(t) || palabras.some((w) => /\$\(|`/.test(w));
       if (!sinResolver) continue;
-      const suyo = textoDe(t);
+      // la palabra entera, sin comillas ni escapes y con las barras colapsadas, como las lee el shell (`"$HOME"/x`, `\.x`,
+      // `a//b`, `a/./b`, `a/b/../b`)
+      let suyo = textoDe([t, ...palabras].join('\n')).replace(/\\(.)/g, '$1').replace(/["']/g, '').replace(/\/\.(?=\/)/g, '').replace(/\/{2,}/g, '/');
+      const SUBE = /\/(?!\.\.(?:\/|$))[^/\s$`]+\/\.\.(?=\/)/g;
+      for (let v = 0; v < 20 && SUBE.test(suyo); v++) { SUBE.lastIndex = 0; suyo = suyo.replace(SUBE, ''); }
+      // la casa armada con el nombre de la persona: `/Users/$(whoami)`, `/home/$USER`
+      const casaConNombre = /\/(?:Users|home)\/(?:\$\(\s*(?:whoami|logname|id)\b|`\s*(?:whoami|logname|id)\b|\$\{?(?:USER|LOGNAME)\b)/.test(suyo);
       // un `$(…)` con blancos adentro llega cortado (`/Users/$(id`): sus cuerpos se leen del comando entero
       const cortado = (String(t).match(/\$\(/g) || []).length > (String(t).match(/\)/g) || []).length;
-      let frena = nombraZona(suyo) || cuerposDe(suyo).some(nombraCasa) || (cortado && cuerposDe(texto).some(nombraCasa));
+      let frena = casaConNombre || nombraZona(suyo) || cuerposDe(suyo).some(nombraCasa) || (cortado && cuerposDe(texto).some(nombraCasa));
       if (!frena && /\$\{?PWD\b/.test(t)) {
         const conCarpeta = String(ex.sinResolver.length ? t : ex.valor).replace(/\$\{PWD\}|\$PWD\b/g, cwd);
         const ex2 = expandirRuta(cmd, conCarpeta);
