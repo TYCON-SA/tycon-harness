@@ -992,6 +992,13 @@ test('2.76-Demo_SitioPublico_NoindexYTope', async () => {
     assert.strictEqual((await desde('203.0.113.99, 198.51.100.2')).status, 200);
     // las sondas de la plataforma no cuentan: con el tope lleno siguen contestando
     assert.strictEqual((await h.pedir('/livez', { headers: { 'x-forwarded-for': '198.51.100.1' } })).status, 200);
+    // A210: lo estático (hoja de estilo, código, letras) tampoco: cada página pide unas seis piezas fijas, y con ellas
+    // contadas la séptima página del minuto salía sin estilos
+    const css = await h.pedir('/static/site.css', { headers: { 'x-forwarded-for': '198.51.100.1' } });
+    assert.strictEqual(css.status, 200, 'con el tope lleno, la hoja de estilo llega');
+    assert.match(String(css.headers['content-type']), /text\/css/);
+    for (let i = 0; i < 70; i++) await h.pedir('/static/site.css', { headers: { 'x-forwarded-for': '198.51.100.4' } });
+    assert.strictEqual((await desde('198.51.100.4')).status, 200, 'pedir lo estático no gasta el tope de las páginas');
     // nada del registro del sitio en las páginas
     for (const ruta of ['/', '/arnes', '/proyectos', '/configuracion', '/como-trabaja']) {
       const r = await h.pedir(ruta, { headers: { 'x-forwarded-for': '198.51.100.3' } });

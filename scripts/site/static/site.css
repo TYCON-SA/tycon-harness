@@ -649,6 +649,8 @@ body.demo .side{top:calc(var(--barra) + 36px);height:calc(100vh - var(--barra) -
 .m-barra .btn.prim{background:var(--ink);color:var(--page);border-color:var(--ink)}
 .m-barra .btn[disabled]{opacity:.45;cursor:not-allowed}
 .m-cuenta{font-weight:600;font-size:13.5px;min-width:72px}
+/* en el teléfono, la barra en una sola fila: con dos renglones tapaba lo que hay que decidir (A208) */
+@media (max-width:640px){.m-barra{flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:6px 10px;margin:0 -10px}.m-barra .btn{white-space:nowrap;padding:5px 9px;min-height:32px;font-size:12.5px;flex:0 0 auto}.m-cuenta{min-width:0;white-space:nowrap;font-size:12.5px}}
 .m-estado{flex-basis:100%;color:var(--ink-2);font-size:13px}
 .m-estado:empty{display:none}
 .m-estado .m-sigue{display:block;margin-top:2px}

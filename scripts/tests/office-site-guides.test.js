@@ -116,3 +116,24 @@ test('T51 Guia_DiceQueViajaTodo — @story-8.171 @ac-28: viajan los mensajes ent
   assert.match(en, /each session's conversation/);
   assert.match(en, /only in (?:its )?memory/);
 });
+
+// A200 (recorrido del sitio): la Ayuda en inglés citaba en castellano, sin traducir, los mensajes del control sin sesión
+// y del registro («el sitio está frenado», «/api contesta con datos»…), justo lo que quien lee tiene que entender para
+// arreglar. Los mensajes se citan tal cual los imprime la herramienta, y van seguidos de su traducción entre paréntesis.
+// 🔴 Falla con: una cita en castellano en la guía en inglés sin «(…)» en inglés detrás.
+const citasSinTraducir = (texto) => {
+  const castellano = /[áéíóúñ]|\b(el|la|los|las|sin|falta|contesta|está|cuenta|acepta|trae|pedido|cambio|queda|pasa|se sabe)\b/i;
+  const malas = [];
+  for (const m of texto.matchAll(/"([^"\n]{3,200})"(\s*)(\(?)/g)) {
+    const cita = m[1];
+    if (!castellano.test(cita) || /[{}:=]\s*$|^[\w.-]+$/.test(cita)) continue;
+    if (m[3] !== '(') malas.push(cita);
+  }
+  return malas;
+};
+test('A200 GuiaDelSitio_EnIngles_CitasEnCastellanoTraducidas', () => {
+  const fsx = require('fs'); const px = require('path');
+  const texto = fsx.readFileSync(px.join(__dirname, '..', '..', 'guides', 'organization-site.en.md'), 'utf8');
+  const malas = citasSinTraducir(texto).filter((c) => /sitio|sesión|contesta|healthz|no-store|http|Referer|repos\.json|owners|versión/.test(c));
+  assert.deepStrictEqual(malas, [], 'cada mensaje citado en castellano lleva su traducción entre paréntesis');
+});

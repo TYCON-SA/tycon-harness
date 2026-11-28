@@ -1863,6 +1863,20 @@ test('T11 2.83-QuePaso_SinNombreLoCuenta @story-2.83 @ac-14 — las ejecuciones 
   });
 });
 
+// A208 (recorrido del sitio): en el teléfono, la barra fija de Mantenimiento («0 elegidas · Enviar para aprobar · Seguir
+// las recomendaciones · Borrar elecciones») ocupaba dos renglones, unos 110 px de 844, y tapaba el título y la segunda
+// ficha. En un teléfono va en una sola fila, con los botones más chicos y desplazable de costado si no entra.
+// 🔴 Falla con: una barra que en el teléfono sigue pudiendo partirse en dos renglones.
+test('A208 Mantenimiento_BarraFija_UnaFilaEnElTelefono', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'site', 'static', 'site.css'), 'utf8');
+  const tel = [...css.matchAll(/@media \(max-width:640px\)\{([\s\S]*?)\n?\}\n/g)].map((m) => m[1]).join('\n');
+  const regla = /\.m-barra\{([^}]*)\}/.exec(tel);
+  assert.ok(regla, 'la barra tiene su regla para el teléfono');
+  assert.match(regla[1], /flex-wrap:nowrap/, 'una sola fila');
+  assert.match(regla[1], /overflow-x:auto/, 'si no entra, se desplaza de costado');
+  assert.match(tel, /\.m-barra \.btn\{[^}]*white-space:nowrap/, 'cada botón en un renglón');
+});
+
 // 🔴 Falla con (A116, A119; recorrido F21): «Arreglos en curso» remitía al historial de decisiones aunque la página no lo
 //    tuviera; y una vulnerabilidad con una sola tarea esperando su cierre decía «1 tareas».
 test('A116-A119 Mantenimiento_NoRemiteALoQueNoEstaYConcuerda', { timeout: 60000 }, async () => {

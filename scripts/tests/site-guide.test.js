@@ -64,10 +64,12 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis; y, en Cloud Run, que el sitio renueva cada 10 minutos la conexión de cada máquina para
 // que Oficinas no quede vacía tras desplegar (SITE_OFFICE_RECONNECT_MINUTES); y su párrafo «Al día» (la plataforma
-// cloudrun del actualizador); y el nombre del ajuste «Los cambios de quien mantiene el sitio», como en la pantalla (A171).
+// cloudrun del actualizador); y el nombre del ajuste «Los cambios de quien mantiene el sitio», como en la pantalla (A171);
+// y, en inglés, la traducción entre paréntesis de los mensajes del control sin sesión y del registro que se citan en
+// castellano (A200).
 const HUELLA_INSTALACION = {
   es: '7b451e641095c6bce929ba6681639db41d773604ddd3d5d58c3e0944327b8e12',
-  en: 'f3c680e105f5435255687fdd42840aca9dcde6cbc5ef629f0d3f391d81daf87b',
+  en: '4894fcdd79def6d20067931fa67ec5d06ecbfed7968d4ff6ede1eca34b30daa6',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

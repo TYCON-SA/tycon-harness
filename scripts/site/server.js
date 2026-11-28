@@ -620,8 +620,10 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const ruta = u.pathname;
     const st = fuentes.estado();
 
-    // el tope de pedidos del sitio demo: por dirección, salvo las sondas de la plataforma
-    if (demo && !SONDAS.has(ruta)) {
+    // el tope de pedidos del sitio demo: por dirección, salvo las sondas de la plataforma y lo estático (hoja de estilo,
+    // código, letras: piezas fijas servidas de memoria, unas seis por página; contadas, la séptima página del minuto
+    // salía sin estilos)
+    if (demo && !SONDAS.has(ruta) && !(estatico[ruta] && req.method === 'GET')) {
       const tope = demo.tope(req);
       if (!tope.ok) return enviar(res, { status: 429, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': String(tope.reintentarEn) } });
     }
