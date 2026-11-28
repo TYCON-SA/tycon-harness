@@ -339,12 +339,12 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${d(noches)}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
   const fichaVig = (id, pr, veredicto, regla, extra = '', producto = 'producto-x') => `id: ${id}\nfuente: vigilante\ncausa: ${producto}:${regla}\nfecha: ${ayer}\nproducto: ${producto}\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
   Object.assign(f, {
-    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: Ana Pérez"\n`),
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\npropuesta_modelo: modelo-de-ejemplo\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: Ana Pérez"\n`),
     'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5, 'repos:\n  - Producto X/FrontEnd\n'),
     'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
     // la tarea de pkg-cuatro se cerró y el paquete sigue: la ficha la tiene (la que el Inicio dice cerrada)
     'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6, 'repos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5003\n'),
-    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'deriva', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
+    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'deriva', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\npropuesta_modelo: modelo-de-ejemplo\n'),
     'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'goteo', '', 'producto-y'),
   });
   const CYCLE = require('../../nightly/findings/cycle.js');

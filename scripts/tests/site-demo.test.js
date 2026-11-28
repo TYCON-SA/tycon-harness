@@ -1477,3 +1477,13 @@ test('A136 Demo_LasEjecucionesSonDeUnProductoNoDeLaboratorio', () => {
   assert.ok(corridas.length >= 4);
   for (const c of corridas) assert.strictEqual(R.esLaboratorio(c.marker.repoPath), false, `${c.marker.storyId}: ${c.marker.repoPath} no es de laboratorio`);
 });
+
+// 🔴 Falla con (A101, recorrido F21): las fichas del demo traían la propuesta de la noche sin decir de qué modelo salió:
+//    el sitio, a propósito, no muestra una propuesta así, y en Mantenimiento la ficha salía «sin analizar» con la
+//    propuesta escondida. La noche siempre escribe el modelo junto con la propuesta.
+test('A101 Demo_CadaPropuestaDiceDeQueModeloSalio', () => {
+  const a = DATOS().operaciones({ ahora: AHORA_FIJO, completo: true });
+  const conPropuesta = Object.entries(a).filter(([k, v]) => k.startsWith('inbox/') && typeof v === 'string' && /^propuesta_accion:/m.test(v));
+  assert.ok(conPropuesta.length >= 2, 'hay fichas con propuesta');
+  for (const [k, v] of conPropuesta) assert.match(v, /^propuesta_modelo:[ \t]*\S/m, `${k} dice de qué modelo salió su propuesta`);
+});
