@@ -2299,11 +2299,12 @@ EOF
 rm -f "$T/upload-started" "$T/upload-done"
 HUP="$(new_home ab-upload)"; ab_installed "$HUP" "$CLONE_UP"
 ab_run "$CLONE_UP" "$HUP" upload TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0
+# la subida se lanza: hasta 5 s para que el proceso de fondo llegue a escribir que arrancó (va detrás del lanzador en
+# orden: son dos arranques de Node, y con la máquina cargada no está contada apenas vuelve el instalador)
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$T/upload-started" ] && break; sleep 0.5; done
 N_UP="$(count_of upload-runs.js)"
 # lo de fondo es la tanda: el lanzador en orden (run-in-order.js) y la subida que lanza; no cuentan para el tope
 N_REST="$(grep -c -v -x -F -e 'upload-runs.js' -e 'run-in-order.js' "$T/ab-upload.counted" 2>/dev/null || true)"
-# la subida se lanza: hasta 5 s para que el proceso de fondo llegue a escribir que arrancó
-for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$T/upload-started" ] && break; sleep 0.5; done
 if [ "$AB_RC" = 0 ] && [ "$N_UP" = 1 ] && [ -f "$T/upload-started" ] && [ ! -f "$T/upload-done" ] && [ "${N_REST:-99}" -le "$AB_CAP" ]; then
   ok "T4b con el buzón prendido, la subida sale de fondo (el arranque terminó antes que ella), una sola vez, y lo demás queda en $N_REST procesos (tope $AB_CAP)"
 else no "T4b la subida de ejecuciones (rc $AB_RC): lanzada $N_UP vez/veces, $( [ -f "$T/upload-started" ] && echo arrancó || echo 'no arrancó'), $( [ -f "$T/upload-done" ] && echo 'el arranque la ESPERÓ' || echo 'no la esperó'), el resto $N_REST procesos (tope $AB_CAP) · $(brief "$T/ab-upload.out" 200)"; fi
