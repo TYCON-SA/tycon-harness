@@ -603,6 +603,22 @@
         "T36 Adv_UntrackedLeadingSpaceName — un nombre con espacio adelante choca igual, aunque sea el primero": 1.0,
         "T39 Redact_AtInPasswordInvisiblesAndBareKeys — nothing of the password or the key is left": 0.0
       }
+    },
+    "platform-github-only.test.js": {
+      "parts": 3,
+      "seconds": {
+        "E2E_GithubOnly_FullCycle_FakeConnector @story-8.85 @ac-26": 0.3,
+        "E2E_GithubOnly_RealGithubConnector_FakeGh @story-8.85 @ac-26": 0.9,
+        "E2E_GithubOnly_NoAzNoAdoMessages @story-8.85 @ac-26": 1.3,
+        "Migration_AzureOrg_SameConfigSameGolden @story-8.85 @ac-27": 0.8,
+        "Migration_AzureOrg_SameGolden_open-prs.test.sh @story-8.85 @ac-27": 2.0,
+        "Migration_AzureOrg_SameGolden_assigned-items.test.js @story-8.85 @ac-27": 3.4,
+        "Migration_AzureOrg_SameGolden_work-items.test.sh @story-8.85 @ac-27": 54.0,
+        "Migration_AzureOrg_SameGolden_work-item-status.test.sh @story-8.85 @ac-27": 12.0,
+        "Migration_AzureOrg_SameGolden_work-items-type.test.sh @story-8.85 @ac-27": 17.0,
+        "Migration_AzureOrg_SameGolden_nightly-deployments.test.js @story-8.85 @ac-27": 12.0,
+        "Migration_InstalledHooksAndSettings_OldPathsReplaced @story-8.85 @ac-27": 0.4
+      }
     }
   }
 }

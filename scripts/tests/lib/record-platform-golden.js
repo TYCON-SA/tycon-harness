@@ -13,7 +13,10 @@
 // Uso:
 //   node scripts/tests/lib/record-platform-golden.js record [--without-suites]   escribe las tres partes
 //   node scripts/tests/lib/record-platform-golden.js compare [--without-suites]  compara contra lo grabado; sale 1 si cambió
-// `--without-suites` saltea la foto de las suites (tarda: corre seis suites de a una).
+//   node scripts/tests/lib/record-platform-golden.js compare --suite <suite>     compara sólo la foto de esa suite
+// `--without-suites` saltea la foto de las suites (tarda: corre seis suites). `--suite` compara la de una sola y nada
+// más: la prueba que mira la foto tiene una por suite, así se reparten entre las partes de su archivo y ninguna corre
+// las seis de un tirón.
 //
 // Casos: scripts/tests/platform-golden.test.js.
 
@@ -151,13 +154,36 @@ async function llamadasDeTodas(suites) {
   return out;
 }
 
+const fotoDe = (suite) => `${suite.replace(/\.test\.(js|sh)$/, '')}.calls`;
+
+/** Lo que cambió entre la foto grabada de una suite y la de hoy (`r`, lo que devuelve llamadasDe). */
+function compararSuite(suite, r) {
+  if (r.error) return [r.error];
+  const a = new Set(fs.readFileSync(path.join(DIR, fotoDe(suite)), 'utf8').split('\n').filter(Boolean));
+  const b = new Set(r.lineas);
+  return [...[...a].filter((x) => !b.has(x)).map((x) => `${suite}: ya no llama ${x}`), ...[...b].filter((x) => !a.has(x)).map((x) => `${suite}: llama algo nuevo ${x}`)];
+}
+
 function leerJson(f) { return JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')); }
 function escribir(f, contenido) { fs.writeFileSync(path.join(DIR, f), contenido); }
 
 async function main(argv) {
   const [modo, ...resto] = argv;
   const sinSuites = resto.includes('--without-suites');
-  if (!['record', 'compare'].includes(modo)) { process.stderr.write('uso: record-platform-golden.js record|compare [--without-suites]\n'); return 2; }
+  const iSuite = resto.indexOf('--suite');
+  const unaSuite = iSuite === -1 ? null : resto[iSuite + 1];
+  const uso = 'uso: record-platform-golden.js record|compare [--without-suites] · compare --suite <suite>\n';
+  if (!['record', 'compare'].includes(modo)) { process.stderr.write(uso); return 2; }
+  if (iSuite !== -1 && (modo !== 'compare' || sinSuites || !SUITES.includes(unaSuite))) {
+    process.stderr.write(`--suite va sólo con compare, sin --without-suites, y con una de: ${SUITES.join(', ')}\n${uso}`);
+    return 2;
+  }
+  if (unaSuite) {
+    const problemas = compararSuite(unaSuite, (await llamadasDeTodas([unaSuite])).get(unaSuite));
+    for (const p of problemas) process.stdout.write(`✗ ${p}\n`);
+    if (!problemas.length) process.stdout.write(`✓ la foto de llamadas a Azure DevOps de ${unaSuite} no cambió\n`);
+    return problemas.length ? 1 : 0;
+  }
   // en el árbol armado la foto saldría de lo que viaja más lo que el privado tiene igual: se graba en el público solo
   if (modo === 'record' && IH().broughtByOverlay(ROOT)) { process.stderr.write('✗ esto es el árbol armado de los nocturnos: la foto se graba en el público solo\n'); return 1; }
   fs.mkdirSync(DIR, { recursive: true });
@@ -175,15 +201,10 @@ async function main(argv) {
     const fotos = await llamadasDeTodas(SUITES);
     for (const suite of SUITES) {
       const r = fotos.get(suite);
-      if (r.error) { problemas.push(r.error); continue; }
-      const f = `${suite.replace(/\.test\.(js|sh)$/, '')}.calls`;
-      if (modo === 'record') escribir(f, `${r.lineas.join('\n')}\n`);
-      else {
-        const antes = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n').filter(Boolean);
-        const a = new Set(antes); const b = new Set(r.lineas);
-        for (const x of a) if (!b.has(x)) problemas.push(`${suite}: ya no llama ${x}`);
-        for (const x of b) if (!a.has(x)) problemas.push(`${suite}: llama algo nuevo ${x}`);
-      }
+      if (modo === 'record') {
+        if (r.error) problemas.push(r.error);
+        else escribir(fotoDe(suite), `${r.lineas.join('\n')}\n`);
+      } else problemas.push(...compararSuite(suite, r));
     }
   }
   if (modo === 'record') process.stdout.write(`foto grabada en ${path.relative(ROOT, DIR)}: ${s.archivos} archivos del núcleo con ${s.lineas} líneas duras, ${Object.keys(l).length} con comandos az${sinSuites ? '' : `, ${SUITES.length} suites`}\n`);
