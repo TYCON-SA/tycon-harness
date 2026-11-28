@@ -47,7 +47,6 @@ the mark only brings forward what would happen anyway.
 | **No option box.** With the mark set, nobody opens a question box: the decision is written down, with its recommendation, and the session moves on. | A box opened in the middle of the night used to leave a session stuck for hours, waiting for someone who was not there. |
 | **Signatures are gathered for the return.** Whatever asks for the owner's signature stays in their list; when they come back, the coordinator hands it to them one at a time, by click. Signatures that touch the same files go in a single pull request. | The owner signs everything at once, in a short while, and no signature makes another one expire. |
 | **The coordinator gives what it can.** Routine work the organization delegated to it (for example, approving an ordinary plan when the automatic review said "approved") it signs itself. | What can be undone does not wait for the owner. |
-| **Nothing by hand in the Claude folder.** With the owner away, nobody writes by hand inside Claude Code's configuration folder: the harness scripts are used, or it is left for the return. | Claude Code asks for confirmation to write there even without permission prompts, and with the owner away nobody gives it: the session used to get stuck. |
 | **Notices according to the profile.** With the owner away, the organization chooses what reaches them through the notice channels (Telegram, Slack, Teams or email): see below. | Each organization decides whether it wants to know at night or only in the morning. |
 
 ### Notices while the owner is away
@@ -61,6 +60,19 @@ The `coordination.away_notify` option of the team profile says what reaches the 
 | `never` | Nothing. Everything waits in their list for when they come back. |
 
 It is changed in the team profile, like any other coordinator option.
+
+## What the coordinator does during the night
+
+The rules say what is not done with the owner away. This is what the coordinator does do so the night pays off:
+
+- **It does not sit waiting.** It checks its sessions every 20 to 30 minutes with its own alarm (in Claude Code, `/loop`
+  with no interval). Waiting for a session to write leaves dead hours: a stuck session does not always say so.
+- **It gives the session that finishes another row.** A free session is wasted time. Whatever needs a signature is left
+  ready and in the owner's list, and the session moves on to something else.
+- **If the assigned rows run out, it takes others.** It picks the ones with no owner, no signature and nothing blocking
+  them. First those that break something, then the guard and security ones.
+- **It leaves the summary before morning.** What reached `main`, what waits for the owner's signature (one at a time,
+  with its file) and what got stuck and why. The owner reads it in a minute and knows where to start.
 
 ## What it does NOT do
 
