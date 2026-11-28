@@ -152,7 +152,8 @@ con más permisos que la coordinadora. No abre, y lo dice en una línea, si no p
 está en modo plan (la sesión nueva quedaría esperando que alguien apruebe su plan). El modo sale de la conversación de
 la coordinadora, que lo anota con cada mensaje de la persona; se busca en toda la conversación, así que también lo
 encuentra una coordinadora que trabaja sola, sin mensajes del dueño por horas. **Límite conocido:** si alguien le cambia el modo con
-Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior. Una sesión abierta a mano, o antes de este
+Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior, aunque haya quedado muy atrás en la
+conversación: no vence. Una sesión abierta a mano, o antes de este
 cambio, que se trabó así, la coordinadora la para y la relanza:
 `claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>` (relanzada así no
 queda anotada como abierta por la coordinadora). Para

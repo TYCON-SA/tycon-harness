@@ -2862,31 +2862,44 @@ function closeSignature({ home, id, folder }) {
 // defecto (el lanzador sin la opción ya arranca en él).
 const LAUNCHER_MODES = new Set(['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan', 'default']);
 const MODE_CHUNK_BYTES = 256 * 1024;
-const MODE_RE = /"permissionMode":"([^"\\]*)"/g;
-// lo que se guarda del bloque leído antes para el siguiente: más largo que cualquier anotación entera, así una partida
-// entre dos bloques queda completa en uno de los dos textos
-const MODE_OVERLAP_BYTES = 512;
+const MODE_KEY = Buffer.from('"permissionMode"');
 
-// El último modo anotado en un archivo, leído de atrás hacia adelante hasta el principio; null si no hay. Claude Code
-// anota el modo sólo con cada mensaje de la persona, y una sesión que trabaja sola (sin mensajes) lo deja muy atrás:
-// no se corta en una distancia. Cada bloque se mira una vez, con el sobrante del bloque anterior.
+// El modo de un renglón de la conversación, si es la anotación de Claude Code: un mensaje de la persona (`type: user`)
+// con `permissionMode` en su primer nivel. La misma clave adentro de la entrada de una herramienta o de un resultado no
+// cuenta. null si el renglón no es eso.
+function modeOfLine(buf) {
+  if (buf.indexOf(MODE_KEY) < 0) return null;
+  let d;
+  try { d = JSON.parse(buf.toString('utf8')); } catch { return null; }
+  return d && d.type === 'user' && typeof d.permissionMode === 'string' ? d.permissionMode : null;
+}
+
+// El último modo anotado en un archivo, leído de atrás hacia adelante hasta el principio, renglón por renglón; null si
+// no hay. Claude Code anota el modo sólo con cada mensaje de la persona, y una sesión que trabaja sola (sin mensajes)
+// lo deja muy atrás: no se corta en una distancia. El renglón partido entre dos bloques se completa con el bloque de
+// antes.
 function lastModeIn(file) {
   const fd = fs.openSync(file, 'r');
   try {
     let end = fs.fstatSync(fd).size;
-    let carry = '';
+    let resto = Buffer.alloc(0); // el principio de un renglón que empieza en un bloque anterior
     while (end > 0) {
       const len = Math.min(MODE_CHUNK_BYTES, end);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, end - len);
       end -= len;
-      const text = buf.toString('latin1') + carry;
-      let m;
-      let last = null;
-      MODE_RE.lastIndex = 0;
-      while ((m = MODE_RE.exec(text))) last = m[1];
-      if (last !== null) return last;
-      carry = text.slice(0, MODE_OVERLAP_BYTES);
+      const text = Buffer.concat([buf, resto]);
+      // los renglones enteros de este texto, del último al primero; el primero puede seguir en el bloque de antes
+      let fin = text.length;
+      let nl = text.lastIndexOf(10, fin - 1);
+      while (nl >= 0) {
+        const mode = modeOfLine(text.subarray(nl + 1, fin));
+        if (mode !== null) return mode;
+        fin = nl;
+        nl = fin > 0 ? text.lastIndexOf(10, fin - 1) : -1;
+      }
+      resto = text.subarray(0, fin);
+      if (end === 0) return modeOfLine(resto);
     }
     return null;
   } finally { fs.closeSync(fd); }

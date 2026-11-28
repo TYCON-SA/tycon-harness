@@ -156,7 +156,8 @@ session with more permissions than the coordinator. It does not open, and says s
 mode or if the coordinator is in plan mode (the new session would wait for someone to approve its plan). The mode comes
 from the coordinator's conversation, which records it with each of the person's messages; the whole conversation is
 searched, so it is also found for a coordinator working alone, with no message from the owner for hours. **Known limit:** if someone
-changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
+changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode, however far back in
+the conversation it is: it does not expire. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
 `claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
 way it is not recorded as opened by the coordinator). To stop a
