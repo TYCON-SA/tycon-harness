@@ -574,6 +574,11 @@ platform lock of an already installed site does not learn it by itself. In Azure
 lock. The sessionless check confirms it: `node scripts/site/check-deploy.js --url https://<site address>`, which warns
 «the one-time step is missing» if the lock covers them.
 
+**When the site restarts or updates.** When the platform signals that it is shutting the old instance down, the site
+closes each machine connection asking it to reconnect (code 1012), and the machine comes back right away. If a machine
+reconnects at a fixed pace, for example every minute, the site's log says so once an hour ("reconecta cada ~61 s"):
+something in between cuts long connections. On Cloud Run it is the service timeout (see its recipe).
+
 ## Configuration, section by section
 
 Each section is a part of a configuration file that lives in an organization repo: the **operations repo** (the night's
