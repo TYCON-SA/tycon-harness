@@ -172,6 +172,34 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
   return -1;
 }
 
+// lo que puede llevar una cuenta fuera de sus sustituciones: nombres, números, operadores, paréntesis, corchetes y `${…}`
+const LETRA_DE_CUENTA = /[\w \t+\-*/%<>=!&|^~?:,()[\]${}#@.]/;
+
+/**
+ * Si la sustitución que abre en `t[i]` y cierra en `t[fin]` es una cuenta (`$(( … ))`), lo que corre adentro de ella: su
+ * texto entre `$(` y el último `)`, con la cuenta en blanco y las sustituciones de adentro como están. El `>` de una
+ * cuenta compara, no escribe; lo de `$(…)` o la comilla invertida adentro de una cuenta sí corre. Es una cuenta, como la
+ * lee el shell, si el `(` del principio cierra justo antes del último `)`: `$((cp a b) )` es un subshell adentro de una
+ * sustitución. null si no es una cuenta, o si tiene algo que una cuenta no lleva (comillas, una barra, un `;`, un renglón,
+ * `<(`): se lee como antes, como un comando.
+ */
+function adentroDeUnaCuenta(t, i, fin) {
+  if (t[i] !== '$' || t[i + 1] !== '(' || t[i + 2] !== '(' || t[fin - 1] !== ')') return null;
+  let out = '';
+  let hondo = 0;
+  for (let j = i + 2; j < fin; j++) {
+    const f = cierreDeUnaSustitucion(t, j);
+    if (f === -1) return null;
+    if (f > j) { out += t.slice(j, f + 1); j = f; continue; }
+    const ch = t[j];
+    if (!LETRA_DE_CUENTA.test(ch) || ((ch === '<' || ch === '>') && t[j + 1] === '(')) return null;
+    if (ch === '(') hondo++;
+    else if (ch === ')' && --hondo === 0 && j !== fin - 1) return null;
+    out += ' ';
+  }
+  return hondo === 0 ? out : null;
+}
+
 /**
  * El delimitador del heredoc cuya palabra empieza en `t[k]` (justo después de `<<`): `{ delim, dash, fin }`, con `fin`
  * donde termina la palabra, o null si no hay una. La palabra se lee con la misma expresión que `delimitadoresQueAbre`:
@@ -243,8 +271,10 @@ function leerCitados(t, hondo) {
   const comandos = [];
   // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
   // un comando, y el de las sustituciones de adentro
+  // (de una cuenta, sólo lo que corre adentro: `adentroDeUnaCuenta`)
   const sustitucion = (desde, fin) => {
-    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(t.slice(desde, fin), true)), hondo + 1);
+    const cuenta = adentroDeUnaCuenta(t, desde - 2, fin);
+    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(cuenta ?? t.slice(desde, fin), true)), hondo + 1);
     comandos.push(r.texto, ...r.comandos);
     return r.texto;
   };
@@ -371,10 +401,11 @@ function tramosDelShell(texto, hondo = 0) {
   const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
   const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
   // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
-  // las otras lecturas
+  // las otras lecturas. De una cuenta, sólo lo que corre adentro (`adentroDeUnaCuenta`)
   const adentro = (desde, fin) => {
     if (hondo >= HONDO_DE_SUSTITUCIONES) return;
-    for (const t of tramosDelShell(s.slice(desde, fin), hondo + 1)) out.push(t);
+    const cuenta = adentroDeUnaCuenta(s, desde - 2, fin);
+    for (const t of tramosDelShell(cuenta ?? s.slice(desde, fin), hondo + 1)) out.push(t);
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -1509,4 +1540,4 @@ function modoDeLectura(cambios = {}) {
   return { leerComentarios, apagoAlgo, soloDecidir };
 }
 
-module.exports = { desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };
+module.exports = { adentroDeUnaCuenta, desdeElPrograma, programaEntre, stripNonCommandText, ANTES_DEL_CD_COMPLEJO, extractWriteTargets, destinosPorElPartidor, HONDO_DE_SUSTITUCIONES, tramosDelShell, destinosDeEscritura, scriptsInline, opcionesDelInterprete, sinContinuaciones, escritosDelGuion, destinosArmados, aperturasDeHeredoc, aperturasComoAntes, delimitadoresQueAbre, heredocsCerrados, quitarCuerposDeHeredoc, conComentariosApagados, tramos, palabrasProfundas, carpetasDeLosCd, origenesMovidos, salidaAjenaALaRevision, carpetasDeLosCdDeConstancias, heredocs, SIN_BARRAS, sinBarras, mensajeRutaSinResolver, mensajeCarpetaSinSeguir, nameSuggestsStory, anotarBorradosDeLaStory, anotarEscriturasConsola, MARKER_LEE, VARIABLE_DEL_SHELL, CARPETAS_DEL_SISTEMA, programaDelSistema, esteGuion, gitQueLee, gitQueNombra, sedQueLee, CONTROL, ENVOLTORIOS, modoDeLectura };
