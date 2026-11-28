@@ -158,7 +158,7 @@ test('T14 Versiones_AlDiaAtrasadaSinNoticiasNoMedido @story-2.29 @ac-13 — cont
   assert.strictEqual(por['maq-a'].estado, 'al_dia');
   assert.strictEqual(por['maq-a'].dia, '2026-10-15');
   assert.strictEqual(por['maq-b'].estado, 'atrasada');
-  assert.match(por['maq-b'].texto, /la imagen puede estar atrasada/);
+  assert.match(por['maq-b'].texto, /si el sitio mismo no está al día, puede haber una más nueva/);
   assert.strictEqual(por['maq-c'].estado, 'sin_noticias');
   assert.match(por['maq-c'].texto, /sin noticias desde 2026-09-30/);
   assert.strictEqual(por['maq-d'].estado, 'no_medido');
@@ -7290,4 +7290,47 @@ test('A179 Celular_PestanasDeConfiguracionSeVenTodas — en pantalla angosta baj
   const angosta = (css.match(/@media \(max-width:640px\)\{[^@]*/g) || []).join('');
   assert.match(angosta, /\.pestanas\{[^}]*flex-wrap:wrap/, 'las pestañas bajan de renglón');
   assert.match(angosta, /\.pestanas\{[^}]*overflow-x:visible/, 'y no se esconden de costado');
+});
+
+// 🔴 mutación: el título y la etiqueta de «Quién ve las oficinas» con la misma frase (A187), o el estado de una máquina
+// atrasada hablando de «la imagen» sin decir cuál (A191).
+test('A187 A191 Personas_OficinasSinFraseRepetida_YVersionDiceContraQue', async () => {
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)) });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const titulo = todos.find((n) => /\bsub-t\b/.test(n.attrs.class || '') && /Quién ve las oficinas/.test(n.textContent));
+  assert.ok(titulo, 'el título está');
+  const etiquetas = todos.filter((n) => n.tag === 'label' && /oficinas|las ven|Pueden verlas/i.test(n.textContent));
+  assert.ok(etiquetas.length, 'el selector tiene su etiqueta');
+  for (const e of etiquetas) assert.notStrictEqual(e.textContent, titulo.textContent, 'la etiqueta no repite el título');
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.doesNotMatch(TX.t('es', 'org.atrasada', { version: '1.2' }), /la imagen/, 'dice contra qué compara');
+  assert.match(TX.t('es', 'org.atrasada', { version: '1.2' }), /versión que conoce el sitio \(1\.2\)/);
+});
+
+// 🔴 mutación: un revisor sin nombre en castellano de un paquete de la organización rotulado «revisor del arnés» (A185).
+test('A185 Revisores_DelPaqueteNoSonDelArnes — el revisor de un paquete sin nombre en castellano dice que es del paquete', async () => {
+  const sec = { ...secModelos({}), extras: { hoy: MOD_DEFAULTS, revisores: [], porPaquete: [
+    { paquete: null, revisores: [{ id: 'arnes-sin-nombre-x', fabrica: null }] },
+    { paquete: 'acme-api', revisores: [{ id: 'acme-api-reviewer', fabrica: null }] },
+  ] } };
+  const t = (await compacta(sec)).textoDe('modelos');
+  assert.match(t, /acme-api-reviewer[^|]*\| revisor del paquete \(sin nombre en castellano\)/);
+  assert.doesNotMatch(t, /acme-api-reviewer[^|]*\| revisor del arnés/);
+  assert.match(t, /arnes-sin-nombre-x[^|]*\| revisor del arnés \(sin nombre en castellano\)/, 'el del arnés sigue diciéndolo');
+});
+
+// 🔴 mutación: el campo de la cobertura vacío sin su «75 (de fábrica)», o el del pase con otra forma que los demás
+// («De fábrica: 6»), así el valor de fábrica no se ve igual en todos (A188).
+test('A188 Campos_DicenSuValorDeFabrica — cobertura «75 (de fábrica)», cambio chico «6 (de fábrica)»', async () => {
+  const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura', 'paseAdversarial'].map((id) => SEC(id)), hash: '#tab-claude' });
+  const todos = [];
+  const walk = (x) => { todos.push(x); (x.hijos || []).forEach(walk); };
+  walk(r.app);
+  const campo = (ruta) => todos.find((n) => n.tag === 'input' && n.attrs['data-path'] === ruta);
+  assert.ok(campo('coverage.min_touched_lines_pct'), 'el campo de la cobertura está');
+  assert.strictEqual(campo('coverage.min_touched_lines_pct').attrs.placeholder, '75 (de fábrica)');
+  assert.ok(campo('deep_review.small_max_files'), 'el del cambio chico está');
+  assert.strictEqual(campo('deep_review.small_max_files').attrs.placeholder, '6 (de fábrica)');
 });

@@ -2082,7 +2082,7 @@ ${trabajandoJs}
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
     // sin valor escrito vale el de fábrica: elegirlo saca la clave, no la escribe
     lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.quienVeLasOficinas') }),
-      selector(T('pantalla.quienVeLasOficinas'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
+      selector(T('pantalla.oficinasLasVen'), (site.offices && site.offices.visibility) || 'maintainers', [['maintainers', T('pantalla.oficinasMantiene')], ['everyone', T('pantalla.oficinasTodos')]], function (v) {
         if (v === 'maintainers') delete site.offices; else site.offices = { visibility: v };
       }, 'site.offices.visibility', pr)));
     // lo que no hace falta tocar: plegado, con su motivo en el título
@@ -3541,7 +3541,7 @@ ${trabajandoJs}
           var origen = m.reviewers ? T('pantalla.origenVueltaOrg') : deFabrica ? T('pantalla.origenFabricaPropio') : r.ilegible ? T('pantalla.origenIlegible') : T('pantalla.origenVuelta');
           var opciones = [['', T(!m.reviewers && deFabrica ? 'pantalla.elSuyoSinCambiar' : 'pantalla.igualQueSuVuelta', { nivel: nombreNivel(base) })]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
           var que = [el('span', { text: nombre })];
-          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T(g.propios || g.sueltos ? 'pantalla.revisorSinNombre' : 'pantalla.revisorDelArnesSinNombre') }));
+          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T(g.propios || g.sueltos ? 'pantalla.revisorSinNombre' : g.paquete ? 'pantalla.revisorDelPaqueteSinNombre' : 'pantalla.revisorDelArnesSinNombre') }));
           if ((g.dobles || []).indexOf(id) >= 0) que.push(el('small', { class: 'glosa', text: T('pantalla.revisorNombradoDosVeces') }));
           var f = fila(t, que, nombre, 'reviewer', id, opciones, propio || base, null, true, base, propio ? T('pantalla.origenOrg') : origen);
           if (propio) f.setAttribute('class', (f.getAttribute ? f.getAttribute('class') : f.attrs.class) + ' cambiado');
@@ -3933,7 +3933,7 @@ ${trabajandoJs}
       if (v === '') { if (esObjeto(d.coverage)) { delete d.coverage.min_touched_lines_pct; if (!Object.keys(d.coverage).length) delete d.coverage; } return; }
       if (!esObjeto(d.coverage)) d.coverage = {};
       d.coverage.min_touched_lines_pct = numOTexto(v);
-    }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
+    }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric', placeholder: T('pantalla.coberturaDeFabrica') }));
   }
   // las vueltas de revisores: el tope (entero de 1 a 6; vacío, el de fábrica, 2) y los prefijos que la organización suma
   // a los de fábrica como «seguridad o datos». Una clave que queda vacía se saca: no se propone un «{}»
