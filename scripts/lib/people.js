@@ -41,6 +41,16 @@ const { FORMA_MAQUINA } = require('../metrics/upload-runs.js');
 const { carpetasDeMaquina } = require('../metrics/download-runs.js');
 
 const PLAZO_MS = 24 * 3600 * 1000;
+// la primera versión del arnés cuyo place.json trae la huella del equipo (upload-runs.js, `machine_id`)
+const MACHINE_ID_SINCE = '2026.10.28.11';
+const partesDeVersion = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(String(v).trim()); return m ? m.slice(1).map(Number) : null; };
+/** Si `v` es `min` o posterior; false si alguna no tiene forma de versión. */
+function versionAlMenos(v, min) {
+  const a = partesDeVersion(v); const b = partesDeVersion(min);
+  if (!a || !b) return false;
+  for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+}
 const FORMA_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // un texto que viene del place.json de OTRA máquina (el motivo de su `owner`): sin controles ni separadores de línea, y
 // acotado — lo va a mostrar el sitio a quien mantiene
@@ -76,7 +86,9 @@ function leerCorreosInformados(espejoDir) {
     let texto;
     try { texto = fs.readFileSync(path.join(espejoDir, e.name, 'registros', 'place.json'), 'utf8'); }
     catch (err) {
-      out.maquinas[e.name] = { estado: 'no_informa', motivo: err.code === 'ENOENT' ? 'la máquina no subió place.json' : `place.json no se pudo leer (${err.code || 'error'})`, corridas };
+      const motivo = err.code === 'ENOENT' ? 'la máquina no subió place.json' : `place.json no se pudo leer (${err.code || 'error'})`;
+      // sin place.json tampoco hay huella, y el motivo es ése: no una versión vieja
+      out.maquinas[e.name] = { estado: 'no_informa', motivo, corridas, machine_id_motivo: motivo };
       continue;
     }
     let p;
@@ -92,6 +104,11 @@ function leerCorreosInformados(espejoDir) {
       const f = p.machine_id && typeof p.machine_id === 'object' ? p.machine_id : {};
       if (typeof f.fingerprint === 'string' && /^[0-9a-f]{16}$/.test(f.fingerprint)) mid = { machine_id: f.fingerprint };
       else mid = { machine_id_motivo: (typeof f.reason === 'string' && textoAjeno(f.reason)) || 'la huella que mandó no tiene la forma de una huella' };
+    } else {
+      // sin la clave: una versión de antes de la huella (la pantalla lo dice así). Si la versión que declara ya la manda,
+      // eso no es cierto y se dice lo que sí se sabe
+      const v = p && p.install && typeof p.install.version === 'string' ? p.install.version.slice(0, 40) : null;
+      if (v && versionAlMenos(v, MACHINE_ID_SINCE)) mid = { machine_id_motivo: `su place.json no trae la huella, aunque su versión del arnés (${textoAjeno(v)}) ya la manda` };
     }
     const correo = o && typeof o.email === 'string' ? normalizarCorreo(o.email) : '';
     if (correo && FORMA_CORREO.test(correo) && !(new RegExp(NO_IMPRIMIBLES.source)).test(correo)) out.maquinas[e.name] = { estado: 'informa', correo, dia, corridas, ...mid };
@@ -501,6 +518,7 @@ function vistaDePersona(sesion, c, datos = {}) {
 }
 
 module.exports = {
+  MACHINE_ID_SINCE,
   normalizarCorreo, huellaDeCorreo, leerCorreosInformados, contexto, listaDeAcceso, cambiosDeAcceso, textoDeCambios, correosDe, estadoDeMaquina, puedeVer, esPersona,
   estadoDeLaConfiguracion, maquinasPorConfirmar, maquinasSinActividad, maquinasOcultas, estaOculta, dondeTrabaja, vistaDePersona, PLAZO_MS,
 };

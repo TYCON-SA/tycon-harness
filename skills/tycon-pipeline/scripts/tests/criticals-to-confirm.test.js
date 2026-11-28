@@ -76,7 +76,10 @@ function lab({ reportes = [], hallazgos = null, cambio = { 'a.js': 'module.expor
     ...(pases ? { adversarialPasses: pases } : {}),
   };
   fs.writeFileSync(path.join(state, 'active', `${SID}.json`), JSON.stringify(marker, null, 2));
-  fs.writeFileSync(path.join(state, 'advisor-runs', `${SID}.jsonl`), `${JSON.stringify({ ts: at(-600), event: 'step5-start', expected: [DEFTR, TESTS], iter: 1 })}\n`);
+  // el pedido de la vuelta 1 y el lanzamiento de sus dos revisores, como los anota el gancho: una ronda que el registro
+  // muestra sin lanzar no se da por vista
+  fs.writeFileSync(path.join(state, 'advisor-runs', `${SID}.jsonl`), `${JSON.stringify({ ts: at(-600), event: 'step5-start', expected: [DEFTR, TESTS], iter: 1 })}\n`
+    + `${[DEFTR, TESTS].map((a) => JSON.stringify({ ts: at(-550), advisor: a, repo, story: '9.93' })).join('\n')}\n`);
   // el registro de críticos, como lo dejan los ganchos: la salida y el reporte de cada revisor de la vuelta 1
   const registro = path.join(state, 'reported-criticals', `${SID}.jsonl`);
   fs.mkdirSync(path.dirname(registro), { recursive: true });

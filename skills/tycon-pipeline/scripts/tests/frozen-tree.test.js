@@ -380,7 +380,8 @@ test('T16b Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — snapshot-iter, el r
 test('T17 Sensitive_CoversDecisionFiles @story-8.161 @ac-17 — lo que decide qué cuenta es sensible', () => {
   const sig = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
   const so = require(path.join(SCRIPTS, 'lib', 'save-ok.js'));
-  for (const rel of ['skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js', 'skills/tycon-pipeline/scripts/smoke-run.sh']) {
+  for (const rel of ['skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js', 'skills/tycon-pipeline/scripts/smoke-run.sh',
+    'skills/tycon-pipeline/scripts/lib/reviewed-diff.js', 'skills/tycon-pipeline/scripts/lib/reloop-code.js']) {
     assert.ok(sig.SENSITIVE.includes(rel), `${rel} en SENSITIVE`);
     assert.ok(so.esSensible(rel), `${rel} pide save:sensible`);
   }
@@ -1211,6 +1212,450 @@ test('T80g Tope_VueltaChica_PasaSinFirma: pasado el tope, sólo textos se sirve 
   assert.strictEqual(v3.r.status, 3, salida(v3.r));
   assert.match(v3.r.stderr, /SEC-C1/);
   assert.ok(!gatesDe(C3).some((g) => g.name === 'small-round'), 'con un crítico abierto no pasa como vuelta chica');
+});
+
+// Caso: tras la última vuelta permitida sólo cambiaron pruebas E2E y la historia. El portón de «Preparar» lo contaba como
+// código sin revisar y pedía otra vuelta; el re-loop la negaba por el tope y hacía falta la firma del dueño para una vuelta
+// que salía vacía. Una vuelta sin código se cierra sola: sin tope, sin firma y sin nota de repensar.
+// 🔴 Falla con: la vuelta sin código frenada por el tope (sale 3), o una firma de vuelta extra anotada.
+test('Tope_VueltaSinCodigo_SeCierraSolaSinFirma: pasado el tope, sólo pruebas E2E y la historia se cierran solas', () => {
+  const C = corridaRevisada('s-ft-a66', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+    const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', C.codigo.repo, ...a], { encoding: 'utf8' });
+    assert.strictEqual(g.status, 0, g.stderr);
+  }
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  C.editar('tests/e2e/flujo.spec.ts', "test('flujo', async () => { expect(1).toBe(1); });\n");
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', '- hoy: escrita\n- después: pruebas E2E'));
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 0, salida(v.r));
+  assert.strictEqual(v.json.no_code_delta, true, salida(v.r));
+  assert.deepStrictEqual(v.json.rerun, []);
+  assert.ok(!gatesDe(C).some((g) => g.name === 'extra-round'), 'una vuelta sin código no pide firma');
+  // el código, en cambio, sigue frenando en el tope
+  C.editar('src/b.js', B_CODIGO);
+  const v2 = C.vuelta(3);
+  assert.strictEqual(v2.r.status, 3, salida(v2.r));
+  assert.match(v2.r.stderr, /Llegaste al tope de 1/);
+});
+
+// El otro lado: el portón de «Preparar» usa el lector del re-loop y, de lo que el re-loop no revisa, perdona sólo lo que
+// no se ejecuta: una prueba del proyecto cambiada después de la vuelta no pide otra. El código, una nota .md suelta (puede
+// ser la instrucción de un agente), la configuración y la historia siguen por sus reglas.
+// 🔴 Falla con: una prueba E2E cambiada después de la vuelta que frena, o un .js o una nota .md que no frenan.
+test('PrepareCommit_PruebasDespuesDeLaVuelta_NoFrenan: el mismo lector de código que el re-loop', () => {
+  const C = corrida('s-ft-a66-b');
+  C.vuelta();
+  fs.mkdirSync(path.join(C.codigo.repo, 'tests', 'e2e'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'tests', 'e2e', 'flujo.spec.ts'), "test('flujo', () => {});\n");
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  assert.match(salida(r), /no se ejecuta[^\n]*tests\/e2e\/flujo\.spec\.ts/, salida(r));
+  // una nota suelta, la configuración de una herramienta y el código siguen frenando
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'notas.md'), '# notas\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'package.json'), '{"scripts":{"test":"true"}}\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /package\.json/);
+  assert.match(salida(r), /src\/b\.js/);
+  assert.match(salida(r), /docs\/notas\.md/);
+  assert.doesNotMatch(salida(r), /· tests\/e2e\/flujo\.spec\.ts/);
+});
+
+// Pasado el tope, la coordinadora no firma sola un cambio de código. «Preparar»
+// dice las tres salidas: volver a lo revisado (con los comandos), llevarlo a una historia de arreglo, o la vuelta extra
+// que firma el dueño.
+// 🔴 Falla con: el aviso que sólo manda a otra vuelta, comandos que no vuelven a lo revisado, o un `$` que se expande.
+test('PrepareCommit_PastTheCap_RestoreToReviewed: pasado el tope, los comandos para volver a lo revisado', () => {
+  const C = corrida('s-ft-s254-tope', { antesDeArrancar: (codigo) => {
+    fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
+    fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), 'review:\n  max_rounds: 1\n');
+    for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+      const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', codigo.repo, ...a], { encoding: 'utf8' });
+      assert.strictEqual(g.status, 0, g.stderr);
+    }
+  } });
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  // un arreglo después de la última vuelta: un .js cambiado, uno nuevo sin agregar y uno con `$` en el nombre
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), 'module.exports = 3;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'c.js'), 'module.exports = 4;\n');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', '$HOME`id`.js'), 'module.exports = 5;\n');
+  const r = prepararCommit(C);
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /Pasaste el tope de 1 vuelta/, salida(r));
+  assert.match(salida(r), /historia de arreglo/);
+  assert.match(salida(r), /--extra-round[^\n]*(\n[^\n]*)?una persona/);
+  const comandos = salida(r).split('\n').map((l) => l.trim()).filter((l) => /^git -C /.test(l));
+  assert.ok(comandos.some((l) => / stash push --include-untracked /.test(l)), salida(r));
+  // los comandos, tal cual y con el shell, guardan el cambio y vuelven a lo revisado; el `$` no se expande
+  for (const l of comandos) execFileSync('bash', ['-c', l], { stdio: 'ignore', env: { ...process.env, HOME: C.home } });
+  assert.strictEqual(fs.existsSync(path.join(C.codigo.repo, 'src', 'c.js')), false);
+  assert.match(execFileSync('git', ['-C', C.codigo.repo, 'stash', 'show', '--include-untracked', '--name-only'], { encoding: 'utf8' }), /src\/\$HOME`id`\.js/);
+  const despues = prepararCommit(C);
+  assert.doesNotMatch(salida(despues), MISMATCH, salida(despues));
+});
+
+// Caso: al abrir una historia de arreglo, el arnés le agrega a la que sigue su enlace `followed_up_by:` en el encabezado;
+// después de la tercera vuelta, ese renglón pedía una cuarta que no existe. Es papeleo, como para la revisión del plan.
+test('T35 StoryPaperwork_FollowedUpBy_IsPaperwork — el enlace a la historia que la sigue; otro campo del encabezado cuenta', () => {
+  const base = ['---', 'story: "9.9"', 'title: "x"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. algo', ''].join('\n');
+  const conEnlace = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n  - id: "9.10"\n    date: "2026-11-20"\n    summary: "el arreglo"\n');
+  const aLaMisma = base.replace('status: review\n', 'status: review\nfollowed_up_by:\n- id: "9.10"\n  type: "gap-fill"\n');
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(conEnlace), ft().sinPapeleoDeLaHistoria(base));
+  assert.strictEqual(ft().sinPapeleoDeLaHistoria(aLaMisma), ft().sinPapeleoDeLaHistoria(base));
+  // otro campo del encabezado, o uno que viene después del enlace, sigue contando
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('title: "x"', 'title: "y"')), ft().sinPapeleoDeLaHistoria(base));
+  const despues = conEnlace.replace('---\n# h', 'files_to_modify:\n  - src/a.js\n---\n# h');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(despues), ft().sinPapeleoDeLaHistoria(base));
+  // una clave que no es del enlace, escondida con sangría dentro de él, cuenta
+  const escondida = conEnlace.replace('    summary: "el arreglo"\n', '    summary: "el arreglo"\n  files_to_create:\n    - src/b.js\n');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(escondida), ft().sinPapeleoDeLaHistoria(base));
+});
+
+// Caso: en un producto con la historia y el código en el mismo repo, la corrida en una copia de trabajo
+// (worktree) y la historia nombrada en la copia principal. Después de la tercera vuelta sólo cambió el papeleo de la
+// historia en la copia (el registro de cambios y la sección de seguimientos, nueva), y el freno la contaba como código.
+test('T36 PrepareCommit_StoryInAnotherCopyOfTheRepo_PaperworkStillPaperwork — la misma historia en otra copia del repo', () => {
+  const base = tmp('ft-copia-');
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
+  fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
+  const historia = ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+    '# Story 9.9', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '### Tests', '',
+    '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
+    '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n');
+  const uno = repoDeJuguete('uno', { 'stories/story-9.9-sello.md': historia, 'src/a.js': 'module.exports = 1;\n' });
+  const copia = path.join(base, 'uno--wt-9.9');
+  uno.git('worktree', 'add', '-q', '-b', 'wt/9.9', copia);
+  const enLaPrincipal = path.join(uno.repo, 'stories', 'story-9.9-sello.md');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 's-ft36', TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off' };
+  for (const k of ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const correr = (script, args) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env, input: '', cwd: copia });
+  const r0 = correr('pipeline.js', ['start', '--story', enLaPrincipal, '--repo', copia, '--brief']);
+  assert.strictEqual(r0.status, 0, salida(r0));
+  const v = correr('pipeline.js', ['advisors', '--story', enLaPrincipal, '--repo', copia, '--files', 'src/a.js', '--iter', '1']);
+  assert.strictEqual(v.status, 0, salida(v));
+  // en la copia: entradas nuevas en el registro y la sección de seguimientos que escribe «Hallazgos», por primera vez
+  const enLaCopia = path.join(copia, 'stories', 'story-9.9-sello.md');
+  fs.writeFileSync(enLaCopia, `${fs.readFileSync(enLaCopia, 'utf8')}- después: revisores, vuelta 1\n${SEGUIMIENTOS}`);
+  let r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  // un criterio cambiado en la copia sigue contando
+  fs.writeFileSync(enLaCopia, fs.readFileSync(enLaCopia, 'utf8').replace('**Then** resultado.', '**Then** otro resultado.'));
+  r = correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
+  assert.match(salida(r), MISMATCH, salida(r));
+});
+
+// Caso: después de la tercera vuelta, «Probar en vivo» marcó un criterio con
+// `@sin-pantalla` y pedía una cuarta vuelta. La marca de pantalla de un criterio es papeleo; el texto del criterio, no.
+test('T37 StoryPaperwork_ScreenMarkOnCriterion_IsPaperwork — @sin-pantalla suelta; @pantalla, una marca pegada y el texto siguen contando', () => {
+  const base = ['---', 'story: "9.9"', 'status: review', '---', '# h', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '## Tasks', ''].join('\n');
+  for (const marca of [' `@sin-pantalla`', ' @sin-pantalla']) {
+    assert.strictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', `resultado.${marca}`)), ft().sinPapeleoDeLaHistoria(base), marca);
+  }
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'otro resultado. @sin-pantalla')), ft().sinPapeleoDeLaHistoria(base));
+  // `@pantalla` (agregarla o cambiarla) y una marca pegada a otra palabra cuentan
+  const conPantalla = base.replace('resultado.', 'resultado. @pantalla');
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla), ft().sinPapeleoDeLaHistoria(base));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(conPantalla.replace('@pantalla', '@sin-pantalla')), ft().sinPapeleoDeLaHistoria(conPantalla));
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('resultado.', 'resultado@sin-pantallax.')), ft().sinPapeleoDeLaHistoria(base));
+  // fuera de los criterios, la palabra no se toca
+  assert.notStrictEqual(ft().sinPapeleoDeLaHistoria(base.replace('## Tasks\n', '## Tasks\n\n- usar @sin-pantalla\n')), ft().sinPapeleoDeLaHistoria(base));
+});
+
+// Caso: después de la tercera vuelta, un control de la historia pidió cambiar la columna «Bloquea» del archivo de
+// intención (`<historia>.intent.md`) de «sólo T14» a «no», y esa palabra pedía una cuarta vuelta. Las tablas de ese
+// archivo son el registro de lo preguntado y lo decidido: papeleo. Su encabezado (el objetivo y los resultados) cuenta.
+test('T38 Changed_IntentFile_TablesArePaperwork_HeaderCounts — el archivo de intención de la historia', () => {
+  // 🔴 mutación: sacar la rama del archivo de intención en changed (entonces la respuesta cuenta como código).
+  const intencion = ['---', 'id: story-9.9-sello', 'status: draft', 'objective: "que algo pase"', 'outcomes:', '  - "resultado uno"', '---', '',
+    '# Sello', '', '## Preguntas abiertas', '', '| # | Pregunta | Bloquea | Estado | Respuesta |', '|---|---|---|---|---|',
+    '| Q1 | ¿Algo? | sólo T14 | abierta | |', ''].join('\n');
+  // la historia en `stories/`, como en los productos con la historia y el código en el mismo repo (`specs/` ya es papeleo)
+  const R = repoDeJuguete('intencion', { 'stories/story-9.9-sello.md': '---\nstory: "9.9"\n---\n# 9.9\n', 'stories/story-9.9-sello.intent.md': intencion, 'src/a.js': '1;\n' });
+  const rel = 'stories/story-9.9-sello.md';
+  const relI = 'stories/story-9.9-sello.intent.md';
+  const antes = ft().seal(R.repo).tree;
+  const archivo = path.join(R.repo, relI);
+  const cambiar = (de, a) => fs.writeFileSync(archivo, reemplazarTexto(fs.readFileSync(archivo, 'utf8'), de, a));
+  const d = () => ft().changed(R.repo, antes, ft().seal(R.repo).tree, { storyRel: rel });
+  cambiar('| sólo T14 | abierta | |', '| no | contestada | Sí, con lo que dijo el dueño. |');
+  cambiar('status: draft', 'status: approved');
+  assert.deepStrictEqual([d().files, d().papeleo], [[], [relI]]);
+  // el objetivo o un resultado cambiado cuenta
+  cambiar('"resultado uno"', '"resultado distinto"');
+  assert.deepStrictEqual(d().files, [relI]);
+});
+
+// Lo que no se ejecuta no pide otra vuelta (una imagen suelta, la guía o el informe de la historia en su carpeta qa), pero
+// una instrucción para un agente o una imagen que compara una prueba visual sí: cambian lo que un agente hace o lo que la
+// prueba acepta.
+// 🔴 Falla con: una imagen suelta que frena, o una instrucción de un agente o una imagen de referencia que no frenan.
+test('PrepareCommit_NoSeEjecuta_NoFrena_InstruccionesEImagenesDePrueba_Si', () => {
+  const C = corrida('s-ft-noejec');
+  C.vuelta();
+  fs.mkdirSync(path.join(C.codigo.repo, 'docs', 'img'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, 'docs', 'img', 'pantalla.png'), 'PNG');
+  fs.mkdirSync(path.join(C.historias.repo, 'specs', 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(C.historias.repo, 'specs', 'qa', 'story-9.9-sello-informe.pdf'), 'PDF');
+  let r = prepararCommit(C);
+  assert.doesNotMatch(salida(r), MISMATCH, salida(r));
+  const casos = [['skills/x/SKILL.md', '# haz esto\n'], ['CLAUDE.local.md', '# instrucciones\n'], ['tests/visual/__screenshots__/home.png', 'PNG2']];
+  for (const [rel, txt] of casos) {
+    const C2 = corrida(`s-ft-noejec-${rel.length}`);
+    C2.vuelta();
+    fs.mkdirSync(path.dirname(path.join(C2.codigo.repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(C2.codigo.repo, rel), txt);
+    r = prepararCommit(C2);
+    assert.strictEqual(r.status, 2, `${rel}: ${salida(r)}`);
+    assert.match(salida(r), MISMATCH, `${rel}: ${salida(r)}`);
+    assert.match(salida(r), new RegExp(rel.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')), rel);
+  }
+});
+
+// ── La vuelta sin código: sólo con lo revisado visto, y pasado el tope sólo si «Preparar» pasaría ──
+const dormirMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const conTopeCommiteado = (C, n) => {
+  fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'), `review:\n  max_rounds: ${n}\n`);
+  for (const a of [['add', '.tycon/advisors.yaml'], ['commit', '-qm', 'tope']]) {
+    const g = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-C', C.codigo.repo, ...a], { encoding: 'utf8' });
+    assert.strictEqual(g.status, 0, g.stderr);
+  }
+};
+const editarConEvento = (C, rel, txt) => {
+  const abs = path.join(C.codigo.repo, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, txt);
+  C.escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), abs])], fileEvents: [...(m.fileEvents || []), { path: abs, ts: new Date().toISOString() }] }));
+};
+const tocarLaHistoria = (C, t) => {
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', `- hoy: escrita\n- después: ${t}`));
+  C.escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), C.story])], fileEvents: [...(m.fileEvents || []), { path: C.story, ts: new Date().toISOString() }] }));
+};
+
+// Caso: la vuelta 1 se pidió y no se lanzó ningún revisor (la sesión se cortó); después sólo cambió la historia. La vuelta
+// siguiente no puede cerrarse sola: nadie vio lo que se selló.
+// 🔴 Falla con: la vuelta 2 cerrada sola (no_code_delta, sin revisores) sobre una vuelta 1 que nadie lanzó.
+test('SmartReloop_VueltaPedidaSinLanzar_NoSeCierraSola', () => {
+  const C = corrida('s-ft-sinlanzar');
+  const archivo = path.join(C.estado(), 'active', `${C.sid}.json`);
+  const escribir = (cambios) => { const m = JSON.parse(fs.readFileSync(archivo, 'utf8')); fs.writeFileSync(archivo, JSON.stringify({ ...m, ...cambios(m) }, null, 2)); };
+  escribir((m) => ({ stepScheme: 2, stepsCompleted: [...new Set([...(m.stepsCompleted || []), 'start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'])] }));
+  const a = path.join(C.codigo.repo, 'src', 'a.js');
+  fs.writeFileSync(a, A_CODIGO);
+  escribir(() => ({ filesTouched: [a], fileEvents: [{ path: a, ts: new Date().toISOString() }] }));
+  dormirMs(50);
+  // la vuelta 1 se pide y no se lanza ningún revisor
+  assert.strictEqual(C.vuelta(1).r.status, 0);
+  dormirMs(50);
+  fs.writeFileSync(C.story, fs.readFileSync(C.story, 'utf8').replace('- hoy: escrita', '- hoy: escrita\n- después: algo'));
+  escribir((m) => ({ filesTouched: [...new Set([...(m.filesTouched || []), C.story])], fileEvents: [...(m.fileEvents || []), { path: C.story, ts: new Date().toISOString() }] }));
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  assert.ok(!v2.json.no_code_delta, `se cerró sola sobre una vuelta que nadie lanzó: ${salida(v2.r).slice(0, 300)}`);
+  assert.ok((v2.json.rerun || []).length > 0, JSON.stringify(v2.json.rerun));
+});
+
+// Caso: pasado el tope, cambió código; la vuelta frena. Una foto «al lanzar» tomada a mano no tapa ese código: sin el
+// sello de esa vuelta no se toma, y la vuelta sin código siguiente no sella el código sin firma.
+// 🔴 Falla con: `snapshot-iter N --at-launch` que escribe una foto sin el sello de la vuelta N, o «Preparar» que pasa con
+//    el código cambiado después de la última vuelta revisada.
+test('Tope_FotoAMano_NoTapaCodigo', () => {
+  const C = corridaRevisada('s-ft-fotoamano', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  assert.strictEqual(C.vuelta(2).r.status, 3, 'el código pasado el tope frena');
+  const s = C.correr('marker.js', ['snapshot-iter', '2', '--at-launch']);
+  assert.notStrictEqual(s.status, 0, `la foto a mano se tomó sin el sello de la vuelta 2: ${salida(s)}`);
+  assert.ok(!(C.marcador().fotosAlLanzar || {})['2'], 'no quedó la foto');
+  dormirMs(50);
+  tocarLaHistoria(C, 'dos');
+  dormirMs(50);
+  const v3 = C.vuelta(3);
+  assert.strictEqual(v3.r.status, 3, `la vuelta se cerró sola con código sin revisar: ${salida(v3.r).slice(0, 400)}`);
+});
+
+// Pasado el tope, lo que se ejecuta y no es código por su extensión (la configuración de una herramienta, un workflow,
+// un Dockerfile, una vista) no pasa como vuelta sin código: «Preparar» lo frena, y la vuelta tampoco lo sella sola.
+// 🔴 Falla con: la vuelta que se cierra sola pasado el tope con uno de esos archivos cambiado.
+test('Tope_LoQueSeEjecuta_NoPasaComoVueltaSinCodigo', () => {
+  for (const [rel, txt] of [['package.json', '{"scripts":{"postinstall":"true"}}\n'], ['.github/workflows/deploy.yml', 'on: push\n'],
+    ['Dockerfile', 'FROM scratch\n'], ['appsettings.json', '{"AllowedHosts":"*"}\n']]) {
+    const C = corridaRevisada(`s-ft-ejec-${rel.length}`, { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+    conTopeCommiteado(C, 1);
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+    dormirMs(1100);
+    editarConEvento(C, rel, txt);
+    dormirMs(50);
+    const v = C.vuelta(2);
+    assert.strictEqual(v.r.status, 3, `${rel}: ${salida(v.r).slice(0, 400)}`);
+    assert.match(v.r.stderr, /tope de 1/, rel);
+  }
+});
+
+const carpetaDeLaCorridaDe = (C) => { const d = path.join(C.codigo.repo, '.advisors', 'pipeline-runs'); return path.join(d, fs.readdirSync(d)[0]); };
+const lanzarYa = (C, nombres) => { for (const a of nombres) fs.appendFileSync(path.join(C.estado(), 'advisor-runs', `${C.sid}.jsonl`), `${JSON.stringify({ ts: new Date().toISOString(), advisor: a })}\n`); };
+
+// Caso: la vuelta 2 se pidió (con un arreglo en el sello) y no se lanzó entera; el orquestador corrió `snapshot-iter 2`
+// como dice el flujo; después sólo cambió la historia. La vuelta 3 no se cierra sola: la ronda 2 no la vio entera nadie.
+// 🔴 Falla con: la vuelta 3 cerrada sola (pasado el tope, sin firma) sobre una ronda que nadie lanzó o lanzó a medias.
+test('SmartReloop_RondaIncompletaConFotoDeSiempre_NoSeCierraSola', () => {
+  for (const lanzados of [0, 1]) {
+    const C = corridaRevisada(`s-ft-incompleta-${lanzados}`, { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+    conTopeCommiteado(C, 2);
+    conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+    dormirMs(1100);
+    editarConEvento(C, 'src/b.js', B_CODIGO);
+    dormirMs(50);
+    const v2 = C.vuelta(2);
+    assert.strictEqual(v2.r.status, 0, salida(v2.r));
+    dormirMs(50);
+    lanzarYa(C, (v2.json.rerun || []).slice(0, lanzados));
+    dormirMs(50);
+    C.correr('marker.js', ['snapshot-iter', '2']);
+    dormirMs(1100);
+    tocarLaHistoria(C, 'uno');
+    dormirMs(50);
+    const v3 = C.vuelta(3);
+    assert.ok(!v3.json.no_code_delta, `lanzados ${lanzados}: se cerró sola: ${salida(v3.r).slice(0, 300)}`);
+    assert.strictEqual(v3.r.status, 3, `lanzados ${lanzados}: pasado el tope, sin firma: ${salida(v3.r).slice(0, 300)}`);
+  }
+});
+
+// Pasado el tope, con nada abierto y algo cambiado después de la última vuelta revisada que «Preparar» cuenta, el tope
+// no dice «no hace falta otra vuelta»: frena con las salidas, y la vuelta extra del dueño se puede pedir.
+// 🔴 Falla con: el tope que sale 0 «sin nada abierto», o que niega --extra-round «porque no quedó nada abierto».
+test('Tope_NadaAbiertoConCambios_NoEsCallejonSinSalida', () => {
+  const C = corridaRevisada('s-ft-callejon', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'docs/notas.md', '# notas\n');
+  dormirMs(50);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  const v = C.vuelta(2);
+  assert.strictEqual(v.r.status, 3, salida(v.r).slice(0, 400));
+  assert.doesNotMatch(v.r.stderr, /no hace falta otra vuelta/);
+  assert.match(v.r.stderr, /--extra-round/);
+  const x = C.correr('pipeline.js', ['smart-reloop', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', '--iter', '2', '--extra-round']);
+  assert.doesNotMatch(x.stderr, /no necesita la vuelta extra/, x.stderr.slice(0, 400));
+});
+
+// Adentro de una carpeta que la app compila, «Preparar» perdona sólo un archivo con nombre de prueba: una carpeta `test/`
+// o `specs/` ahí puede ser una ruta de la app, y `*Test.cs` fuera de un proyecto de pruebas es código.
+// 🔴 Falla con: `app/api/test/route.ts` (una ruta que la app sirve) perdonado como prueba.
+test('PrepareCommit_PruebaPorCarpetaEnLaApp_Frena', () => {
+  for (const [rel, frena] of [['app/api/test/route.ts', true], ['pages/test/index.tsx', true], ['src/Domain/LabTest.cs', true],
+    ['src/specs/build.ts', true], ['src/__tests__/a.test.ts', false], ['src/Proyecto.Tests/FooTests.cs', false]]) {
+    const C = corrida(`s-ft-n3-${rel.length}-${frena ? 1 : 0}`);
+    C.vuelta();
+    fs.mkdirSync(path.dirname(path.join(C.codigo.repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(C.codigo.repo, rel), 'export const x = 1;\n');
+    const r = prepararCommit(C);
+    if (frena) assert.match(salida(r), MISMATCH, `${rel}: ${salida(r).slice(0, 300)}`);
+    else assert.doesNotMatch(salida(r), MISMATCH, `${rel}: ${salida(r).slice(0, 300)}`);
+  }
+});
+
+// Caso: la vuelta 2 se pidió (con un arreglo en el sello) y nadie la lanzó; se tomó a mano la foto de una vuelta 3 que
+// nunca se pidió; después sólo cambió la historia. La vuelta 4 no pasa el tope sola: la ronda base no consta vista.
+// 🔴 Falla con: la vuelta 4 cerrada sola pasado el tope, sin firma, sobre un arreglo que nadie revisó.
+test('Tope_FotoDeUnaVueltaQueNoExiste_NoPasaSola', () => {
+  const C = corridaRevisada('s-ft-n8a', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  dormirMs(50);
+  C.correr('marker.js', ['snapshot-iter', '3']);
+  dormirMs(1100);
+  tocarLaHistoria(C, 'uno');
+  dormirMs(50);
+  const v4 = C.vuelta(4);
+  assert.strictEqual(v4.r.status, 3, `la vuelta 4 pasó el tope sola: ${salida(v4.r).slice(0, 400)}`);
+});
+
+// Caso: pasado el tope, cambian una nota y la configuración; el dueño firma la vuelta extra, que sale con el revisor de
+// seguridad y sella lo cambiado. Pedir el set otra vez sin --extra-round no la cierra sola: lo cambiado sigue sin revisar
+// contra la última vuelta vista.
+// 🔴 Falla con: el pedido repetido que sale 0 sin revisores, o la vuelta firmada sin revisores.
+test('Tope_VueltaExtraFirmadaPedidaOtraVez_NoSeCierraSola', () => {
+  const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const C = corridaRevisada('s-ft-n8b', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 1\n' } });
+  conTopeCommiteado(C, 1);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'docs/notas.md', '# notas\n');
+  editarConEvento(C, 'package.json', '{ "scripts": { "postinstall": "node x.js" } }\n');
+  dormirMs(50);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  assert.strictEqual(C.vuelta(2).r.status, 3, 'el tope frena con las salidas');
+  const env = { ...process.env, HOME: C.home, USERPROFILE: C.home, CLAUDE_CODE_SESSION_ID: C.sid, TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off' };
+  for (const k of ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const f = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'smart-reloop', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', '--iter', '2', '--extra-round'],
+    { encoding: 'utf8', env: conVentana(env), input: '', cwd: C.codigo.repo });
+  assert.strictEqual(f.status, 0, f.stderr.slice(0, 400));
+  assert.ok(JSON.parse(f.stdout).rerun.length > 0, 'la vuelta firmada sale con revisores');
+  dormirMs(50);
+  const sin = C.vuelta(2);
+  assert.ok(!(sin.r.status === 0 && sin.json.no_code_delta && !(sin.json.rerun || []).length), `el pedido repetido se cerró solo: ${salida(sin.r).slice(0, 400)}`);
+});
+
+// Caso: la vuelta 1 completa; cambia la configuración; se pide otra vez el set de la vuelta 1 (vuelve a sellar con esa
+// etiqueta) y no se lanza; después sólo cambia la historia. La vuelta siguiente no pasa el tope sola: los revisores de la
+// ronda base leyeron el primer sello, no el que trae el cambio.
+// 🔴 Falla con: la vuelta que pasa el tope sin firma comparando contra el sello repetido que nadie leyó.
+test('Tope_SelloRepetidoSinLanzar_NoPasaSola', () => {
+  const C = corridaRevisada('s-ft-n9e2', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  fs.writeFileSync(path.join(carpetaDeLaCorridaDe(C), 'findings.json'), '[]\n');
+  dormirMs(1100);
+  editarConEvento(C, 'package.json', '{ "scripts": { "postinstall": "node x.js" } }\n');
+  dormirMs(50);
+  assert.strictEqual(C.correr('pipeline.js', ['advisors', '--story', C.story, '--repo', C.codigo.repo, '--files', 'src/a.js', 'src/b.js', '--iter', '1']).status, 0);
+  dormirMs(1100);
+  tocarLaHistoria(C, 'uno');
+  C.escribir((m) => ({ filesTouchedAt: { ...(m.filesTouchedAt || {}), [C.story]: { ts: Date.now() } } }));
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.ok(!(v2.r.status === 0 && v2.json.no_code_delta && !(v2.json.rerun || []).length), `pasó sola: ${salida(v2.r).slice(0, 400)}`);
+  assert.ok(!gatesDe(C).some((g) => g.name === 'no-code-round'), 'no queda la constancia de una vuelta sin código');
+});
+
+// Caso: vuelta 2 al tope, lanzada a medias, un arreglo por consola y, en el medio, un pedido de vuelta de otro repo sin
+// --story. Pedir la vuelta 2 otra vez es una vuelta nueva (se lanzaron revisores desde que se sirvió): el pedido del otro
+// repo no corta la cuenta.
+// 🔴 Falla con: la vuelta 2 servida otra vez como «la misma» por el pedido del otro repo.
+test('Rondas_PedidoDeOtroRepoEnElMedio_NoCortaLaCuenta', () => {
+  const C = corridaRevisada('s-ft-n8c', { extra: { '.tycon/advisors.yaml': 'review:\n  max_rounds: 2\n' } });
+  conTopeCommiteado(C, 2);
+  conFotoDeLaVuelta(C, ['src/a.js', 'src/b.js']);
+  dormirMs(1100);
+  editarConEvento(C, 'src/b.js', B_CODIGO);
+  dormirMs(50);
+  const v2 = C.vuelta(2);
+  assert.strictEqual(v2.r.status, 0, salida(v2.r));
+  dormirMs(1100);
+  lanzarYa(C, (v2.json.rerun || []).slice(0, -1));
+  dormirMs(50);
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'b.js'), `${B_CODIGO}// arreglo de lo que dijeron\n`);
+  const otro = repoDeJuguete('otro', { 'src/x.js': 'module.exports = 1;\n' });
+  fs.writeFileSync(path.join(otro.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  C.correr('pipeline.js', ['advisors', '--repo', otro.repo, '--files', 'src/x.js', '--iter', '1']);
+  dormirMs(50);
+  const v2b = C.vuelta(2);
+  assert.strictEqual(v2b.r.status, 3, `la vuelta 2 se sirvió otra vez como la misma: ${salida(v2b.r).slice(0, 300)}`);
 });
 
 test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide la nota de repensar; con código, sí', () => {

@@ -27,9 +27,9 @@ trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra eso
 
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
   lo que el arnés mide.
-- **Una story:** una tarea de programación descrita por escrito, con lo que tiene que cumplir.
+- **Una historia:** una tarea de programación descrita por escrito, con lo que tiene que cumplir.
 - **El pipeline y una ejecución:** el pipeline es el recorrido por pasos con que el arnés acompaña a alguien a hacer una
-  story (validarla, planear, programar, probar, revisar). Una **ejecución** es una vez que alguien hizo ese recorrido.
+  historia (validarla, planear, programar, probar, revisar). Una **ejecución** es una vez que alguien hizo ese recorrido.
 - **Un repo:** la carpeta compartida donde vive el código o la configuración, con su historia de cambios. Su **rama
   principal** es la versión que vale.
 - **Un pedido de cambio** (en inglés, *pull request*): una propuesta para cambiar un repo. Otra persona la mira y, si
@@ -84,7 +84,7 @@ sin sitio se cambia con un pull request a cada uno. Qué necesita cada caso (un 
 ## El primer ingreso
 
 **La dirección.** La deja quien instaló el sitio: viene en el aviso de la mañana, y quien mantiene la tiene anotada en
-la configuración del sitio (para quien mantiene: `site.url`, en la sección «Quién entra al sitio»). Si no la tenés,
+la configuración del sitio (para quien mantiene: `site.url`, en Personas, en «La dirección del sitio en cada máquina»). Si no la tenés,
 pedísela a quien te pasó el enlace o a quien instaló el arnés en tu máquina.
 
 **El inicio de sesión.** El sitio pide la cuenta que eligió tu organización al instalarlo: Microsoft, Google o GitHub.
@@ -103,9 +103,9 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
-- **Quien mantiene** ve todas las pestañas (Inicio, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés, Cómo trabaja,
-  Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
-- **Una persona confirmada** ve Inicio, Ejecuciones, Proyectos y Ayuda, con lo suyo.
+- **Quien mantiene** ve todas las pestañas (Inicio, Oficinas, Ejecuciones, Mantenimiento, Aprendizajes, Proyectos, Arnés,
+  Cómo trabaja, Horas y tokens, Configuración y Ayuda), y en Inicio lo que espera una decisión de toda la organización.
+- **Una persona confirmada** ve Inicio, Oficinas, Ejecuciones, Proyectos y Ayuda, con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
   lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
@@ -141,7 +141,7 @@ deciden en el repo de operaciones, donde la noche dejó su foto. Las fichas son:
 - **Dependencias:** las nuevas con una vulnerabilidad, las aceptadas que todavía no se arreglaron, y las rechazadas sin
   una deuda declarada (una fecha para pagarla).
 - **Vigilante:** lo que el vigilante de producción (un proceso que mira los productos en producción) dejó pendiente, o
-  aceptado y sin story.
+  aceptado y sin historia.
 - **Pull requests abiertos hace más de dos días** y **pedidos cerrados con la vulnerabilidad viva**.
 - **Suites rojas** y **casos del banco rojos esta noche:** las pruebas del arnés y los controles del arnés que se
   pusieron rojos anoche.
@@ -218,7 +218,7 @@ disco del sitio (`SITE_DATA_DIR`): **sin disco**, después de un reinicio la pes
 
 Sólo para **quien mantiene**: lo que encontró la noche, ordenado por quién tiene la pelota. Al lado del nombre, en el
 menú, va cuántas fichas esperan tu decisión, por ejemplo «Mantenimiento (12)»; sin ninguna, el nombre solo. La pantalla
-tiene cuatro bloques:
+tiene hasta cuatro bloques. «Te toca decidir» está siempre; de los otros tres, uno vacío no se muestra:
 
 - **Te toca decidir**: lo que encontraron el vigilante de producción y la revisión de las ejecuciones, y las
   vulnerabilidades de paquetes pendientes. Primero lo de producción, porque son clientes reales. Dentro de cada grupo,
@@ -263,7 +263,7 @@ resaltado. Los botones para decidir están siempre a la vista, bajo el título *
 **Archivar** quiere decir «es normal, no hay que tocar nada». **Arreglar** quiere decir que la noche crea una tarea para
 corregirlo. Marcás una opción en cada tarjeta (o «Seguir las recomendaciones» para todas las que tienen análisis) y al
 final **Enviar para aprobar**: abre un solo pedido al repo de operaciones con todas tus elecciones. Nada cambia hasta
-que otra persona lo aprueba. Si la organización prendió «Los cambios de un mantenedor» (`site.auto_apply`), el botón
+que otra persona lo aprueba. Si la organización prendió «Los cambios de quien mantiene el sitio» (`site.auto_apply`), el botón
 dice **Enviar** y lo enviado se guarda sin esperar a nadie: la revisión de esa noche lo aplica. Tus marcas quedan guardadas en el navegador hasta que las envíes o las borres. Cada término
 tiene su «?» con la explicación.
 
@@ -318,13 +318,13 @@ que ser de lectura sólo para quienes mantienen, no para todo el equipo.
 
 **Qué contesta:** ¿cómo va cada producto?
 
-Una fila por producto: las stories en curso (y cuántas en revisión), las paradas, su edad en el estado («más de 30 días:
+Una fila por producto: las historias en curso (y cuántas en revisión), las paradas, su edad en el estado («más de 30 días:
 2 · más de 60: 1»), las bloqueadas, qué versión está en prueba y cuál en producción, si espera una aprobación, si el
 vigilante lo mira, sus vulnerabilidades vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin
 contar dos veces lo compartido. Una persona ve los productos en los que trabaja. La **paridad** compara cada producto
 con los otros: lo que uno hace y los demás no.
 
-Una story está **parada** cuando está en curso y lleva en su estado más del primero de los dos días de
+Una historia está **parada** cuando está en curso y lleva en su estado más del primero de los dos días de
 `params.edad_en_estado_dias` del `sources.json` (por ejemplo `[30, 60]`); la edad cuenta lo empezado, en curso y
 bloqueado, contra los dos. Es la misma cuenta que la ficha de edad del tablero de la noche. Sin esos días, las paradas
 y la edad dicen «no medido» con su motivo: el sitio no tiene un número propio.
@@ -340,7 +340,7 @@ final, el total del producto. Una épica cuya suma vigente cae fuera de su rango
 25 h»). Un repo sin registro dice «sin estimaciones»; una foto vieja, o de antes de las estimaciones, dice «no medido».
 Cómo se estima: `guides/estimates.md`.
 
-**Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
+**Qué hacer:** una historia parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
 
 ### Arnés
 
@@ -366,8 +366,8 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 
 - **Registros por merge que cumplen el contrato de formato** (`contrato_v2`). Dice si los registros que se escriben al cerrar cada merge se pueden leer por máquina.
 - **Registros por merge con fecha declarada adentro** (`fechas_declaradas`). Una fecha inferida del nombre del archivo ordena, pero no sirve para dibujar una tendencia.
-- **Cierres que dejaron prueba de que la cosa anda corriendo** (`dod`). De las stories cerradas, cuántas dejaron evidencia de que se probó en vivo.
-- **Lo que vuelve: stories con un seguimiento posterior** (`rework`). Qué parte de lo entregado hubo que volver a tocar.
+- **Cierres que dejaron prueba de que la cosa anda corriendo** (`dod`). De las historias cerradas, cuántas dejaron evidencia de que se probó en vivo.
+- **Lo que vuelve: historias con un seguimiento posterior** (`rework`). Qué parte de lo entregado hubo que volver a tocar.
 - **Por qué volvió: defecto nuestro contra cambio de requisito** (`rework_por_causa`). Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.
 - **Lo rehecho al lado de lo entregado, mes por mes** (`rework_por_mes`). Muestra, para cada uno de los últimos meses, cuántas historias se entregaron y cuántas se rehicieron por cada causa, para ver si lo rehecho crece o baja.
 - **¿Vuelve menos lo que pasó por el pipeline?** (`rework_por_carril`). Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.
@@ -385,10 +385,10 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 
 **En Proyectos:**
 
-- **En el backlog: escritas y todavía sin arrancar** (`backlog`). Cuántas stories hay escritas sin empezar.
+- **En el backlog: escritas y todavía sin arrancar** (`backlog`). Cuántas historias hay escritas sin empezar.
 - **Con un estado que el diccionario no reconoce** (`estados_sin_diccionario`). Los estados que nadie tradujo: son la lista de trabajo del próximo diccionario.
 - **Tiempo por etapa: de listo para desarrollar a cerrado** (`tiempo_por_etapa`). Dónde se queda parado el trabajo entre una etapa y la siguiente.
-- **Stories empezadas que llevan mucho en su estado** (`edad_estado`). El trabajo empezado que no se mueve hace días.
+- **Historias empezadas que llevan mucho en su estado** (`edad_estado`). El trabajo empezado que no se mueve hace días.
 - **Cambios de código sin historia** (`sin_historia`). Las entradas a main de los últimos 28 días que no nombran su historia. Sólo se mide: no frena a nadie.
 - **Productos donde una sola persona hizo el 75 % o más de los commits del último año** (`bus_factor`). El riesgo de ingeniería no es el código: es quién es la única persona que sabe tocarlo.
 - **Productos sin pipeline de producción** (`sin_pipeline_de_prod`). No es calidad: es exposición. Para ellos «despliegues» es cero porque no hay a dónde mirar.
@@ -424,8 +424,8 @@ Si el cálculo de las fichas se cae, todas lo dicen con su propio motivo: «el c
 
 Arriba, **Tu organización**: las integraciones prendidas y apagadas (tachadas), los paquetes de revisores activos y las
 reglas (cómo se nombran las pruebas, qué pantallas piden prueba de punta a punta, en qué idioma está la aplicación).
-Debajo, los pasos del recorrido en orden; aparte, bajo «Fuera del recorrido», «Cerrar la historia» (el cierre en Azure
-DevOps), y al final, bajo «En cualquier paso», lo que actúa en todo el recorrido. Al elegir un paso se ve:
+Debajo, los pasos del recorrido en orden; aparte, bajo «Fuera del recorrido», «Cerrar la historia» (el cierre de su
+tarea en la plataforma del equipo), y al final, bajo «En cualquier paso», lo que actúa en todo el recorrido. Al elegir un paso se ve:
 
 - **Guías que cita:** el archivo del paso y las guías que nombra.
 - **Según la historia:** lo que se suma sólo en algunas historias, con su condición. Por ejemplo, en una historia que
@@ -576,6 +576,11 @@ candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, s
 túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
 avisa «falta el paso de una vez» si el candado las tapa.
 
+**Al reiniciar o actualizar el sitio.** Cuando la plataforma avisa que apaga la instancia vieja, el sitio cierra cada
+conexión de máquina pidiéndole que reconecte (el código 1012), y la máquina vuelve enseguida. Si una máquina reconecta
+con un ritmo fijo, por ejemplo cada minuto, el registro del sitio lo dice una vez por hora («reconecta cada ~61 s»): es
+un intermediario que corta las conexiones largas. En Cloud Run es el plazo del servicio (ver su receta).
+
 ## Configuración, sección por sección
 
 Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de
@@ -655,7 +660,7 @@ Las secciones, en el orden de la pantalla:
 - **La organización**: el nombre y el logo que muestra la barra de arriba y el pie. Queda en `operations.json`, en el
   repo de operaciones. Lo revisa quien mantiene.
 - **Quién entra al sitio**: la lista de quién entra y qué ve, una fila por persona, con su rol («Mantiene el sitio» o
-  «Dev») y uno o más correos. Nadie entra si no está acá, con cualquier inicio de sesión. Quienes mantienen ven la
+  «Programador») y uno o más correos. Nadie entra si no está acá, con cualquier inicio de sesión. Quienes mantienen ven la
   pestaña Configuración y proponen cambios; los devs ven lo suyo. Una persona entra con cualquiera de sus correos y ve lo
   mismo. Para sumar a alguien: Configuración, en Personas, «Quién entra al sitio» → **+ Agregar persona**, su correo y su
   rol; se hace acá, sin el portal de Microsoft. La primera vez la sección trae la lista armada con lo de antes (quienes
@@ -666,7 +671,7 @@ Las secciones, en el orden de la pantalla:
   «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones (con su
   servicio: Azure Blob Storage o Google Cloud Storage) y el refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
-  haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
+  haya prendido «Los cambios de quien mantiene el sitio»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
   la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
@@ -675,7 +680,7 @@ Las secciones, en el orden de la pantalla:
   minutos el sitio vuelve a leer la configuración (este repo de operaciones), el buzón de ejecuciones y el perfil del
   equipo. Va de 5 a 120 minutos; si no lo declarás, son 15. No instala versiones: eso es «Cómo se actualiza el sitio»,
   en Instalación y actualización.
-- **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
+- **Los cambios de quien mantiene el sitio**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
   que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. La regla de la organización la prende
   («La política de rama del repo de operaciones», más abajo). Prendida («sí», `site.auto_apply` en
   `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
@@ -754,8 +759,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
 - **Tareas**: a dónde y cómo pide trabajo la noche. Arriba, la **organización** y el **proyecto** adonde van
-  los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que la noche no
-  va a pedir trabajo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
+  los pedidos de la revisión de las ejecuciones y del vigilante; si falta alguno, la sección dice cuál y que
+  la revisión de las ejecuciones y el vigilante no van a pedir trabajo; las vulnerabilidades sí, al proyecto de cada repo. Después, en un recuadro, el **tipo** (vacío, cada proyecto usa su elemento de backlog) y los
   **campos fijos**. Abajo, **según la gravedad**, una tabla con una fila por campo y una columna por gravedad (crítica,
   alta, media y baja); sus valores ganan sobre los fijos si el campo coincide. Los campos fijos y la tabla valen sólo
   para las vulnerabilidades, y la sección lo dice. Con organización y proyecto, el sitio lee de ese proyecto los tipos,
@@ -883,7 +888,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   | Abrir el pull request · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
   | Pedir otra revisión · 1 | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
   | Aprobar el plan · 1 | la revisión de la propia sesión, si da aprobado \*\*; si no, vos | la revisión de la propia sesión, si da aprobado \*\*; si no, espera | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | obligatoria: sin su «aprobado», firma una persona |
-  | Aprobar el plan de una story delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |
+  | Aprobar el plan de una historia delicada · 2 | vos | espera | vos | espera | ataca y avisa, nunca aprueba |
   | Saltear un control · 2 | vos | espera | vos | espera | no aplica |
   | Aceptar un criterio imposible de probar en vivo · 2 | vos | espera | vos | espera | no aplica |
   | Marcar un criterio como probado a mano · 2 | vos | espera | vos | espera | no aplica |
@@ -892,7 +897,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   \* Sólo si esa firma está en «Delegada a la coordinadora» y tu máquina está en «En qué máquinas vale lo delegado»;
   si no, es igual que sin coordinadora. \*\* La revisión automática del plan la lanza la coordinadora o, sin ella, la
   propia sesión, y aprueba un plan de rutina sólo si dice «aprobado» (salvo que la organización pida el click: la opción
-  O4, `plan_review.routine_approval: person`); el de una story delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/owner-signatures.md`.
+  O4, `plan_review.routine_approval: person`); el de una historia delicada lo aprueba siempre el dev. Por qué cada rutina es rutina, y las notas, en `guides/owner-signatures.md`.
 
   **Dónde se configura**, todo en esta sección:
   - **A · si hay coordinadora**: «¿Quién pasa la autorización para saltarse un control grave?», con «¿Cómo la llaman?»
@@ -937,7 +942,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   primero deja más archivos sin revisores ni pase adversarial cuando el riesgo es normal; subir el segundo saca el click
   aparte en arreglos más grandes. Lo sensible, el riesgo alto y el aviso a la persona no cambian, y el primero no puede
   pasar del segundo. Un campo vacío saca la clave del perfil. **Esta sección nunca se aplica sola**, aunque la
-  organización tenga prendida «Los cambios de un mantenedor»: abre el pedido y lo aprueba una persona que no sea quien lo
+  organización tenga prendida «Los cambios de quien mantiene el sitio»: abre el pedido y lo aprueba una persona que no sea quien lo
   propone. Si la rama principal del repo del perfil no exige un revisor así, «Proponer» queda apagado y dice por qué.
   Ni la máquina ni una variable cambian los topes. Queda en `team-profile.json` → `short_path.coordinator_max_files` y
   `short_path.max_files`; quién firma qué, en `guides/owner-signatures.md`.
@@ -1142,11 +1147,12 @@ El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra
 | **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | no | los productos en los que trabaja | no | no | no |
 | **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no | no |
 
-**Aprendizajes** la ve sólo quien mantiene, como Mantenimiento: una persona confirmada no la ve en el menú.
+**Aprendizajes** y **Horas y tokens** las ve sólo quien mantiene, como Mantenimiento: una persona confirmada no las ve en el
+menú. **Oficinas** está en el menú de los dos; qué oficinas ve cada uno lo dice «La pestaña «Oficinas»».
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
-- Para entrar como **dev**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Dev». Para ver tus ejecuciones,
+- Para entrar como **dev**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Programador». Para ver tus ejecuciones,
   además, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»): aparece sola en «Por
   confirmar» cuando sube su primera ejecución.
 - Para **mantener**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Mantiene el sitio». La primera
@@ -1235,13 +1241,13 @@ credencial vencida o un permiso que cambió.
 **Por qué pasa:** el sitio sólo propone si la rama principal del repo tiene una política de revisión (la de «La
 política de rama del repo de operaciones»); sin ninguna, el sitio podría cambiar el repo sin dejar un pedido. También
 cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en Azure
-DevOps) y «Los cambios de un mantenedor» está apagada: el pedido lo crea el sitio, y se aprobaría solo sin que la
+DevOps) y «Los cambios de quien mantiene el sitio» está apagada: el pedido lo crea el sitio, y se aprobaría solo sin que la
 organización lo haya pedido. En GitHub, con la regla de empuje por ruta, el sitio no propone `operations.json`. Y cuando
 el sitio no tiene permiso para escribir en ese repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la
 sección muestra su enlace).
 
 **Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
-poner la política de la organización (con «Los cambios de un mantenedor» prendida) o dar el permiso de escritura. Con un
+poner la política de la organización (con «Los cambios de quien mantiene el sitio» prendida) o dar el permiso de escritura. Con un
 pedido abierto, esperá a que se mergee o se cierre.
 
 ![«Proponer» apagado, con su motivo: el repo no tiene una política que pida revisión](sitio-de-la-organizacion/capturas/proponer-apagado.png)
@@ -1274,8 +1280,9 @@ Es el mismo sitio, con datos de ejemplo de una organización inventada (**Acme**
 para mostrar qué hace sin dar acceso a nada real. Corre como una instancia aparte: no es el sitio de la organización ni
 lo reemplaza, y nada de lo que se ve en él existe.
 
-**Qué se ve.** Todas las pestañas con los datos de ejemplo: Inicio, Ejecuciones (con su detalle y sus textos), Proyectos,
-Arnés, Cómo trabaja, Configuración y Ayuda. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
+**Qué se ve.** Las pestañas con los datos de ejemplo: Inicio, Oficinas, Ejecuciones (con su detalle y sus textos),
+Mantenimiento, Proyectos, Arnés, Cómo trabaja, Horas y tokens, Configuración y Ayuda. **Aprendizajes** no está: sólo la
+tiene el sitio de una organización. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
 de la pestaña del navegador también. El selector **Ver como** deja mirar el sitio como quien lo mantiene (todo, con
 Configuración) o como una persona del equipo («Lo tuyo», sin Configuración). Los botones que cambian algo (**Proponer** en
 Configuración y en Cómo trabaja, **Invitar** y **Revocar**) revisan como siempre y muestran lo que pasaría, y dicen que en
@@ -1568,7 +1575,7 @@ ninguna política, «Proponer» queda apagado.
    «Required reviewers» deja el pedido esperando a esas personas.
 2. *Security*: **Bypass policies when pushing** en «Allow» sólo para la identidad de compilación de los nocturnos, que
    guardan empujando a `main`. Nadie más, tampoco la identidad del sitio.
-3. En `operations.json`, `site.auto_apply: true` («Los cambios de un mantenedor», en Personas).
+3. En `operations.json`, `site.auto_apply: true` («Los cambios de quien mantiene el sitio», en Personas).
 
 Con eso la noche empuja directo, y el sitio abre su pedido, lo aprueba con su identidad y lo completa (la sección dice
 «Aplicado»). Una persona no puede empujar a `main` (rebota con `TF402455`): entra por un pedido, que puede aprobar ella
@@ -1598,7 +1605,7 @@ perfil del equipo. En Azure DevOps, un permiso con *Code: Read & write* sobre es
 pushing* ni *Bypass policies when completing pull requests*: el sitio crea una rama y un pedido, nunca escribe `main`.
 Con un permiso personal, los pedidos salen a nombre de esa persona. Si la política deja que quien crea el pedido lo
 apruebe («Allow requestors to approve their own changes», la regla de la organización), el sitio propone sólo con «Los
-cambios de un mantenedor» prendida (abajo): apagada, lo aprobaría el mismo autor sin que la organización lo haya
+cambios de quien mantiene el sitio» prendida (abajo): apagada, lo aprobaría el mismo autor sin que la organización lo haya
 pedido. Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
@@ -1614,7 +1621,7 @@ Los repos de producto llevan su propio secreto, `SITE_PRODUCTS_WRITE_TOKEN`. Par
    el sitio no propone a ese repo y lo dice.
 
 Con ese secreto el sitio sólo crea ramas `team-config/...` y abre pedidos. Nunca escribe `main` ni completa el pedido,
-aunque «Los cambios de un mantenedor» esté prendida: esa opción vale para el perfil y para operaciones, no para los
+aunque «Los cambios de quien mantiene el sitio» esté prendida: esa opción vale para el perfil y para operaciones, no para los
 repos de producto.
 
 Una organización puede elegir no pedir ese revisor en sus repos de producto, por ejemplo porque cada dev mergea solo a
@@ -1692,7 +1699,7 @@ El botón vuelve a decir que falta, y nada más cambia.
 
 ### Los cambios que se aplican solos
 
-Con `site.auto_apply: true` en `operations.json` («Los cambios de un mantenedor», en Personas), el sitio aprueba y
+Con `site.auto_apply: true` en `operations.json` («Los cambios de quien mantiene el sitio», en Personas), el sitio aprueba y
 completa cada pedido que propone quien mantiene. Para eso su identidad de escritura necesita, en Azure DevOps, *Code:
 Read & write* y *Contribute to pull requests* sobre el repo, y nunca *Bypass policies*: el sitio no saltea ninguna
 política, y si una no se cumple con su voto, el pedido queda. La política de revisión de `main` es la de la
