@@ -574,6 +574,11 @@ platform lock of an already installed site does not learn it by itself. In Azure
 lock. The sessionless check confirms it: `node scripts/site/check-deploy.js --url https://<site address>`, which warns
 «the one-time step is missing» if the lock covers them.
 
+**When the site restarts or updates.** When the platform signals that it is shutting the old instance down, the site
+closes each machine connection asking it to reconnect (code 1012), and the machine comes back right away. If a machine
+reconnects at a fixed pace, for example every minute, the site's log says so once an hour ("reconecta cada ~61 s"):
+something in between cuts long connections. On Cloud Run it is the service timeout (see its recipe).
+
 ## Configuration, section by section
 
 Each section is a part of a configuration file that lives in an organization repo: the **operations repo** (the night's
@@ -1986,10 +1991,7 @@ an hour. That is why the site cuts each machine connection after 10 minutes and 
 few seconds, now to the new revision; the office does not flicker. It holds from the second deployment with this
 version, because the first one is still served by the old instance. Whoever deploys often lowers it with
 `SITE_OFFICE_RECONNECT_MINUTES` (1 to 60; `0` does not cut). To skip the wait, restart the office server on each
-machine: the next session relaunches it. When the platform signals that it is shutting the old instance down, the site
-also closes each machine connection asking it to reconnect (code 1012), and the machine comes back right away. If a
-machine reconnects at a fixed pace, for example every minute, the site's log says so once an hour ("reconecta cada
-~61 s"): something in between cuts long connections, and on Cloud Run it is the service timeout.
+machine: the next session relaunches it.
 
 **Up to date on Cloud Run**: with `site.update: "auto"`, the GitHub nightly keeps it up to date with the `cloudrun`
 platform, which the `gcs` connector brings: it changes only the image, by digest, waits for the new revision with all

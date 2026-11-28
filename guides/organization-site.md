@@ -575,6 +575,11 @@ candado de la plataforma de un sitio ya instalado no se entera solo. En Azure, s
 túnel. Lo comprueba la prueba sin sesión: `node scripts/site/check-deploy.js --url https://<dirección del sitio>`, que
 avisa «falta el paso de una vez» si el candado las tapa.
 
+**Al reiniciar o actualizar el sitio.** Cuando la plataforma avisa que apaga la instancia vieja, el sitio cierra cada
+conexión de máquina pidiéndole que reconecte (el código 1012), y la máquina vuelve enseguida. Si una máquina reconecta
+con un ritmo fijo, por ejemplo cada minuto, el registro del sitio lo dice una vez por hora («reconecta cada ~61 s»): es
+un intermediario que corta las conexiones largas. En Cloud Run es el plazo del servicio (ver su receta).
+
 ## Configuración, sección por sección
 
 Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de
@@ -1947,11 +1952,7 @@ fotos viven en la memoria de cada instancia: sin más, la pestaña Oficinas de l
 hora. Por eso el sitio corta cada conexión de máquina a los 10 minutos y la máquina vuelve sola en unos segundos, ya a la
 revisión nueva; la oficina no parpadea. Vale desde el segundo despliegue con esta versión, porque el primero lo atiende
 todavía la instancia vieja. Quien despliega seguido lo baja con `SITE_OFFICE_RECONNECT_MINUTES` (de 1 a 60; `0` no corta).
-Para no esperar, reiniciá en cada máquina el servidor de la oficina: lo relanza la próxima sesión. Cuando la plataforma
-avisa que apaga la instancia vieja, el sitio cierra además cada conexión de máquina pidiéndole que reconecte (el código
-1012), y la máquina vuelve enseguida. Si una máquina reconecta con un ritmo fijo, por ejemplo cada minuto, el registro del
-sitio lo dice una vez por hora («reconecta cada ~61 s»): es un intermediario que corta las conexiones largas, y en Cloud
-Run es el plazo del servicio.
+Para no esperar, reiniciá en cada máquina el servidor de la oficina: lo relanza la próxima sesión.
 
 **Al día en Cloud Run**: con `site.update: "auto"`, lo pone al día el nocturno de GitHub con la plataforma `cloudrun`, que
 trae el conector `gcs`: cambia sólo la imagen, por huella, espera la revisión nueva con todo el tráfico, la prueba y, si
