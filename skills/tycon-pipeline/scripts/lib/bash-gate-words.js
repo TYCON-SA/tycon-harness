@@ -484,7 +484,9 @@ function variantesConSeparador(texto) {
   // con renglones partidos por una barra (`i\⏎f (true) then cp …`), también las del comando con los renglones juntos,
   // como los junta el shell: la de juntos sola, si no tiene puntos, no hace falta (es la de tal cual)
   if (/\\\r?\n/.test(t)) {
-    const juntos = t.replace(/\\\r?\n/g, '');
+    // (no adentro del cuerpo de un heredoc: su barra del final es texto)
+    const cuerpo = require('./bash-gate-blocks.js').cuerposDeHeredoc(t);
+    const juntos = t.replace(/\\\r?\n/g, (m, en) => (cuerpo[en] ? m : ''));
     const deJuntos = variantesSinJuntar(juntos);
     const propias = variantesSinJuntar(t);
     if (!deJuntos.length) return propias;

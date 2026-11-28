@@ -23,8 +23,22 @@ const NO_ES_UN_COMANDO = /^(?:[;\n|)}#]|&(?!>))/;
  * en el texto de comando (un `(` citado no se empareja con el `)` de verdad). Como en el `for ((`, lo citado sigue siendo
  * texto para quien lo lee, y un señuelo que corta argumentos se ve en la lectura de tal cual o en la de su punto solo.
  */
+// el cuerpo de un heredoc, como lo lee `posicionesDeComando` (bash-gate-words.js)
+const HEREDOC = /(?<!<)<<(?!<)-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g;
+
+/** Qué posiciones de `t` son el cuerpo de un heredoc (1) y cuáles no (0). */
+function cuerposDeHeredoc(t) {
+  const en = new Uint8Array(t.length);
+  if (!t.includes('<<')) return en;
+  for (const m of t.matchAll(HEREDOC)) en.fill(1, m.index + m[0].indexOf('\n') + 1, m.index + m[0].length);
+  return en;
+}
+
 function puntosDeOtrasCabeceras(t, puntos, es) {
+  // (el cuerpo de un heredoc es texto: un guion que se escribe a un archivo no corre)
+  const cuerpo = cuerposDeHeredoc(t);
   const poner = (fin) => {
+    if (cuerpo[fin]) return;
     let k = fin + 1;
     while (t[k] === ' ' || t[k] === '\t') k++;
     if (k >= t.length || NO_ES_UN_COMANDO.test(t.slice(k, k + 2))) return;
@@ -104,7 +118,8 @@ function tramosConSustituciones(cmd) {
   if (!/[$<>`=]/.test(s)) return viejos;
   const ya = new Set(viejos);
   const out = [...viejos];
-  for (const texto of new Set([s, s.replace(/(^|[\s;&|(])#[^\n]*/g, '$1')])) {
+  // (sólo los comentarios con un `)`, el que cierra de más: uno citado, `"cierra #12"`, no se toca)
+  for (const texto of new Set([s, s.replace(/(^|[\s;&|(])#[^\n)]*\)[^\n]*/g, '$1')])) {
     for (const t of conSustitucionesEnteras(texto)) if (!ya.has(t)) { ya.add(t); out.push(t); }
   }
   return out;
@@ -170,4 +185,4 @@ function findsEnSustituciones(texto, absoluta) {
   return out;
 }
 
-module.exports = { findsEnSustituciones, puntosDeOtrasCabeceras, tramosConSustituciones, vaUnComando };
+module.exports = { cuerposDeHeredoc, findsEnSustituciones, puntosDeOtrasCabeceras, tramosConSustituciones, vaUnComando };

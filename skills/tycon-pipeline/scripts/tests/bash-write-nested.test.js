@@ -1123,6 +1123,8 @@ test('T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218 — lo de desp
     `repeat "$(echo 1)" cp README.md ${H}`, `rm $(: # )\n) ${H}`, `rm \${x:-;} ${H}`, `rm $[1|1] ${H}`, `rm =(: ; :) ${H}`,
     `dd if=README.md $(: ; :) of=${H}`, `find specs -name 'story-1.1.md' $(: ; :) -delete`,
     `find specs $(: ; :) -name 'story-1.1.md' -exec rm {} +`,
+    // (segunda vuelta) el `dd` de siempre sigue frenando
+    `dd if=README.md bs=$((512*2)) of=${H}`, `dd if=$(echo $(echo README.md)) of=${H}`,
   ]) frena(c, cmd);
   for (const cmd of [`for ((i=0;i<3;i++)) do echo $i; done`, `(( a > b ))`, `echo "$(( a > b ))"`, `if (true) then echo hola; fi`,
     `while (true) do echo x; break; done`, `for x do echo $x; done`, `for x (1) echo $x`, `repeat 2 echo hola`,
@@ -1134,5 +1136,8 @@ test('T50 SaltoEnSustitucion_Y_CabecerasSinPuntoYComa @A217 @A218 — lo de desp
     // (primera vuelta de Fable) código escrito con un heredoc, una tabla con paréntesis en un texto: no llegan al tope
     `cat > notas.txt <<'EOF'\n${'if (a) {\n  x();\n} else {\n  y();\n}\n'.repeat(13)}EOF`,
     `echo "${'| (0) algo |\n'.repeat(13)}" > notas.txt`, `node -e "${'const f = (a) => a; '.repeat(25)}"`,
+    // (segunda vuelta) un `#` citado no es un comentario; el cuerpo de un heredoc es texto, también su barra del final
+    `gh pr comment 12 --body "cierra #12" --repo=x/y\ngit commit -m "nota\n\nrm ${H} no se puede"`,
+    `cat > notas.txt <<'EOF'\nEjemplo: if (true) then rm ${H}; fi\ncurl a \\\nEOF`,
   ]) pasa(c, cmd);
 });
