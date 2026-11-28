@@ -10,10 +10,17 @@ const path = require('path');
 
 const R = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'runs.js'));
 const M = { corridas: [], generado: '2026-11-28T02:00:00.000Z', multi: false, registro: { estado: 'no_aplica' }, pasos: { fuente: 'skill', motivo: '' } };
+// el texto de un pedazo de página sin sus etiquetas: se repite hasta que no queda ninguna (una sola pasada puede dejar
+// una etiqueta armada con los restos de otras)
+const sinEtiquetas = (html) => {
+  let s = String(html);
+  for (let antes = null; antes !== s;) { antes = s; s = s.replace(/<[^<>]*>/g, ''); }
+  return s;
+};
 const sello = (opts) => {
   const m = /<div class="stamp">([\s\S]*?)<\/div>/.exec(R.cabecera(M, opts));
   assert.ok(m, 'la cabecera trae el sello');
-  return m[1].replace(/<[^>]+>/g, '');
+  return sinEtiquetas(m[1]);
 };
 
 test('S1 SelloDelSitio_ConLaVersion — en castellano y en inglés', () => {
@@ -38,7 +45,7 @@ test('S3 Eyebrow_SeisPreguntas_NombraDondeEstan — cada pestaña con preguntas,
   for (const idioma of ['es', 'en']) {
     const m = /<p class="eyebrow">([\s\S]*?)<\/p>|class="eyebrow"[^>]*>([\s\S]*?)<\/(?:p|div)>/.exec(R.cabecera(M, { sitio: { rol: 'maintainer', version: '1' }, idioma }));
     assert.ok(m, 'la cabecera trae el eyebrow');
-    const texto = (m[1] || m[2]).replace(/<[^>]+>/g, '');
+    const texto = sinEtiquetas(m[1] || m[2]);
     for (const p of pestanas) assert.ok(texto.includes(TEXTOS[`pestana.${p}`][idioma]), `${idioma}: «${texto}» no nombra ${TEXTOS[`pestana.${p}`][idioma]}`);
   }
 });
