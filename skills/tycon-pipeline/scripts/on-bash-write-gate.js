@@ -613,7 +613,8 @@ function handleCarrilEHistoria(event, opts = {}) {
     return true;
   });
   const cmdDestinos = sub.cmd;
-  const targets = extractWriteTargets(cmdDestinos, { keep });
+  // una cuenta sin `$` (`(( a > b ))`) se lee como cuenta sólo en el comando de la herramienta Bash (`sinCuentasSueltas`)
+  const targets = extractWriteTargets(cmdDestinos, { keep, cuentas: event?.tool_name === 'Bash' });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
     const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos, 0, installedRoots);
