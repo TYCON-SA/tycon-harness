@@ -13,7 +13,12 @@
 // Uso:
 //   node scripts/tests/lib/record-platform-golden.js record [--without-suites]   escribe las tres partes
 //   node scripts/tests/lib/record-platform-golden.js compare [--without-suites]  compara contra lo grabado; sale 1 si cambió
-// `--without-suites` saltea la foto de las suites (tarda: corre seis suites de a una).
+//   node scripts/tests/lib/record-platform-golden.js compare --suite <suite>     compara sólo la foto de esa suite
+//   node scripts/tests/lib/record-platform-golden.js check-calls <suite> <archivo>  compara la foto que la suite sacó
+//                                                                                   mientras corría (SELF_CHECKED)
+// `--without-suites` saltea la foto de las suites (tarda: corre seis suites). `--suite` compara la de una sola y nada
+// más: la prueba que mira la foto tiene una por suite, así se reparten entre las partes de su archivo y ninguna corre
+// las seis de un tirón.
 //
 // Casos: scripts/tests/platform-golden.test.js.
 
@@ -34,6 +39,10 @@ const TEXTO = /\.(js|cjs|mjs|sh|ps1|md|json|yml|yaml|toml|py)$/;
 const LITERAL = /\baz\s+(boards|repos|pipelines|devops|rest)\b/;
 // Las suites que corren guiones de verdad contra el az de mentira
 const SUITES = ['open-prs.test.sh', 'assigned-items.test.js', 'work-items.test.sh', 'work-item-status.test.sh', 'work-items-type.test.sh', 'nightly-deployments.test.js'];
+// Las que sacan su propia foto cada vez que corren y la comparan al final (`check-calls`): la prueba de la foto no las
+// vuelve a correr. work-items.test.sh es la más larga de la lista y no se puede partir; correrla dos veces era la mitad
+// del tiempo de la suite que mira las fotos.
+const SELF_CHECKED = ['work-items.test.sh'];
 
 // los archivos del núcleo que no se pudieron leer: la foto no se arma sin ellos (contarlos como 0 la achicaría en silencio)
 const ilegibles = [];
@@ -151,13 +160,48 @@ async function llamadasDeTodas(suites) {
   return out;
 }
 
+const fotoDe = (suite) => `${suite.replace(/\.test\.(js|sh)$/, '')}.calls`;
+
+/** Lo que cambió entre la foto grabada de una suite y la de hoy (`r`, lo que devuelve llamadasDe). */
+function compararSuite(suite, r) {
+  if (r.error) return [r.error];
+  const a = new Set(fs.readFileSync(path.join(DIR, fotoDe(suite)), 'utf8').split('\n').filter(Boolean));
+  const b = new Set(r.lineas);
+  return [...[...a].filter((x) => !b.has(x)).map((x) => `${suite}: ya no llama ${x}`), ...[...b].filter((x) => !a.has(x)).map((x) => `${suite}: llama algo nuevo ${x}`)];
+}
+
 function leerJson(f) { return JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')); }
 function escribir(f, contenido) { fs.writeFileSync(path.join(DIR, f), contenido); }
 
 async function main(argv) {
   const [modo, ...resto] = argv;
   const sinSuites = resto.includes('--without-suites');
-  if (!['record', 'compare'].includes(modo)) { process.stderr.write('uso: record-platform-golden.js record|compare [--without-suites]\n'); return 2; }
+  const iSuite = resto.indexOf('--suite');
+  const unaSuite = iSuite === -1 ? null : resto[iSuite + 1];
+  const uso = 'uso: record-platform-golden.js record|compare [--without-suites] · compare --suite <suite> · check-calls <suite> <archivo>\n';
+  if (modo === 'check-calls') {
+    // la suite que saca su propia foto mientras corre (SELF_CHECKED) la compara al final: así nadie la vuelve a correr
+    const [suite, archivo] = resto;
+    if (!SELF_CHECKED.includes(suite) || !archivo) { process.stderr.write(`check-calls va con una de: ${SELF_CHECKED.join(', ')} y el archivo de su foto\n${uso}`); return 2; }
+    let crudo;
+    try { crudo = fs.readFileSync(archivo, 'utf8'); } catch (e) { process.stdout.write(`✗ no pude leer la foto de ${suite} (${e.code || e.message})\n`); return 1; }
+    const lineas = [...new Set(crudo.split('\n').filter(Boolean).map(normalizar))].sort();
+    const problemas = lineas.length ? compararSuite(suite, { lineas }) : [`la suite ${suite} no hizo ninguna llamada a az: la foto vacía no sirve de vara`];
+    for (const p of problemas) process.stdout.write(`✗ ${p}\n`);
+    if (!problemas.length) process.stdout.write(`✓ la foto de llamadas a Azure DevOps de ${suite} no cambió\n`);
+    return problemas.length ? 1 : 0;
+  }
+  if (!['record', 'compare'].includes(modo)) { process.stderr.write(uso); return 2; }
+  if (iSuite !== -1 && (modo !== 'compare' || sinSuites || !SUITES.includes(unaSuite))) {
+    process.stderr.write(`--suite va sólo con compare, sin --without-suites, y con una de: ${SUITES.join(', ')}\n${uso}`);
+    return 2;
+  }
+  if (unaSuite) {
+    const problemas = compararSuite(unaSuite, (await llamadasDeTodas([unaSuite])).get(unaSuite));
+    for (const p of problemas) process.stdout.write(`✗ ${p}\n`);
+    if (!problemas.length) process.stdout.write(`✓ la foto de llamadas a Azure DevOps de ${unaSuite} no cambió\n`);
+    return problemas.length ? 1 : 0;
+  }
   // en el árbol armado la foto saldría de lo que viaja más lo que el privado tiene igual: se graba en el público solo
   if (modo === 'record' && IH().broughtByOverlay(ROOT)) { process.stderr.write('✗ esto es el árbol armado de los nocturnos: la foto se graba en el público solo\n'); return 1; }
   fs.mkdirSync(DIR, { recursive: true });
@@ -175,15 +219,10 @@ async function main(argv) {
     const fotos = await llamadasDeTodas(SUITES);
     for (const suite of SUITES) {
       const r = fotos.get(suite);
-      if (r.error) { problemas.push(r.error); continue; }
-      const f = `${suite.replace(/\.test\.(js|sh)$/, '')}.calls`;
-      if (modo === 'record') escribir(f, `${r.lineas.join('\n')}\n`);
-      else {
-        const antes = fs.readFileSync(path.join(DIR, f), 'utf8').split('\n').filter(Boolean);
-        const a = new Set(antes); const b = new Set(r.lineas);
-        for (const x of a) if (!b.has(x)) problemas.push(`${suite}: ya no llama ${x}`);
-        for (const x of b) if (!a.has(x)) problemas.push(`${suite}: llama algo nuevo ${x}`);
-      }
+      if (modo === 'record') {
+        if (r.error) problemas.push(r.error);
+        else escribir(fotoDe(suite), `${r.lineas.join('\n')}\n`);
+      } else problemas.push(...compararSuite(suite, r));
     }
   }
   if (modo === 'record') process.stdout.write(`foto grabada en ${path.relative(ROOT, DIR)}: ${s.archivos} archivos del núcleo con ${s.lineas} líneas duras, ${Object.keys(l).length} con comandos az${sinSuites ? '' : `, ${SUITES.length} suites`}\n`);
@@ -193,4 +232,4 @@ async function main(argv) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((codigo) => { process.exitCode = codigo; });
-module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES };
+module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES, SELF_CHECKED };

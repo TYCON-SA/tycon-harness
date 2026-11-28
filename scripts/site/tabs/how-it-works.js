@@ -142,16 +142,19 @@ function renderPage(model, { idioma, publicRepo, version }) {
   let franja;
   if (model.org) {
     const o = model.org;
-    const integ = Object.entries(o.integrations || {}).map(([k, v]) => (v === false ? `<span class="ct-ap" title="${esc(T('comoTrabaja.apagadoEnTuOrganizacion'))}">${esc(k)}</span>` : `<span>${esc(k)}</span>`)).join(' ');
+    // cada integración con su nombre de la pantalla; una que la tabla no conoce, con su identificador
+    // la herramienta de horas elegida se nombra por lo que hace: el núcleo no nombra herramientas
+    const nombreDe = (k) => { try { return T(`comoTrabaja.integ.${k === o.timeTracking ? 'timeTracking' : k}`); } catch (_) { return k; } };
+    const integ = Object.entries(o.integrations || {}).map(([k, v]) => (v === false ? `<span class="ct-ap" title="${esc(T('comoTrabaja.apagadoEnTuOrganizacion'))}">${esc(nombreDe(k))}</span>` : `<span>${esc(nombreDe(k))}</span>`)).join(' · ');
     const activos = o.packs.active && o.packs.active.length ? o.packs.active.join(', ') : T('comoTrabaja.ninguno');
     const r = o.rules || {};
     const valor = (x) => (x && x.value != null ? String(x.value) : T('comoTrabaja.ninguno'));
     // la regla de pantallas con las palabras del selector de Configuración; sin elegir, la de fábrica
     const OPCION_PANTALLAS = { ui: 'pantalla.tecTodas', react: 'pantalla.tecSoloReact', off: 'pantalla.tecNinguna' };
     const pantallas = (x) => (x && x.source === 'por_defecto' ? T('pantalla.tecSinDeclararTodas') : x && OPCION_PANTALLAS[x.value] ? T(OPCION_PANTALLAS[x.value]) : valor(x));
-    // el estilo de nombres con las palabras del selector de Configuración, no el valor guardado («any»)
+    // la regla de nombres, también con las palabras del selector de Configuración
     const OPCION_NOMBRES = { any: 'pantalla.tecCualquierNombre', pascal: 'pantalla.tecPascal', snake: 'pantalla.tecSnake' };
-    const nombres = (x) => (x && OPCION_NOMBRES[x.value] ? T(OPCION_NOMBRES[x.value]) : valor(x));
+    const nombres = (x) => (!x || x.value == null || x.source === 'por_defecto' ? T('pantalla.tecSinDeclararCualquiera') : OPCION_NOMBRES[x.value] ? T(OPCION_NOMBRES[x.value]) : valor(x));
     const reglas = [T('comoTrabaja.reglaNombres', { valor: nombres(r.test_names) }), T('comoTrabaja.reglaPantallas', { valor: pantallas(r.screen_test) }), T('comoTrabaja.reglaIdioma', { valor: valor(r.ui_language) })].join(' · ');
     const problemas = (o.problems || []).length ? `<div class="ct-fila"><b>${esc(T('comoTrabaja.orgProblemas'))}</b><span>${o.problems.map((p) => problemaConSeccion(p, T)).join(' · ')}</span></div>` : '';
     franja = `<section class="ct-org card" aria-label="${esc(T('comoTrabaja.orgTitulo'))}"><h2>${esc(T('comoTrabaja.orgTitulo'))}</h2><div class="ct-fila"><b>${esc(T('comoTrabaja.orgIntegraciones'))}</b><span>${integ} <span class="ct-nota">${esc(T('comoTrabaja.orgIntegracionesAyuda'))} ${esc(T('comoTrabaja.telegramDeCadaMaquina'))}</span></span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgPaquetes'))}</b><span>${esc(activos)}</span></div><div class="ct-fila"><b>${esc(T('comoTrabaja.orgReglas'))}</b><span>${esc(reglas)}</span></div>${problemas}</section>`;

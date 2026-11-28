@@ -67,7 +67,8 @@ function blobsDelBuzon(ahora = Date.now(), { completo = false, version = VERSION
   const { hoy } = diasDe(ahora);
   // el comienzo de una ejecución de hace `n` horas, en hora redonda
   const haceHoras = (n) => new Date(Math.floor((ahora - n * 36e5) / 36e5) * 36e5).toISOString();
-  const lugar = (correo, v) => JSON.stringify({ day: hoy, owner: { email: correo }, folder: null, ...(completo ? { install: { mode: 'managed', version: v } } : {}) });
+  // `huella` (sólo el sitio demo): la que manda cada máquina con una versión que la manda; la de bruno, más vieja, no
+  const lugar = (correo, v, huella) => JSON.stringify({ day: hoy, owner: { email: correo }, folder: null, ...(completo ? { install: { mode: 'managed', version: v }, ...(huella ? { machine_id: { fingerprint: huella } } : {}) } : {}) });
   const b = {};
   const sid = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
   const dos = completo ? { esquema: 2 } : {};
@@ -81,9 +82,9 @@ function blobsDelBuzon(ahora = Date.now(), { completo = false, version = VERSION
     ['mac-lead', '3.1', 'Producto-X/Backend', haceHoras(75), {}],
   ];
   corridas.forEach(([maq, story, repo, inicio, extra], i) => { b[`${maq}/${sid(i + 1)}.json`] = volcadoDeEjecucion(sid(i + 1), inicio, { story, repo, completo, ...extra }); });
-  b['mac-ana/registros/place.json'] = lugar(ANA, version);
+  b['mac-ana/registros/place.json'] = lugar(ANA, version, 'a1a1a1a1a1a1a1a1');
   b['mac-bruno/registros/place.json'] = lugar(BRUNO, VERSION_VIEJA);
-  b['mac-lead/registros/place.json'] = lugar(LEAD, version);
+  b['mac-lead/registros/place.json'] = lugar(LEAD, version, 'c3c3c3c3c3c3c3c3');
   if (completo) {
     const deMaquina = (maq) => corridas.map((c, i) => [c, sid(i + 1)]).filter(([c]) => c[0] === maq).map(([c, s]) => ({ volcado: `${s}.json`, inicio: c[3] }));
     for (const maq of ['mac-ana', 'mac-bruno', 'mac-lead']) Object.assign(b, registrosDeMaquina(maq, ahora, deMaquina(maq)));
@@ -144,6 +145,8 @@ function operaciones({ access, invitaciones, ahora = Date.now(), completo = fals
   if (access) { delete ops.site.maintainers; ops.site.access = access; }
   if (invitaciones) ops.site.invitations = invitaciones;
   if (completo) {
+    // a dónde van las tareas de la revisión de las ejecuciones y del vigilante: las que muestra Mantenimiento
+    ops.work_items = { org: PLATAFORMA.urlOrganizacion, project: 'Producto X', ...ops.work_items };
     // en qué productos trabaja cada persona, de dónde se leen los despliegues y por dónde sale el aviso
     ops.people.projects = { [ANA]: { add: ['Producto X', 'Producto Y'] }, [INVITADA]: { add: ['Producto X'] } };
     const pipeline = (p, nombre, stage) => [{ pipeline: `${p}/${nombre}`, stages: [stage] }];
@@ -324,28 +327,31 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
     aceptadas_sin_resolver: { valor: [{ id: 'f2', paquete: 'pkg-dos' }], motivo: null },
     rechazadas_sin_deuda: { valor: [{ id: 'f3', paquete: 'pkg-tres' }], motivo: null },
     vivas_por_proyecto: { valor: [{ proyecto: 'Producto X', ids: ['f1', 'f2'] }], motivo: null },
-    pedidos_cerrados_con_vivas: { valor: [{ id: 'f4', paquete: 'pkg-cuatro' }], motivo: null } } } };
+    // la forma con que la escribe la noche (daily-summary.js): la ficha, el proyecto y la tarea que se cerró
+    pedidos_cerrados_con_vivas: { valor: [{ ficha: 'f4', proyecto: 'Producto X', pedido: 5003, clase: 'arreglado' }], motivo: null } } } };
   f[`.dashboard/vigilante/vigilante-${hoy}.json`] = { fecha: hoy, generado: `${hoy}T05:30:00Z`, productos: { 'producto-x': { ok: true }, 'producto-y': { ok: true } }, hallazgos: [{ id: 'v1' }], nuevos: 1, repetidos: 0, resumen: { rubros: {
-    pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'errores-500' }], motivo: null },
-    aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'lentitud' }], motivo: null } } } };
+    pendientes: { valor: [{ id: 'v1', producto: 'producto-x', regla: 'deriva' }], motivo: null },
+    aceptadas_sin_story: { valor: [{ id: 'v2', producto: 'producto-y', regla: 'goteo' }], motivo: null } } } };
   // las fichas, en el formato de cada fuente: la pestaña Mantenimiento las muestra.
   // Las pendientes van sin `pr:`: con el pedido de la noche abierto se deciden ahí, no en el sitio
   const conPr = (pr) => (pr ? `pr: ${pr}\n` : '');
-  const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
-  const fichaVig = (id, pr, veredicto, regla, extra = '') => `id: ${id}\nfuente: vigilante\ncausa: producto-x:${regla}\nfecha: ${ayer}\nproducto: producto-x\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
+  // la detectó la noche de hace tantos días como noches lleva
+  const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${d(noches)}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
+  const fichaVig = (id, pr, veredicto, regla, extra = '', producto = 'producto-x') => `id: ${id}\nfuente: vigilante\ncausa: ${producto}:${regla}\nfecha: ${ayer}\nproducto: ${producto}\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
   Object.assign(f, {
-    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, 'aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\npedidos:\n  - Producto X: 5002\n'),
-    'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5),
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: Ana Pérez"\n`),
+    'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5, 'repos:\n  - Producto X/FrontEnd\n'),
     'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
-    'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6),
-    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'errores-500', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
-    'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'lentitud'),
+    // la tarea de pkg-cuatro se cerró y el paquete sigue: la ficha la tiene (la que el Inicio dice cerrada)
+    'inbox/dependencies/promoted/f4.yaml': fichaDep('f4', 204, 'util', 'pkg-cuatro', 'high', 6, 'repos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5003\n'),
+    'inbox/watcher/pending/v1.yaml': fichaVig('v1', null, 'pendiente', 'deriva', 'propuesta_accion: arreglar\npropuesta_razon: Se repite en el mismo endpoint desde el último despliegue\n'),
+    'inbox/watcher/promoted/v2.yaml': fichaVig('v2', 206, 'util', 'goteo', '', 'producto-y'),
   });
   const CYCLE = require('../../nightly/findings/cycle.js');
   const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),
     ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' },
     analisis: { recomendacion: 'arreglar', por_que_pasa: 'Se apagó con la variable de escape en 3 de las 6 ejecuciones de la semana, siempre en la misma máquina', por_que_recomienda: 'sin el pase adversarial los errores llegan a la revisión humana', arreglo: 'que el escape pida el ok de una persona y quede anotado', autor: 'modelo', modelo: 'sonnet', el: hoy } };
-  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5001 };
+  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5004 };
   f[`inbox/runs-review/pending/${ej1.id}.yaml`] = CYCLE.serializar(ej1);
   f[`inbox/runs-review/promoted/${ej2.id}.yaml`] = CYCLE.serializar(ej2);
   // lo que deja la noche para el sitio
@@ -431,7 +437,9 @@ const RECETA_NETFX = {
   results: { format: 'trx', path: '{results}/**/*.trx' },
 };
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
-const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), stack: { test_runners: [RECETA_NETFX] } };
+// operaciones, donde lo pone el sitio demo (`remotos.operaciones`): así «Dónde vive cada repo» y los enlaces dicen lo mismo
+const { web: _web, ...OPERACIONES } = PLATAFORMA.remotos.operaciones;
+const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: { ...OPERACIONES }, stack: { test_runners: [RECETA_NETFX] } };
 
 /**
  * Los archivos del repo del perfil de «acme» (`ruta → objeto o texto`). `repos`: claves que se suman a `team-repos.json`;

@@ -105,4 +105,29 @@ function pideOtraVuelta(file, { storyPath, repoPath } = {}) {
   return true;
 }
 
-module.exports = { pideOtraVuelta, raizDelRepo };
+// Lo que no es código y aun así cuenta para lo revisado: cambia lo que hace un agente o lo que acepta una prueba. Lo usan
+// el portón de «Preparar» (marker-shared.js) y la vuelta sin código del re-loop: con uno de éstos, la vuelta no se cierra
+// sola y el portón frena.
+//   · una carpeta de instrucciones para un agente (skills, agents, commands, steps, prompts, rules, hooks, integrations,
+//     packs, guides), en cualquier nivel;
+//   · un archivo de instrucciones suelto (CLAUDE.md, CLAUDE.local.md, AGENTS.md, GEMINI.md);
+//   · una imagen en una ruta de pruebas o de referencias, que una prueba visual compara (cada herramienta usa su carpeta:
+//     `*-snapshots`, `__screenshots__`, `backstop_data`, `baseline_images`, `.loki/reference`, `.reg/expected`);
+//   · lo sensible del catálogo de firmas.
+const DE_INSTRUCCIONES = /(^|\/)(skills|agents|commands|steps|prompts|rules|hooks|integrations|packs|guides)\//i;
+const INSTRUCCION_SUELTA = /^(claude|agents|gemini)(\.[\w-]+)?\.md$/i;
+const IMAGENES = /\.(png|jpe?g|gif|webp)$/i;
+const DE_PRUEBA_VISUAL = /(^|\/)[^/]*(test|spec|e2e|cypress|playwright|snapshot|screenshot|baseline|reference|golden|expected|backstop|visual|\.loki|\.reg)[^/]*\//i;
+
+/** ¿`file` cuenta siempre para lo revisado, aunque no sea código? La ruta se mira desde la raíz de su repo. */
+function cuentaSiempre(file) {
+  if (!file) return false;
+  const abs = path.resolve(String(file));
+  const raiz = raizDelRepo(abs);
+  const rel = (raiz ? path.relative(raiz, abs) : abs).split(path.sep).join('/');
+  if (DE_INSTRUCCIONES.test(rel) || INSTRUCCION_SUELTA.test(path.posix.basename(rel))) return true;
+  if (IMAGENES.test(rel) && DE_PRUEBA_VISUAL.test(rel)) return true;
+  try { return require('./save-ok.js').esSensible(rel); } catch (_) { return true; }
+}
+
+module.exports = { pideOtraVuelta, raizDelRepo, cuentaSiempre };

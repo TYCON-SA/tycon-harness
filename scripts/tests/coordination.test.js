@@ -999,10 +999,65 @@ test('8.177 T4d Open_ModoFueraDeLista_NoAbre @story-8.177 @ac-4: un modo que el 
   refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'modo raro');
 });
 
-test('8.177 T4e Open_ModoMasLejosQueElTope_NoAbre @story-8.177 @ac-4: un modo anotado a más de 1 MB del final no se busca: no abre', () => {
+// Una coordinadora que trabaja sola no recibe mensajes de la persona, y Claude Code anota el modo sólo con cada uno:
+// tras unas pocas llamadas con registros de cientos de KB, el último modo queda a más de 1 MB del final. Se busca hasta
+// el principio de la conversación, y vale el último anotado.
+test('8.177 T4e Open_ModoMasLejosQueUnMega_SeEncuentra @story-8.177 @ac-4: un modo anotado lejos del final se busca hasta el principio', () => {
+  for (const [modos, pad, esperado] of [[['bypassPermissions'], 1024 * 1024 + 10, 'bypassPermissions'], [['default', 'auto'], 3 * 1024 * 1024, 'auto']]) {
+    const t = toy();
+    callerTranscript(t, modos, { pad });
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: esperado }, `pad ${pad}: ${JSON.stringify(r)}`);
+  }
+});
+
+// La anotación partida en el borde de un bloque de lectura (256 KB, contados desde el final) se lee entera: el corte
+// cae adentro de la clave, y adentro de un renglón de la persona más largo que un bloque.
+test('8.177 T4e2 Open_ModoPartidoEntreBloques_SeLee @story-8.177 @ac-4: el modo partido entre dos bloques de lectura se encuentra', () => {
+  const BLOQUE = 256 * 1024;
   const t = toy();
-  callerTranscript(t, ['bypassPermissions'], { pad: 1024 * 1024 + 10 });
-  refuses(t, openAs(t, { CLAUDE_CODE_SESSION_ID: CALLER_SID }), 'más lejos que el tope');
+  const file = callerTranscript(t, ['auto']);
+  const linea = fs.readFileSync(file, 'utf8');
+  const corte = linea.indexOf('"permissionMode"') + 8;
+  for (const k of [1, 4]) {
+    // lo que va después del renglón, para que el borde del bloque k caiga en el byte `corte`
+    const relleno = JSON.stringify({ type: 'assistant', message: { content: '' } });
+    const falta = k * BLOQUE - (linea.length - corte) - relleno.length - 1;
+    const tras = JSON.stringify({ type: 'assistant', message: { content: 'y'.repeat(falta) } });
+    fs.writeFileSync(file, `${linea}${tras}\n`);
+    assert.strictEqual(fs.statSync(file).size - k * BLOQUE, corte, 'el borde cae adentro de la clave');
+    const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+    assert.deepStrictEqual(r, { mode: 'auto' }, `bloque ${k}: ${JSON.stringify(r)}`);
+  }
+  // un renglón de la persona más largo que tres bloques, con el modo al principio
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', permissionMode: 'default', message: { content: 'z'.repeat(3 * BLOQUE + 17) } })}\n`);
+  assert.deepStrictEqual(C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } }), { mode: 'default' });
+});
+
+// Sólo cuenta la anotación de Claude Code: la clave en el primer nivel de un mensaje de la persona. La misma clave
+// adentro de la entrada de una herramienta o de un resultado, posterior al último mensaje, no gana.
+test('8.177 T4e3 Open_ClaveAnidada_NoEsElModo @story-8.177 @ac-4: una clave permissionMode anidada en otro renglón no cuenta', () => {
+  const t = toy();
+  const file = callerTranscript(t, ['default']);
+  const anidadas = [
+    { type: 'assistant', message: { content: [{ type: 'tool_use', input: { permissionMode: 'bypassPermissions' } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] }, toolUseResult: { permissionMode: 'bypassPermissions' } },
+    { type: 'assistant', permissionMode: 'bypassPermissions' },
+    // el renglón de un subagente no es un mensaje de la persona
+    { type: 'user', isSidechain: true, permissionMode: 'bypassPermissions', message: { content: 'hola' } },
+  ];
+  fs.appendFileSync(file, `${anidadas.map((d) => JSON.stringify(d)).join('\n')}\n`);
+  assert.deepStrictEqual(C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } }), { mode: 'default' });
+});
+
+// Un renglón con el modo que no se puede leer (a medio escribir) no se saltea para copiar uno más viejo: no abre.
+test('8.177 T4e4 Open_RenglonDelModoIlegible_NoAbre @story-8.177 @ac-4: el último renglón con el modo, roto, no deja ganar al anterior', () => {
+  const t = toy();
+  const file = callerTranscript(t, ['bypassPermissions']);
+  fs.appendFileSync(file, '{"type":"user","permissionMode":"default","message":{"content":"ho');
+  const r = C.callerPermissionMode({ home: t.home, env: { CLAUDE_CODE_SESSION_ID: CALLER_SID } });
+  assert.ok(r.problem && !r.mode, JSON.stringify(r));
+  assert.match(r.problem, /no se puede leer/);
 });
 
 test('8.177 T5 Open_SinModo_ConRepo_NoTomaPuesto @story-8.177 @ac-4: con el repo y sin modo legible, no toma puesto ni crea la rama', () => {
