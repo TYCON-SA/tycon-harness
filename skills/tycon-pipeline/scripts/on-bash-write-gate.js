@@ -383,11 +383,28 @@ function handleCarrilEHistoria(event, opts = {}) {
     return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true })
       || signedRecordKind(abs) !== null || signedRecordKind(real) !== null;
   };
+  // La zona protegida (el estado o el árbol instalado) adonde puede llegar un destino con comodín, o null. Un patrón de k
+  // tramos desde su primer comodín sólo nombra rutas a esa profundidad; `**` y `(a|b)` (zsh) llegan a cualquiera. Llega
+  // si el tramo fijo ya está adentro de la zona, o si la zona queda a menos de k tramos debajo de él.
+  const zonaQueAlcanzaElComodin = (abs) => {
+    const partes = String(abs).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
+    const i = partes.findIndex((p) => /[*?[{(]/.test(p));
+    if (i < 0) return null;
+    const fijo = partes.slice(0, i).join(path.sep) || path.sep;
+    const resto = partes.slice(i);
+    const cualquiera = resto.some((p) => p.includes('**') || /[(|]/.test(p));
+    for (const z of [stateDir, stateReal, ...installedRoots, ...installedRoots.map((r) => installedTree.realPath(r))]) {
+      if (isInside(z, fijo)) return z;
+      if (isInside(fijo, z) && (cualquiera || resto.length > path.relative(fijo, z).split(path.sep).length)) return z;
+    }
+    return null;
+  };
   // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
   // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
   const keep = (t) => {
     const valor = expandirRuta(cmd, t).valor;
-    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
+    const abs = resolveTarget(valor, cwd, process.platform, { homeVariable: true });
+    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null;
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
   const constancias = constanciasTocadas(cmd, cwd, stateDir, baseCwd);
@@ -599,13 +616,11 @@ function handleCarrilEHistoria(event, opts = {}) {
   // Con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
   const resueltos = destinosResueltos(cmdDestinos, cwd, process.platform, { keep });
   const absTargets = [...new Set([...resueltos.map((d) => d.abs), ...armadosAbs])];
-  // un comodín en el destino (`>> /p/est?do/x`): bash lo expande si nombra un archivo que existe. Se juzga también cada
-  // archivo que nombra; si son demasiados para mirarlos todos, el que quedó sin mirar puede ser del estado
+  // un comodín en el destino (`>> /p/est?do/x`, `{a,b}`, `**` y `(a|b)` de zsh): el shell lo expande y puede nombrar un
+  // archivo del estado o del árbol instalado. Sin mirar el disco: si el comodín puede llegar adentro de una zona, frena
   for (const abs of [...absTargets]) {
-    if (!/[*?[]/.test(abs)) continue;
-    const aviso = {};
-    for (const m of expandirComodin(abs, cwd, aviso)) if (!absTargets.includes(m)) absTargets.push(m);
-    if (aviso.recortado && !absTargets.includes(path.join(stateDir, 'comodin-sin-mirar'))) absTargets.push(path.join(stateDir, 'comodin-sin-mirar'));
+    const zona = zonaQueAlcanzaElComodin(abs);
+    if (zona && !absTargets.includes(path.join(zona, 'comodin'))) absTargets.push(path.join(zona, 'comodin'));
   }
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // los destinos relativos, si el comando cambia de carpeta con un `cd` (o `pushd`/`popd`) que no es el que se sigue: el

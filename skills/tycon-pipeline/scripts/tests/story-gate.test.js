@@ -1993,7 +1993,11 @@ test('EscrituraAlEstado_ConComodinEnElDestino_Frena', () => {
   const conComodin = (c) => `${E.slice(0, -1)}${c}`;
   conEnv(SIN_REGISTRO, () => {
     for (const c of [`F=${conComodin('?')}/plan-review/s1/s1.resultado.json; echo x >> $F`, `echo x >> ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
-      `echo x >> ${E}/plan-revie?/s1/s1.resultado.json`, `echo x >> ${E}/plan-revie[w]/s1/s1.resultado.json`, `echo x >> ${E}/plan-*/s1/s1.resultado.json`]) {
+      `echo x >> ${E}/plan-revie?/s1/s1.resultado.json`, `echo x >> ${E}/plan-revie[w]/s1/s1.resultado.json`, `echo x >> ${E}/plan-*/s1/s1.resultado.json`,
+      // de la revisión de Fable: ocultos, sed -i, llaves, `**` y `(a|b)` de zsh
+      `shopt -s dotglob; echo x >> ${path.dirname(E)}/*/plan-review/s1/s1.resultado.json`, `sed -i '' 1d ${conComodin('?')}/plan-review/s1/s1.resultado.json`,
+      `echo x | tee ${conComodin(`{${E.slice(-1)},}`)}/plan-review/s1/s1.resultado.json`, `echo x >> ${path.dirname(E)}/**/s1.resultado.json`,
+      `echo x >> ${conComodin(`(${E.slice(-1)}|x)`)}/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
@@ -2008,7 +2012,13 @@ test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
   const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
   const arnes = path.join(SCRIPTS, '..', '..', '..');
   conEnv(SIN_REGISTRO, () => {
-    const r = bash.handle(ev('echo x > ~+/plan-review/s1/s1.resultado.json', E), { stateDir, installedRoots: [arnes] });
+    const r = bash.handle(ev(`echo x >> ~+/${path.basename(E)}/plan-review/s1/s1.resultado.json`, path.dirname(E)), { stateDir, installedRoots: [arnes] });
     assert.ok(r && r.block, '~+ es la carpeta actual');
+    // un comodín que no puede llegar al estado no frena por eso
+    fs.mkdirSync(path.join(repo, 'logs'), { recursive: true });
+    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt']) {
+      const p = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
+      assert.ok(!(p && p.block && /estado|state/i.test(p.block)), `${c}: ${p && p.block}`);
+    }
   });
 });

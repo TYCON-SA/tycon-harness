@@ -1412,7 +1412,8 @@ function inlineStoryText(cmd, declares) {
  */
 function resolveTarget(target, cwd, platform = process.platform, { homeVariable = false } = {}) {
   const P = platform === 'win32' ? path.win32 : path;
-  let expanded = String(target).replace(/^~(?=\/|$)/, os.homedir());
+  // `~+` es la carpeta actual (bash y zsh)
+  let expanded = String(target).replace(/^~\+(?=\/|$)/, () => String(cwd)).replace(/^~(?=\/|$)/, os.homedir());
   // `$HOME` sólo lo expande quien ya lo expandía (los destinos de una escritura): acá no cambia qué se expande
   if (homeVariable) expanded = expanded.replace(/^\$\{?HOME\}?(?=\/|$)/, os.homedir());
   expanded = nativePath(expanded, platform);
