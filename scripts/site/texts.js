@@ -251,6 +251,8 @@ const TEXTOS = {
   'decidir.corto.en_su_tarea': { es: 'se sigue en su tarea', en: 'followed in its work item' },
   'decidir.nadie_lo_sigue': { es: 'pull request #{n} cerrado sin resolver: nadie lo sigue', en: 'pull request #{n} closed without a fix: nobody follows it' },
   'decidir.en_su_tarea': { es: 'ya decidida: se sigue en su tarea, en Mantenimiento', en: 'already decided: it is followed in its work item, under Maintenance' },
+  'decidir.tarea_cerrada': { es: 'su tarea {tarea} ({proyecto}) se cerró y la vulnerabilidad sigue: la noche le comentó; se decide en esa tarea', en: 'its work item {tarea} ({proyecto}) was closed and the vulnerability is still there: the nightly run commented on it; it is decided in that work item' },
+  'decidir.tarea_cerrada_sin_numero': { es: 'su tarea se cerró y la vulnerabilidad sigue: la noche no dejó el número de la tarea', en: 'its work item was closed and the vulnerability is still there: the nightly run did not record the work item number' },
   'decidir.sin_pedido': { es: 'sin pull request abierto todavía: la noche lo abre en su próxima vuelta', en: 'no pull request open yet: the nightly run opens it on its next pass' },
   'decidir.sin_repo_https': { es: 'el repo de operaciones no tiene una dirección https navegable: no se puede enlazar su pull request', en: 'the operations repo has no browsable https address: its pull request cannot be linked' },
   'decidir.plataforma_desconocida': { es: 'el repo de operaciones está en una plataforma que el sitio no sabe enlazar: no se puede armar el enlace a su pull request', en: 'the operations repo is on a platform the site cannot link to: the link to its pull request cannot be built' },
