@@ -1637,18 +1637,19 @@ w4_defects_section() {
     ok "(x) con Claude Code y la casa propia, la subida y la lista de proyectos de Azure van a la carpeta del estado"
   else no "(x) casa propia con Claude Code (rc $rc): en el estado $(ls -A "$h/.tycon/state" 2>/dev/null | tr '\n' ' ') · en la de Claude Code $(ls -A "$h/.claude/.tycon-pipeline" 2>/dev/null | tr '\n' ' ') · $(brief "$W/x4c.out" 200)"; fi
   # (x4d) la recolección de hallazgos, como en el .sh: de fondo, en la misma tanda que la subida y ANTES que ella (lo de
-  # hoy sube hoy), con su registro agregado. Sin repos bajo la raíz, la recolección lo dice en su registro: ésa es la
-  # prueba de que corrió. 🔴 Sin la recolección en el .ps1, no queda collect-findings.log.
+  # hoy sube hoy), con su registro agregado. En el laboratorio la recolección dice en su registro por qué no junta nada
+  # (sin repos, sin catálogo): un registro con algo es la prueba de que corrió. 🔴 Sin la recolección en el .ps1, no
+  # queda collect-findings.log.
   h="$(new_home 'w4 hallazgos')"; mkdir -p "$h/.claude" "$h/repos"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
   : > "$NODE_CALLS"
   PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_NO_COLLECT_FINDINGS=0 TYCON_REPOS_ROOT="$h/repos" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > "$W/x4d.out" 2>&1; rc=$?
   local cf="$h/.claude/.tycon-pipeline/collect-findings.log"; up="$h/.claude/.tycon-pipeline/upload-runs.log"; i=0
-  while { ! grep -q 'repo' "$cf" 2>/dev/null || ! grep -q 'sin_config' "$up" 2>/dev/null; } && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
+  while { [ ! -s "$cf" ] || ! grep -q 'sin_config' "$up" 2>/dev/null; } && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
   local ncf nup
   ncf="$(grep -n 'collect-findings.js --budget-ms 60000 --log' "$NODE_CALLS" | grep -v 'run-in-order' | head -1 | cut -d: -f1)"
   nup="$(grep -n 'upload-runs.js --budget-ms 90000 --log' "$NODE_CALLS" | grep -v 'run-in-order' | head -1 | cut -d: -f1)"
-  if [ "$rc" -eq 0 ] && grep -q 'repo' "$cf" 2>/dev/null && grep -q 'sin_config' "$up" 2>/dev/null && [ -n "$ncf" ] && [ -n "$nup" ] && [ "$ncf" -lt "$nup" ]; then
+  if [ "$rc" -eq 0 ] && [ -s "$cf" ] && grep -q 'sin_config' "$up" 2>/dev/null && [ -n "$ncf" ] && [ -n "$nup" ] && [ "$ncf" -lt "$nup" ]; then
     ok "(x) la recolección de hallazgos: de fondo, antes de la subida, con su registro"
   else no "(x) la recolección de hallazgos (rc $rc): registro $([ -f "$cf" ] && head -c 160 "$cf" || echo 'no quedó') · orden recolección ${ncf:-?} / subida ${nup:-?} · $(brief "$W/x4d.out" 200)"; fi
   # (x4f) el chequeo de sqlite3 corre con el PowerShell 7 de la misma consola, también fuera de Windows: con engram
