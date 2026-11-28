@@ -276,26 +276,52 @@ const GUION_DE_CONTROLES = path.join(__dirname, '..', 'ci', 'run-base-controls.s
  * comando. `{ rutas, entradas }`, `{ error }`, o null si el comando no es por rango.
  */
 function rutasDelRango(palabras, raiz) {
-  if (valor(palabras, '--range') == null || valor(palabras, '--entries') != null || valor(palabras, '--file') != null) return null;
-  const base = valor(palabras, '--base');
-  const rango = valor(palabras, '--range');
-  const huella = valor(palabras, '--expect');
-  if (!base || base.startsWith('--') || !rango || rango.startsWith('--')) return { error: 'la firma por rango no dice su base o su rango: no sé qué archivos de control firma' };
-  if (!/^[0-9a-f]{64}$/.test(String(huella || ''))) return { error: 'la firma por rango no trae --expect con la huella de su lista: no sé qué archivos de control firma' };
-  const r = spawnSync('bash', [GUION_DE_CONTROLES, 'entries', '--root', raiz, '--base', base, '--range', rango, '--expect', huella],
-    { cwd: raiz, windowsHide: true, encoding: 'utf8', timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
-  let leido = null;
-  try { leido = r.status === 0 ? JSON.parse(String(r.stdout).trim()) : null; } catch (_) { leido = null; }
-  if (!leido || !Array.isArray(leido.entries) || !leido.entries.length) {
-    const motivo = String(r.stderr || r.stdout || '').trim().split('\n').pop() || (r.error && r.error.message) || 'el guion no contestó';
-    return { error: `no pude armar la lista de la firma por rango (${motivo.slice(0, 200)})` };
-  }
-  for (const e of leido.entries) {
+  const l = listaDelRango(palabras, raiz);
+  if (!l || l.error) return l;
+  for (const e of l.entradas) {
     if (!e || typeof e.path !== 'string' || !e.path) return { error: 'la lista de la firma por rango trae una entrada sin ruta' };
     const no = porQueNoSeVe(e.path);
     if (no) return { error: `la ruta «${rutaALaVista(e.path)}» de la lista ${no}` };
   }
-  return { rutas: leido.entries.map((e) => e.path), entradas: leido.entries };
+  return { rutas: l.entradas.map((e) => e.path), entradas: l.entradas };
+}
+
+// La lista de una firma por rango, armada una vez por proceso del freno: el cuadro, la clasificación y el chequeo previo
+// la piden en la misma decisión, y cada armado lleva unos segundos de los que tiene el freno (fila A10). Se recuerda por
+// la carpeta y las palabras del comando; el `sello` (los commits que el guion resolvió) deja que el chequeo previo la
+// reuse sólo si nada se movió desde entonces.
+const LISTAS = new Map();
+// la opción tal como la lee el guion (`opt` de run-base-controls.sh): sólo separada de su valor
+const opcionDelGuion = (palabras, o) => { const i = (palabras || []).indexOf(o); return i >= 0 && palabras[i + 1] != null ? String(palabras[i + 1]) : null; };
+
+/**
+ * La lista que firma `approve --base <rev> --range <base>...<punta> --expect <huella>`, armada por el guion (`entries`):
+ * `{ entradas, sello }`, `{ error }`, o null si el comando no es por rango (o trae una opción pegada con «=», que el
+ * guion no lee: ahí no se arma nada).
+ */
+function listaDelRango(palabras, raiz) {
+  const p = (palabras || []).map(String);
+  if (p.some((w) => OPCIONES_DEL_GUION.some((o) => w.startsWith(`${o}=`)))) return null;
+  if (!p.includes('--range') || p.includes('--entries') || p.includes('--file')) return null;
+  const base = opcionDelGuion(p, '--base');
+  const rango = opcionDelGuion(p, '--range');
+  const huella = opcionDelGuion(p, '--expect');
+  if (!base || base.startsWith('--') || !rango || rango.startsWith('--')) return { error: 'la firma por rango no dice su base o su rango: no sé qué archivos de control firma' };
+  if (!/^[0-9a-f]{64}$/.test(String(huella || ''))) return { error: 'la firma por rango no trae --expect con la huella de su lista: no sé qué archivos de control firma' };
+  const clave = JSON.stringify([path.resolve(raiz), base, rango, huella]);
+  if (LISTAS.has(clave)) return LISTAS.get(clave);
+  const r = spawnSync('bash', [GUION_DE_CONTROLES, 'entries', '--root', raiz, '--base', base, '--range', rango, '--expect', huella],
+    { cwd: raiz, windowsHide: true, encoding: 'utf8', timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+  let leido = null;
+  try { leido = r.status === 0 ? JSON.parse(String(r.stdout).trim()) : null; } catch (_) { leido = null; }
+  let l;
+  if (!leido || !Array.isArray(leido.entries) || !leido.entries.length) {
+    const motivo = String(r.stderr || r.stdout || '').trim().split('\n').pop() || (r.error && r.error.message) || 'el guion no contestó';
+    l = { error: `no pude armar la lista de la firma por rango (${motivo.slice(0, 200)})` };
+  } else l = { entradas: leido.entries, sello: typeof leido.sello === 'string' ? leido.sello : null };
+  // también la que no contestó a tiempo: volver a pedirla en la misma decisión gastaría otro plazo entero del freno
+  LISTAS.set(clave, l);
+  return l;
 }
 
 /**
@@ -833,4 +859,4 @@ function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, to
   return null;
 }
 
-module.exports = { RETIRAR_OTRA, partesDe, laHistoria,historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida };
+module.exports = { RETIRAR_OTRA, partesDe, laHistoria,historiaDe, seccion, seccionesDelPlan, planDe, carpetaDeLaCorrida, valor, abiertoDeLaCorrida, listaDelRango };

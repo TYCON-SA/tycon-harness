@@ -1939,3 +1939,107 @@ test('SignatureQuestion_ApproveMockup_TextsByContent_FirstApprovalFromTheRun', (
   assert.match(q, /Primera aprobación de la maqueta en esta ejecución/);
   assert.doesNotMatch(q, /Huella: [0-9a-f]{12} →/);
 });
+
+// ── A10: la firma de controles por rango arma la lista del pedido UNA vez por decisión ──────────────────────────────
+// El caso: el freno armaba la lista (`analyze` de run-base-controls.sh) para el cuadro, para la clasificación y para el
+// chequeo previo: tres veces, ~3,5 s cada una sobre el arnés, de los 20 s que tiene el freno. Se cuenta cada armado con
+// un `git` que anota la consulta que sólo hace `analyze` (`rev-list --parents`).
+function repoConPedidoDeControles(t) {
+  const r = path.join(temporal(t, 'sigq-rango-'), 'repo');
+  const escribir = (rel, texto) => { fs.mkdirSync(path.dirname(path.join(r, rel)), { recursive: true }); fs.writeFileSync(path.join(r, rel), texto); };
+  escribir('.githooks/pre-commit-checks', '#!/usr/bin/env bash\nbash "$(git rev-parse --show-toplevel)/scripts/ci/toy-check.sh" || exit 1\n');
+  escribir('scripts/ci/toy-check.sh', '#!/usr/bin/env bash\nexit 0\n');
+  escribir('scripts/ci/toy-rules.json', '{ "mode": "block" }\n');
+  escribir('scripts/ci/controls-from-base.json', JSON.stringify({ hook: '.githooks/pre-commit-checks',
+    passes: [{ name: 'pre-commit', mode: 'index', cmd: ['bash', '.githooks/pre-commit-checks'] }],
+    controls: [{ name: 'toy', script: 'scripts/ci/toy-check.sh', rules: ['scripts/ci/toy-rules.json'] }], content: [], workflows: [], approvals: '.tycon/control-changes/' }, null, 2));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid', GIT_AUTHOR_DATE: '2026-11-04T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-04T12:00:00Z' };
+  // el repo de juguete no trae ganchos: sin la carpeta de ganchos de la máquina, el commit de laboratorio no corre los del arnés
+  const g = (...a) => { const x = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', `core.hooksPath=${path.join(r, '.git', 'sin-ganchos')}`, '-C', r, ...a], { env, encoding: 'utf8' }); assert.strictEqual(x.status, 0, `${a.join(' ')}: ${x.stderr}`); return x.stdout.trim(); };
+  g('init', '-q', '-b', 'main'); g('add', '-A'); g('commit', '-q', '-m', 'base');
+  g('checkout', '-q', '-b', 'pedido');
+  escribir('scripts/ci/toy-rules.json', '{ "mode": "warn" }\n');
+  g('add', '-A'); g('commit', '-q', '-m', 'afloja el control de juguete');
+  return fs.realpathSync(r);
+}
+
+/** `git` en el PATH que anota en `log` cada armado de la lista; lo de adentro corre con el git de siempre. */
+function gitQueCuenta(t, log) {
+  const bin = temporal(t, 'sigq-git-');
+  const real = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nfor a in "$@"; do [ "$a" = "--parents" ] && { echo x >> '${log}'; break; }; done\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const antes = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${antes}`;
+  t.after(() => { process.env.PATH = antes; });
+}
+const armados = (log) => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; } };
+const INI = 'Tue Oct 27 10:00:00 2026';
+const ARBOL_DEL_FRENO = [{ pid: 1, ppid: 0, inicio: INI, comando: '/sbin/launchd' },
+  { pid: 100, ppid: 1, inicio: INI, comando: '/Applications/x/native-binary/claude --output-format stream-json --verbose' },
+  { pid: 200, ppid: 100, inicio: INI, comando: '/bin/bash /h/scripts/hooks/safety-guard-pre.sh' },
+  { pid: 201, ppid: 200, inicio: INI, comando: 'node /h/scripts/lib/owner-window.js gate' }];
+/** La decisión entera del freno ante `cmd`, con la clasificación y el chequeo previo de verdad. */
+function decisionDelFreno(t, repo, cmd) {
+  const casa = temporal(t, 'sigq-casa-');
+  fs.mkdirSync(path.join(casa, '.claude', '.tycon-pipeline', 'active'), { recursive: true });
+  const evento = { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd }, permission_mode: 'default', cwd: repo };
+  return ow.decidir({ evento, escapes: [], arbol: ARBOL_DEL_FRENO, pid: 201, casa, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), tramite: () => ({ ok: false, motivo: null }) });
+}
+function huellaDelPedido(repo) {
+  const pend = spawnSync('bash', [CONTROLES, 'pending', '--root', repo, '--base', 'main', '--range', 'main...HEAD'], { cwd: repo, encoding: 'utf8' });
+  const huella = (/^hash: ([0-9a-f]{64})$/m.exec(pend.stdout) || [])[1];
+  assert.ok(huella, pend.stdout + pend.stderr);
+  return huella;
+}
+const porRango = (repo, huella) => `bash ${CONTROLES} approve --root ${repo} --base main --range main...HEAD --out .tycon/control-changes/ --expect ${huella}`;
+const SIN_BASH = process.platform === 'win32' && 'el git que cuenta es de bash';
+
+// 🔴 Falla con: 3 armados de la lista (el cuadro, la clasificación y el chequeo previo) en lugar de 1.
+test('SignatureQuestion_RangeSignature_BuildsTheListOnce (A10)', { skip: SIN_BASH }, (t) => {
+  const repo = repoConPedidoDeControles(t);
+  const huella = huellaDelPedido(repo);
+  const log = path.join(temporal(t, 'sigq-log-'), 'armados');
+  gitQueCuenta(t, log);
+  const r = decisionDelFreno(t, repo, porRango(repo, huella));
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.deepStrictEqual(r.firmas, ['control-change']);
+  assert.match(r.texto, /Cambia 1 archivo\(s\) de control: \+1 −1 líneas/, 'el cuadro sale de la lista del pedido');
+  assert.strictEqual(armados(log), 1, 'la lista del pedido se arma una vez por decisión');
+});
+
+// La lista que trae el ambiente vale sólo en el chequeo previo, fuera de la terminal y con el sello de ahora; sobre ella
+// se comprueba igual la huella del comando. Una lista falsa nunca da «ok» con otra huella ni llega a escribirse.
+test('SignatureQuestion_RangeSignature_ReusedListOnlyInThePrecheck (A10)', { skip: SIN_BASH }, (t) => {
+  const repo = repoConPedidoDeControles(t);
+  const huella = huellaDelPedido(repo);
+  const lista = JSON.parse(spawnSync('bash', [CONTROLES, 'entries', '--root', repo, '--base', 'main', '--range', 'main...HEAD', '--expect', huella], { cwd: repo, encoding: 'utf8' }).stdout);
+  assert.ok(lista.sello, 'entries da el sello de los commits de la lista');
+  const log = path.join(temporal(t, 'sigq-log-'), 'armados');
+  gitQueCuenta(t, log);
+  const casa = temporal(t, 'sigq-casa-');
+  const correr = (env, extra = []) => {
+    fs.rmSync(log, { force: true });
+    const args = [CONTROLES, 'approve', '--root', repo, '--base', 'main', '--range', 'main...HEAD', '--out', '.tycon/control-changes/', '--expect', huella, ...extra];
+    const r = spawnSync('bash', args, { cwd: repo, encoding: 'utf8', input: '', env: { ...process.env, HOME: casa, TYCON_SIGN_PRECHECK: '', BASE_CONTROLS_PRECHECK_LIST: '', ...env } });
+    return { ...r, armados: armados(log), ok: String(r.stdout).includes(ow.PRECHEQUEO_OK) };
+  };
+  const conLista = (l) => JSON.stringify(l);
+  // en el chequeo, con su sello: se reusa sin armarla
+  let r = correr({ TYCON_SIGN_PRECHECK: '1', BASE_CONTROLS_PRECHECK_LIST: conLista({ entries: lista.entries, sello: lista.sello }) });
+  assert.ok(r.ok, r.stderr);
+  assert.strictEqual(r.armados, 0, 'en el chequeo, con su sello, la lista no se vuelve a armar');
+  // otro sello (un commit que se movió): se arma de nuevo
+  r = correr({ TYCON_SIGN_PRECHECK: '1', BASE_CONTROLS_PRECHECK_LIST: conLista({ entries: lista.entries, sello: '["otro"]' }) });
+  assert.ok(r.ok, r.stderr);
+  assert.strictEqual(r.armados, 1, 'con otro sello se arma desde el pedido');
+  // una lista falsa con el sello bueno: la huella del comando no coincide y el chequeo se niega
+  r = correr({ TYCON_SIGN_PRECHECK: '1', BASE_CONTROLS_PRECHECK_LIST: conLista({ entries: [{ path: 'docs/otro.txt', blob: 'borrado' }], sello: lista.sello }) });
+  assert.ok(!r.ok && r.status !== 0, `una lista falsa no da «ok»: ${r.stdout}`);
+  // fuera del chequeo o con --terminal, la lista del ambiente no cuenta: se arma desde el pedido
+  for (const [env, extra] of [[{ BASE_CONTROLS_PRECHECK_LIST: conLista({ entries: lista.entries, sello: lista.sello }) }, []],
+    [{ TYCON_SIGN_PRECHECK: '1', BASE_CONTROLS_PRECHECK_LIST: conLista({ entries: lista.entries, sello: lista.sello }) }, ['--terminal']]]) {
+    r = correr(env, extra);
+    assert.strictEqual(r.armados, 1, `la lista del ambiente no cuenta (${extra.join(' ') || 'sin chequeo'}): ${r.stderr}`);
+  }
+  assert.ok(!fs.existsSync(path.join(repo, '.tycon', 'control-changes')), 'ninguna corrida escribió una constancia');
+});

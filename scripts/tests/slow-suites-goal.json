@@ -1,5 +1,5 @@
 {
-  "__doc": "El registro de la meta de las suites lentas: la suite completa en la Mac de quien mantiene tarda menos de 20 min de reloj. `antes` y `despues` son las dos mediciones de la suite completa (TYCON_GATE_ALL_SUITES=1 sobre una copia del público en un commit fijo), cada una con su commit, su carga al arrancar y cuántas corrieron a la vez. Se toman en un día normal, con la carga que haya y la regla de trabajadores sin variable, seguidas: son también `antes_con_carga` y `despues_con_carga`. Si el después no llega, `falta_s` dice cuánto falta y `excepcion` trae la del dueño. `bajadas`, una fila por suite que se bajó: su tiempo de antes, la meta (la mitad o 60 s, lo que sea mayor), el de después, qué se cambió, qué se rompió a propósito y qué caso dio rojo, y la excepción escrita del dueño si no llegó. `github`, los segundos de cada parte de suites de la CI de GitHub: el antes, de una corrida de la cola de merge sobre main; el después, de la CI del pedido, cuando corre. Lo lee scripts/tests/slow-suites-goal.test.js: con las tablas vacías da rojo.",
+  "__doc": "El registro de la meta de las suites lentas: la suite completa en la Mac de quien mantiene tarda menos de 20 min de reloj. `antes` y `despues` son las dos mediciones de la suite completa (TYCON_GATE_ALL_SUITES=1 sobre una copia del público en un commit fijo), cada una con su commit, su carga al arrancar y cuántas corrieron a la vez. Se toman en un día normal, con la carga que haya y la regla de trabajadores sin variable, seguidas: son también `antes_con_carga` y `despues_con_carga`. `antes_vacia` y `despues_vacia` son las mismas dos mediciones con la máquina quieta (Decisión 9 de la 8.208): la carga de 1 min en 4 o menos al arrancar, 8 a la vez (TYCON_SUITES_MAX_WORKERS=8), sin otra sesión trabajando; `carga_max` es la mayor carga de 1 min durante la corrida (la de las propias suites) y `suma_comunes_s` suma sólo las suites que están en los dos commits. Si el después no llega, `falta_s` dice cuánto falta y `excepcion` trae la del dueño. `bajadas`, una fila por suite que se bajó: su tiempo de antes, la meta (la mitad o 60 s, lo que sea mayor), el de después, qué se cambió, qué se rompió a propósito y qué caso dio rojo, y la excepción escrita del dueño si no llegó. `github`, los segundos de cada parte de suites de la CI de GitHub: el antes, de una corrida de la cola de merge sobre main; el después, de la CI del pedido, cuando corre. Lo lee scripts/tests/slow-suites-goal.test.js: con las tablas vacías da rojo.",
   "antes": {
     "commit": "5a48ea35e299c6be44716c562ab854f85b9be6cc",
     "fecha": "2026-11-17T13:33",
@@ -71,6 +71,58 @@
     "mediana_s": 5.6,
     "falta_s": 5645,
     "excepcion": "aceptada por el dueño (17/11 16:30, «si», por Coordinadora-2): la suite completa no llega a 20 min; queda escrito cuánto falta y la meta se vuelve a medir en el seguimiento con la máquina vacía"
+  },
+  "antes_vacia": {
+    "commit": "5a48ea35e299c6be44716c562ab854f85b9be6cc",
+    "fecha": "2026-11-28T03:57",
+    "carga": 3.59,
+    "trabajadores": 8,
+    "nucleos": 10,
+    "suites": 791,
+    "verdes": 783,
+    "rojas": [
+      "tycon-pipeline/scripts/tests/packs.test.js",
+      "tests/rules-catalog.test.sh",
+      "tests/installer-repeated-hooks.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/installer-shared-pieces.p1.test.sh",
+      "tests/minimal-lane-gate.test.sh",
+      "tests/unclosed-runs.test.js",
+      "tests/trimmed-close.test.sh"
+    ],
+    "reloj_s": 3147,
+    "suma_s": 20288,
+    "mediana_s": 4.9,
+    "carga_max": 22.61
+  },
+  "despues_vacia": {
+    "commit": "2c77641850ee67526fc6902009a44c7312a51fda",
+    "fecha": "2026-11-28T04:50",
+    "carga": 3.39,
+    "trabajadores": 8,
+    "nucleos": 10,
+    "suites": 801,
+    "verdes": 793,
+    "rojas": [
+      "tycon-pipeline/scripts/tests/packs.test.js",
+      "tests/rules-catalog.test.sh",
+      "tests/harness-install.test.sh",
+      "tests/installer-shared-pieces.p1.test.sh",
+      "tests/minimal-lane-gate.test.sh",
+      "tests/unclosed-runs.test.js",
+      "tests/temp-sweep.test.js",
+      "tests/trimmed-close.test.sh"
+    ],
+    "reloj_s": 3184,
+    "suma_s": 20369,
+    "mediana_s": 5,
+    "carga_max": 15.12,
+    "suma_comunes_s": {
+      "antes": 20288,
+      "despues": 20252,
+      "suites": 791
+    },
+    "falta_s": 1984
   },
   "bajadas": [
     {

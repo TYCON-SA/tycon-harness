@@ -18,6 +18,21 @@ const os = require('os');
 const path = require('path');
 
 const SCRIPTS = path.join(__dirname, '..');
+// Una ruta dentro de un comando de bash, como la escribe quien usa bash en Windows (Git Bash): entre comillas simples
+// (sin comillas, bash se come las barras invertidas y el comando escribe en otro lado) o con barras normales (cuando
+// la palabra lleva un blanco escapado, o va adentro de `env -S`, que procesa las barras invertidas). Fuera de Windows,
+// la ruta tal cual.
+const enBash = (p) => (process.platform === 'win32' ? `'${p}'` : p);
+const conBarras = (p) => (process.platform === 'win32' ? String(p).split('\\').join('/') : p);
+// La misma ruta en la forma de Git Bash (`C:\\a` → `/c/a`)
+const deGitBash = (p) => `/${String(p)[0].toLowerCase()}${conBarras(p).slice(2)}`;
+// La misma ruta aunque la carpeta temporal se nombre distinto (en Windows, `TEMP` o `Temp` según quién la arma): por la
+// carpeta real y, en Windows, sin mayúsculas
+const mismaRuta = (a, b) => {
+  const real = (x) => { try { return path.join(fs.realpathSync.native(path.dirname(x)), path.basename(x)); } catch (_) { return x; } };
+  const n = (x) => (process.platform === 'win32' ? path.resolve(real(x)).toLowerCase() : real(x)); // en Windows el disco no distingue mayúsculas
+  return n(a) === n(b);
+};
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
 const io = require(path.join(SCRIPTS, 'lib', 'story-gate-io.js'));
 const bash = require(path.join(SCRIPTS, 'on-bash-write-gate.js'));
@@ -624,22 +639,22 @@ test('BashWrite_InstalledTree_OtherForms', () => {
     `sed -i '' 's/x/y/' "${g}"`,
     `echo x | tee -a "${path.join(tree, 'f')}"`,
     `echo x >| "${g}"`,
-    `cp -rt ${tree} a`,
-    `mv -vt ${tree} a`,
-    `cp -t${tree} a`,
+    `cp -rt ${enBash(tree)} a`,
+    `mv -vt ${enBash(tree)} a`,
+    `cp -t${enBash(tree)} a`,
     `Copy-Item a ${path.join(tree, 'b.md')} 2>&1`,
     `cp a "b.md"`.replace('"b.md"', `"${path.join(tree, 'b.md')}"`),
-    `cp a ${path.join(tree, 'b.md')} -f`,
+    `cp a ${enBash(path.join(tree, 'b.md'))} -f`,
     `Copy-Item a ${path.join(tree, 'b.md')} -Force`,
-    `cp a ${path.join(tree, 'b.md')} # nota`,
-    `cp -t /tmp/x -t ${tree} a`,
-    `mv --target-directory ${tree} a`,
-    `perl -i.bak -pe 's/x/y/' ${g}`,
-    `perl -pi.bak -e 's/x/y/' ${g}`,
-    `sed -i ${g} -ne p`,
-    `sed -i 's/a b/c/' ${g}`,
-    `sed -i -es/a/b/ ${g}`,
-    `sed -i -e 's/a/b/' ${g}`,
+    `cp a ${enBash(path.join(tree, 'b.md'))} # nota`,
+    `cp -t /tmp/x -t ${enBash(tree)} a`,
+    `mv --target-directory ${enBash(tree)} a`,
+    `perl -i.bak -pe 's/x/y/' ${enBash(g)}`,
+    `perl -pi.bak -e 's/x/y/' ${enBash(g)}`,
+    `sed -i ${enBash(g)} -ne p`,
+    `sed -i 's/a b/c/' ${enBash(g)}`,
+    `sed -i -es/a/b/ ${enBash(g)}`,
+    `sed -i -e 's/a/b/' ${enBash(g)}`,
   ]) {
     const b = bash.handle(ev(cmd), opts);
     assert.ok(b && /el arnés instalado no se edita/.test(b.block), cmd);
@@ -1086,6 +1101,13 @@ test('T32b Freno_DeshacerEnBloque', { skip: SIN_GIT_T32B }, () => {
     // con código cambiado, deshacerlo en bloque frena y nombra el archivo
     fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 2;\n');
     assert.match(frena('git reset --hard'), /src[\\/]a\.ts/);
+    // 🔴 el ensayo de un find que borra código no ve de menos: un comodín que en la carpeta de la sesión cumple un solo
+    // archivo (en Windows, el find de Git lanzado desde node lo expandía y buscaba ese nombre), y en Windows el
+    // arranque de Git Bash (`/c/…`), cuyas rutas caían fuera del repo
+    fs.writeFileSync(path.join(repo, 'suelto.ts'), 'x\n');
+    frena("find src -name '*.ts' -delete");
+    if (process.platform === 'win32') frena(`find ${deGitBash(repo)}/src -name '*.ts' -delete`);
+    fs.rmSync(path.join(repo, 'suelto.ts'));
     frena('git reset --hard HEAD');
     frena('git reset --merge');
     frena('git stash');
@@ -1125,12 +1147,12 @@ test('T32b Freno_DeshacerEnBloque', { skip: SIN_GIT_T32B }, () => {
     pasa('git clean -n');
     pasa('git clean -fd');
     const anotados = () => fs.readFileSync(path.join(stateDir, 'console-writes', 's1.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.ok(anotados().some((l) => l.path === path.join(repo, 'src', 'nuevo.ts') && l.kind === 'delete'), JSON.stringify(anotados()));
+    assert.ok(anotados().some((l) => mismaRuta(l.path, path.join(repo, 'src', 'nuevo.ts')) && l.kind === 'delete'), JSON.stringify(anotados()));
     // y lo que el stash con -u se lleva sin que git lo siga, también
     fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 1;\n');
     fs.writeFileSync(path.join(repo, 'src', 'otro.ts'), 'export const o = 1;\n');
     pasa('git stash -u');
-    assert.ok(anotados().some((l) => l.path === path.join(repo, 'src', 'otro.ts') && l.kind === 'delete'), JSON.stringify(anotados()));
+    assert.ok(anotados().some((l) => mismaRuta(l.path, path.join(repo, 'src', 'otro.ts')) && l.kind === 'delete'), JSON.stringify(anotados()));
     fs.unlinkSync(path.join(repo, 'src', 'otro.ts'));
     // ensayar git clean no borra nada, aunque el comando traiga --no-dry-run y el repo no pida -f
     fs.writeFileSync(path.join(repo, 'src', 'queda.ts'), 'x\n');
@@ -1321,7 +1343,7 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-
       assert.ok(r && r.block, cmd);
     }
     // los dos del arnés pasan: el corredor del pase con su --out y marker.js plan-review
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${E}/plan-review/s1/s1.args.json' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${path.join(E, 'plan-review', 's1', 's1.args.json')}' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     assert.equal(bash.handle(ev(`node ${path.join(SCRIPTS, 'marker.js')} plan-review --result ${res} --model opus`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
@@ -1456,10 +1478,10 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     assert.ok(Date.now() - desde < 1500, `env -S con miles de palabras: ${Date.now() - desde} ms`);
     // lo de siempre sigue pasando
     pasa(`install -m 644 ${S} '${repo}/copia.json'`);
-    pasa(`rsync -a ${S} '${repo}/copia.json'`);
+    pasa(`rsync -a ${enBash(S)} '${repo}/copia.json'`);
     // el valor de una opción de rsync no es el destino
-    pasa(`rsync -a ${S} '${repo}/copia/' --exclude specs/story-9.9-algo.md`);
-    pasa(`rsync -a ${S} '${repo}/copia/' -f '- x' --filter specs/story-9.9-algo.md`);
+    pasa(`rsync -a ${enBash(S)} '${repo}/copia/' --exclude specs/story-9.9-algo.md`);
+    pasa(`rsync -a ${enBash(S)} '${repo}/copia/' -f '- x' --filter specs/story-9.9-algo.md`);
     pasa(`install -m 644 ${S} '${repo}/copia.json' --mode 600`);
     pasa(`env HOLA=1 cp ${S} '${repo}/copia.json'`);
     pasa('npm install left-pad');
@@ -1536,7 +1558,7 @@ test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el
       frena(`echo x ${op}'${res}'`);
     }
     // P4: un destino citado con blancos u operadores adentro, o con un blanco escapado, detrás de una redirección
-    const citados = [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${E}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`];
+    const citados = [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${conBarras(E)}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`];
     for (const nombre of citados) frena(`echo x > ${nombre}`);
     for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) frena(`${delante} truncate -s0 '${res}'`);
     // lo que sigue lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
@@ -1574,7 +1596,7 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   const E = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'f228-')));
   const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
   const S = path.join(E, '..', 'falso.json');
-  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).some((t) => mismaRuta(t, res)), JSON.stringify(cmd));
   // de acá hasta los envoltorios lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
   if (CON_LECTOR) {
     // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
@@ -1583,15 +1605,15 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
     // una sustitución detrás del destino puede no dar ninguna palabra: el destino puede ser la de antes
     visto(`cp ${S} '${res}' $(true)`);
     // el texto de `env -S`, que env parte en palabras y corre
-    for (const cmd of [`env -S 'cp ${S} ${res}'`, `env -S"cp ${S} ${res}"`, `env --split-string='cp ${S} ${res}'`, `env -iS 'cp ${S} ${res}'`]) visto(cmd);
+    for (const cmd of [`env -S 'cp ${conBarras(S)} ${conBarras(res)}'`, `env -S"cp ${conBarras(S)} ${conBarras(res)}"`, `env --split-string='cp ${conBarras(S)} ${conBarras(res)}'`, `env -iS 'cp ${conBarras(S)} ${conBarras(res)}'`]) visto(cmd);
     // los archivos que escribe rsync por sus opciones
     for (const op of ['--log-file=', '--log-file ', '--write-batch=', '--only-write-batch ']) visto(`rsync ${op}'${res}' a b`);
     // una sustitución pegada al nombre de un envoltorio o de tee
     visto(`nohup$(:/ ) cp ${S} '${res}'`);
     visto(`tee$(:/ ) '${res}' < ${S}`);
     // un destino escrito con el citado ANSI-C, con o sin escapes
-    visto(`echo x > $'${res}'`);
-    visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
+    visto(`echo x > $'${conBarras(res)}'`);
+    visto(`cp ${S} $'${conBarras(res).slice(0, -1)}\\x6e'`);
   }
   // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
   for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
@@ -1779,7 +1801,7 @@ test('PlanReview_ArgsFile_ElComandoDelArnesPasa_LasFalsificacionesNo (T28, el fr
     // el comando tal como lo arma la revisión del plan: sin lista de corredores, y con la de la organización
     pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
     pasa(PR.comandoLite(args, res));
-    pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+    pasa(`node '${lite}' '${wf}' --args-file=${enBash(args)} --out '${res}'`);
     // otro archivo, dos veces, junto con --args, en una variable o con revisores propios
     frena(`node '${lite}' '${wf}' --args-file /tmp/mio.args.json --out '${res}'`);
     frena(`node '${lite}' '${wf}' --args-file '${args}' --args-file /tmp/mio.args.json --out '${res}'`);
@@ -1823,7 +1845,7 @@ test('PlanReview_ArgsFile_SoloLaRutaExactaDelArnes (fila 212, el freno)', () => 
       // el comando del arnés, tal cual o con la ruta pegada a la opción, pasa
       pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
       pasa(PR.comandoLite(args, res));
-      pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+      pasa(`node '${lite}' '${wf}' --args-file=${enBash(args)} --out '${res}'`);
       pasa(`node '${lite}' '${wf}' --args-file='${args}' --out '${res}'`);
       // a. un `..` adentro de la carpeta de la revisión
       frena(corre(`'${path.join(E, 'plan-review')}/${path.relative(path.join(E, 'plan-review'), falso)}'`));
@@ -1978,6 +2000,35 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
     const r = gate.computeStoryGate({ ...EN_OTRO, marker: APROBADO, isHarness: true, grupo: FUERA });
     assert.equal(r.action, 'pass');
     assert.match(r.reason, /harness/);
+  });
+});
+
+// 🔴 Lo que en Windows sí escribe en el estado o en el arnés instalado: la ruta entre comillas (bash conserva las barras
+// invertidas), con barras normales (`C:/…`) o en la forma de Git Bash (`/c/…`). Las tres son el mismo archivo y tienen
+// que frenar como en Mac. Sin comillas y con barras invertidas, bash se come las barras y el comando escribe en otro lado:
+// eso no es una escritura al estado (las pruebas de arriba arman sus rutas con `enBash`).
+test('EscrituraAlEstado_FormasDeWindows_Frena', { skip: process.platform !== 'win32' && 'las formas de ruta de Windows (comillas, C:/, /c/) sólo se miden en Windows' }, () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const formas = (p) => [`'${p}'`, `"${p}"`, conBarras(p), deGitBash(p)];
+  const { tree } = mkInstalled();
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd, roots = [arnes]) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: roots }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    for (const f of formas(res)) {
+      frena(`cp ${enBash(S)} ${f}`);
+      frena(`rsync -a ${enBash(S)} ${f}`);
+      frena(`echo x > ${f}`);
+      frena(`env cp ${enBash(S)} ${f}`);
+    }
+    frena(`env -S 'cp ${conBarras(S)} ${conBarras(res)}'`);
+    frena(`env -S 'cp ${conBarras(S)} ${deGitBash(res)}'`);
+    for (const f of formas(tree)) frena(`cp -rt ${f} a`, [tree]);
   });
 });
 

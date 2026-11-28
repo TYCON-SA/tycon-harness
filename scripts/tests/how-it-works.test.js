@@ -1763,16 +1763,6 @@ test('A176_HowItWorks_TuOrganizacion_EnPalabrasDeLaPantalla', () => conCasa(() =
   }
 }));
 
-// 🔴 Falla con (A153, recorrido F21): el monitor de disco sólo avisa y figuraba en «Anotan»; la puesta al día del freno
-//    de producción actúa por su cuenta y figuraba en «Avisan». Cada control, en el grupo de lo que hace.
-test('A153 Controles_CadaUnoEnElGrupoDeLoQueHace', () => {
-  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
-  const hooks = Array.isArray(lista) ? lista : lista.hooks;
-  const de = (spec) => hooks.find((h) => h.spec === spec);
-  assert.strictEqual(de('@tcg:disk-notice.js').effect, 'warns', 'el disco sólo avisa');
-  assert.strictEqual(de('@tcg:guard-auto-update.js').effect, 'records', 'la puesta al día del freno actúa sola: anota');
-});
-
 // 🔴 Falla con (A155, recorrido F21): «Cómo trabaja» decía «nombres de prueba: any», «ADO», «deprecado», «mergearon» y
 //    «en choque»: jerga sin traducir.
 test('A155 ComoTrabaja_SinJerga', () => {
@@ -1787,4 +1777,16 @@ test('A155 ComoTrabaja_SinJerga', () => {
   // el estilo de nombres con las palabras del selector de Configuración, no el valor guardado
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'how-it-works.js'), 'utf8');
   assert.match(src, /tecCualquierNombre/, 'el valor «any» se dice con las palabras del selector');
+});
+
+// 🔴 mutación: un gancho que le dice algo a la sesión al arrancar (el aviso del disco) en «Anotan», que según la
+// leyenda no avisa; o la descripción de uno de «Avisan» que no dice qué avisa (A181).
+test('A181 Arranque_CadaPiezaEnElGrupoDeLoQueHace — el aviso del disco avisa; la actualización del freno dice que lo avisa', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  const efecto = (spec) => (lista.find((h) => h.spec === spec) || {}).effect;
+  assert.strictEqual(efecto('@tcg:disk-notice.js'), 'warns', 'dice al arrancar cuánto disco queda: avisa');
+  assert.strictEqual(efecto('@tcg:guard-auto-update.js'), 'warns', 'actúa y lo dice al arrancar');
+  const TX = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.match(TX.t('es', 'control.@tcg:guard-auto-update.js'), /lo dice al arrancar/);
+  assert.match(TX.t('en', 'control.@tcg:guard-auto-update.js'), /says so at startup/);
 });
