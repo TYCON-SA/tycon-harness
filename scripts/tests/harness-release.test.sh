@@ -502,7 +502,24 @@ if corre T17; then
   case "$out" in *"lab-third"*) mal "lo de terceros se contó como de más: $out" ;; *) ok "lo de terceros no se cuenta como de más" ;; esac
   # sin git en el PATH, doctor corre igual; sin --fetch no sale a la red
   : > "$LAB_RELEASE_LOG"
-  mkdir -p "$BASE/bin-sin-git"; for b in node python3 bash sh; do p="$(command -v $b)"; [ -n "$p" ] && ln -sf "$p" "$BASE/bin-sin-git/$b"; done
+  # Un python3 que es un atajo de un gestor de versiones (pyenv; asdf o volta para node): un guion que llama al gestor,
+  # que no está en el PATH reducido. Se arma uno de mentira delante del PATH, como en la máquina del reporte (#1855).
+  PY_REAL="$(command -v python3)"
+  mkdir -p "$BASE/gestor-bin" "$BASE/atajos"
+  printf '#!/bin/sh\nshift 2\nexec "%s" "$@"\n' "$PY_REAL" > "$BASE/gestor-bin/pyenv-falso"
+  printf '#!/bin/sh\nexec pyenv-falso exec python3 "$@"\n' > "$BASE/atajos/python3"
+  chmod +x "$BASE/gestor-bin/pyenv-falso" "$BASE/atajos/python3"
+  # Se enlaza el ejecutable real, no el primero del PATH: el atajo, sin su gestor, no contesta ni a --version
+  mkdir -p "$BASE/bin-sin-git"
+  real_de() { # $1 = comando → la ruta del ejecutable que de verdad corre, preguntándole a él mismo
+    local PATH="$BASE/atajos:$BASE/gestor-bin:$PATH"
+    case "$1" in
+      node) node -p process.execPath 2>/dev/null ;;
+      python3) python3 -c 'import sys; print(sys.executable)' 2>/dev/null ;;
+      *) command -v "$1" ;;
+    esac
+  }
+  for b in node python3 bash sh; do p="$(real_de $b)"; [ -n "$p" ] && ln -sf "$p" "$BASE/bin-sin-git/$b"; done
   out="$(PATH="$BASE/bin-sin-git" harness_release doctor 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "sin git en el PATH, doctor sale 0" || mal "sin git: doctor salió $rc: $out"
   case "$out" in *"falta git"*) mal "pide git: $out" ;; *) ok "no pide git" ;; esac
