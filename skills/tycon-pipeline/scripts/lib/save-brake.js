@@ -1046,7 +1046,61 @@ function comandosQueGuardan(command, cwd, home) {
 const PARECE_GUARDAR = new Set(['commit', 'push', 'pr', 'merge', 'repos']);
 // los programas que cambian archivos: con `-i` (sed, perl), con su salida escrita (curl), o siempre
 const ESCRIBEN = new Set(['tee', 'touch', 'cp', 'mv', 'rm', 'ln', 'install', 'truncate', 'chmod', 'rsync']);
-const ESCRIBEN_EN_LA_CARPETA = new Set(['patch', 'wget', 'unzip', 'tar']);
+const ESCRIBEN_EN_LA_CARPETA = new Set(['patch', 'wget', 'tar']);
+// el que abre un zip: dónde escribe lo dice `dondeAbreElZip`
+const ABREN_ZIP = new Set(['unzip']);
+// dónde escribe un `unzip`. Ante cualquier duda, la carpeta del shell, como cualquier programa que escribe ahí: sólo
+// afloja lo que se lee seguro.
+//   · listar o probar (`-l`, `-t`, `-v`, `-z`, `-Z`) y mandar a la salida (`-p`, `-c`) no escriben, pero sólo cuentan
+//     antes del nombre del zip: después van los nombres de adentro, `-x` con su lista y `-d` como palabra propia.
+//   · las banderas se leen letra por letra; lo que sigue a `d`, `P`, `O` o `I` (estas dos llevan valor en el unzip de
+//     Debian y Fedora) en el mismo grupo es su valor, y si no hay nada pegado lo es la palabra siguiente: «-dout»
+//     extrae en «out» aunque traiga una t, y la clave de «-P -l» no es una bandera.
+//   · un guion dentro de un grupo (la negación: «--l», «-o-l», «-t--q»), una palabra «--», `-:` (deja que los de
+//     adentro salgan de la carpeta de `-d`), una `x` antes del zip y las variables UNZIP / UNZIPOPT (sus opciones van
+//     primero) nombradas en el comando no se leen: la carpeta. Puestas desde antes en el entorno no se ven.
+//   · extraer escribe en la carpeta de `-d` sólo si hay uno solo, no viene después de `-x` y no trae una variable, un
+//     comodín, llaves ni `~` (el shell los cambia); si no, la carpeta del shell.
+// Casos: tests/save-brake-archive.test.js
+const UNZIP_NO_ESCRIBE = 'ltvzZpc';
+const UNZIP_CON_VALOR = 'dPOI';
+function dondeAbreElZip(args, dirs) {
+  let k = 0;
+  let noEscribe = false;
+  const destinos = [];
+  // las opciones, hasta el nombre del zip
+  for (; k < args.length && args[k].startsWith('-'); k++) {
+    const w = args[k];
+    if (w.length < 2) return dirs;
+    for (let j = 1; j < w.length; j++) {
+      const c = w[j];
+      // la negación («--l», «-o-l»), lo que no es una bandera de unzip, `-:` (deja salir de la carpeta de `-d`) y una `x`
+      // antes del zip (en el unzip de FreeBSD lleva valor) no se leen
+      if (!/[A-Za-z0-9$^]/.test(c) || c === 'x') return dirs;
+      if (UNZIP_CON_VALOR.includes(c)) {
+        const v = j + 1 < w.length ? w.slice(j + 1) : args[++k];
+        if (v === undefined) return dirs;
+        if (c === 'd') destinos.push(v);
+        break;
+      }
+      if (UNZIP_NO_ESCRIBE.includes(c)) noEscribe = true;
+    }
+  }
+  if (noEscribe) return [];
+  // después del nombre del zip: los de adentro, `-x` con su lista y `-d <carpeta>`
+  let conExcluidos = false;
+  for (k += 1; k < args.length; k++) {
+    const w = args[k];
+    if (w === '-x') conExcluidos = true;
+    else if (w === '-d' && !conExcluidos && args[k + 1] !== undefined) destinos.push(args[++k]);
+    else if (w.startsWith('-')) return dirs;
+  }
+  if (destinos.length !== 1) return dirs;
+  const destino = destinos[0];
+  if (conVariable(destino) || /[*?[\]{}~]/.test(destino) || destino === '') return dirs;
+  return dirs.map((d) => path.resolve(d, destino));
+}
+
 // un archivo nombrado que existe, o cuya carpeta existe (el que se crea): `s/a/b/` de un sed no lo es
 function rutasEscritas(args, dirs) {
   const out = [];
@@ -1163,6 +1217,10 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
       for (let k = 0; k < args.length; k++) if (/^(-o|--output)$/.test(args[k])) escritos.push(...rutasEscritas([args[k + 1]], ctx.dirs));
     } else if (cmd === 'dd') {
       escritos.push(...rutasEscritas(args.filter((a) => a.startsWith('of=')).map((a) => a.slice(3)), ctx.dirs));
+    } else if (ABREN_ZIP.has(cmd)) {
+      // las opciones de las variables UNZIP / UNZIPOPT van antes que las de la línea (un «--» ahí niega el `-l`): si el
+      // comando las nombra, la carpeta del shell
+      escritos.push(...(/UNZIP/.test(command) ? ctx.dirs : dondeAbreElZip(args, ctx.dirs)));
     } else if (ESCRIBEN_EN_LA_CARPETA.has(cmd)) escritos.push(...ctx.dirs);
   }
 

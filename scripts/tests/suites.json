@@ -815,6 +815,12 @@
       "requiere": []
     },
     {
+      "__nota": "dónde escribe un unzip para el freno de guardar: listar, probar o mandar a la salida no escribe, y extraer escribe en la carpeta de -d o en la del shell. Aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-archive.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el pedido sin preparar que no es de la historia dice la salida (la coordinadora cierra la ejecución con el comando exacto); aparte de save-brake.test.js, que es de las suites bajadas.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake-way-out.test.js",
