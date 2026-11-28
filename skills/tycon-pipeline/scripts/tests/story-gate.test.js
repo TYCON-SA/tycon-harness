@@ -30,7 +30,7 @@ const deGitBash = (p) => `/${String(p)[0].toLowerCase()}${conBarras(p).slice(2)}
 // carpeta real y, en Windows, sin mayúsculas
 const mismaRuta = (a, b) => {
   const real = (x) => { try { return path.join(fs.realpathSync.native(path.dirname(x)), path.basename(x)); } catch (_) { return x; } };
-  const n = (x) => (process.platform === 'win32' ? path.resolve(real(x)).toLowerCase() : real(x));
+  const n = (x) => (process.platform === 'win32' ? path.resolve(real(x)).toLowerCase() : real(x)); // en Windows el disco no distingue mayúsculas
   return n(a) === n(b);
 };
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
@@ -2007,7 +2007,7 @@ test('T13 StoryGate_ArnesFueraDelRepo_SigueIgual @story-8.317 @ac-9', () => {
 // invertidas), con barras normales (`C:/…`) o en la forma de Git Bash (`/c/…`). Las tres son el mismo archivo y tienen
 // que frenar como en Mac. Sin comillas y con barras invertidas, bash se come las barras y el comando escribe en otro lado:
 // eso no es una escritura al estado (las pruebas de arriba arman sus rutas con `enBash`).
-test('EscrituraAlEstado_FormasDeWindows_Frena', { skip: process.platform !== 'win32' }, () => {
+test('EscrituraAlEstado_FormasDeWindows_Frena', { skip: process.platform !== 'win32' && 'las formas de ruta de Windows (comillas, C:/, /c/) sólo se miden en Windows' }, () => {
   const { stateDir, repo } = corridaAbierta();
   const E = stateDir;
   fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
