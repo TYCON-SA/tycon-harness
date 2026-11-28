@@ -254,7 +254,7 @@ const { resolveSessionId } = require('./lib/session-id.js');
 const { expandirRuta } = require('./lib/command-vars.js');
 // las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
 // nombre y deja su renglón, como un `require` de arriba del freno entero
-const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
+const { BORRA_O_MUEVE, MENCIONA_HISTORIA, RAIZ_DEL_ARNES, SHELL_CON_C, archivoQueNoCompila, TOPE_DE_CABECERAS, variantesConSeparador, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
 const { algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
 const { anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
 const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, fotosTocadas, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
@@ -304,11 +304,43 @@ function paso(texto) {
   try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
 }
 
+/**
+ * El cuerpo de un `for ((…)) do …` sin `;` antes del `do` corre como un comando: si el comando tiene un `for ((`, se lee
+ * también con el `;` detrás de las cabeceras (`variantesConSeparador`: con todas y con cada una sola), y frena si
+ * cualquiera de las lecturas frena. La de tal cual ve lo que un `;` cortaría (un `for ((` citado en un argumento); las
+ * otras, el `for` donde corra, también con un señuelo citado en su cuerpo. Con más cabeceras sin `;` que el tope, frena
+ * sin leerlas. Las de más sólo deciden y no vuelven a juzgar lo de la coordinadora, que ya leyó todas las versiones con
+ * el click del dueño al comando que llegó (`comandoTalCual`).
+ */
 function handle(event, opts = {}) {
+  const r = handleConComentarios(event, opts);
+  if (r && r.block) return r;
+  const original = event?.tool_input?.command;
+  const variantes = typeof original === 'string' ? variantesConSeparador(original) : [];
+  if (!variantes.length) return r;
+  if (variantes.demasiadas) {
+    return { block: `⛔ tycon-pipeline — DEMASIADOS for (( )) SIN «;»\n\n  El comando tiene más de ${TOPE_DE_CABECERAS} cabeceras \`for ((…))\` sin \`;\` antes del \`do\`: no se puede leer qué corre cada cuerpo.\n  Poné el \`;\` (\`for ((…)); do\`) o partilo en comandos más chicos.\n` };
+  }
+  paso('las lecturas con un ; detrás de los for (( ))');
+  const antes = modoDeLectura().soloDecidir;
+  modoDeLectura({ soloDecidir: true });
+  try {
+    for (const v of variantes) {
+      const conSeparador = handleConComentarios({ ...event, comandoTalCual: original, tool_input: { ...event.tool_input, command: v } }, opts);
+      if (conSeparador && conSeparador.block) return conSeparador;
+    }
+  } finally {
+    modoDeLectura({ soloDecidir: antes });
+  }
+  return r;
+}
+
+function handleConComentarios(event, opts = {}) {
   modoDeLectura({ apagoAlgo: false });
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !modoDeLectura().apagoAlgo) return r;
   paso('la segunda lectura, sin los comentarios');
+  const antes = modoDeLectura().soloDecidir;
   modoDeLectura({ leerComentarios: false });
   modoDeLectura({ soloDecidir: true });
   try {
@@ -316,7 +348,7 @@ function handle(event, opts = {}) {
     if (comoAntes && comoAntes.block) return comoAntes;
   } finally {
     modoDeLectura({ leerComentarios: true });
-    modoDeLectura({ soloDecidir: false });
+    modoDeLectura({ soloDecidir: antes });
   }
   return r;
 }
@@ -613,7 +645,8 @@ function handleCarrilEHistoria(event, opts = {}) {
     return true;
   });
   const cmdDestinos = sub.cmd;
-  const targets = extractWriteTargets(cmdDestinos, { keep });
+  // una cuenta sin `$` (`(( a > b ))`) se lee como cuenta sólo en el comando de la herramienta Bash (`sinCuentasSueltas`)
+  const targets = extractWriteTargets(cmdDestinos, { keep, cuentas: event?.tool_name === 'Bash' });
   if (!skillOff) {
     // una historia que existe y no está en borrador no se escribe por consola (con o sin ejecución abierta)
     const historias = historiasPorConsola(cmd, cwd, targets, baseCwd, sub.destinos, 0, installedRoots);

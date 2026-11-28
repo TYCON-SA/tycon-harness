@@ -22,8 +22,8 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
-const { variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
+const { BORRA_O_MUEVE, LECTORES_DE_FIND, PREFIJO, variantesConSeparador, PS_CON_VALOR, SED_W_EN_COMANDO, SED_W_EN_GUION, TOPE_ANIDADOS, blancoPorRedireccion, expandirLlaves, guionDeSedSinEfectos, guionesInternos, leadingCd, palabras, posicionesDeComando, programaDePerlSoloSustituye, programasSinProcesos, sinComillasDeLosBordes, textosCitados } = require('./bash-gate-words.js');
+const { PALABRA_CON_ANSI, palabrasConAnsi, cuerpoDePowerShell, variantesDeVariables, entradasAlternativas, CAT_O_TEE_REDEFINIDO, DETRAS_DE_LA_MARCA, EXPANSION_DE_VARIABLE, GRUPO_O_CONTROL, HEREDOC_ENTERO, LEE_EL_CUERPO_COMO_TEXTO, PALABRA_ANTES_DE_XARGS, REDIRECCION_A_DESCRIPTOR, SHELLS_CON_DASH_C, XARGS_CON_VALOR, ansiC, argumentosDeCopia, citarParaElShell, comodinDelShell, comodinSimple, cuerpoConValores, expandirComodin, formatoDePrintf, guionDelShell, moverCds, nombreDeComando, ordenesDeFind, ordenesDeParallel, ordenesDeXargs, marcaDeXargs, palabraDelShell, palabrasEnteras, pelarEnv, posicionales, renglonesDelShell, resolveTarget, sedConEfectos, shellLeeEntrada, sinCierre, sinComentarioAlFinal, sinPalabrasDelShell, conCarpetaDelComando, LECTORES_DE_XARGS, alcanzadasPorFind } = require('./bash-gate-expansions.js');
 const { adentroDeUnaCuenta, ANTES_DEL_CD_COMPLEJO, delimitadoresQueAbre, destinosArmados, extractWriteTargets, heredocs, heredocsCerrados, origenesMovidos, palabrasProfundas, quitarCuerposDeHeredoc, tramos } = require('./bash-gate-targets.js');
 
 /**
@@ -896,16 +896,8 @@ function sinCuerposDeTexto(cmd) {
   return out + s.slice(hasta);
 }
 
-// una palabra del shell entera: también con `$'…'`, `$"…"` y con tramos citados pegados (`'a'"'"'b'` es `a'b`)
-const PALABRA_CON_ANSI = /(?:\$'(?:\\[\s\S]|[^'\\])*'|'[^']*'|\$?"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
-// la palabra que un `<<<` da a la entrada
+// la palabra que un `<<<` da a la entrada (`PALABRA_CON_ANSI`, de bash-gate-expansions.js)
 const CADENA_A_LA_ENTRADA = new RegExp(`<<<[ \\t]*(${PALABRA_CON_ANSI.source})`);
-/** Las palabras de un tramo como las lee el shell, con sus comillas, sus escapes y los `$'…'` resueltos. */
-function palabrasConAnsi(tramo) {
-  return (String(tramo).match(PALABRA_CON_ANSI) || []).map((w) => w.replace(/\$'((?:\\[\s\S]|[^'\\])*)'|'([^']*)'|\$?"((?:\\.|[^"\\])*)"|\\(.)/g,
-    (m, ansi, simple, doble, escapado) => (ansi !== undefined ? ansiC(ansi) : simple !== undefined ? simple
-      : doble !== undefined ? doble.replace(/\\(["\\$`])/g, '$1') : escapado)));
-}
 
 /**
  * El cuerpo de un shell con `-c` y lo que lo sigue (sus `$0`, `$1`…), leídos como el shell: `bash -c $'…'` y
@@ -925,6 +917,7 @@ function cuerpoDelShell(tramo) {
   return String(w[j]).replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
     .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' '));
 }
+
 /**
  * El comando y lo que corre adentro de él: `$(…)`, comillas invertidas, `bash -c '…'`, `eval …` y `find … -exec …`.
  * Cada uno se mira como otro comando. El texto de un heredoc que nadie corre no es un comando.
@@ -933,6 +926,10 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   const cmd = sinTextoDeHeredocs(comando);
   const out = [cmd];
   if (hondo > 3) return out;
+  // con un `for ((`, también lo que corre adentro del comando con el `;` detrás de las cabeceras: el cuerpo de un
+  // `for ((…)) do …` sin `;` antes del `do` es un comando (`variantesConSeparador`). El comando de arriba con el `;` no
+  // es un anidado: lo lee la segunda lectura del freno (`handle`)
+  if (hondo === 0) for (const v of variantesConSeparador(cmd)) out.push(...comandosAnidados(v, 1, valores).slice(1));
   // Lo que el comando guarda en una variable (`c='cp … constancia'`) es texto hasta que se corre: con `eval "$c"`,
   // `bash -c "$c"` o `$c` como programa. Ahí su valor se mira como un comando más; sin esto, guardarlo antes en una
   // variable era el camino para que el freno no lo viera. Los valores de todo el comando, también los de afuera.
@@ -1024,6 +1021,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // comando. Lo de arriba sigue: las palabras de este lector no cortan lo que aquél sí lee
     const cuerpo = cuerpoDelShell(tramo);
     if (cuerpo !== null) for (const b of cuerpoConValores(cuerpo, asignados)) sumarConCd(b);
+    // lo que corre PowerShell con `-Command` (`pwsh -Command '((cp a h.md))'`)
+    const dePowerShell = cuerpoDePowerShell(tramo);
+    if (dePowerShell !== null) for (const b of cuerpoConValores(dePowerShell, asignados)) sumarConCd(b);
     // `busybox` y `toybox` corren el programa que les sigue (`busybox rm h.md`, `sudo busybox sh -c '…'`): se mira el
     // tramo sin ellos, con lo que vale afuera
     if (w.some((x) => /^(?:\S*\/)?(?:busybox|toybox)$/.test(x))) {
