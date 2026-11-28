@@ -95,6 +95,8 @@ function comienzoDe(real, bytes) {
  * lista dice que quedaron archivos sin mirar.
  */
 const SUITES_DEL_COMODIN = 5000;
+// una variable dentro de una ruta: `$f`, `${f}`
+const VARIABLE_EN_RUTA = /\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g;
 function suitesDelComodin(patron, base) {
   const absoluto = path.isAbsolute(patron) ? patron : path.join(base, patron);
   const dir = path.dirname(absoluto);
@@ -283,12 +285,14 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
       // chica delante no esconde a la que sigue), también detrás de un `-` y los que nombran llaves y comodines. Un
       // comodín con más archivos de los que se miran cuenta como un guion que no se pudo leer
       let hallado = false;
+      const porVariable = [];
       // en modo pruebas, sin las redirecciones: su destino (`> salida.txt`) no es una suite
       const lista = op.pruebas ? sinRedirecciones(tramo, words, op.desde) : words;
       for (let j = op.desde; j < lista.length && (!hallado || op.pruebas); j++) {
         const w = lista[j];
         if (w === '-' || /^\/dev\/(?:stdin|fd\/0)$/.test(w) || /^(?:\d|&)?[<>]/.test(w)) { if (op.pruebas) continue; break; }
         const valor = palabraExpandida(cmd, w);
+        if (expandirRuta(cmd, w).sinResolver.length) porVariable.push(String(valor));
         if (!op.pruebas) { hallado = abrir(interprete, valor, argumentos(words.slice(j + 1))); continue; }
         for (const x of expandirLlaves(String(valor))) {
           // también la ruta tal cual: un `[id]` puede ser parte del nombre
@@ -297,6 +301,21 @@ function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO
           for (const base of bases) for (const f of suitesDelComodin(x, base)) {
             if (f === null) out.push({ interprete, archivo: path.join(base, x), texto: '', argv: [], grande: true });
             else if (abrir(interprete, f, [])) hallado = true;
+          }
+        }
+      }
+      // el guion en una variable que no se resuelve (la de un `for f in …`, la de un `while read f`, también de fondo):
+      // cuenta cada archivo del comando con la extensión del intérprete, y lo que nombra la ruta con la variable
+      // cambiada por un comodín (`scripts/tests/$f`)
+      if (porVariable.length) {
+        const conComodin = porVariable.map((v) => v.replace(VARIABLE_EN_RUTA, '*')).filter((v) => /[^*]/.test(v))
+          .map((v) => (EXTENSION_DE[familia].test(v) ? v : `${v}*`));
+        const candidatos = [...todasLasPalabras().map((x) => palabraExpandida(cmd, x)), ...conComodin];
+        for (const c of candidatos) for (const x of expandirLlaves(String(c))) {
+          if (!/[*?[]/.test(x)) { if (EXTENSION_DE[familia].test(x)) abrir(interprete, x, []); continue; }
+          for (const base of bases) for (const f of suitesDelComodin(x, base)) {
+            if (f === null) out.push({ interprete, archivo: path.join(base, x), texto: '', argv: [], grande: true });
+            else if (EXTENSION_DE[familia].test(f)) abrir(interprete, f, []);
           }
         }
       }

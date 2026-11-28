@@ -167,3 +167,24 @@ test('T4 NodeTest_ComodinesYRedirecciones', () => {
   const chica = path.join(e.copia, 'scripts', 'tests', 'chica.test.js');
   assert.equal(e.freno(`node --test ${chica} > ${salida}`), '', 'el destino de una redirección no es una suite');
 });
+
+// T5 NodeTest_EnUnBucle_MiraCadaArchivo
+// 🔴 Falla con: no mirar el guion que llega en la variable de un `for` o de un `while read` (`node --test "$f"`), en
+//    primer plano o de fondo, o soltar la ruta armada con la variable (`t/$f`, `$f.test.js`).
+test('T5 NodeTest_EnUnBucle_MiraCadaArchivo', () => {
+  const e = escena();
+  const chica = path.join(e.copia, 'scripts', 'tests', 'chica.test.js');
+  const escritor = path.join(e.repo, 'escritor.test.js');
+  fs.writeFileSync(escritor, grande('// nuevo\n'));
+  fs.mkdirSync(path.join(e.repo, 't'));
+  fs.copyFileSync(escritor, path.join(e.repo, 't', 'w.test.js'));
+  for (const c of [
+    `for f in ${chica} ${escritor}; do node --test "$f" | grep ok; done`,
+    `for f in ${chica} ${escritor}; do node --test "$f" | grep ok; done &`,
+    `for f in ${escritor}; do node $f; done`,
+    'ls *.test.js | while read f; do node --test "$f"; done',
+    'ls t | while read f; do node --test "t/$f"; done',
+    'for f in escritor; do node --test "$f.test.js"; done',
+  ]) assert.equal(e.freno(c), FRENO, c);
+  assert.equal(e.freno(`for f in ${chica}; do node --test "$f"; done`), '', 'un bucle sobre una suite inocua pasa');
+});
