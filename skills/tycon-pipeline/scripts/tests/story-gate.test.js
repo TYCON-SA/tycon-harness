@@ -2057,14 +2057,21 @@ test('EscrituraAlEstado_ConDestinoSinResolverYExtension_Frena', () => {
       // opción B del dueño: lo que no se resuelve nombra la casa (`~`, `$HOME`) o la carpeta del arnés; o la ruta del estado
       // queda a la vista pegada a una variable sin resolver
       'D=$(echo ~)/.tycon/x; echo x > $D/s1.json', 'echo x > $(cd $HOME && pwd)/.tycon/x/s1.json',
-      `echo x >> ${E}$NOSE/plan-review/s1/s1.resultado.json`]) {
+      `echo x >> ${E}$NOSE/plan-review/s1/s1.resultado.json`,
+      // vuelta de Fable: un paréntesis dentro de la sustitución, la zona en la asignación fuera de ella, y `$PWD`
+      `D=$(python3 -c "print('${E}')"); echo x >> $D/plan-review/s1/s1.resultado.json`, 'D=~/.tycon/$(echo state); echo x >> $D/x.json',
+      `D=\${NOSE:-${E}}; echo x >> $D/plan-review/s1/s1.resultado.json`]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(r && r.block, JSON.stringify(c));
     }
     // lo que no se resuelve y no nombra nada de eso sigue pasando
-    for (const c of ['echo x > $(date +%F)-informe.md', 'echo x > $NOSE/notas.txt', 'D=$(mktemp -d); echo x > $D/x.json']) {
+    for (const c of ['echo x > $(date +%F)-informe.md', 'echo x > $NOSE/notas.txt', 'D=$(mktemp -d); echo x > $D/x.json',
+      'ROOT=$(git rev-parse --show-toplevel); echo "x: 1" > $ROOT/.tycon/work-items.yaml', "N=$(awk '$3 ~ /err/' log | wc -l); echo $N > $OUT/n.txt"]) {
       const r = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(!(r && r.block && /ESTADO/.test(r.block)), `${c}: ${r && r.block}`);
     }
+    // `$PWD` es la carpeta del comando
+    const r2 = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: path.dirname(E), tool_input: { command: `echo x >> $PWD/${path.basename(E)}/plan-review/s1/s1.resultado.json` } }, { stateDir, installedRoots: [arnes] });
+    assert.ok(r2 && r2.block, '$PWD');
   });
 });

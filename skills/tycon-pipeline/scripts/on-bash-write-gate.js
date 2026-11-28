@@ -610,20 +610,44 @@ function handleCarrilEHistoria(event, opts = {}) {
   });
   const cmdDestinos = sub.cmd;
   // Un destino que no se sabe resolver (una variable o un `$(…)` que no se calcula sin correrlo) no se puede probar fuera
-  // del estado. Frena si lo que no se resuelve nombra la casa (`~`, `$HOME`) o la carpeta del arnés, o si la ruta de una
-  // zona protegida queda a la vista en el destino (`<estado>$NOSE/x`). Se esquiva armando el nombre a pedazos
-  // (`$(printf %s .ty con)`): límite conocido y aceptado (opción B del dueño, A215)
+  // del estado. Frena si el comando nombra una zona protegida o la carpeta del arnés en la casa (`~/.tycon`), o si lo que
+  // no se resuelve (el cuerpo de un `$(…)` o de comillas invertidas, sin lo que va entre comillas simples) nombra la casa
+  // (`~`, `$HOME`). `$PWD` se lee como la carpeta del comando. Se esquiva armando el nombre a pedazos
+  // (`$(printf %s .ty con)`) o con una variable que el freno no sigue (`declare`, `read`): límite conocido y aceptado
+  // (opción B del dueño, A215)
   {
-    const nombraZona = (t) => /\.tycon\b/.test(t) || zonas().some((z) => z && String(t).includes(z));
-    const nombraCasa = (t) => /(^|[^\w~])~(?=[\/\s)`;|&]|$)|\$\{?HOME\b/.test(t);
-    const sustituciones = [...String(cmd).matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)].map((m) => m[1] ?? m[2]);
-    const sustitucionNombra = sustituciones.some((t) => nombraZona(t) || nombraCasa(t));
+    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/.test(t) || zonas().some((z) => z && String(t).includes(z));
+    const nombraCasa = (t) => /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(String(t).replace(/'[^']*'/g, "''"));
+    // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
+    const cuerpos = [];
+    const texto = String(cmd);
+    for (let k = texto.indexOf('$('); k >= 0 && cuerpos.length < 100; k = texto.indexOf('$(', k + 2)) {
+      let hondo = 0;
+      let fin = -1;
+      for (let m = k + 1; m < texto.length && m < k + 20000; m++) {
+        if (texto[m] === '(') hondo++;
+        else if (texto[m] === ')' && --hondo === 0) { fin = m; break; }
+      }
+      cuerpos.push(texto.slice(k + 2, fin < 0 ? Math.min(texto.length, k + 20000) : fin));
+    }
+    for (const m of texto.matchAll(/`([^`]*)`/g)) cuerpos.push(m[1]);
+    const nombra = nombraZona(texto) || cuerpos.some(nombraCasa);
     for (const t of extractWriteTargets(cmd, { keep: () => true })) {
       if (!/[$`]/.test(t)) continue;
       const ex = expandirRuta(cmd, t);
-      if (!ex.sinResolver.length && !/\$\(|`/.test(t)) continue;
-      if (sustitucionNombra || nombraZona(t)) {
-        return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: t, via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)} (un destino que no se puede resolver y nombra la casa o el arnés)` }) + '\n' };
+      const sinResolver = ex.sinResolver.length > 0 || /\$\(|`/.test(t);
+      if (!sinResolver) continue;
+      let frena = nombra;
+      if (!frena && /\$\{?PWD\b/.test(t)) {
+        const conCarpeta = String(ex.sinResolver.length ? t : ex.valor).replace(/\$\{PWD\}|\$PWD\b/g, cwd);
+        const ex2 = expandirRuta(cmd, conCarpeta);
+        if (!ex2.sinResolver.length && !/[$`]/.test(String(ex2.valor))) {
+          const abs = resolveTarget(ex2.valor, cwd, process.platform, { homeVariable: true });
+          frena = protegido(abs) || zonaQueAlcanzaElComodin(abs) !== null;
+        }
+      }
+      if (frena) {
+        return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: t, via: `Bash: ${texto.replace(/\s+/g, ' ').slice(0, 120)} (un destino que no se puede resolver y nombra la casa o el arnés)` }) + '\n' };
       }
     }
   }
