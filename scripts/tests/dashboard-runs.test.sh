@@ -2315,7 +2315,7 @@ fi
 # ── 2.79-T56 · 2.79-Corridas_RampaDistinguible @story-2.79 @ac-45 ──
 # 🔴 Falla con: la rampa de un solo tono (dos vecinos a menos de 15 de distancia), las dos copias distintas, o un
 #    rótulo de barra que no se lee sobre su color.
-python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" <<'PY' 2>"${FX}.err" && ok "2.79-T56 la rampa: diez colores en cuatro familias, vecinos distinguibles, las dos copias iguales y el rótulo legible" || mal "2.79-T56 $(tail -1 "${FX}.err")"
+python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" <<'PY' 2>"${FX}.err" && ok "2.79-T56 la rampa: diez colores en cuatro familias (Correr las pruebas con su propio tono), vecinos distinguibles, las dos copias iguales y el rótulo legible" || mal "2.79-T56 $(tail -1 "${FX}.err")"
 import re, sys, math
 src = open(sys.argv[1]).read()
 rampas = [re.findall(r"#[0-9A-Fa-f]{6}", m) for m in re.findall(r"(?:const|var) RAMPA = \[([^\]]*)\]", src)]
@@ -2337,7 +2337,10 @@ for i in range(9):
     assert d >= 15, 'los pasos %d y %d están a %.1f (menos de 15)' % (i, i+1, d)
 tono = lambda l: math.degrees(math.atan2(l[2], l[1])) % 360
 dif = lambda a, b: min(abs(a - b), 360 - abs(a - b))
-FAM = [[0, 1, 2, 3], [4, 5, 6], [7, 8], [9]]
+# construir: Implementar e Implementar + pruebas (que nunca están en la misma ejecución) son una familia; Correr las
+# pruebas, entre los dos Implementar, va con otro tono: con tres verdes azulados no se distinguían (A147)
+FAM = [[0, 1, 2, 3], [4, 6], [7, 8], [9]]
+assert dif(tono(L[5]), tono(L[4])) >= 60 and dif(tono(L[5]), tono(L[6])) >= 60, 'Correr las pruebas no se distingue de Implementar: %s' % [round(tono(L[i])) for i in (4, 5, 6)]
 medio = []
 for f in FAM:
     t = [tono(L[i]) for i in f]

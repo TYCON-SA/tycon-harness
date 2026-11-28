@@ -1492,10 +1492,11 @@ function textosDe(c) {
 
 // ───────────────────────────── la página ─────────────────────────────
 
-// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4-6,
-// verde azulado), revisar (7-8, ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
+// un color por fila de pasos (las diez de FILAS), en cuatro familias por etapa: preparar (0-3, azul), construir (4 y 6,
+// verde azulado; Correr las pruebas, el 5, en terracota: con tres verdes azulados no se distinguía), revisar (7-8,
+// ámbar) y cerrar (9, violeta). Dos vecinos quedan a 15 o más de distancia de color (ΔE
 // de CIELAB): con una sola tonalidad, dos pasos seguidos no se distinguían. La copia del navegador es la misma.
-const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#3D9799', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
+const RAMPA = ['#C9D6EA', '#9DB3D6', '#6E8DBF', '#3F64A0', '#9CD0CE', '#D98C5F', '#14555C', '#F2C46D', '#B07A12', '#6B4C9A'];
 // la coma decimal es del castellano: en inglés va el punto
 // (sólo en un idioma que la tabla tiene: uno desconocido sale entero en castellano, y con coma)
 const decimal = (x, idioma) => (TX && TX.IDIOMAS.includes(idioma) && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
@@ -1998,7 +1999,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     if (antes) partes.push(T('pasosSinMarca', { n: antes }));
     return partes.join('; ');
   };
-  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#3D9799','#14555C','#F2C46D','#B07A12','#6B4C9A'];
+  var RAMPA = ['#C9D6EA','#9DB3D6','#6E8DBF','#3F64A0','#9CD0CE','#D98C5F','#14555C','#F2C46D','#B07A12','#6B4C9A'];
   // el rótulo de cada barra, oscuro o blanco según su color: se lee sobre los diez
   var TINTA = ['#0b0b0b','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff','#0b0b0b','#0b0b0b','#fff'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
