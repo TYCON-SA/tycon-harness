@@ -405,8 +405,10 @@ function handleCarrilEHistoria(event, opts = {}) {
     // cuenta como si subiera hasta la raíz
     let desconocidoEntero = false;
     if (/[*?[{(]/.test(texto)) {
-      desconocidoEntero = /(^|[\\/])\u0001+(?=[\\/]|$)/.test(texto);
-      texto = texto.replace(/(^|[\\/])\u0001+(?=[\\/]|$)/g, '$1**').split(DESCONOCIDO).join('*');
+      // (también sólo con puntos al lado: `$NOSE.` puede quedar `.` o `..`)
+      const ENTERO = /(^|[\\/])(?=[.\u0001]*\u0001)[.\u0001]+(?=[\\/]|$)/g;
+      desconocidoEntero = new RegExp(ENTERO.source).test(texto);
+      texto = texto.replace(ENTERO, '$1**').split(DESCONOCIDO).join('*');
     }
     const partes = texto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
