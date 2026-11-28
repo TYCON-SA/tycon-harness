@@ -613,6 +613,7 @@ const TEXTOS = {
   'mant.marcha.asignada': { es: 'asignada a {quien}', en: 'assigned to {quien}' },
   'mant.marcha.sinAsignar': { es: 'sin asignar', en: 'unassigned' },
   'mant.marcha.asignadaSinNombre': { es: 'asignada: su nombre en la plataforma es un correo y acá no se muestra', en: 'assigned: their name on the platform is an email address and is not shown here' },
+  'mant.marcha.cerradaConViva': { es: 'cerrada con la vulnerabilidad viva: se decide en la tarea si se reabre', en: 'closed with the vulnerability still live: whether to reopen it is decided in the work item' },
   'mant.marcha.asignadoSinMedir': { es: 'asignada a: no se sabe todavía', en: 'assigned to: not known yet' },
   'mant.marcha.seCrea': { es: 'La tarea se crea esta noche', en: 'The work item is created tonight' },
   'mant.marcha.historia': { es: 'Ya tiene su historia: {nombre}', en: 'Already has its story: {nombre}' },

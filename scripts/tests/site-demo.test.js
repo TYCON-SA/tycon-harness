@@ -1379,6 +1379,20 @@ test('A91-A93 Demo_LasFichasYLosResumenesDeLaNocheDicenLoMismo', () => {
   for (const p of a[`.dashboard/assigned/assigned-${hoy}.json`].pedidos.filter((x) => x.dependencias)) {
     const conTarea = Object.entries(a).find(([k, txt]) => k.startsWith('inbox/dependencies/') && new RegExp(`- ${p.proyecto}: ${p.id}\\n`).test(txt));
     assert.ok(conTarea, `la tarea ${p.id} es de una ficha`);
-    assert.match(conTarea[1], new RegExp(`^asignados:\\n(?:[ \\t]+-[^\\n]*\\n)*[ \\t]+- "${p.id}: ${p.asignado}"`, 'm'), `la ficha dice a quién está asignada la ${p.id}`);
+    // la noche anota el nombre que muestra la plataforma (nunca un correo), o <alguien> si el nombre es un correo
+    const quien = (new RegExp(`^[ \\t]+- "${p.id}: ([^"]+)"`, 'm').exec(conTarea[1].split(/^asignados:\n/m)[1] || '') || [])[1];
+    assert.ok(quien && quien !== '<nadie>' && !quien.includes('@'), `la ficha dice a quién está asignada la ${p.id}, como la anota la noche: ${quien}`);
+  }
+  // A96: una vulnerabilidad que lleva N noches se detectó hace N días, no ayer
+  const diaDe = (n) => new Date(AHORA_FIJO - n * 864e5).toISOString().slice(0, 10);
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => k.startsWith('inbox/dependencies/'))) {
+    const noches = Number(escalar(txt, 'noches'));
+    assert.strictEqual(escalar(txt, 'detectado'), diaDe(noches), `${rel}: detectada hace ${noches} noches`);
+  }
+  // A99: la tarea que creó la noche para un arreglo no es una tarea de otra cosa que alguien tiene asignada
+  const asignadas = new Map(a[`.dashboard/assigned/assigned-${hoy}.json`].pedidos.map((x) => [String(x.id), x]));
+  for (const [rel, txt] of Object.entries(a).filter(([k]) => k.startsWith('inbox/runs-review/'))) {
+    const n = (/^pedido:[ \t]*(\d+)/m.exec(txt) || /^[ \t]+id:[ \t]*(\d+)/m.exec(txt) || [])[1];
+    if (n) assert.ok(!asignadas.has(n), `${rel}: su tarea ${n} no es «${(asignadas.get(n) || {}).titulo}»`);
   }
 });

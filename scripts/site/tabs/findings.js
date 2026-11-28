@@ -569,8 +569,27 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     } catch { return null; }
   }
 
+  /**
+   * Las tareas que la noche vio cerradas con la vulnerabilidad viva (el rubro de su última foto de dependencias, el mismo
+   * que cuenta el Inicio): un Set de «ficha|proyecto|tarea». Sin foto o ilegible, vacío: no se marca ninguna.
+   */
+  function tareasCerradasConVivas(dir) {
+    const cerradas = new Set();
+    try {
+      const carpeta = path.join(dir, '.dashboard', 'dependencias');
+      const ultima = fs.readdirSync(carpeta).filter((n) => /^dependencias-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().pop();
+      if (!ultima) return cerradas;
+      const doc = JSON.parse(fs.readFileSync(path.join(carpeta, ultima), 'utf8'));
+      const r = doc && doc.resumen && doc.resumen.rubros && doc.resumen.rubros.pedidos_cerrados_con_vivas;
+      for (const x of (r && r.motivo == null && Array.isArray(r.valor) ? r.valor : [])) {
+        if (isObject(x) && Number.isInteger(x.pedido)) cerradas.add(`${x.ficha || x.id}|${String(x.proyecto || '').toLowerCase()}|${x.pedido}`);
+      }
+    } catch { /* sin foto: ninguna se marca */ }
+    return cerradas;
+  }
+
   const avisadosSinProyectos = new Set();
-  function vulnerabilidadDe(f, destino, reposCfg) {
+  function vulnerabilidadDe(f, destino, reposCfg, cerradas = new Set()) {
     const severidad = String(f.severidad || '').toLowerCase() || null;
     // una tarea es vigente si el paquete sigue en su proyecto, con la misma regla que la noche usa para pedirlas;
     // si un repo no dice su proyecto, no se sabe dónde vive el paquete y todas son vigentes
@@ -585,7 +604,7 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     return {
       id: f.id, paquete: f.contexto.paquete || f.nombre, severidad, repos: Number.isInteger(f.repos) ? f.repos : 0, desde: f.primera_vez, volvio: f.reaparecido,
       tareas: (f.pedidos || []).map((t) => ({ proyecto: t.proyecto, numero: t.id, enlace: enlaceDeTarea(destino, t.proyecto, t.id), asignado: nombreDePersona(t.asignado), sinAsignar: t.sin_asignar === true, sinNombre: t.asignada_sin_nombre === true,
-        vigente: !donde || donde.has(String(t.proyecto).toLowerCase()) })),
+        vigente: !donde || donde.has(String(t.proyecto).toLowerCase()), cerrada: cerradas.has(`${f.id}|${String(t.proyecto).toLowerCase()}|${t.id}`) })),
       motivo: f.pedido_motivo || null,
     };
   }
@@ -728,9 +747,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
     const arreglos = [];
     const vulnerabilidades = [];
     const reposCfg = dir ? reposDeDependencias(dir) : null;
+    const cerradas = dir ? tareasCerradasConVivas(dir) : new Set();
     for (const f of l.fichas) {
       // una vulnerabilidad se sigue en su tarea y, mientras está pendiente, además se decide su pull request
-      if (f.fuente === 'dependencias') { if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino, reposCfg)); }
+      if (f.fuente === 'dependencias') { if (['pendiente', 'arreglo'].includes(f.veredicto)) vulnerabilidades.push(vulnerabilidadDe(f, destino, reposCfg, cerradas)); }
       else if (f.veredicto === 'arreglo') { arreglos.push(arregloDe(f, destino, deLaNoche || (deLaNoche = destinoDeLaNoche()), idioma)); continue; }
       if (!porDecidir(f)) continue;
       const enMain = decisionEnMain(dir, f);
@@ -907,11 +927,12 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
           : x.estado === 'sin_tarea' ? esc(T(idioma, 'mant.marcha.sinTarea', { motivo: T(idioma, `mant.sinTarea.${x.motivo}`) }))
             : x.estado === 'historia' ? esc(historia(x.historia))
               : esc(T(idioma, 'mant.marcha.seCrea'));
-      return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} <span class="m-tarea">${t}</span></li>`;
+      // la raya separa el nombre de su seguimiento: «…al cerrar Tarea 5001» se leía como una tarea cerrada
+      return `<li><b>${esc(x.nombre)}</b>${ayudaRegla(x.regla)} — <span class="m-tarea">${t}</span></li>`;
     };
     const tareaDeVuln = (t) => (t.enlace ? `${tarea(t.numero, t.enlace, t.proyecto)}` : esc(T(idioma, 'mant.marcha.sinEnlace')))
       // «sin asignar» sólo si la noche leyó la tarea y no la tiene nadie; sin medir, lo dice
-      + ` · ${esc(t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : t.sinNombre ? 'mant.marcha.asignadaSinNombre' : 'mant.marcha.asignadoSinMedir'))}`;
+      + ` · ${esc(t.cerrada ? T(idioma, 'mant.marcha.cerradaConViva') : t.asignado ? T(idioma, 'mant.marcha.asignada', { quien: t.asignado }) : T(idioma, t.sinAsignar ? 'mant.marcha.sinAsignar' : t.sinNombre ? 'mant.marcha.asignadaSinNombre' : 'mant.marcha.asignadoSinMedir'))}`;
     const vuln = (v) => {
       const sev = NOMBRE_SEVERIDAD[v.severidad] || null;
       const meta = [T(idioma, v.repos === 1 ? 'mant.vuln.filaUno' : 'mant.vuln.fila', { n: v.repos, dia: dia(v.desde) })];

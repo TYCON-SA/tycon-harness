@@ -326,10 +326,11 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   // las fichas, en el formato de cada fuente: la pestaña Mantenimiento las muestra.
   // Las pendientes van sin `pr:`: con el pedido de la noche abierto se deciden ahí, no en el sitio
   const conPr = (pr) => (pr ? `pr: ${pr}\n` : '');
-  const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${ayer}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
+  // la detectó la noche de hace tantos días como noches lleva
+  const fichaDep = (id, pr, veredicto, paquete, severidad, noches, extra = '') => `id: ${id}\ndetectado: ${d(noches)}\nveredicto: ${veredicto}\npaquete: ${paquete}\nseveridad: ${severidad}\nnoches: ${noches}\n${conPr(pr)}${extra}`;
   const fichaVig = (id, pr, veredicto, regla, extra = '', producto = 'producto-x') => `id: ${id}\nfuente: vigilante\ncausa: ${producto}:${regla}\nfecha: ${ayer}\nproducto: ${producto}\nregla: ${regla}\nseveridad: alta\nveredicto: ${veredicto}\nvista_por_ultima_vez: ${hoy}\nnoches_seguidas: 2\n${conPr(pr)}${extra}`;
   Object.assign(f, {
-    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: ${ANA}"\n`),
+    'inbox/dependencies/pending/f1.yaml': fichaDep('f1', null, 'pendiente', 'pkg-uno', 'high', 3, `aviso_resumen: "Prototype pollution in pkg-uno via crafted keys (CVE-2026-1234)"\naviso_parche: "2.4.1"\npropuesta_accion: aceptar\npropuesta_razon: La versión 2.4.1 corrige el problema y el pedido sólo sube el paquete\nrepos:\n  - Producto X/FrontEnd\npedidos:\n  - Producto X: 5002\nasignados:\n  - "5002: Ana Pérez"\n`),
     'inbox/dependencies/promoted/f2.yaml': fichaDep('f2', 202, 'util', 'pkg-dos', 'moderate', 5, 'repos:\n  - Producto X/FrontEnd\n'),
     'inbox/dependencies/archived/f3.yaml': fichaDep('f3', 203, 'descartado', 'pkg-tres', 'low', 8),
     // la tarea de pkg-cuatro se cerró y el paquete sigue: la ficha la tiene (la que el Inicio dice cerrada)
@@ -341,7 +342,7 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
   const ej1 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase adversarial', hoy: ayer }),
     ultima_vez: hoy, apariciones: 3, propuesta: { accion: 'arreglar', razon: 'Pasa en la mitad de las ejecuciones de la semana' },
     analisis: { recomendacion: 'arreglar', por_que_pasa: 'Se apagó con la variable de escape en 3 de las 6 ejecuciones de la semana, siempre en la misma máquina', por_que_recomienda: 'sin el pase adversarial los errores llegan a la revisión humana', arreglo: 'que el escape pida el ok de una persona y quede anotado', autor: 'modelo', modelo: 'sonnet', el: hoy } };
-  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5001 };
+  const ej2 = { ...CYCLE.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ROJO:pruebas', nombre: 'Las pruebas quedaron en rojo al cerrar', hoy: ayer }), veredicto: 'arreglo', pedido: 5004 };
   f[`inbox/runs-review/pending/${ej1.id}.yaml`] = CYCLE.serializar(ej1);
   f[`inbox/runs-review/promoted/${ej2.id}.yaml`] = CYCLE.serializar(ej2);
   // lo que deja la noche para el sitio
