@@ -626,13 +626,20 @@ function handleCarrilEHistoria(event, opts = {}) {
       }
       return out;
     };
-    const nombresDeZona = zonas().filter(Boolean).flatMap(formasDe);
-    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/.test(t) || nombresDeZona.some((z) => String(t).includes(z));
+    // la carpeta del arnés en la casa cuenta como zona; en Mac y Windows el disco no distingue mayúsculas
+    const sinMayusculas = process.platform === 'darwin' || process.platform === 'win32';
+    const comparable = (x) => (sinMayusculas ? String(x).toLowerCase() : String(x));
+    const nombresDeZona = [...zonas().filter(Boolean), ...(casa ? [path.join(casa, '.tycon')] : [])].flatMap(formasDe).map(comparable);
+    const nombraZona = (t) => /(?:~|\$\{?HOME\}?)[\\/]\.tycon\b/i.test(t) || nombresDeZona.some((z) => comparable(t).includes(z));
+    // un `cd` solo en el comando deja la carpeta en la casa
+    const cdSolo = /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(String(cmd));
     const nombraCasa = (t) => {
       const sinSimples = String(t).replace(/'[^']*'/g, "''");
       // `pwd` parado en la casa (o en una carpeta que contiene una zona) también la nombra
       return /(^|[^\w~])~(?=[\/\s)`;|&"]|$)|\$\{?HOME\b/.test(sinSimples) || /(^|[;&|(]\s*)cd\s*(?=$|[;&|)])/.test(sinSimples)
-        || (/(^|[;&|(\s])pwd\b/.test(sinSimples) && zonas().some((z) => z && (isInside(cwd, z) || isInside(z, cwd))));
+        || (/(^|[;&|(\s])pwd\b/.test(sinSimples) && (cdSolo || zonas().some((z) => z && (isInside(cwd, z) || isInside(z, cwd)))))
+        // la casa pedida a otro programa: `printenv HOME`, `os.homedir()`, `Path.home()`, `expanduser`, `getenv("HOME")`
+        || /\bprintenv\s+HOME\b|\bhomedir\s*\(|\bPath\.home\s*\(|\bexpanduser\b|\bgetenv\s*\(\s*\\?["']?HOME\b|\bENV\s*\[\s*\\?["']HOME/.test(t);
     };
     // los cuerpos de las sustituciones, con paréntesis adentro (`$(python3 -c "print('x')")`); con tope
     const cuerposDe = (texto) => {
@@ -702,7 +709,12 @@ function handleCarrilEHistoria(event, opts = {}) {
       const casaConNombre = /\/(?:Users|home)\/(?:\$\(\s*(?:whoami|logname|id)\b|`\s*(?:whoami|logname|id)\b|\$\{?(?:USER|LOGNAME)\b)/.test(suyo);
       // un `$(…)` con blancos adentro llega cortado (`/Users/$(id`): sus cuerpos se leen del comando entero
       const cortado = (String(t).match(/\$\(/g) || []).length > (String(t).match(/\)/g) || []).length;
-      let frena = casaConNombre || nombraZona(suyo) || cuerposDe(suyo).some(nombraCasa) || (cortado && cuerposDe(texto).some(nombraCasa));
+      // cada pieza por separado (un `$(…)` sin cerrar de una pieza no se come la siguiente); una pieza relativa se lee
+      // también desde la carpeta del comando
+      const piezas = suyo.split('\n');
+      const conCarpeta = piezas.filter((x) => x && !/^[/~$`]/.test(x)).map((x) => `${cwd}/${x}`);
+      let frena = casaConNombre || [...piezas, ...conCarpeta].some(nombraZona) || piezas.some((x) => cuerposDe(x).some(nombraCasa))
+        || (cortado && cuerposDe(texto).some(nombraCasa));
       if (!frena && /\$\{?PWD\b/.test(t)) {
         const conCarpeta = String(ex.sinResolver.length ? t : ex.valor).replace(/\$\{PWD\}|\$PWD\b/g, cwd);
         const ex2 = expandirRuta(cmd, conCarpeta);
