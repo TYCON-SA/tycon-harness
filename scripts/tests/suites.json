@@ -1226,6 +1226,12 @@
       "requiere": []
     },
     {
+      "__nota": "Un guion grande de otra copia del arnés con los mismos bytes que main en la misma ruta es lo revisado y pasa; cambiado, en otra ruta o igual a un commit que no está en main, frena. Con node --test cada archivo nombrado es un guion, no sólo el primero.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-reviewed-copy.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La segunda capa del freno de escrituras por consola: lo protegido que un comando cambió vuelve a lo que tenía la foto de antes, comparado por contenido, salvo lo que escribe marker.js solo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-after.test.js",
@@ -4916,6 +4922,12 @@
       "requiere": []
     },
     {
+      "__nota": "A24 (S1-S10): el freno de producción sabe cuándo arrancó la sesión aunque `ps` hable castellano o la sesión aparezca con el nombre de su versión; y si no lo sabe, revisa todos los snapshots y le pregunta al shell de login en vivo, en vez de cerrar la puerta para siempre. Con un `ps` de mentira y un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-session-start.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.9, tanda E (T58): la story de retiro existe con followup_of a la 8.9 y a la 8.12, trae lo que pide el AC 54, las dos padres tienen su followed_up_by y epics.md la registra con los números del termómetro. Sin specs/ (copia pública), no mide.",
       "raiz": "arnes",
       "ruta": "tests/retirement-story.test.js",
@@ -5106,6 +5118,18 @@
       "__nota": "story 8.36 (T1-T3): la tanda del aplicador (scripts/setup/applier-batch.js) corre varios pasos de Node en un solo proceso. Cada paso de la lista cerrada (skills-dir, tycon-config, legacy-names, apply-hooks), en una HOME de juguete con cada estado que el aplicador conoce, contesta igual que su llamada suelta: código, salida, salida de error y lo que deja en el disco; también juntos, en el orden del aplicador. Un paso que tira o llama a process.exit cuenta como un Node caído y el resto corre; uno fuera de la lista: sale 2 sin correr nada. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/applier-batch.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Las tablas del detalle de una ejecución se leen en el celular: las reglas de pantalla angosta que rearman la tabla de ejecuciones en tarjetas tocan sólo la tabla principal, no las tablas de adentro del detalle (Controles, Archivos que tocó). Por lectura del CSS de scripts/nightly/dashboard/runs.js. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/runs-mobile-tables.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La fila «El proceso de la noche» de Configuración dice lo que pasa sin modelo: la noche corre igual y sólo no redacta con un modelo (aprendizajes, propuestas de hallazgos). Antes decía que la noche no corría, con los datos de la noche de hoy a la vista. La opción vacía del selector es corta. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-nightly-model-text.test.js",
       "requiere": []
     },
     {

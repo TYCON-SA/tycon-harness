@@ -44,6 +44,20 @@ function partirAMano(md) {
   return out.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n') }));
 }
 
+/** El texto de una sección como lo ve `rol`: un bloque entre `<!-- maintainers-only -->` y su cierre, sólo para quien
+ *  mantiene; las marcas no las ve nadie. */
+function segunRolAMano(texto, rol) {
+  const out = [];
+  let dentro = false;
+  for (const l of texto.split('\n')) {
+    if (/^<!-- maintainers-only -->\s*$/.test(l)) { dentro = true; continue; }
+    if (/^<!-- \/maintainers-only -->\s*$/.test(l)) { dentro = false; continue; }
+    if (dentro && rol !== 'maintainer') continue;
+    out.push(l);
+  }
+  return out.join('\n');
+}
+
 /** El sitio con la ayuda sobre `raiz` (un árbol con guides/); `entrar(correo)` da la cookie de una sesión real. */
 async function conAyuda({ raiz = ROOT } = {}, fn) {
   const emisor = await arrancarEmisor();
@@ -85,7 +99,7 @@ test('T2 Ayuda_LoQueVeCadaRol_EsLaGuia @story-2.41 @ac-2 @ac-7', () => {
       const esperadas = aMano.filter((s) => s.titulo === null || HELP.SECCIONES[idioma][s.titulo].includes(rol));
       const r = HELP.paraRol(md, idioma, rol);
       assert.deepStrictEqual(r.partes.map((p) => p.titulo), esperadas.map((s) => s.titulo), `${idioma}/${rol}: las secciones`);
-      r.partes.forEach((p, i) => assert.strictEqual(p.texto, esperadas[i].texto, `${idioma}/${rol}: «${p.titulo || 'el comienzo'}» no es el texto de la guía`));
+      r.partes.forEach((p, i) => assert.strictEqual(p.texto, segunRolAMano(esperadas[i].texto, rol), `${idioma}/${rol}: «${p.titulo || 'el comienzo'}» no es el texto de la guía`));
     }
   }
   // «Qué ve cada rol» dice que la ayuda está dentro del sitio (AC 7)
@@ -297,6 +311,25 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
     const img = await h.pedir(`/ayuda/capturas/${una}`, { cookie: c });
     assert.strictEqual(img.headers['cache-control'], 'private, max-age=3600', 'la captura se guarda sólo en el navegador de la sesión');
   } finally { await h.cerrar(); await emisor.cerrar(); }
+});
+
+// 🔴 Falla con: la guía sin las marcas de quien mantiene dentro de las secciones que ven todos, o help.js que no las
+// aplica. Una persona recibía la instalación, las decisiones del dueño, las rutas del sitio y dónde se cargan los precios
+// (recorrido del sitio del 27/11).
+test('T7 Ayuda_DentroDeLoComun_LoDeQuienMantieneNoLlegaALaPersona — y nadie ve las marcas', () => {
+  const frases = {
+    es: ['después, cómo se instala', 'Instalarlo', 'Lo que decidió el dueño', 'RUTAS_SIN_SESION', 'site.prices', 'en la instalación', '### Configuración\n'],
+    en: ['then, how to install it', 'Installing it', 'What the owner decided', 'RUTAS_SIN_SESION', 'site.prices', 'in the installation', '### Configuration\n'],
+  };
+  for (const idioma of ['es', 'en']) {
+    const md = leer(GUIA[idioma]);
+    const texto = (rol) => HELP.paraRol(md, idioma, rol).partes.map((p) => p.texto).join('\n');
+    const persona = texto('person');
+    const mantiene = texto('maintainer');
+    for (const f of frases[idioma]) assert.ok(!persona.includes(f), `${idioma}: la persona recibe «${f.trim()}»`);
+    for (const f of frases[idioma].slice(2, 5)) assert.ok(mantiene.includes(f), `${idioma}: quien mantiene no recibe «${f}»`);
+    for (const t of [persona, mantiene]) assert.ok(!t.includes('maintainers-only'), `${idioma}: una marca quedó a la vista`);
+  }
 });
 
 // Las pestañas de cada rol, leídas de las rutas del sitio: `needs` y `pestana.id` de cada archivo que arma una pestaña.

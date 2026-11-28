@@ -406,6 +406,83 @@ test('BaseControls_ConstanciaAMano_EnvoltoriosYPwd', () => {
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });
 
+// 🔴 Falla con: el texto que sale de un `$(cat <<EOF … EOF)` (o entre comillas invertidas) y corre un `eval`, un
+// `sh -c` o una variable que después corre `eval`: el cuerpo del heredoc es lo que se corre. O `view`, que sólo mira
+// el archivo como `vim -R`, frenado de más.
+test('BaseControls_ConstanciaAMano_SalidaDeUnHeredocQueSeCorre', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-salida-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.writeFileSync(path.join(repo, 'x.json'), '{}\n');
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const frenan = [
+    `eval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<'EOF'\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<"EOF"\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<-EOF\n\ttouch ${F}\n\tEOF\n)"`,
+    `eval "$(cat <<EOF\ncp x.json .github/control-changes/\nEOF\n)"`,
+    `eval $(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `eval \`cat <<EOF\ntouch ${F}\nEOF\n\``,
+    `bash -c "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `sh -c "$(cat <<'EOF'\ncd .tycon && touch control-changes.jsonl\nEOF\n)"`,
+    `x="$(cat <<EOF\ntouch ${F}\nEOF\n)"; eval "$x"`,
+    // lo que encontró el pase adversarial: otros lectores del heredoc, comillas en el cuerpo, la marca con barra, una
+    // sustitución como programa, otros que corren el texto
+    `eval "$(cat <<'EOF'\ntouch '${F}'\nEOF\n)"`,
+    `eval "$(cat <<EOF\necho "it's" && cp x.json .github/control-changes/a.json\nEOF\n)"`,
+    `eval "$(cat - <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(/bin/cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(tee <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(sed '' <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<EOF | cat\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<EOF # nota\ntouch ${F}\nEOF\n)"`,
+    `eval "$(true; cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(\ncat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `eval "$(cat <<\\EOF\ntouch ${F}\nEOF\n)"`,
+    `eval ''"$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `echo 'no' # '\neval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `echo alias tee=x; eval "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `trap "$(cat <<EOF\ntouch ${F}\nEOF\n)" EXIT`,
+    `set -- "$(cat <<EOF\ntouch ${F}\nEOF\n)"; eval "$1"`,
+    `$(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `bash <<'OUT'\neval "$(cat <<EOF\ntouch ${F}\nEOF\n)"\nOUT`,
+    `VIMINIT='au VimEnter * wq!' view ${F}`,
+    `view() { touch "$1"; }; view ${F}`,
+    `ln -s /usr/bin/touch view; ./view ${F}`,
+    // la segunda vuelta del pase
+    `function view { touch "$1"; }; view ${F}`,
+    `ln -s /usr/bin/touch view; PATH=.:$PATH view ${F}`,
+    `printf 'au VimEnter * wq!\\n' > .vimrc; HOME=$PWD view ${F}`,
+    `export "VIMINIT"='au VimEnter * wq!'; view ${F}`,
+    `x=1 $(cat <<EOF\ntouch ${F}\nEOF\n)`,
+    `eval "$(cat <<A; cat <<B\necho hi\nA\ntouch ${F}\nB\n)"`,
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    `view ${F}`,
+    `view .github/control-changes/abc.json`,
+    `eval "$(cat <<EOF\nls ${F}\nEOF\n)"`,
+    `x="$(cat <<EOF\ntouch ${F}\nEOF\n)"; echo "$x"`,
+    `echo "$(cat <<EOF\ntouch ${F}\nEOF\n)"`,
+    `git commit -m "$(cat <<'EOF'\nfix: touch ${F} ya frena\nEOF\n)"`,
+    `git commit -m "$(cat <<EOF\nfix: cp x.json .github/control-changes/ ya frena\nEOF\n)"`,
+    `gh pr create --title t --body "$(cat <<'EOF'\nfrena touch ${F}\nEOF\n)"`,
+    `git commit -F - <<'EOF'\nfix: eval con touch ${F} ya frena\nEOF`,
+    `cat > /tmp/notas.md <<'EOF'\ntouch ${F}\nEOF\nbash -c 'echo listo'`,
+    `/usr/bin/view ${F}`,
+    // el cuerpo de un intérprete es su programa: un texto que nombra la escritura no es un comando del shell
+    `node - <<'EOF'\nconsole.log('\`touch ${F}\`')\nEOF`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
 // Un repo de verdad: `origin/main` adelante de `main`, una rama sin constancias y otra que trae una.
 function repoConRamas() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-ramas-'));
@@ -748,4 +825,130 @@ test('Constancias_CdAOtroRepo_NoMiraLaCarpetaDePartida', () => {
     assert.ok(!(correr(c) || {}).block, `pasa: ${c}\n${(correr(c) || {}).block}`);
   }
   for (const c of frenan) assert.ok((correr(c) || {}).block, `frena: ${c}`);
+});
+
+// Un remoto con dos copias: `otra` (la máquina que firmó) empuja a `wt/X` un cambio de control y su constancia; `esta`
+// (la sesión) tiene `wt/X` atrás y la copia del remoto bajada con `git fetch`. `constancia(rules, blob)` arma el texto.
+function ramaConConstanciaEnElRemoto({ arma } = {}) {
+  const crypto = require('crypto');
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-remoto-'));
+  const env = sinGitDelPadre({});
+  const git = (cwd, ...a) => execFileSync('git', ['-c', 'maintenance.auto=false', ...a], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const remoto = path.join(raiz, 'remoto.git');
+  git(raiz, 'init', '-q', '--bare', '-b', 'main', remoto);
+  const otra = path.join(raiz, 'otra');
+  git(raiz, 'clone', '-q', remoto, otra);
+  for (const [k, v] of [['user.email', 'prueba@ejemplo.test'], ['user.name', 'prueba']]) git(otra, 'config', k, v);
+  fs.mkdirSync(path.join(otra, 'scripts'));
+  fs.writeFileSync(path.join(otra, 'scripts', 'freno.js'), 'v1\n');
+  git(otra, 'add', '.'); git(otra, 'commit', '-q', '-m', 'inicio'); git(otra, 'push', '-q', 'origin', 'main');
+  git(otra, 'checkout', '-q', '-b', 'wt/X');
+  fs.writeFileSync(path.join(otra, 'scripts', 'freno.js'), 'v2\n');
+  git(otra, 'add', '.'); git(otra, 'commit', '-q', '-m', 'cambia el freno'); git(otra, 'push', '-q', '-u', 'origin', 'wt/X');
+  const esta = path.join(raiz, 'esta');
+  git(raiz, 'clone', '-q', '-b', 'wt/X', remoto, esta);
+  for (const [k, v] of [['user.email', 'prueba@ejemplo.test'], ['user.name', 'prueba']]) git(esta, 'config', k, v);
+  const hashOf = (rules) => crypto.createHash('sha256').update(rules.map((e) => `${e.path}\t${e.blob}\n`).sort().join('')).digest('hex');
+  const rules = [{ path: 'scripts/freno.js', blob: git(otra, 'rev-parse', 'HEAD:scripts/freno.js') }];
+  const linea = { hash: hashOf(rules), rules, at: '2026-11-28', by: 'dueño' };
+  const { archivo, texto } = (arma || ((l) => ({ archivo: `.github/control-changes/${l.hash}.json`, texto: JSON.stringify(l) })))(linea, { hashOf });
+  fs.mkdirSync(path.dirname(path.join(otra, archivo)), { recursive: true });
+  fs.writeFileSync(path.join(otra, archivo), `${texto}\n`);
+  git(otra, 'add', '.'); git(otra, 'commit', '-q', '-m', 'constancia'); git(otra, 'push', '-q', 'origin', 'wt/X');
+  git(esta, 'fetch', '-q', 'origin');
+  const gate = require(GATE);
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: esta, session_id: 'prueba' }, { stateDir: path.join(raiz, 'estado'), installedRoots: [] });
+  return { raiz, esta, otra, git, correr };
+}
+
+// 🔴 Falla con (A211): `git merge --ff-only origin/<rama>` frenado con «una constancia de cambio de control no se escribe a
+// mano» cuando la rama del remoto trae una constancia que firmó y commiteó otra máquina: la copia de la sesión queda atrás
+// de su propia rama. Avanzar hasta la copia que bajó `git fetch` pasa si cada constancia que trae coincide con su huella
+// (su nombre y su `hash` son los de sus reglas, y las reglas son lo que había en el commit que la escribió).
+test('Constancias_AvanceRapidoARamaDelRemotoConConstanciaFirmada_Pasa', () => {
+  const { correr } = ramaConConstanciaEnElRemoto();
+  for (const c of ['git merge --ff-only origin/wt/X', 'git merge --ff-only', 'git merge --ff-only @{upstream}', 'git merge --ff-only refs/remotes/origin/wt/X 2>&1']) {
+    const r = correr(c) || {};
+    assert.ok(!r.block, `pasa: ${c}\n${r.block}`);
+  }
+  // con el registro del cuadro, si coincide con la línea
+  const conCuadro = ramaConConstanciaEnElRemoto({
+    arma: (l) => {
+      const { huella } = require(path.join(SCRIPTS, 'lib', 'signed-record-approval.js'));
+      const linea = { ...l, cuadro: { aprobacion: 'x', firma: 'control-change', via: 'click', aprobada_en: '2026-11-28T00:00:00Z', huella: huella(l) } };
+      return { archivo: `.github/control-changes/${l.hash}.json`, texto: JSON.stringify(linea) };
+    },
+  });
+  assert.ok(!(conCuadro.correr('git merge --ff-only origin/wt/X') || {}).block, 'pasa con el cuadro que coincide');
+});
+
+// 🔴 Falla con: el avance hasta la rama del remoto dejando pasar una constancia que no coincide con su huella, una que no
+// llega por la copia que bajó git fetch, o una fusión que no es un avance rápido. Y `git pull`, que baja lo que trae recién
+// al correr, sigue frenando y dice cómo traerla para que el freno la mire.
+test('Constancias_RamaDelRemoto_LoQueNoCoincideSigueFrenando', () => {
+  const casos = {
+    'el hash no es el de sus reglas': (l) => ({ archivo: `.github/control-changes/${l.hash}.json`, texto: JSON.stringify({ ...l, rules: [{ path: 'scripts/freno.js', blob: '0'.repeat(40) }] }) }),
+    'el nombre no es su hash': (l) => ({ archivo: `.github/control-changes/${'a'.repeat(64)}.json`, texto: JSON.stringify(l) }),
+    'las reglas no son lo que había': (l, { hashOf }) => { const rules = [{ path: 'scripts/freno.js', blob: '0'.repeat(40) }]; const h = hashOf(rules); return { archivo: `.github/control-changes/${h}.json`, texto: JSON.stringify({ ...l, hash: h, rules }) }; },
+    'sin reglas': (l, { hashOf }) => { const h = hashOf([]); return { archivo: `.github/control-changes/${h}.json`, texto: JSON.stringify({ ...l, hash: h, rules: [] }) }; },
+    'no es JSON': (l) => ({ archivo: `.github/control-changes/${l.hash}.json`, texto: 'no es json' }),
+    'el cuadro no coincide': (l) => ({ archivo: `.github/control-changes/${l.hash}.json`, texto: JSON.stringify({ ...l, cuadro: { huella: 'f'.repeat(64) } }) }),
+    'un renglón del registro de antes': (l) => ({ archivo: '.tycon/control-changes.jsonl', texto: JSON.stringify(l) }),
+  };
+  for (const [nombre, arma] of Object.entries(casos)) {
+    const { correr } = ramaConConstanciaEnElRemoto({ arma });
+    assert.ok((correr('git merge --ff-only origin/wt/X') || {}).block, `frena: ${nombre}`);
+  }
+  // no es un avance rápido: la rama de la sesión tiene un commit propio
+  {
+    const { esta, git, correr } = ramaConConstanciaEnElRemoto();
+    fs.writeFileSync(path.join(esta, 'propio.txt'), 'x');
+    git(esta, 'add', '.'); git(esta, 'commit', '-q', '-m', 'propio');
+    assert.ok((correr('git merge origin/wt/X') || {}).block, 'frena: no es un avance rápido');
+  }
+  // la copia del remoto movida a mano (no la escribió git fetch), o una rama local con la misma constancia
+  {
+    const { esta, git, correr } = ramaConConstanciaEnElRemoto();
+    const punta = git(esta, 'rev-parse', 'refs/remotes/origin/wt/X');
+    git(esta, 'update-ref', 'refs/remotes/origin/wt/Y', punta);
+    git(esta, 'branch', 'local-con-firma', punta);
+    assert.ok((correr('git merge --ff-only origin/wt/Y') || {}).block, 'frena: copia del remoto escrita a mano');
+    assert.ok((correr('git merge --ff-only local-con-firma') || {}).block, 'frena: rama local');
+    assert.ok((correr(`git merge --ff-only ${punta}`) || {}).block, 'frena: un commit suelto');
+  }
+  // sin `--ff-only`, con algo que fusiona o deja la constancia en el índice, con otra ref, o con un fetch en el mismo
+  // comando (lo que se trae se baja después de mirarlo)
+  {
+    const { esta, git, correr } = ramaConConstanciaEnElRemoto();
+    git(esta, 'branch', 'otra-local', 'HEAD');
+    for (const c of [
+      'git merge origin/wt/X',
+      'git merge --no-ff origin/wt/X',
+      'git merge --ff-only --squash origin/wt/X',
+      'git merge --ff-only --no-commit origin/wt/X',
+      'git merge --ff-only origin/wt/X otra-local',
+      'git fetch origin && git merge --ff-only origin/wt/X',
+      'git pull; git merge --ff-only origin/wt/X',
+    ]) assert.ok((correr(c) || {}).block, `frena: ${c}`);
+  }
+  // la rama de otro: desde una rama que no sigue a wt/X
+  {
+    const { esta, git, correr } = ramaConConstanciaEnElRemoto();
+    git(esta, 'checkout', '-q', '-b', 'nueva', 'origin/main');
+    assert.ok((correr('git merge --ff-only origin/wt/X') || {}).block, 'frena: rama ajena');
+  }
+  // la copia de origin bajada de otro lado (`--refmap` con una ruta): el registro no dice que vino de origin
+  {
+    const { raiz, esta, otra, git, correr } = ramaConConstanciaEnElRemoto();
+    git(esta, 'update-ref', 'refs/remotes/origin/wt/X', 'HEAD');
+    git(esta, 'fetch', '-q', '--refmap=+refs/heads/*:refs/remotes/origin/*', otra, 'wt/X');
+    assert.ok(raiz && (correr('git merge --ff-only origin/wt/X') || {}).block, 'frena: bajada de una ruta con el nombre de origin');
+  }
+  // `git pull` baja lo que trae recién al correr: sigue frenando, y dice cómo traerla
+  {
+    const { correr } = ramaConConstanciaEnElRemoto();
+    const r = correr('git pull --ff-only') || {};
+    assert.ok(r.block, 'frena: git pull');
+    assert.match(r.block, /git merge --ff-only origin\/wt\/X/, 'dice cómo traerla');
+  }
 });

@@ -1245,9 +1245,11 @@ function readFromTty(prompt) {
 function entriesFromRange(cmdName) {
   const exp = opt('--expect');
   if (!exp || !/^[0-9a-f]{64}$/.test(exp)) { console.error(`run-base-controls ${cmdName}: con --range va --expect <huella de la lista>, la que da \`pending\`: no se firmó nada.`); process.exit(2); }
-  const log = console.log; console.log = (...a) => console.error(...a);
-  let a;
-  try { a = analyze(); } finally { console.log = log; }
+  let a = cmdName === 'approve' ? listaDelChequeo() : null;
+  if (!a) {
+    const log = console.log; console.log = (...x) => console.error(...x);
+    try { a = analyze(); } finally { console.log = log; }
+  }
   if (!a.entries.length) { console.error(`run-base-controls ${cmdName}: el pedido no cambia ningún archivo de control: no hay nada que firmar.`); process.exit(1); }
   // lo mismo que `pending`: con desparejos (el pedido mezclado con la base cambia lo que se firmaría) no hay comando
   if (a.desparejos.length) { console.error(`run-base-controls ${cmdName}: ${DESPAREJOS(a.desparejos)}: no se firmó nada.`); process.exit(1); }
@@ -1426,10 +1428,43 @@ function registroFirmado(root, aprobaciones, p, sacados) {
   return false;
 }
 
-// la lista de la firma de `--range` y su huella, en JSON: la lee el cuadro del freno de firmas (signature-sources.js)
+// la lista de la firma de `--range` y su huella, en JSON: la lee el cuadro del freno de firmas (signature-sources.js).
+// Con su sello: los commits de los que salió, para que el chequeo previo de la misma decisión la reuse
 function cmdEntries() {
+  // el sello, antes y después de armar la lista: si algo se movió mientras se armaba, no hay sello y nadie la reusa
+  const antes = selloDelRango();
   const entries = entriesFromRange('entries');
-  process.stdout.write(`${JSON.stringify({ entries, hash: hashOf(entries) })}\n`);
+  const sello = antes && antes === selloDelRango() ? antes : null;
+  process.stdout.write(`${JSON.stringify({ entries, hash: hashOf(entries), sello })}\n`);
+}
+
+// Los commits de los que sale la lista de una firma por rango: la carpeta, la base, las dos puntas del rango y la punta de
+// la carpeta, resueltos ahora. null si alguno no resuelve. Los commits no cambian: con el mismo sello, `analyze` arma la
+// misma lista
+function selloDelRango() {
+  const rootArg = opt('--root'); const baseArg = opt('--base'); const range = opt('--range');
+  const m = rootArg && baseArg && range ? /^(.+?)\.\.\.(.+)$/.exec(range) : null;
+  if (!m) return null;
+  const root = path.resolve(rootArg);
+  const revs = [baseArg, m[1], m[2], 'HEAD'].map((r) => resolveCommit(root, r));
+  return revs.every(Boolean) ? JSON.stringify([root, ...revs]) : null;
+}
+
+// El chequeo previo del freno (TYCON_SIGN_PRECHECK) de una firma por rango trae la lista que el freno ya armó para su
+// cuadro en la misma decisión (BASE_CONTROLS_PRECHECK_LIST, `{ entries, sello }`), y no se vuelve a armar: eran unos
+// segundos de los 20 del freno (fila A10). Se reusa sólo con el sello de ahora: si un commit se movió, se arma de nuevo.
+// Nunca fuera del chequeo, ni en la terminal: lo que firma se arma siempre desde el pedido. Lo que sigue (la huella del
+// comando, la punta de la carpeta) se comprueba igual sobre la lista reusada
+function listaDelChequeo() {
+  if (process.env.TYCON_SIGN_PRECHECK !== '1' || !process.env.BASE_CONTROLS_PRECHECK_LIST) return null;
+  if (rest.includes('--terminal') || process.env.BASE_CONTROLS_STDIN_INTERACTIVE === '1') return null;
+  let l = null;
+  try { l = JSON.parse(process.env.BASE_CONTROLS_PRECHECK_LIST); } catch (_) { return null; }
+  if (!l || typeof l.sello !== 'string' || !Array.isArray(l.entries) || !l.entries.length) return null;
+  if (l.entries.some((e) => !e || typeof e.path !== 'string' || !e.path || typeof e.blob !== 'string' || !e.blob)) return null;
+  if (l.sello !== selloDelRango()) return null;
+  const entries = l.entries.map((e) => ({ path: e.path, blob: e.blob }));
+  return { root: path.resolve(opt('--root')), entries, hash: hashOf(entries), desparejos: [] };
 }
 
 function cmdClassify() {

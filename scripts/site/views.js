@@ -15,7 +15,7 @@
  *   · Ningún texto visible se escribe acá: sale de la tabla de texts.js, en el idioma del pedido
  *     (`ctx.idioma`; sin él, castellano). Las funciones de filas reciben `idioma` por el mismo motivo.
  */
-const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
+const { esc, chip, umbralValido, claveDeProducto } = require('../nightly/dashboard/common.js');
 const fichasDelTablero = require('./tabs/cards.js');
 const { compare: compararVersiones } = require('../setup/harness/version-order.js');
 const { t, TEXTOS } = require('./texts.js');
@@ -142,6 +142,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   DONDE.maquinas_sin_confirmar = '/configuracion';
   void enlaceOperaciones;
   for (const f of filas) f.enlace = DONDE[f.clave] || null;
+  // las retrospectivas, en su lista de abajo: sólo hay lista con la foto de hoy
+  const fRet = filas.find((f) => f.clave === 'retrospectivas');
+  if (fRet && fRet.estado === 'medido') fRet.enlace = '#retros-pendientes';
   return filas;
 }
 
@@ -187,7 +190,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   for (const p of productos) for (const k of p.proyectos || []) cuantos.set(k, (cuantos.get(k) || 0) + 1);
   const dep = m.despliegues;
   const vig = m.vigilante;
-  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map((x) => String(x).toLowerCase().replace(/\s+/g, '')) : []);
+  const vigilados = new Set(medida(vig) || (vig && Array.isArray(vig.productos)) ? (vig.productos || []).map(claveDeProducto) : []);
   const contar = (stories) => {
     const r = { en_curso: 0, en_revision: 0, bloqueadas: 0 };
     for (const s of stories) {
@@ -244,7 +247,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
       por_proyecto: Object.fromEntries((p.proyectos || []).map((k) => { const c = contar(frescasDe(k).flatMap((s) => s.stories || [])); return [k, { en_curso: c.en_curso, paradas: c.paradas, sin_medir: c.sin_medir }]; })),
       despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? motivoDeDespliegue(d.motivo, idioma) : null }
         : { estado: 'no_medido', motivo: medida(dep) ? T('proyectos.despliegueSinProducto') : conFecha(dep, idioma) },
-      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(String(p.producto).toLowerCase().replace(/\s+/g, '')) : null,
+      vigilado: medida(vig) || (vig && Array.isArray(vig.productos)) ? vigilados.has(claveDeProducto(p.producto)) : null,
       vivas,
       paridad: paridadDe(p),
     };
@@ -451,6 +454,19 @@ function prsTrabados(prs, idioma) {
 }
 
 /**
+ * La lista de las retrospectivas pendientes de la foto de hoy, a donde lleva su ficha: cada una con su repo, su merge y
+ * sus días, y cómo se hace (en la máquina de quien mergeó). Sin la foto de hoy, nada: la ficha ya dice por qué.
+ */
+function retrosPendientes(ret, idioma) {
+  if (!medida(ret) || !Array.isArray(ret.pendientes)) return '';
+  const T = (k, v) => t(idioma, k, v);
+  const lista = [...ret.pendientes].sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
+  const fila = (r) => renglonDeLista(null, [esc(r.repo), r.merge ? `merge ${esc(r.merge)}` : null, Number.isFinite(r.dias) ? esc(dias(r.dias, idioma)) : null].filter(Boolean).join(' · '));
+  const cuerpo = `<p class="q-note">${esc(T('inicio.retrosComo'))}</p>` + (lista.length ? `<ul class="lista dos">${lista.map(fila).join('')}</ul>` : `<p class="q-note">${esc(T('vista.ninguno'))}</p>`);
+  return seccion(T('inicio.retrospectivas'), cuerpo, T('vista.deLaNocheDel', { fecha: ret.fecha }), 'retros-pendientes');
+}
+
+/**
  * Las listas a las que llevan las tarjetas de «Qué decidir hoy»: una sección por tarjeta (`#decidir-<clave>`), una
  * ficha por renglón con el enlace a su pedido o el motivo por el que no lo tiene (decisions.js). Lo declarado se decide
  * en un archivo de cada repo, no en un pedido: la sección lo dice y lista los que vencen.
@@ -514,7 +530,7 @@ function paginaInicio(ctx) {
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones, idioma, esperan: ctx.esperan });
     // mientras alguna ficha carga, la página se recarga sola
-    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
+    return layout(filas.some((f) => f.estado === 'cargando') ? { ...ctx, recargar: 10 } : ctx, T('pestana.inicio'), seccion(T('inicio.queDecidir'), `<div class="grid">${filas.map((f) => tile(f, idioma)).join('')}</div>`, T('inicio.cadaFicha')) + prsTrabados(m.prs, idioma) + retrosPendientes(m.retros, idioma) + listasDeDecision(m, { enlaceOperaciones: ctx.enlaceOperaciones, remotoOperaciones: ctx.remotoOperaciones, ahora: ctx.ahora, idioma }), T('inicio.ledeMantiene'));
   }
   const d = inicioDev(m, { ahora: ctx.ahora, idioma });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');

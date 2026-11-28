@@ -40,6 +40,19 @@ const volcadoMinimo = (sid, inicio, extra = {}) => JSON.stringify({ archivedAt: 
  * (sólo el sitio demo): además el arranque de cada paso, sus vueltas, los revisores medidos con el validador por fase,
  * el desglose por tipo y el consumo de cada paso; `esquema: 2`, los pasos por nombre (el marcador de hoy).
  */
+// Los tokens de la conversación principal de una ejecución de la demo, y su reparto por paso con la misma cuenta que
+// tokens-digest.js (entrada + salida + caché nueva): los pasos suman el total que dice el recuadro. Cada paso pesa un
+// poco más que el anterior; el resto del redondeo va al último.
+const TOKENS_DE_EJEMPLO = { in: 900, out: 30000, cache_new: 100000, cache_read: 1800000 };
+function repartoPorPaso(ids, tokens = TOKENS_DE_EJEMPLO) {
+  const total = tokens.in + tokens.out + tokens.cache_new;
+  const pesos = ids.map((_, i) => 4 + i);
+  const suma = pesos.reduce((a, n) => a + n, 0);
+  const partes = pesos.map((w) => Math.floor((total * w) / suma));
+  if (partes.length) partes[partes.length - 1] += total - partes.reduce((a, n) => a + n, 0);
+  return Object.fromEntries(ids.map((p, i) => [p, partes[i]]));
+}
+
 function volcadoDeEjecucion(sid, inicio, { story, repo, pasos = [0, 1, 2, 3, 4, 5, 6, 7, 8], rojo = false, completo = false, esquema = 1 } = {}) {
   if (completo) return volcadoCompleto(sid, inicio, { story, repo, pasos, rojo, esquema });
   const m = (x) => iso(inicio, x);
@@ -224,8 +237,8 @@ function volcadoCompleto(sid, inicio, { story, repo, pasos, rojo, esquema }) {
       tokens_medidos: { total: 40000 * spawns, n: spawns },
       estimado: { estado: 'vacio', motivo: 'todos los lanzamientos tienen tokens medidos', lanzamientos_cubiertos: 0 },
       validador: { estado: 'medido', lanzamientos: 2, por_fase: porFase } },
-    consumo: { estado: 'medido', respuestas: 40, sinteticos: 0, lineas_ilegibles: 0, tokens: { in: 900, out: 30000, cache_new: 100000, cache_read: 1800000 },
-      por_modelo: {}, por_paso: Object.fromEntries(ids.map((p, i) => [p, 20000 + i * 5000])), fuera_de_ventana: 0, hilo_hasta: m(126), medido_en: m(300) },
+    consumo: { estado: 'medido', respuestas: 40, sinteticos: 0, lineas_ilegibles: 0, tokens: { ...TOKENS_DE_EJEMPLO },
+      por_modelo: {}, por_paso: repartoPorPaso(ids), fuera_de_ventana: 0, hilo_hasta: m(126), medido_en: m(300) },
   });
 }
 
