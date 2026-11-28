@@ -756,3 +756,19 @@ test('T67 2.79-Prolijidad_ListasSingularYSinFalta @story-2.79 @ac-56 @ac-57 @ac-
   }
   assert.strictEqual(t('es', 'fichas.falta'), 'sin dato');
 });
+
+// A125 (recorrido del sitio): el vigilante de la noche nombra los productos como los escribe (`producto-x`) y la lista de
+// la organización los nombra con espacio («Producto X»). La comparación quitaba espacios pero no guiones: el producto
+// salía «no» vigilado aunque lo estaba.
+// 🔴 Falla con: «Producto X» contra `producto-x` (o «Producto_Y» contra «producto y») que no coinciden.
+test('A125 Proyectos_Vigilado_EspacioGuionYMayusculas', () => {
+  const m = {
+    productos: [{ producto: 'Producto X', proyectos: ['Producto X'], rutas: ['Producto-X/FrontEnd'] },
+      { producto: 'Producto_Y', proyectos: ['Producto Y'], rutas: ['Producto-Y/Backend'] },
+      { producto: 'Producto Z', proyectos: ['Producto Z'], rutas: ['Producto-Z/Api'] }],
+    productosFuente: { estado: 'medido', codigo: null, motivo: null, fecha: HOY },
+    vigilante: { estado: 'medido', fecha: HOY, productos: ['producto-x', 'producto y'] },
+  };
+  const por = Object.fromEntries(views.filasProyectos(m).filas.map((f) => [f.producto, f.vigilado]));
+  assert.deepStrictEqual(por, { 'Producto X': true, Producto_Y: true, 'Producto Z': false });
+});

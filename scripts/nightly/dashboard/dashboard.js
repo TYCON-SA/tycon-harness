@@ -970,6 +970,45 @@ const SRC = path.dirname(RAIZ); // la carpeta que contiene a todos los repos del
 const REPOS_JSON = 'scripts/nightly/dependencies/repos.json';
 /** El motivo de una ficha que cuenta productos y no tiene ninguno: el de la lista de repos, o que no nombra productos. */
 const sinProductos = (ctx) => ctx.reposMotivo || `${REPOS_JSON} no nombra ningún producto (la clave «producto» de cada repo)`;
+
+/**
+ * La ficha «Productos sin pipeline de producción», de la deuda declarada (scripts/ci/pipeline-debt.json, las entradas
+ * PROD-PIPELINE-*) cruzada con los despliegues que la organización declaró en Configuración. Una deuda de un producto al
+ * que Despliegues le declara producción no cuenta (la deuda quedó vieja) y el detalle lo dice; la que cuenta se nombra
+ * como la lista de productos. Sin la deuda, los despliegues solos dicen qué productos no tienen producción.
+ */
+function fichaSinPipeline(ctx) {
+  const { claveDeProducto: clave } = require('./common');
+  const despliegues = ctx.despliegues ? new Map(Object.entries(ctx.despliegues).map(([k, v]) => [clave(k), v])) : null;
+  const conProduccion = (p) => { const d = despliegues && despliegues.get(clave(p)); return !!(d && Array.isArray(d.production) && d.production.length); };
+  if (!ctx.debt || !Array.isArray(ctx.debt.debt)) {
+    if (despliegues && ctx.productos.length) {
+      // dos casos distintos, que cuentan los dos y se nombran aparte: el declarado sin producción y el que no se declaró
+      const sinDeclarar = ctx.productos.filter((p) => !despliegues.has(clave(p)));
+      const sinProd = ctx.productos.filter((p) => despliegues.has(clave(p)) && !conProduccion(p));
+      const partes = [sinProd.length ? `sin producción: ${sinProd.join(' · ')}` : '', sinDeclarar.length ? `sin declarar en Despliegues: ${sinDeclarar.join(' · ')}` : ''].filter(Boolean);
+      return medida(sinProd.length + sinDeclarar.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados',
+        detalle: `${partes.join(' — ')} · de los despliegues declarados en Configuración` });
+    }
+    // con despliegues declarados, lo que falta es la lista de productos
+    if (despliegues) return noMedida(sinProductos(ctx));
+    return noMedida('falta scripts/ci/pipeline-debt.json (la deuda declarada de pipelines) y no hay despliegues declarados en Configuración → Despliegues');
+  }
+  if (!ctx.productos.length) return noMedida(sinProductos(ctx));
+  const abiertas = ctx.debt.debt.filter((x) => /^PROD-PIPELINE-/.test(String(x.id)));
+  // cada deuda, con el producto de la lista que nombra (o como la escribe, si no está en la lista)
+  const deudas = abiertas.map((x) => {
+    const crudo = String(x.id).replace(/^PROD-PIPELINE-/, '').replace(/-\d+$/, '');
+    const producto = ctx.productos.find((p) => clave(p) === clave(crudo));
+    return { nombre: producto || crudo, revision: x.revision || null, vieja: !!(producto && conProduccion(producto)) };
+  });
+  const vigentes = deudas.filter((d) => !d.vieja);
+  const viejas = deudas.filter((d) => d.vieja);
+  const rev = vigentes.map((d) => d.revision).filter(Boolean).sort()[0];
+  const partes = [vigentes.length ? vigentes.map((d) => d.nombre).join(' · ') + (rev ? ` · deuda con revisión ${rev}` : '') : 'ninguno',
+    viejas.length ? `deuda que ya no corresponde: ${viejas.map((d) => d.nombre).join(' · ')} (Despliegues le declara producción)` : ''].filter(Boolean);
+  return medida(vigentes.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados', detalle: partes.join(' — ') });
+}
 function contexto() {
   const rj = datoDelArbol(...REPOS_JSON.split('/'));
   const repos = rj && Array.isArray(rj.repos) ? rj.repos : (Array.isArray(rj) ? rj : []);
@@ -1359,29 +1398,7 @@ function extra(por, ctx, cfg) {
     return { ...ratio(ok.length, ctx.productos.length), den_etiqueta: 'productos declarados', detalle: ok.length ? `vigilados: ${ok.join(' · ')}` : 'ninguno' };
   });
 
-  m.sin_prod = (() => {
-    if (!ctx.debt || !Array.isArray(ctx.debt.debt)) {
-      // sin la deuda, los despliegues declarados ya dicen qué productos no tienen producción (o no declararon ninguno)
-      if (ctx.despliegues && ctx.productos.length) {
-        const declarados = new Map(Object.entries(ctx.despliegues).map(([k, v]) => [k.toLowerCase(), v]));
-        // dos casos distintos, que cuentan los dos y se nombran aparte: el declarado sin producción y el que no se declaró
-        const sinDeclarar = ctx.productos.filter((p) => !declarados.has(String(p).toLowerCase()));
-        const sinProd = ctx.productos.filter((p) => { const d = declarados.get(String(p).toLowerCase()); return d && (!Array.isArray(d.production) || !d.production.length); });
-        const partes = [sinProd.length ? `sin producción: ${sinProd.join(' · ')}` : '', sinDeclarar.length ? `sin declarar en Despliegues: ${sinDeclarar.join(' · ')}` : ''].filter(Boolean);
-        return medida(sinProd.length + sinDeclarar.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados',
-          detalle: `${partes.join(' — ')} · de los despliegues declarados en Configuración` });
-      }
-      // con despliegues declarados, lo que falta es la lista de productos
-      if (ctx.despliegues) return noMedida(sinProductos(ctx));
-      return noMedida('falta scripts/ci/pipeline-debt.json (la deuda declarada de pipelines) y no hay despliegues declarados en Configuración → Despliegues');
-    }
-    if (!ctx.productos.length) return noMedida(sinProductos(ctx));
-    const abiertas = ctx.debt.debt.filter((x) => /^PROD-PIPELINE-/.test(String(x.id)));
-    const nombres = abiertas.map((x) => String(x.id).replace(/^PROD-PIPELINE-/, '').replace(/-\d+$/, '').toLowerCase());
-    const rev = abiertas.map((x) => x.revision).filter(Boolean).sort()[0];
-    return medida(abiertas.length, ctx.productos.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos declarados',
-      detalle: `${nombres.join(' · ')}${rev ? ` · deuda con revisión ${rev}` : ''}` });
-  })();
+  m.sin_prod = fichaSinPipeline(ctx);
 
   // La familia del capturador: contrato y fechas, con loadAll (no se reimplementa el parser), sobre la raíz y merges/,
   // un registro por merge.
@@ -1912,5 +1929,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, encuentra, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
+module.exports = { fichaSinPipeline, colectar, encuentra, render, equipo, local, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues, fichaVueltasAtras,
   DENOMINADORES: require('./common').DENOMINADORES };
