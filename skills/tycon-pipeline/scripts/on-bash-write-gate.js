@@ -396,14 +396,21 @@ function handleCarrilEHistoria(event, opts = {}) {
     const nombraPadre = (p) => /^\./.test(p) && /[*?[]/.test(p) && (() => { try { return comodinDelShell(p).test('..'); } catch { return true; } })();
     const P = process.platform === 'win32' ? path.win32 : path;
     // un `..` después del comodín sube desde donde el comodín cayó (un enlace: `l?/../x` sube desde el destino del enlace)
-    // llaves con una barra adentro (`{x,l1/active}`) o anidadas más hondo de lo que se convierte: nombran tramos que no se
-    // pueden contar, como si subieran hasta la raíz
+    // unas llaves con una barra adentro Y otras llaves anidadas (`{x,l{1..1}/active}`: la expansión de llaves con coma no
+    // las abre), o más de cuatro niveles: nombran tramos que no se pueden contar, como si subieran hasta la raíz. Con una
+    // barra y sin anidar (`{v1/a.txt,v2/a.txt}`) cada alternativa ya se juzga por su cuenta
     let hondo = 0;
     let llaveRara = false;
+    let barraEnGrupo = false;
+    let anidado = false;
     for (const ch of String(abs)) {
-      if (ch === '{') { hondo++; if (hondo > 4) llaveRara = true; } else if (ch === '}') hondo = Math.max(0, hondo - 1);
-      else if (hondo > 0 && (ch === '/' || ch === '\\')) llaveRara = true;
+      if (ch === '{') { hondo++; if (hondo > 1) anidado = true; if (hondo > 4) llaveRara = true; }
+      else if (ch === '}') {
+        hondo = Math.max(0, hondo - 1);
+        if (hondo === 0) { if (barraEnGrupo && anidado) llaveRara = true; barraEnGrupo = false; anidado = false; }
+      } else if (hondo > 0 && (ch === '/' || ch === '\\')) barraEnGrupo = true;
     }
+    if (hondo > 0 && barraEnGrupo && anidado) llaveRara = true;
     const fijo = llaveRara || partes.slice(i).some((p) => nombraPadre(p) || p === '..') ? P.parse(String(abs)).root || P.sep : P.normalize(partes.slice(0, i).join(P.sep) || P.sep);
     for (const z of zonas()) if (isInside(z, fijo) || isInside(fijo, z)) return z;
     // en el disco, las llaves y los paréntesis de zsh se miran como `*` (nombran de más, nunca de menos)

@@ -2035,7 +2035,8 @@ test('EscrituraAlEstado_ConTildesQueBashExpande_Frena', () => {
     assert.ok(r && r.block, '~+ es la carpeta actual');
     // un comodín que no puede llegar al estado no frena por eso
     fs.mkdirSync(path.join(repo, 'logs'), { recursive: true });
-    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt', `echo x | tee ${repo}/{a,b}/notas.txt`]) {
+    for (const c of ['echo x > logs/*.log', 'ls > /tmp/*/out.txt', `echo x | tee ${repo}/{a,b}/notas.txt`,
+      'mv docs/{v1/guia.txt,v2/guia.txt}', 'echo x | tee logs/{a,sub/b}.txt']) {
       const p = bash.handle(ev(c), { stateDir, installedRoots: [arnes] });
       assert.ok(!(p && p.block && /estado|state/i.test(p.block)), `${c}: ${p && p.block}`);
     }
