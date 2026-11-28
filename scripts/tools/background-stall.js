@@ -37,6 +37,8 @@ const { spawnSync } = require('child_process');
 // a la vez es una tarea colgada, y avisa media hora antes que la espera de 41 minutos que lo motivó.
 const STALL_MS = 15 * 60000;
 const SAMPLE_AFTER_MS = 5 * 60000;
+// una muestra de los procesos por minuto alcanza para un umbral de quince, y en Windows cada lectura cuesta un segundo
+const SAMPLE_EVERY_MS = 60000;
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'fish', 'sandbox-exec', 'bwrap']);
 // en Windows la herramienta corre sus comandos por el bash de Git o por PowerShell
 const SHELLS_WINDOWS = new Set(['bash', 'sh', 'pwsh', 'powershell']);
@@ -83,7 +85,9 @@ function processesWindows(run) {
   for (const k of Object.keys(env)) if (/^(PSModulePath$|COR_|CORECLR_|COMPLUS_|DOTNET_)/i.test(k)) delete env[k];
   let r;
   try {
-    r = run('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', CONSULTA_WINDOWS],
+    // la carpeta de Windows de la máquina (otra unidad o carpeta si se instaló así); sin ella, la de siempre
+    const raiz = /^[a-zA-Z]:\\[^"<>|*?]*$/.test(process.env.SystemRoot || '') ? process.env.SystemRoot : 'C:\\Windows';
+    r = run(path.win32.join(raiz, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', CONSULTA_WINDOWS],
       { windowsHide: true, encoding: 'utf8', timeout: 15000, maxBuffer: 64 * 1024 * 1024, env });
   } catch (e) { return { problem: `los procesos (${e.message})` }; }
   if (!r || r.error || r.status !== 0 || !r.stdout) return { problem: `los procesos (${(r && r.error && r.error.message) || `PowerShell salió con ${r && r.status}`})` };
@@ -139,8 +143,11 @@ function taskDirs(sid, root, cwd, { platform = process.platform } = {}) {
   return [...raices].map((s) => path.join(root, s, sid, 'tasks')).filter((d) => {
     let st;
     try { st = fs.statSync(d); } catch (_) { return false; }
+    if (!st.isDirectory()) return false;
+    // un disco que no da número de nodo (FAT, una carpeta de red) da 0 en todas: ahí no se puede saber, y no se saca
+    if (!st.ino) return true;
     const id = `${st.dev}:${st.ino}`;
-    if (!st.isDirectory() || vistas.has(id)) return false;
+    if (vistas.has(id)) return false;
     vistas.add(id);
     return true;
   });
@@ -208,6 +215,18 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
     if (Object.keys(previo).length) guardar(archivo, {}, problems);
     return [];
   }
+  const acusar = (s, desde, out) => {
+    const salida = Math.max(...s.tasks.map((t) => t.mtimeMs));
+    const quieta = now - Math.max(desde, salida);
+    if (quieta >= STALL_MS) out.push({ sid: s.sid, minutes: Math.floor(quieta / 60000), tasks: s.tasks.length });
+  };
+  // con todas muestreadas hace menos de un minuto, se usa lo guardado y no se leen los procesos
+  const fresca = (e) => e && Number.isFinite(e.seen) && e.seen <= now && now - e.seen < SAMPLE_EVERY_MS;
+  if (conTareas.every((s) => fresca(previo[s.sid]))) {
+    const out = [];
+    for (const s of conTareas) if (!previo[s.sid].sinConsola && Number.isFinite(previo[s.sid].at)) acusar(s, previo[s.sid].at, out);
+    return out;
+  }
   const ps = readProcesses();
   if (ps.problem) { problems.push(ps.problem); return []; }
   const nuevo = {};
@@ -215,14 +234,12 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
   for (const s of conTareas) {
     // cada comando de fondo corre en una consola de la sesión: sin ninguna, no corre ninguno, y lo que sigue abierto es
     // el archivo de una tarea que se cortó sin su renglón de cierre
-    if (!consoles(s.pid, ps.list).length) continue;
+    if (!consoles(s.pid, ps.list).length) { nuevo[s.sid] = { sinConsola: true, seen: now }; continue; }
     const sig = signature(s.pid, ps.list);
     const antes = previo[s.sid];
     const desde = antes && antes.sig === sig && Number.isFinite(antes.at) ? antes.at : now;
-    nuevo[s.sid] = { sig, at: desde };
-    const salida = Math.max(...s.tasks.map((t) => t.mtimeMs));
-    const quieta = now - Math.max(desde, salida);
-    if (quieta >= STALL_MS) out.push({ sid: s.sid, minutes: Math.floor(quieta / 60000), tasks: s.tasks.length });
+    nuevo[s.sid] = { sig, at: desde, seen: now };
+    acusar(s, desde, out);
   }
   guardar(archivo, nuevo, problems);
   return out;

@@ -127,4 +127,5 @@ test('T7 PedidoQueNoEntraEnLaLinea_NoRompeLaCorrida — el agente vuelve como no
   assert.strictEqual(r.code, -1);
   assert.match(r.err, /no entra en la línea de comando/);
   assert.match(r.err, /entrada estándar/);
+  assert.strictEqual(r.tooLong, true, 'el corredor no queda caído: sirve para los pedidos cortos');
 });

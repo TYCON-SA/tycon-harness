@@ -139,12 +139,16 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs, { stdin = false, env = {} }
     try {
       ch = spawn(bin, pre, { windowsHide: true, cwd, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_EVAL_SANDBOX: '1', ...env, TYCON_WFLITE_PROMPT: prompt } });
     } catch (e) {
-      // Node tira al lanzar (no como evento) cuando la línea de comando no entra: ENAMETOOLONG en Windows, cuyo tope es de
-      // unos 32 KB, y E2BIG en Mac y Linux. Pasa con un corredor que recibe el pedido como argumento
-      const largo = (e && (e.code === 'ENAMETOOLONG' || e.code === 'E2BIG'))
-        ? `el pedido no entra en la línea de comando (${pre.reduce((n, a) => n + String(a).length, 0)} caracteres; en Windows el tope es de unos 32.000): este corredor lo recibe como argumento; usá uno que lo lea por la entrada estándar`
-        : null;
-      resolve({ code: -1, out: '', err: largo || (e && e.message) || 'no se pudo lanzar' });
+      // Node tira al lanzar (no como evento) cuando el pedido no entra: ENAMETOOLONG en Windows, cuya línea de comando topa
+      // en unos 32 KB, y E2BIG en Mac y Linux (Linux topa además cada variable de ambiente en 128 KB). Con un corredor que
+      // recibe el pedido como argumento es la línea; si no, la variable TYCON_WFLITE_PROMPT
+      const enLaLinea = pre.reduce((n, a) => n + String(a).length, 0);
+      const largo = !(e && (e.code === 'ENAMETOOLONG' || e.code === 'E2BIG')) ? null
+        : enLaLinea >= String(prompt).length
+          ? `el pedido no entra en la línea de comando (${enLaLinea} caracteres; en Windows el tope es de unos 32.000): este corredor lo recibe como argumento; usá uno que lo lea por la entrada estándar`
+          : `el pedido no entra en la variable de ambiente TYCON_WFLITE_PROMPT (${String(prompt).length} caracteres; Linux topa cada una en 128 KB)`;
+      // `tooLong`: este pedido no se puede lanzar así, pero el corredor sirve para los que siguen (no queda caído)
+      resolve({ code: -1, out: '', err: largo || (e && e.message) || 'no se pudo lanzar', tooLong: Boolean(largo) });
       return;
     }
     let out = '', err = '';
@@ -400,6 +404,8 @@ function makeAgent(opts, corredor) {
           }
           corredor.fallosSeguidos[name] = (corredor.fallosSeguidos[name] || 0) + 1;
           const noLanzo = res.code === -1;
+          // un pedido que no entra no tumba al corredor: los pedidos más cortos de la misma corrida sí se pueden lanzar
+          if (res.tooLong) { corredor.fallosSeguidos[name] = 0; process.stderr.write(`wflite ✖ ${label}: ${runner.label} — ${causa}\n`); return; }
           if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
             // sin el programa: dónde se buscó y la salida aprobada, que no lanza nada desde acá
             // en la revisión del plan, --agents-dir no es salida: las respuestas las escribiría la sesión revisada, y el

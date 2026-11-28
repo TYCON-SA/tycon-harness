@@ -2257,3 +2257,23 @@ test('BSW3 BackgroundTasks_Windows_DriveLetterEitherCase: la carpeta de la sesi�
   fs.writeFileSync(path.join(d, 'b7.output'), 'corriendo\n');
   assert.deepStrictEqual(BS.openTasks('sid-w', root, 'c:\\lab\\coordi', { platform: 'win32' }).map((x) => x.id), ['b7']);
 });
+
+// 🔴 mutación: sin guardar la hora de la muestra, en Windows cada turno lanza PowerShell (alrededor de un segundo) mientras
+// una sesión tenga una tarea abierta y callada, y si PowerShell falla `open` vuelve a negarse.
+test('BSW4 BackgroundTasks_ProcessesSampledAtMostOncePerMinute: dentro del minuto se usa la muestra guardada', () => {
+  const t = toy();
+  bg(t, 'bg-m', 'Mora', 2, { status: 'busy' });
+  bgTask(t, 'bg-m', 'b9');
+  let lecturas = 0;
+  const contar = () => { lecturas++; return procs()(); };
+  C.status(stallOpts(t, NOW, contar));
+  assert.strictEqual(lecturas, 1, 'la primera vez se lee');
+  C.status(stallOpts(t, NOW + 30000, contar));
+  assert.strictEqual(lecturas, 1, 'a los 30 s se usa la muestra');
+  C.status(stallOpts(t, NOW + 61000, contar));
+  assert.strictEqual(lecturas, 2, 'pasado el minuto se vuelve a leer');
+  // la cuenta del silencio sigue igual con la muestra guardada
+  C.status(stallOpts(t, NOW + 16 * 60000, contar));
+  const s = C.status(stallOpts(t, NOW + 16 * 60000 + 20000, contar));
+  assert.deepStrictEqual(s.backgroundStalled.map((b) => [b.session, b.minutes]), [['Mora', 16]]);
+});
