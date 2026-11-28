@@ -254,8 +254,8 @@ async function deLaDemo(browser) {
     d.page.on('websocket', (w) => conexiones.push(w.url()));
     await d.page.goto(`${base}/offices`);
     await d.page.waitForSelector('.oficina[data-id="mac-ana"]', { timeout: ESPERA_MS });
-    check(await d.page.locator('.oficina').count() === 3, 'la demo dibuja sus oficinas inventadas');
-    check(await d.page.locator('.oficina[data-id="mac-bruno"] .stats').innerText().then((t) => /sin conexión desde \d\d:\d\d/.test(t)), 'y una dice que no tiene conexión');
+    check(await d.page.locator('.oficina').count() === 2, 'la demo dibuja sus oficinas inventadas (sólo las de máquinas confirmadas)');
+    check(await d.page.locator('.oficina[data-id="mac-ana"] .stats').innerText().then((t) => /sin conexión desde \d\d:\d\d/.test(t)), 'y una dice que no tiene conexión');
     await d.page.waitForTimeout(1000);
     await shot(d.page, '8-demo');
     await d.page.locator('.oficina[data-id="mac-lead"] .cover').click();
@@ -326,15 +326,15 @@ async function reconectando(browser) {
     await d.page.route('**/offices/demo.json', async (route) => {
       const res = await route.fetch();
       const json = await res.json();
-      const bruno = (json.oficinas || []).find((o) => o.id === 'mac-bruno');
-      if (bruno) bruno.reconectando = true;
+      const ana = (json.oficinas || []).find((o) => o.id === 'mac-ana');
+      if (ana) ana.reconectando = true;
       await route.fulfill({ response: res, json });
     });
     await d.page.goto(`${base}/offices`);
-    await d.page.waitForSelector('.oficina[data-id="mac-bruno"] .stats', { timeout: ESPERA_MS });
-    const dice = await d.page.locator('.oficina[data-id="mac-bruno"] .stats').innerText();
+    await d.page.waitForSelector('.oficina[data-id="mac-ana"] .stats', { timeout: ESPERA_MS });
+    const dice = await d.page.locator('.oficina[data-id="mac-ana"] .stats').innerText();
     check(/reconectando: el sitio se reinició/.test(dice) && !/sin conexión desde/.test(dice), `Regresion_PaginaReconectando_LaTarjetaLoDice (8.234 AC 25): la tarjeta dice «reconectando» y no su hora de conexión (${dice.replace(/\s+/g, ' ')})`);
-    const otra = await d.page.locator('.oficina[data-id="mac-ana"] .stats').innerText();
+    const otra = await d.page.locator('.oficina[data-id="mac-lead"] .stats').innerText();
     check(!/reconectando/.test(otra), 'Regresion_PaginaReconectando_LaTarjetaLoDice: la que no está reconectando no lo dice');
     check(d.problemas.length === 0, `sin errores en la página: ${d.problemas.join(' | ')}`);
     await d.context.close();

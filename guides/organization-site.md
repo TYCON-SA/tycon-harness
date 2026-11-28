@@ -145,7 +145,7 @@ deciden en el repo de operaciones, donde la noche dejó su foto. Las fichas son:
 - **Suites rojas** y **casos del banco rojos esta noche:** las pruebas del arnés y los controles del arnés que se
   pusieron rojos anoche.
 - **Datos declarados que vencen:** números que alguien anotó a mano con una fecha para revisarlos.
-- **Máquinas sin confirmar con ejecuciones** y **retrospectivas pendientes**.
+- **Máquinas por confirmar con ejecuciones** y **retrospectivas pendientes**.
 
 ![Inicio de quien mantiene: «Qué decidir hoy», con fichas en Decidir, Nada y No medido](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 

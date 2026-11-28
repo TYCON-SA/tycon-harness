@@ -518,13 +518,12 @@ function oficinasDeEjemplo(ahora = Date.now()) {
       sesion('Cleo', 'trabajando', { titulo: 'La oficina se actualiza en tiempo real', fin: fin(90), avance: 73, pasos: pasos(8) }),
       sesion('Dina', 'libre', { haciendo: 'Sin trabajo' }),
     ]) },
-    { id: 'mac-ana', person: ANA, conectada: true, sinConexionDesde: null, marcas: [], foto: foto([
+    // como en el sitio real, sólo las máquinas confirmadas tienen oficina (mac-bruno sigue «por confirmar» en
+    // Configuración); la de Ana muestra cómo se ve una oficina sin conexión: su última foto, con la hora en que se cortó
+    { id: 'mac-ana', person: ANA, conectada: false, sinConexionDesde: ahora - 42 * 60000, marcas: [], foto: foto([
       sesion('Eros', 'trabajando', { titulo: 'Comprobante de transferencias entre cuentas', fin: fin(25), avance: 45, pasos: pasos(5) }),
       sesion('Fara', 'espera', { titulo: 'Exportar los reportes mensuales a planilla', haciendo: 'Espera su turno para entrar', fin: fin(50), avance: 91, pasos: pasos(10) }),
       sesion('Gael', 'libre', { haciendo: 'Sin trabajo' }),
-    ]) },
-    { id: 'mac-bruno', person: BRUNO, conectada: false, sinConexionDesde: ahora - 42 * 60000, marcas: [], foto: foto([
-      sesion('Hugo', 'parada', { titulo: 'Revisa un error al iniciar sesión desde el celular', parada: 'sin novedades' }),
     ]) },
   ];
 }

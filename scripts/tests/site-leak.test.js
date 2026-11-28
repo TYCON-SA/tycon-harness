@@ -133,7 +133,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
     const pL = await todo(await entrar(LEAD));
     const unido = Object.values(pL).join('\n');
     for (const m of ['Producto Solo B', 'Producto A']) assert.ok(unido.includes(m), `quien mantiene ve ${m}`);
-    assert.match(pL['/'], /Máquinas sin confirmar con ejecuciones[\s\S]*?t-val">1</, 'quien mantiene ve la máquina sin confirmar (la cuenta)');
+    assert.match(pL['/'], /Máquinas por confirmar con ejecuciones[\s\S]*?t-val">1</, 'quien mantiene ve la máquina sin confirmar (la cuenta)');
     assert.deepStrictEqual(buscar(pL, LIBRE), [], 'nadie ve el texto libre, tampoco quien mantiene');
 
     // sin sesión: ninguna ruta de la tabla contesta 200; lo que contesta 200 son las sondas y los estáticos, sin datos

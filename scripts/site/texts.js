@@ -235,7 +235,7 @@ const TEXTOS = {
   'inicio.suites_rojas_nuevas': { es: 'Suites rojas esta noche (nuevas)', en: 'Red suites tonight (new)' },
   'inicio.banco_rojos_nuevos': { es: 'Casos del banco rojos esta noche (nuevos)', en: 'Red bench cases tonight (new)' },
   'inicio.declarados_por_vencer': { es: 'Datos declarados que vencen en 7 días', en: 'Declared items that expire within 7 days' },
-  'inicio.maquinas_sin_confirmar': { es: 'Máquinas sin confirmar con ejecuciones', en: 'Unconfirmed machines with runs' },
+  'inicio.maquinas_sin_confirmar': { es: 'Máquinas por confirmar con ejecuciones', en: 'Machines to confirm, with runs' },
   'inicio.maquinasSinInforme': { es: 'no medido: lo que informan las máquinas no se pudo leer del depósito', en: 'not measured: what the machines report could not be read from the run storage' },
   'inicio.retrospectivas': { es: 'Retrospectivas pendientes', en: 'Pending retrospectives' },
   'inicio.retrospectivasMotivo': { es: 'no medido: sólo existen en la máquina de quien mergeó', en: 'not measured: they only exist on the machine of the person who merged' },

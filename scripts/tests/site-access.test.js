@@ -275,7 +275,7 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   // quien mantiene: la cuenta de máquinas sin confirmar con corridas (la de OTRO y la que no informa), sin correos
   const mL = ve(LEAD);
   assert.strictEqual(mL.maquinasSinConfirmar, 2);
-  assert.match(views.paginaInicio({ modelo: mL, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.now() }), /Máquinas sin confirmar con ejecuciones[\s\S]*?t-val">2</);
+  assert.match(views.paginaInicio({ modelo: mL, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.now() }), /Máquinas por confirmar con ejecuciones[\s\S]*?t-val">2</);
   assert.ok(!JSON.stringify(mL).includes(OTRO) && !JSON.stringify(mA).includes(OTRO), 'ningún correo informado en el modelo');
 });
 

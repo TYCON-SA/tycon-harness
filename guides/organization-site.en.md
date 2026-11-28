@@ -149,7 +149,7 @@ The cards are:
 - **Red suites** and **red bench cases tonight:** the harness tests and the harness controls that turned red last
   night.
 - **Declared data about to expire:** numbers someone wrote down by hand with a date to review them.
-- **Unconfirmed machines with runs** and **pending retrospectives**.
+- **Machines to confirm, with runs** and **pending retrospectives**.
 
 ![A maintainer's Home: "What to decide today", with cards in Decide, Nothing and Not measured](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
