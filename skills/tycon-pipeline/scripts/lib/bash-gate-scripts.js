@@ -387,14 +387,17 @@ function loQueDeshaceEnBloque(b, dir) {
       const salida = correr(programaFind(), [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
       // por ruta real: el repo puede estar detrás de un enlace (en Mac, /tmp y /var lo son)
       const realDe = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
+      // la misma ruta aunque git y el disco la escriban distinto: en Windows, git da `C:/…` y la carpeta temporal se
+      // nombra `TEMP` o `Temp` según quién la arma (el disco no distingue mayúsculas)
+      const clave = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : p);
       const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(path.resolve(dir, f)), kind: 'delete' }));
       // qué sigue git, de una vez: la carpeta puede no ser un repo (y entonces nada es código seguido de la corrida)
       let seguidosAca = null;
       try {
         const top = git(['rev-parse', '--show-toplevel']).trim();
-        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => path.join(top, f)));
+        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => clave(path.join(realDe(top), f))));
       } catch (_) { seguidosAca = null; }
-      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(a.abs) ? [a.abs] : [];
+      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(clave(a.abs)) ? [a.abs] : [];
       return { archivos };
     }
     const top = git(['rev-parse', '--show-toplevel']).trim();

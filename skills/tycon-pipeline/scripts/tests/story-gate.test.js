@@ -28,7 +28,7 @@ const conBarras = (p) => (process.platform === 'win32' ? String(p).split('\\').j
 // carpeta real y, en Windows, sin mayúsculas
 const mismaRuta = (a, b) => {
   const real = (x) => { try { return path.join(fs.realpathSync.native(path.dirname(x)), path.basename(x)); } catch (_) { return x; } };
-  const n = (x) => (process.platform === 'win32' ? real(x).toLowerCase() : real(x));
+  const n = (x) => (process.platform === 'win32' ? path.resolve(real(x)).toLowerCase() : real(x));
   return n(a) === n(b);
 };
 const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));
