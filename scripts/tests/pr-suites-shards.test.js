@@ -757,7 +757,9 @@ test('T5 PrShards_EachJobRecordsSuiteTimes_WithoutTheCommandSaysSo — cada trab
   assert.match(sin.out, /el árbol no trae scripts\/tools\/suite-times\.js: no anoto los tiempos/, sin.out);
   assert.ok(fs.existsSync(path.join(sin.artifact, 'finished')), sin.out);
 
-  const SLOW_RED = 'sleep 1\necho "MAL — lenta y roja"\nexit 1\n';
+  // 3 s por pasada: lo anotado tiene que ser una pasada (≥ 2,9 s) y no las dos (≥ 6 s). Con 1 s la ventana era de 0,9 s y
+  // una sola pasada se pasaba de la cota en una máquina cargada, con el medidor de cobertura (A76)
+  const SLOW_RED = 'sleep 3\necho "MAL — lenta y roja"\nexit 1\n';
   const con = toy([['lab-green-a.test.sh', GREEN_SH], ['lab-red.test.sh', SLOW_RED], ['lab-absent.test.sh', null]]);
   fs.mkdirSync(path.join(con, 'repo', 'scripts', 'tools'), { recursive: true });
   fs.symlinkSync(path.join(ROOT, 'scripts', 'tools', 'suite-times.js'), path.join(con, 'repo', 'scripts', 'tools', 'suite-times.js'));
@@ -770,7 +772,7 @@ test('T5 PrShards_EachJobRecordsSuiteTimes_WithoutTheCommandSaysSo — cada trab
   assert.strictEqual(e.origen, 'ci-azure');
   assert.deepStrictEqual(e.suites.map((x) => [x.s, x.exit]).sort(), [['tests/lab-green-a.test.sh', 0], ['tests/lab-red.test.sh', 1]]);
   const red = e.suites.find((x) => x.s === 'tests/lab-red.test.sh');
-  assert.ok(red.ms >= 900 && red.ms < 1900, `la roja se reintenta: se anota sólo la primera pasada (${red.ms} ms)`);
+  assert.ok(red.ms >= 2900 && red.ms < 5900, `la roja se reintenta: se anota sólo la primera pasada (${red.ms} ms)`);
   assert.strictEqual(typeof e.carga, 'number');
   // 🔴 mutación: medir la carga al terminar el trabajo (es la del propio trabajo, no la ajena): la carga que va a
   //    `record` se toma antes de lanzar la primera suite.

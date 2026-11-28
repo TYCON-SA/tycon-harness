@@ -706,12 +706,20 @@ test('NadieQuieto_BloqueNoTexto_EmpiezaTurno: una imagen o un documento con reco
 
 test('NadieQuieto_RecordatoriosSinCierre_Lineal: 40000 aperturas sin cierre se leen rápido, y una apertura sin cierre se come el resto', () => {
   // 🔴 mutación: sacar los recordatorios con una expresión que vuelve a buscar el cierre desde cada apertura → segundos
-  const r = destinosConMensaje('<system-reminder>'.repeat(40000));
+  // se mide cómo crece (40000 aperturas contra un octavo), no contra un tope fijo: con el medidor de cobertura o la
+  // máquina cargada, 500 ms no alcanzaban sin que nada fuera cuadrático (A76). Lineal da unas 8 veces; cuadrático, 64
+  const crece = (armar) => {
+    destinosConMensaje(armar(5000));
+    const chico = destinosConMensaje(armar(5000)).ms;
+    const r = destinosConMensaje(armar(40000));
+    assert.ok(r.ms < chico * 24 + 300, `40000 aperturas tardaron ${Math.round(r.ms)} ms y 5000, ${Math.round(chico)} ms: no crece lineal`);
+    assert.ok(r.ms < 15000, `tardaron ${Math.round(r.ms)} ms`);
+    return r;
+  };
+  const r = crece((n) => '<system-reminder>'.repeat(n));
   assert.deepStrictEqual(r.to, ['A', 'B'], 'sólo aperturas: no hay texto de la persona');
-  assert.ok(r.ms < 500, `40000 aperturas sin cierre tardaron ${Math.round(r.ms)} ms (tope 500)`);
-  const r2 = destinosConMensaje(`seguí${'<system-reminder>'.repeat(40000)}`);
+  const r2 = crece((n) => `seguí${'<system-reminder>'.repeat(n)}`);
   assert.deepStrictEqual(r2.to, ['B'], 'el texto antes de las aperturas es de la persona');
-  assert.ok(r2.ms < 500, `con texto adelante tardaron ${Math.round(r2.ms)} ms (tope 500)`);
   assert.deepStrictEqual(destinosConMensaje('<system-reminder>ctx sin cerrar\nseguí').to, ['A', 'B'], 'la apertura sin cierre se come el resto del bloque');
   assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '<system-reminder>sin cerrar' }, { type: 'text', text: 'seguí' }]).to, ['B'], 'sólo el resto de su bloque');
 });

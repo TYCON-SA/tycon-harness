@@ -221,7 +221,9 @@ test('ExpansionBudget_CountedBeforeGenerating', () => {
   const b = new ExpansionBudget();
   const t0 = Date.now();
   const r = expandWord('p{1..100000000}', { budget: b });
-  assert.ok(Date.now() - t0 < 200, 'un rango enorme no se materializa');
+  // que no se materializa lo dicen `exhausted` y el patrón de abajo; el tiempo sólo cuida que no se cuelgue (un tope de
+  // 200 ms fallaba con el medidor de cobertura o la máquina cargada, A76; materializar cien millones tarda minutos)
+  assert.ok(Date.now() - t0 < 5000, 'un rango enorme no se materializa');
   assert.equal(r.exhausted, true); assert.equal(r.undecidable, true);
   assert.deepEqual(r.patterns, ['p*'], 'la lectura gruesa: la lista vale *');
   const g = new ExpansionBudget();
@@ -353,7 +355,8 @@ test('ExpandWord_BudgetExhausted_CoarseReadingKeepsSlashAlternatives', () => {
   // una lista enorme de alternativas con carpeta: no se materializa, y la palabra cruda queda como patrón
   const muchas = 'h/{' + Array.from({ length: 5000 }, (_, k) => `d${k}/x`).join(',') + ',sub/name.json}';
   const t0 = Date.now(); const r3 = expandWord(muchas, { budget: new ExpansionBudget(10) });
-  assert.ok(Date.now() - t0 < 500, 'la lectura gruesa tiene tope');
+  // el tope lo dice la palabra cruda de abajo; el tiempo sólo cuida que no se cuelgue (A76)
+  assert.ok(Date.now() - t0 < 5000, 'la lectura gruesa tiene tope');
   assert.ok(r3.patterns.some((p) => sp.patternToLiteral(p).includes('sub/name.json')), 'pasado el tope, la palabra cruda');
 });
 
@@ -523,7 +526,8 @@ test('ExpandWord_BashBraceWithoutComma_KeepsScanning', { skip: OFF_REFERENCE }, 
   assert.deepEqual(difieren, [], difieren.join('\n'));
   // muchas llaves que zsh y bash leen distinto: indecidible, no exponencial
   const t0 = Date.now(); const r = expandWord('{a}'.repeat(40) + ',}');
-  assert.ok(Date.now() - t0 < 500); assert.equal(r.undecidable, true);
+  // exponencial serían 2^40 lecturas: no termina; el tope sólo cuida que no se cuelgue (A76)
+  assert.ok(Date.now() - t0 < 5000); assert.equal(r.undecidable, true);
 });
 
 // Una barra invertida al final del comando entero: el shell la descarta (continuación contra el fin del texto).
