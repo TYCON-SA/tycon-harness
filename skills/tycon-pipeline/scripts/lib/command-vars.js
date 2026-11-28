@@ -69,10 +69,59 @@ function sinSubcomandos(s) {
 const BLOQUE_ABRE = new Set(['if', 'while', 'until', 'for', 'case', 'select']);
 const BLOQUE_CIERRA = new Set(['fi', 'done', 'esac']);
 
-function sinComillas(v) {
+/**
+ * El valor de una asignación como lo deja bash: fuera de comillas `\x` es `x`; entre comillas dobles la contrabarra sólo
+ * escapa `$`, `` ` ``, `"`, `\` y el salto de línea; entre comillas simples todo es literal. Un `$` o un `` ` `` literal (escapado o
+ * entre comillas simples) no se puede representar para la expansión que sigue: da null («no sé»). Lineal.
+ */
+function sinEscapesDelShell(v) {
   const s = String(v);
-  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) return s.slice(1, -1);
-  return s;
+  // `$'…'`, `$"…"` (comillas de bash con escapes propios) y `$\x` (un `$` literal pegado a lo que sigue): «no sé»
+  if (/\$["'\\]/.test(s)) return null;
+  let out = '';
+  let modo = '';
+  // un `$nombre` que se está escribiendo ('' no, 'empieza' recién el `$`, 'sigue' ya con letras) y si lo último fue una
+  // comilla o una contrabarra que se quitó: si después viene una letra, quitarlas pegaría dos palabras en otra variable
+  // (`$x''do` no es `$xdo`): «no sé»
+  let nombre = '';
+  let corte = false;
+  // adentro de `${…}` una comilla o contrabarra es «bad substitution» para bash (corta la línea y deja el valor anterior)
+  let enLlave = false;
+  const emitir = (c, deUnDolar = false) => {
+    const letra = /[A-Za-z0-9_]/.test(c);
+    if (corte && nombre && (letra || (nombre === 'empieza' && c === '{'))) return false;
+    corte = false;
+    if (nombre === 'empieza' && c === '{') enLlave = true;
+    else if (enLlave && c === '}') enLlave = false;
+    if (deUnDolar) nombre = 'empieza';
+    else if (nombre === 'empieza' && /[A-Za-z_]/.test(c)) nombre = 'sigue';
+    else if (!(nombre === 'sigue' && letra)) nombre = '';
+    out += c;
+    return true;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (enLlave && (c === "'" || c === '"' || c === '\\')) return null;
+    if (modo === "'") {
+      if (c === "'") { modo = ''; corte = true; continue; }
+      if (c === '$' || c === '`') return null;
+      if (!emitir(c)) return null;
+      continue;
+    }
+    if (c === '\\' && i + 1 < s.length) {
+      const sig = s[i + 1];
+      if (modo === '"' && !'$`"\\\n'.includes(sig)) { if (!emitir(c)) return null; continue; }
+      i++;
+      if (sig === '$' || sig === '`') return null;
+      corte = true;
+      if (sig !== '\n' && !emitir(sig)) return null;
+      continue;
+    }
+    if (modo === '"' && c === '"') { modo = ''; corte = true; continue; }
+    if (modo === '' && (c === "'" || c === '"')) { modo = c; corte = true; continue; }
+    if (!emitir(c, c === '$')) return null;
+  }
+  return out;
 }
 
 /**
@@ -409,13 +458,11 @@ function expandirEn(t, pos, asigs, env, home, prof = 0) {
           const crudo = String(a.valor);
           // `D=$(mktemp -d …)`: una carpeta temporal, que se sabe dónde queda aunque no su nombre
           const temporal = carpetaDeMktemp(crudo, a.pos, asigs, env);
-          if (temporal !== null) { a.resuelto = temporal; a.temporal = true; } else if (/^'[\s\S]*'$/.test(crudo)) {
-            // entre comillas simples el shell no expande nada: el valor es literal. Si trae un `$`, la ruta final tendría
-            // un `$` de verdad y otra pieza (resolveTarget) lo expandiría: «no sé».
-            const literal = crudo.slice(1, -1);
-            a.resuelto = /\$/.test(literal) ? NO_SE : literal;
-          } else {
-            const r = expandirEn(sinComillas(crudo), a.pos, asigs, env, home, prof + 1);
+          if (temporal !== null) { a.resuelto = temporal; a.temporal = true; } else {
+            // entre comillas simples el shell no expande nada; si trae un `$`, la ruta final tendría un `$` de verdad y
+            // otra pieza (resolveTarget) lo expandiría: sinEscapesDelShell da «no sé»
+            const literal = sinEscapesDelShell(crudo);
+            const r = literal === null ? { valor: null } : expandirEn(literal, a.pos, asigs, env, home, prof + 1);
             a.resuelto = r.valor === null ? NO_SE : r.valor;
             if (r.temporal) a.temporal = true;
           }

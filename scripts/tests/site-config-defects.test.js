@@ -733,3 +733,103 @@ test('Regresion_CadaSeccionDelPerfil_PideSuVersion — toda sección que el prim
   const todas = ORG.pedidasDelPerfil({ actual: {}, doc: { office: {}, approvals: { signature_list: 'on', levels: {}, owner_only: [], delegated_machines: [] }, coordination: { session_names: [] } } });
   for (const [k, , mensaje] of todas) for (const idioma of ['es', 'en']) assert.ok(t(idioma, mensaje) && t(idioma, mensaje) !== mensaje, `${idioma} ${k}: ${mensaje}`);
 });
+
+// 🔴 Falla con: el «Para qué» de las vueltas de revisores dice un valor de fábrica distinto del que usa el pipeline (A162).
+test('A162_VueltasDeRevisores_ElParaQueDiceElMismoValorDeFabrica — el «Para qué» nombra el tope de fábrica de review-rounds.js', () => {
+  const { FABRICA } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'review-rounds.js'));
+  const textos = { es: t('es', 'pantalla.para.revision'), en: t('en', 'pantalla.para.revision') };
+  assert.match(textos.es, new RegExp(`de fábrica son ${FABRICA}\\b`), textos.es);
+  assert.match(textos.en, new RegExp(`the default is ${FABRICA}\\b`), textos.en);
+});
+
+// 🔴 Falla con: «Tareas» sin organización ni proyecto dice que la noche no pide trabajo, y las vulnerabilidades lo
+// piden igual, al proyecto de cada repo (integrations/azure-devops/scripts/dependency-notices.js) (A164).
+test('A164_TareasSinOrganizacion_NoDiceQueLaNocheNoPideNada — dice quién deja de pedir y que las vulnerabilidades siguen', () => {
+  for (const k of ['pantalla.pedidosFaltanLosDos', 'pantalla.pedidosFaltaOrganizacion', 'pantalla.pedidosFaltaProyecto']) {
+    const es = t('es', k); const en = t('en', k);
+    assert.doesNotMatch(es, /la noche no va a pedir trabajo$/, es);
+    assert.match(es, /revisión de las ejecuciones y el vigilante/, es);
+    assert.match(es, /vulnerabilidades/, es);
+    assert.match(en, /run review and the watcher/, en);
+    assert.match(en, /vulnerabilit/, en);
+  }
+});
+
+// 🔴 Falla con: textos del sitio que dicen «ADO» (sin explicar, y la tarea puede vivir en otra plataforma), o que la
+// sección Azure DevOps «no aplica» porque «la organización trabaja en GitHub» cuando sólo el perfil vive ahí (A165).
+test('A165_Plataforma_LosTextosNoDicenAdoNiInventanDondeTrabajaLaOrganizacion', () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const conAdo = Object.entries(TEXTOS || {}).filter(([, v]) => v && /\bADO\b/.test(`${v.es} ${v.en}`)).map(([k]) => k);
+  assert.deepStrictEqual(conAdo, [], `con «ADO»: ${conAdo.join(', ')}`);
+  assert.doesNotMatch(t('es', 'config.noAplicaGithub'), /la organización trabaja en GitHub/);
+  assert.match(t('es', 'config.noAplicaGithub'), /perfil/);
+  assert.match(t('en', 'config.noAplicaGithub'), /profile/);
+});
+
+// 🔴 Falla con: el «Para qué» de la actualización nombra una opción que el selector no tiene («una versión fija») (A169).
+test('A169_Actualizacion_ElParaQueNombraLasOpcionesDelSelector — «la última» y «estable», nada más', () => {
+  const es = t('es', 'pantalla.para.actualizacion'); const en = t('en', 'pantalla.para.actualizacion');
+  assert.doesNotMatch(es, /versión fija/, es);
+  assert.doesNotMatch(en, /fixed version/, en);
+  assert.match(es, /«la última»/i); assert.match(es, /«estable»/);
+  assert.match(en, /«latest»/i); assert.match(en, /«stable»/);
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const sel = /hoja\(d, 'update', 'channel', v\)/.test(src) && /\['latest', T\('pantalla\.laUltimaCadaMaquinaToma'\)\], \['stable', T\('pantalla\.estableSoloLasVersionesMarcadas'\)\]/.test(src);
+  assert.ok(sel, 'el selector de update.channel ofrece la última y estable');
+});
+
+// 🔴 Falla con: una pieza de «Ver las piezas» manda a cambiarse en una sección que no tiene ese ajuste (A170): el aviso
+// de espera no apaga «aprobado» ni el click, Frenos y medidores no calla el aviso de otra sesión, y el nombre de la
+// sección no es el que se ve en la pantalla.
+test('A170_Piezas_SeCambianDondeLaSeccionLasCambia', () => {
+  const efectos = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects;
+  const { SWITCHES } = TC;
+  const variables = Object.values(SWITCHES).map((s) => s.variable);
+  for (const e of efectos.filter((x) => x.site_section === 'espera')) {
+    assert.match(String(e.switch), /^TYCON_WAIT_NOTICE=/, `${e.id}: el aviso de espera sólo cambia el aviso de espera`);
+  }
+  for (const e of efectos.filter((x) => x.site_section === 'interruptores')) {
+    const v = String(e.switch).split('=')[0];
+    assert.ok(variables.includes(v), `${e.id}: ${v} no es un interruptor de Frenos y medidores`);
+  }
+  const callado = efectos.find((x) => x.id === 'SessionStart:@tcg:session-collision-guard.js');
+  assert.notStrictEqual(callado.site_section, 'interruptores', 'Frenos y medidores dice que ese aviso sale siempre');
+  // y la pieza nombra la sección con el título que se ve, no con un nombre corto que la pantalla no muestra
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.match(src, /T\('pantalla\.seCambiaEnConfiguracion'\) \+ pestana\(f\.site_section\) \+ \(PLANO\[f\.site_section\] \? PLANO\[f\.site_section\]\.t :/);
+});
+
+// 🔴 Falla con: Configuración muestra días en UTC como «hoy» o «última vez» sin decirlo, y de noche van un día
+// adelantados para quien lee (A172). Los días salen de upload-runs.js (`toISOString`) y de la noche, en UTC.
+test('A172_Fechas_LosDiasEnUtcLoDicen', () => {
+  for (const k of ['pantalla.ultimaNoticia', 'pantalla.comparacionDeHoy', 'pantalla.ultimaNoticia2']) {
+    assert.match(t('es', k), /UTC/, `${k}: ${t('es', k)}`);
+    assert.match(t('en', k), /UTC/, `${k}: ${t('en', k)}`);
+  }
+  assert.doesNotMatch(t('es', 'pantalla.comparacionDeHoy'), /de hoy/);
+  const upload = fs.readFileSync(path.join(ROOT, 'scripts', 'metrics', 'upload-runs.js'), 'utf8');
+  assert.match(upload, /function hoy\(\) \{ return new Date\(\)\.toISOString\(\)\.slice\(0, 10\); \}/, 'el día de cada máquina es UTC');
+});
+
+// 🔴 Falla con: la pantalla dice «story» y «historia» para lo mismo (A175). La palabra es «historia»
+// (guides/maintaining/vocabulary.md). Quedan afuera los textos que vienen del catálogo de firmas (`pantalla.firmaQue.*`,
+// se cambian con su firma) y los de la pestaña Ejecuciones (`corridas.*`) y las causas (`mant.causa.*`), que no son de
+// Configuración ni de la Ayuda.
+test('A175_Historia_LaPantallaNoDiceStory', () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const afuera = /^(pantalla\.firmaQue\.|pantalla\.nivelQue\.|corridas\.|mant\.causa\.)/;
+  const con = Object.entries(TEXTOS).filter(([k, v]) => !afuera.test(k) && /\b[Ss]tor(y|ies)\b/.test(v.es)).map(([k]) => k);
+  assert.deepStrictEqual(con, [], `con «story»: ${con.join(', ')}`);
+  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8').replace(/`[^`]*`/g, '');
+  assert.doesNotMatch(guia, /\b[Ss]tor(y|ies)\b/);
+});
+
+// 🔴 Falla con: las casillas de «Fichas que muestra el sitio» van todas seguidas, como un solo párrafo (cada una es un
+// <label>, que no corta renglón) (A177). Cada ficha va en su propio renglón (un <div>).
+test('A177_Fichas_UnaPorRenglon', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const i = src.indexOf('function editorFichas(');
+  const cuerpo = src.slice(i, src.indexOf('\n  }\n', i));
+  assert.match(cuerpo, /grupo\.appendChild\(el\('div', \{ class: 'ficha-renglon' \}, el\('label'/, 'cada ficha en su renglón');
+  assert.doesNotMatch(cuerpo, /grupo\.appendChild\(el\('label'/, 'sin labels sueltas una al lado de la otra');
+});

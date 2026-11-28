@@ -74,7 +74,6 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | Firma | Nivel | Quién la ve | Qué aprueba | Se pide hoy con |
 | --- | --- | --- | --- | --- |
 | `plan-approval` | 1 · rutina | dev y mantenimiento | aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person) | `plan-approval` |
-| `extra-round` | 1 · rutina | dev y mantenimiento | una vuelta más de revisores | `extra-round` |
 | `pending-approval` | 1 · rutina | dev y mantenimiento | abrir un pendiente nuevo en la lista | `pending-approval` |
 | `save` | 1 · rutina | dev y mantenimiento | guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible | `save` |
 | `browser-test:prepare` | 1 · rutina | dev y mantenimiento | preparar la prueba con navegador | `browser-test` |
@@ -83,6 +82,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `compare-waiver` | 1 · rutina | dev y mantenimiento | eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing) | `compare-waiver` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `lost-run:particion` | 1 · rutina | dev y mantenimiento | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing) | `lost-run:particion` |
+| `extra-round` | 2 · excepción | dev y mantenimiento | una vuelta más de revisores pasado el tope: la firma el dueño, con su click o su terminal; no es trámite ni la firma la coordinadora | `extra-round` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
 | `write-after-release` | 2 · excepción | dev y mantenimiento | liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada: sólo la persona, o la coordinadora designada si el perfil la suma a approvals.delegated_signing) | `write-after-release` |
 | `adhoc-lane:datos` | 2 · excepción | dev y mantenimiento | dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño) | `adhoc-lane:datos` |
@@ -142,7 +142,7 @@ delega nada.
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
-| `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
+| `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
 | `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
@@ -168,7 +168,7 @@ firmar, y en la columna tu situación:
 | Nivel | Lo que hay que firmar | Sin coordinadora, estás | Sin coordinadora, no estás | Con coordinadora, estás | Con coordinadora, no estás | La revisión automática |
 |---|---|---|---|---|---|---|
 | 1 · rutina | **Abrir el pull request** (`save`): los pull requests y el push a una rama compartida; el commit y el push a tu rama de trabajo no se firman. Es rutina porque se deshace; si un commit toca algo sensible, pasa a `save:sensible`, de nivel 2. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
-| 1 · rutina | **Pedir otra revisión** (`extra-round`). Es rutina porque sólo suma control: firmarla de más no daña nada. | vos | espera | la coordinadora \* | la coordinadora \* | no aplica |
+| 2 · excepción | **Pedir otra revisión pasado el tope** (`extra-round`). La firma el dueño: pasado el tope, la coordinadora no firma sola un cambio de código. Sin su firma, lo cambiado vuelve a lo revisado o va a una historia de arreglo, y una vuelta sin código se cierra sola. | vos | espera | vos (también en la pestaña de la coordinadora) | espera | no aplica |
 | 1 · rutina | **Aprobar el plan** (`plan-approval`) de una historia que no es delicada. Es rutina porque decide qué se construye antes de construirlo, y se cambia. | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, vos | la revisión que lanza la propia sesión, si da aprobado \*\*; si no, espera | vos, o la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | la coordinadora, sólo con el veredicto aprobado de la revisión que ella lanza \*\* | su «aprobado» es lo único con que se aprueba sin vos: con coordinadora la lanza ella; sin ella, la propia sesión. Con `plan_review.routine_approval: person`, aprobás vos siempre |
 | 1 · rutina | **Eximir un comando de la comparación con main** (`compare-waiver`): un comando que la historia modifica y que no se puede comparar con su versión de `main` (por ejemplo, porque usa la red). La firma es delegable sólo cuando el perfil del equipo la suma a `approvals.delegated_signing`, con un pedido al perfil que firma el dueño: amplía lo que firma la coordinadora. Hasta entonces, es tuya. | vos | espera | vos; la coordinadora \* sólo si el perfil la delega | espera; la coordinadora \* sólo si el perfil la delega | no aplica |
 | 2 · excepción | **Aprobar el plan de una historia delicada** (`plan-approval` cuando `risk-class` dice `delicate`), con su maqueta | vos, con tu click o tu «aprobado» | espera | vos, con tu click o tu «aprobado» (también en la pestaña de la coordinadora); sin eso, nadie, aunque el perfil nombre `plan-approval:delicada` | espera | ataca el plan y avisa; su «aprobado» nunca aprueba un plan delicado |
@@ -659,8 +659,8 @@ ventana.
 ## Lo delegado no está protegido
 
 La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada por su cuenta,
-el arnés no lo distingue de un ok del dueño. Por eso a la lista de delegadas sólo va lo de bajo riesgo: aprobar planes, la vuelta extra de revisores y refirmar los
-controles tras traer `main`.
+el arnés no lo distingue de un ok del dueño. Por eso a la lista de delegadas sólo va lo de bajo riesgo: aprobar planes y refirmar los controles tras traer `main`. La vuelta extra de
+revisores no va: pasado el tope, la firma el dueño.
 
 Tocar un freno es sólo del dueño: aprobar un cambio de los controles, los escapes que apagan un freno (salvo los dos de
 abajo), eximir pruebas o un crítico, aceptar un criterio imposible de probar y saltear el pase adversarial.
