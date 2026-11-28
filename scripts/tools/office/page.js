@@ -27,6 +27,12 @@ const EN={
   "El trabajo":"The work","Tablas":"Tables","Kanban":"Kanban","Buscar":"Search","Ir":"Go","Ver como tabla":"See as a table","Trabajo":"Work","Estado":"State",
   "Fin estimado":"Estimated end","Sesión":"Session","Carpeta":"Folder","Las sesiones trabajando en la oficina":"The sessions working in the office","Acercar":"Zoom in","Alejar":"Zoom out","Conversación":"Conversation",
   "Trabajando":"Working","Corriendo pruebas":"Running tests","Parada":"Stopped","Esperando entrar":"Waiting to merge","Esperando":"Waiting","Tu firma":"Your signature","Te pregunta":"Asks you",
+  // los pasos de una ejecución, como los nombra el pipeline (la misma traducción que `paso.<id>` del sitio), y la etiqueta
+  // del resumen de cada oficina
+  "Arranque":"Start","Validar la historia":"Validate the story","Armar el plan":"Draft the plan",
+  "Implementar":"Implement","Correr las pruebas":"Run the tests","Revisores":"Reviewers",
+  "Hallazgos":"Findings","Probar en vivo":"Try it live","Preparar el pull request":"Prepare the pull request","Cerrar la historia":"Close the story",
+  "coordina":"coordinates",
   "Libre":"Free","Coordinando":"Coordinating","Inactiva":"Inactive","Terminado, falta cerrar":"Done, still to close","Pasada de la hora":"Past its time","En hora":"On time",
   "Agentes de IA":"AI agents","Pendientes":"Pending","tocá para ver el detalle":"tap to see the detail","TU FIRMA":"SIGN","PARADA":"STOPPED",
   "A medio camino":"Halfway","Camino corto":"Short path","Cargando las oficinas…":"Loading the offices…","Con la coordinadora":"With the coordinator","Con las sesiones":"With the sessions",

@@ -223,3 +223,20 @@ test('T16 PhotoPhrases_AfterThePass — la nota en todas sus vistas, los agentes
   };
   for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
 });
+
+// 🔴 Falla con: los pasos de una ejecución y la etiqueta «coordina» en castellano en la oficina en inglés (recorrido del
+// sitio del 27/11). Los nombres de los pasos llegan en la foto como los dice el pipeline; la traducción es la misma que
+// usa el sitio (`paso.<id>` de scripts/site/texts.js), así un paso nuevo sin traducir frena acá.
+test('T-pasos Steps_AndCoordinatesLabel_InEnglish — cada paso del pipeline y «coordina» salen en inglés', () => {
+  const { traducir } = block({ source: 'site', lang: 'en' });
+  const STEPS = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  const { TEXTOS } = require(path.join(__dirname, '..', 'site', 'texts.js'));
+  const ids = STEPS.STEPS.map((s) => s.id);
+  assert.ok(ids.length >= 11, `los pasos: ${ids.join(' ')}`);
+  for (const id of ids) {
+    const t = TEXTOS[`paso.${id}`];
+    assert.ok(t, `el sitio no traduce el paso ${id}`);
+    assert.strictEqual(traducir(STEPS.stepName(id)), t.en, `el paso ${id} («${STEPS.stepName(id)}»)`);
+  }
+  assert.strictEqual(traducir('coordina '), 'coordinates ', 'la etiqueta del resumen de cada oficina');
+});
