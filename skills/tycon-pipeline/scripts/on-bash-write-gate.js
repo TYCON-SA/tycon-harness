@@ -395,12 +395,13 @@ function handleCarrilEHistoria(event, opts = {}) {
     // se juzga con la palabra entera, más abajo
     let texto = String(abs);
     if ((texto.match(/\$\(/g) || []).length > (texto.match(/\)/g) || []).length || (texto.match(/`/g) || []).length % 2) return null;
-    // lo desconocido cuenta como `*` sólo en un tramo que ya tiene un comodín (`est?do$(true)`); solo (`$R/src/x.cs`) es un
-    // destino sin resolver, que juzga la opción B
+    // lo desconocido cuenta como `*` sólo si el destino ya tiene un comodín (`est?do$(true)`); sin comodín (`$R/src/x.cs`)
+    // es un destino sin resolver, que juzga la opción B
     const DESCONOCIDO = '\u0001';
     for (let v = 0; v < 8 && /\$\(/.test(texto); v++) texto = texto.replace(/\$\([^()]*\)/g, DESCONOCIDO);
     texto = texto.replace(/`[^`]*`/g, DESCONOCIDO).replace(/\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/g, DESCONOCIDO);
-    texto = texto.split(/(?=[\\/])|(?<=[\\/])/).map((p) => (/[*?[{(]/.test(p) ? p.split(DESCONOCIDO).join('*') : p)).join('');
+    // (en cualquier tramo, si algún tramo trae comodín: `~/.c*/estado$NOSE/x` también llega)
+    if (/[*?[{(]/.test(texto)) texto = texto.split(DESCONOCIDO).join('*');
     const partes = texto.split(process.platform === 'win32' ? /[\\/]+/ : /\/+/);
     const i = partes.findIndex((p) => /[*?[{(]/.test(p));
     if (i < 0) return null;
