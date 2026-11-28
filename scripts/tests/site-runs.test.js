@@ -1189,7 +1189,11 @@ function normalizar260(s) {
     .replace(/nonce="[^"]*"/g, 'nonce="X"')
     .replace(/"generado":"[^"]*"/g, '"generado":"X"')
     .replace(/<script>\s*\(function \(\) \{[\s\S]*?<\/script>/g, '<script>CLIENTE</script>')
-    .replace(/<div id="corridas-textos" data-textos="[^"]*" hidden><\/div>/g, '');
+    .replace(/<div id="corridas-textos" data-textos="[^"]*" hidden><\/div>/g, '')
+    // la fecha y la hora del detalle y de las firmas salen en la zona y el formato del navegador (A135): cambian con la
+    // máquina que corre la prueba, no con lo que se muestra (runs-site-layout.test.js las prueba)
+    .replace(/(<div class="mono sub">)[^<·]*( · )/g, '$1FECHA$2')
+    .replace(/<span class="np-t">\d\d:\d\d<\/span>/g, '<span class="np-t">HORA</span>');
 }
 function foto260(nombre, texto) {
   const f = path.join(FOTOS_260, nombre);

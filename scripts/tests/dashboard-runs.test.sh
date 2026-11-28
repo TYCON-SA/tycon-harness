@@ -1317,7 +1317,7 @@ volcado "${T}/r" "55555555-5555-4555-8555-555555555555" "" '{"marker":{"repoPath
 volcado "${T}/r" "77777777-7777-4777-8777-777777777777" "" '{"marker":{"repoPath":"/Users/dev/SourceCode/acme-lab/arnes"}}' g.json
 generar "${T}/r" "${T}/o.html" "${T}/log"
 R="$(cliente "${T}/o.html" container f-repo | grep -o '<optgroup label="[^"]*"\|value="[^"]*"' | tr '\n' ' ')"
-[ "${R}" = 'value="" <optgroup label="otros repos" value="arnes" value="ClienteA/Backend" <optgroup label="laboratorio" value="laboratorio/acme-lab/arnes" value="laboratorio/acme-tienda" ' ] \
+[ "${R}" = 'value="" <optgroup label="otros repos" value="arnes" value="ClienteA/Backend" <optgroup label="laboratorio: pruebas y ensayos, no trabajo de un producto" value="laboratorio/acme-lab/arnes" value="laboratorio/acme-tienda" ' ] \
   && ok "REPOS-T3 el filtro agrupa con optgroup: otros repos y laboratorio al final, con el valor del laboratorio aparte, y el nombre de un ensayo no se le pega al repo de verdad" || mal "REPOS-T3 el filtro salió: ${R}"
 rm -rf "${T}"
 
@@ -2496,10 +2496,11 @@ volcado "${T}/r" "${S1}" "" '{"firmas":{"estado":"leido","ilegibles":0,"recortad
  {"cuando":"2026-08-15T07:00:00.000Z","firma":"pending-approval","nivel":1,"via":"notified","delegada":false,"quien":"sesión dddddddd, en una pestaña sin permisos (hecho y avisado)","pedida_por":"dddddddd","razon":"un pendiente nuevo"},
  {"cuando":"2026-08-15T07:30:00.000Z","firma":"save","nivel":1,"via":"window","delegada":false,"quien":"persona","pedida_por":null,"razon":"guardar","otra_casa":true}]}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
-D="$(cliente "${T}/o.html" detail 0)"
+# la hora de cada firma sale en la zona del navegador (A135): la prueba la fija en UTC
+D="$(TZ=UTC cliente "${T}/o.html" detail 0)"
 grep -q 'Las firmas' <<< "${D}" && ok "2.78-T8 el detalle trae la tarjeta «Las firmas»" || mal "2.78-T8 no está la tarjeta de las firmas: ${D:0:300}"
 grep -q '4 firmas: 2 tuyas, 1 por delegación, 1 hecha y avisada' <<< "${D}" && ok "2.78-T8 la cuenta de las firmas" || mal "2.78-T8 la cuenta no está"
-ORDEN="$(python3 -c "import re,sys; m=re.search(r'<ul class=\"nopaso firmas\">([\s\S]*?)</ul>', sys.argv[1]); print(','.join(re.findall(r'(\d\d:\d\d) UTC', m.group(1) if m else '')))" "${D}")"
+ORDEN="$(python3 -c "import re,sys; m=re.search(r'<ul class=\"nopaso firmas\">([\s\S]*?)</ul>', sys.argv[1]); print(','.join(re.findall(r'<span class=\"np-t\">(\d\d:\d\d)</span>', m.group(1) if m else '')))" "${D}")"
 [ "${ORDEN}" = "06:00,06:30,07:00,07:30" ] && ok "2.78-T8 cuatro filas en orden de hora" || mal "2.78-T8 el orden de las filas: ${ORDEN}"
 grep -q 'aprobar el plan de una story' <<< "${D}" && ok "2.78-T8 qué se firmó, en palabras del catálogo" || mal "2.78-T8 no dice qué se firmó con el catálogo"
 grep -q 'firma-delegada' <<< "${D}" && grep -q 'Por delegación' <<< "${D}" && grep -q '⇄' <<< "${D}" && ok "2.78-T8 la delegada con su marca, su glifo y su color" || mal "2.78-T8 la marca de delegación"

@@ -602,6 +602,7 @@ const TEXTOS = {
   'corridas.c.sinDeclarar': { es: 'sin declarar', en: 'undeclared' },
   'corridas.c.sinProducto': { es: 'sin producto', en: 'no product' },
   'corridas.c.laboratorio': { es: 'laboratorio', en: 'lab' },
+  'corridas.c.laboratorioGrupo': { es: 'laboratorio: pruebas y ensayos, no trabajo de un producto', en: 'lab: tests and trials, not work on a product' },
   'corridas.c.otrosRepos': { es: 'otros repos', en: 'other repos' },
   'corridas.c.todos': { es: 'todos ({n})', en: 'all ({n})' },
   'corridas.c.todas': { es: 'todas ({n})', en: 'all ({n})' },

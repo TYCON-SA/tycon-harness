@@ -1799,29 +1799,29 @@ section{margin-top:40px}h2{font-size:clamp(18px,2.3vw,24px);letter-spacing:-.018
 .leyenda{display:flex;flex-wrap:wrap;gap:5px 14px;margin:12px 0 2px;font-size:11.5px;color:var(--ink-2);font-family:"IBM Plex Mono",monospace}
 .lg{display:inline-flex;align-items:center;gap:5px}.lg i{width:11px;height:11px;display:inline-block;border-radius:2px}
 .lg i.falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
-.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+.tabla{margin-top:12px;overflow-x:auto;border:1px solid var(--line);background:var(--surface);container-type:inline-size}
 /* entre 641 y 1439 px la tabla se desplaza de costado: la sombra del borde derecho avisa que sigue */
 .tabla-caja{position:relative}.tabla-caja::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--ink) 18%,transparent));opacity:0}.tabla-caja.sigue::after{opacity:1}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:940px}
 th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line-strong);z-index:2;font-family:"IBM Plex Mono",monospace}
-.tabla th{padding:8px 7px;letter-spacing:.03em}.tabla td{padding:7px 7px}
+.tabla th{padding:8px 5px;letter-spacing:.03em}.tabla td{padding:7px 5px}
 th small{display:block;font-size:9px;letter-spacing:.02em;text-transform:none;color:var(--ink-3);font-weight:400;margin-top:1px}
 td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}tr:hover td{background:var(--surface-2)}
 td.fecha{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2);white-space:nowrap}td.fecha small{display:block;color:var(--ink-3);font-size:10.5px}
-td.story{min-width:150px}td.story .desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px;line-height:1.3;color:var(--ink-2);margin:1px 0}td.story b{font-weight:600}td.story small{display:block;color:var(--ink-3);font-size:11px;overflow-wrap:anywhere;min-width:12ch}
-td.barra{width:9%;min-width:80px}
+td.story{min-width:130px}td.story .desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px;line-height:1.3;color:var(--ink-2);margin:1px 0}td.story b{font-weight:600}td.story small{display:block;color:var(--ink-3);font-size:11px;overflow-wrap:anywhere;min-width:12ch}
+td.barra{width:9%;min-width:60px}
 .bar{display:flex;height:13px;border-radius:2px;overflow:hidden;min-width:8px}.bar i{display:block;height:100%}.bar .entre{background:repeating-linear-gradient(90deg,var(--line-strong) 0 1px,transparent 1px 3px)}.bar .falta{background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 4px)}
 .nobar{font-size:11px;color:var(--ink-3);font-style:italic}
 td.ar small{display:block;font-size:9.5px;font-style:italic}td.dur,td.ag,td.vu,td.tk,td.ar{font-family:"IBM Plex Mono",monospace;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-td.pasos-n{font-family:"IBM Plex Mono",monospace;font-size:11.5px;white-space:nowrap}.ok9{color:var(--good)}.parcial{color:var(--warn)}
-td.frenos{white-space:normal;min-width:150px}.f{display:inline-block;margin-bottom:2px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;border:1px solid var(--line-strong);color:var(--ink-3);padding:1px 5px;margin-right:3px;border-radius:2px}
+td.pasos-n{font-family:"IBM Plex Mono",monospace;font-size:11.5px;min-width:10ch}.ok9{color:var(--good)}.parcial{color:var(--warn)}
+td.frenos{white-space:normal;min-width:110px}.f{display:inline-block;margin-bottom:2px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;border:1px solid var(--line-strong);color:var(--ink-3);padding:1px 5px;margin-right:3px;border-radius:2px}
 .f.f-error{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
 .f.f-freno{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .f.f-sin{color:var(--ink-3);border-style:dashed}.f b{font-weight:600;white-space:nowrap}
 .nd{color:var(--ink-3);font-style:italic;font-size:11.5px}
 tr.abierta td{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}tbody tr[data-i]{cursor:pointer}
 .fila-det td{padding:0;background:var(--surface-2);position:relative}
-.det{position:sticky;left:0;width:min(1124px,calc(100vw - 60px));box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
+.det{position:sticky;left:0;width:100cqw;box-sizing:border-box;padding:16px 18px 18px;border-top:2px solid var(--accent);border-bottom:1px solid var(--line-strong)}
 .det>*{max-width:100%}
 /* a 640 px o menos cada ejecución es una tarjeta: cada dato con su nombre de columna y Controles a la vista */
 @media (max-width:640px){.tabla{overflow-x:visible}.tabla>table{display:block;min-width:0}.tabla>table>thead{display:none}.tabla>table>tbody{display:block}
@@ -2011,6 +2011,15 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var ctlEs = function (k) { return CTL[k] || k; };
   var ctlTec = function (k) { return CTL[k] ? k : ''; };
   var mediana = function (v) { if (!v.length) return null; var x = v.slice().sort(function (a, b) { return a - b; }); return x.length % 2 ? x[(x.length - 1) / 2] : (x[x.length / 2 - 1] + x[x.length / 2]) / 2; };
+  // La fecha y la hora de un instante en la zona del navegador, con el formato de la columna de la fecha de la tabla: la
+  // fila y su detalle dicen el mismo día (a las 21 h de Argentina ya es mañana en UTC).
+  var p2h = function (n) { return (n < 10 ? '0' : '') + n; };
+  var fechaLocal = function (iso) {
+    var d = new Date(iso); if (!iso || isNaN(d.getTime())) return '';
+    try { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+    catch (e) { return d.getFullYear() + '-' + p2h(d.getMonth() + 1) + '-' + p2h(d.getDate()); }
+  };
+  var horaLocal = function (iso) { var d = new Date(iso); return !iso || isNaN(d.getTime()) ? '' : p2h(d.getHours()) + ':' + p2h(d.getMinutes()); };
   var tokensDe = function (c) { return c.consumo.tokens.out + c.consumo.tokens.in + c.consumo.tokens.cache_new; };
 
   function ejeTicks(durMin) {
@@ -2277,7 +2286,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     };
     return '<div class="mini ancha"><h4>' + T('firmasTitulo') + ' — ' + T('firmasN', { n: ls.length }) + ': ' + partes.join(', ') + '</h4>'
       + '<ul class="nopaso firmas">' + ls.map(function (l) {
-        return '<li class="' + (clase(l) === 'delegada' ? 'firma-delegada' : '') + '"><span class="np-t">' + esc(String(l.cuando).slice(11, 16)) + ' UTC</span>'
+        return '<li class="' + (clase(l) === 'delegada' ? 'firma-delegada' : '') + '"><span class="np-t">' + esc(horaLocal(l.cuando) || String(l.cuando).slice(11, 16) + ' UTC') + '</span>'
           + '<span class="np-n">' + esc(l.que || l.firma) + ' ' + marca(l) + '</span>'
           + (l.quien ? '<span class="np-m">' + esc(l.quien) + '</span>' : '')
           + (l.pedida_por ? '<span class="np-m">' + T('firmaPedidaPor', { s: esc(l.pedida_por) }) + '</span>' : '')
@@ -2528,7 +2537,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto ? rotulo(c.producto) : T('productoSinRegistrar')) + '</span>'
       + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : T('maquinaSinDeclarar') + ' ' + esc(c.maquina_motivo || '')) + '</span>' : '')
       + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">' + T('sinDescripcion') + '</div>')
-      + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : T('sinDuracion')) + '</div></div>'
+      + '<div class="mono sub">' + esc(c.inicio ? fechaLocal(c.inicio) + ' ' + horaLocal(c.inicio) : '') + ' · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : T('sinDuracion')) + '</div></div>'
       + '<div class="det-chips">' + chips + '<button class="cerrar">' + T('cerrar') + ' ✕</button></div></div>'
       + '<div class="tl">' + tl + '</div><div class="qtok" hidden></div>'
       + ((c._notas && c._notas.length) ? '<p class="fuera">' + c._notas.join(' ') + '</p>' : '')
@@ -2818,10 +2827,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var RANGO = [fechas[0] || '', fechas[fechas.length - 1] || ''];
   // la columna de la fecha, también en la del navegador: la tabla y el filtro dicen el mismo día (llega en UTC), y con el
   // formato del navegador, el mismo que muestran los campos de fecha del filtro
-  var diaVisible = function (iso) {
-    var d = new Date(iso); if (isNaN(d.getTime())) return '';
-    try { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return ymd(d); }
-  };
+  var diaVisible = fechaLocal;
   for (var fi = 0; fi < cuerpo.rows.length; fi++) {
     var fr = cuerpo.rows[fi], fk = fr.classList.contains('fila-det') ? null : enC(fr);
     var fd = fk !== null && C[fk] && C[fk].inicio ? diaVisible(C[fk].inicio) : '', ftd = fd ? fr.querySelector('td.fecha') : null;
@@ -2865,7 +2871,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     };
     var elegido = elRepo.value;
     elRepo.innerHTML = '<option value="">' + T('todos', { n: enFechas.length }) + '</option>' + Object.keys(reposDeGrupo).sort(ordenGrupo).map(function (g) {
-      var etiqueta = g === 'laboratorio' ? T('laboratorio') : g === '' ? T('otrosRepos') : g;
+      var etiqueta = g === 'laboratorio' ? T('laboratorioGrupo') : g === '' ? T('otrosRepos') : g;
       return '<optgroup label="' + esc(etiqueta) + '">' + reposDeGrupo[g].sort(alfabetico).map(opcion).join('') + '</optgroup>';
     }).join('');
     elRepo.value = elegido;

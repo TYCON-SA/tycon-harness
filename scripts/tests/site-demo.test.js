@@ -29,8 +29,10 @@ const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.p
 // ── los datos de ejemplo y las fuentes que los leen ─────────────────────────────────────────────────────────
 // El resumen (sha256 del JSON con las claves ordenadas) de lo que las capturas de la guía armaban en línea, medido con el
 // guion de antes de mover los datos y a esta misma hora: si los datos movidos dan el mismo resumen, las capturas salen iguales.
+// Cambia a propósito cuando cambian los datos: las ejecuciones viven en /home/dev/proyectos/ y no en una carpeta `acme`, que
+// el código toma como de laboratorio (A136: el filtro marcaba «(laboratorio)» los tres productos).
 const AHORA_FIJO = Date.parse('2026-10-22T15:30:00Z');
-const RESUMEN_DE_LAS_CAPTURAS = 'cef71fb65e5da931de9ac58dae3564f1723300c7ba3d18f88612edc97fb3fd31';
+const RESUMEN_DE_LAS_CAPTURAS = '689d0baf531c0c27c315b2b3edf34886e47d85a11cd35c418c9b8dca1dc57016';
 const canonico = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));
 
 test('2.76-Capturas_MismosDatos', () => {

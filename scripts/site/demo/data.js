@@ -46,7 +46,7 @@ function volcadoDeEjecucion(sid, inicio, { story, repo, pasos = [0, 1, 2, 3, 4, 
   const tiempos = Object.fromEntries(pasos.map((p, i) => [p, { completedAt: m(5 + i * 12) }]));
   return JSON.stringify({
     archivedAt: m(130),
-    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/acme/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
+    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/proyectos/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
       stepsCompleted: pasos, stepsPending: [], stepTimings: tiempos },
     gates: [
       { ts: m(20), sessionId: sid, check: 'build', status: 'green', exit: 0, durationMs: 11000 },
@@ -207,7 +207,7 @@ function volcadoCompleto(sid, inicio, { story, repo, pasos, rojo, esquema }) {
   const spawns = Object.values(REVISORES_POR_TIPO).reduce((a, b) => a + b, 0);
   return JSON.stringify({
     archivedAt: m(130),
-    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/acme/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
+    marker: { storyId: story, storyPath: `/home/dev/acme/specs/story-${story}-una-mejora.md`, repoPath: `/home/dev/proyectos/${repo}`, sessionId: sid, startedAt: m(0), lastTouch: m(120),
       ...(esquema === 2 ? { stepScheme: 2 } : {}), stepsCompleted: ids, stepsPending: [], stepTimings: tiempos,
       iterations: { 1: { ts: m(60) }, 2: { ts: m(85) } } },
     gates: [

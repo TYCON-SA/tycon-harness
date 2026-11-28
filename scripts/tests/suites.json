@@ -5093,6 +5093,12 @@
       "requiere": []
     },
     {
+      "__nota": "La pestaña Ejecuciones del sitio se lee entera: la fecha del detalle es la de su fila (la del navegador, no UTC); las ejecuciones del demo son de productos y el grupo «laboratorio» del filtro dice qué es; la tabla entra en 962 px (el sitio a 1280); el detalle mide lo que se ve de la tabla; la línea de tiempo conserva su ancho dentro del sitio. Arma la página con dashboard.js y corre el cliente sobre un DOM mínimo. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/runs-site-layout.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "La fila «El proceso de la noche» de Configuración dice lo que pasa sin modelo: la noche corre igual y sólo no redacta con un modelo (aprendizajes, propuestas de hallazgos). Antes decía que la noche no corría, con los datos de la noche de hoy a la vista. La opción vacía del selector es corta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-nightly-model-text.test.js",
