@@ -869,3 +869,14 @@ test('T19 Tareas_DestinoYEnlace_PorPlataforma — la organización de operations
   assert.strictEqual(propuesta.enlaceDeTarea(d, 'Producto Y', 'x'), null);
   assert.strictEqual(propuesta.enlaceDeTarea({ org: null }, 'Producto Y', 5003), null);
 });
+
+// 🔴 Falla con: el enlace de una tarea armaba la dirección con dev.azure.com aunque el repo de operaciones esté en otro
+//    servidor (un Azure DevOps propio, o el sitio demo): la misma tarea llevaba a otra organización según la página (A100).
+test('A100 Tareas_EnlaceEnElServidorDelRepoDeOperaciones', () => {
+  const propio = { platform: 'azure', org: 'acme', project: 'Operaciones', repo: 'ops', web: 'https://devops.acme.example/acme/Operaciones/_git/ops' };
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, propio), { org: 'https://devops.acme.example/acme', proyecto: 'Operaciones' });
+  assert.deepStrictEqual(propuesta.destinoDeTareas({ org: 'otra' }, propio), { org: 'https://devops.acme.example/otra', proyecto: 'Operaciones' }, 'otra organización del mismo servidor');
+  assert.strictEqual(propuesta.enlaceDeTarea(propuesta.destinoDeTareas({}, propio), 'Producto Y', 5003), 'https://devops.acme.example/acme/Producto%20Y/_workitems/edit/5003');
+  // sin la dirección del repo, la de siempre
+  assert.deepStrictEqual(propuesta.destinoDeTareas({}, { ...propio, web: null }), { org: 'https://dev.azure.com/acme', proyecto: 'Operaciones' });
+});
